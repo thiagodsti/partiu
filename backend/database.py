@@ -1,0 +1,445 @@
+"""
+SQLite database schema initialization and connection helpers.
+Uses WAL journal mode for concurrent reads during background sync.
+"""
+import sqlite3
+import threading
+import logging
+from pathlib import Path
+from contextlib import contextmanager
+
+from .config import settings
+
+logger = logging.getLogger(__name__)
+
+_write_lock = threading.Lock()
+
+
+def get_db_path() -> str:
+    return settings.DB_PATH
+
+
+def get_connection(db_path: str | None = None) -> sqlite3.Connection:
+    """Open a SQLite connection with WAL mode and row_factory set."""
+    path = db_path or get_db_path()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA foreign_keys=ON')
+    conn.execute('PRAGMA busy_timeout=5000')
+    return conn
+
+
+@contextmanager
+def db_conn():
+    """Context manager yielding a read-only-style connection (auto-close)."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def db_write():
+    """Context manager yielding a connection with the write lock held."""
+    with _write_lock:
+        conn = get_connection()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Versioned migrations
+# Each entry: (version, description, [sql_statements])
+# Rules:
+#   - Never edit an existing migration — add a new one instead.
+#   - Each statement is executed individually so a failure is easy to pinpoint.
+#   - DDL changes (ALTER TABLE, CREATE INDEX, etc.) go here.
+#   - Bulk data fixes can also go here when needed.
+# ---------------------------------------------------------------------------
+MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (1, "Initial schema", [
+        """CREATE TABLE IF NOT EXISTS email_sync_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_synced_at TEXT,
+            last_rules_version TEXT,
+            status TEXT DEFAULT 'idle',
+            last_error TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS airports (
+            iata_code TEXT PRIMARY KEY,
+            icao_code TEXT,
+            name TEXT NOT NULL,
+            city_name TEXT,
+            country_code TEXT,
+            latitude REAL,
+            longitude REAL
+        )""",
+        """CREATE TABLE IF NOT EXISTS trips (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            booking_refs TEXT DEFAULT '[]',
+            start_date TEXT,
+            end_date TEXT,
+            origin_airport TEXT,
+            destination_airport TEXT,
+            is_auto_generated INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS flights (
+            id TEXT PRIMARY KEY,
+            trip_id TEXT REFERENCES trips(id) ON DELETE SET NULL,
+            airline_name TEXT,
+            airline_code TEXT,
+            flight_number TEXT NOT NULL,
+            booking_reference TEXT,
+            departure_airport TEXT NOT NULL,
+            departure_datetime TEXT NOT NULL,
+            departure_terminal TEXT,
+            departure_gate TEXT,
+            arrival_airport TEXT NOT NULL,
+            arrival_datetime TEXT NOT NULL,
+            arrival_terminal TEXT,
+            arrival_gate TEXT,
+            passenger_name TEXT,
+            seat TEXT,
+            cabin_class TEXT,
+            duration_minutes INTEGER,
+            status TEXT DEFAULT 'upcoming',
+            departure_timezone TEXT,
+            arrival_timezone TEXT,
+            email_message_id TEXT UNIQUE,
+            email_subject TEXT,
+            email_date TEXT,
+            aircraft_type TEXT,
+            aircraft_icao TEXT,
+            aircraft_fetched_at TEXT,
+            is_manually_added INTEGER DEFAULT 0,
+            notes TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS aircraft_types (
+            iata_code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            manufacturer TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_flights_trip_id ON flights(trip_id)",
+        "CREATE INDEX IF NOT EXISTS idx_flights_departure ON flights(departure_datetime)",
+        "CREATE INDEX IF NOT EXISTS idx_flights_booking_ref ON flights(booking_reference)",
+        "CREATE INDEX IF NOT EXISTS idx_trips_start_date ON trips(start_date)",
+    ]),
+    (2, "Add email_body and aircraft_registration columns to flights", [
+        "ALTER TABLE flights ADD COLUMN email_body TEXT",
+        "ALTER TABLE flights ADD COLUMN aircraft_registration TEXT",
+    ]),
+]
+
+CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
+
+
+def _get_schema_version(conn: sqlite3.Connection) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _run_migrations():
+    """
+    Apply any pending migrations in order.
+
+    Uses SQLite's PRAGMA user_version to track the current schema version.
+    Each migration is committed individually so a partial failure leaves the
+    DB at the last successfully applied version.
+
+    Existing databases that pre-date this migration system (user_version = 0
+    but tables already present) are detected and fast-forwarded to the current
+    version — their schema was already set up by the old init_database() code.
+    """
+    conn = get_connection()
+    try:
+        current = _get_schema_version(conn)
+
+        if current == 0:
+            # Check whether this is an existing DB or a brand-new one.
+            existing = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='flights'"
+            ).fetchone()
+            if existing:
+                # Pre-versioning DB — already set up, just stamp the version.
+                conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+                conn.commit()
+                logger.info(
+                    "Existing DB detected — stamped schema version %d",
+                    CURRENT_SCHEMA_VERSION,
+                )
+                return
+
+        pending = [(v, desc, stmts) for v, desc, stmts in MIGRATIONS if v > current]
+        if not pending:
+            logger.debug("Schema is up to date (version %d)", current)
+            return
+
+        for version, description, statements in pending:
+            logger.info("Applying migration v%d: %s", version, description)
+            for sql in statements:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError as e:
+                    # Some DDL statements are intentionally idempotent
+                    # (e.g. ADD COLUMN on an already-migrated DB).
+                    # Log a warning but don't abort the migration.
+                    logger.warning("  Statement skipped (%s): %.120s", e, sql.strip())
+            conn.execute(f"PRAGMA user_version = {version}")
+            conn.commit()
+            logger.info("Migration v%d applied", version)
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_database():
+    """Run pending migrations then seed static data."""
+    logger.info("Initializing database at %s", get_db_path())
+    _run_migrations()
+    _normalize_aircraft_types()
+    load_aircraft_types_if_empty()
+    logger.info("Database ready (schema v%d)", CURRENT_SCHEMA_VERSION)
+
+
+def _normalize_aircraft_types():
+    """One-time data fix: resolve raw IATA codes in aircraft_type to human-readable names."""
+    with db_write() as conn:
+        rows = conn.execute(
+            "SELECT id, aircraft_type FROM flights "
+            "WHERE aircraft_type IS NOT NULL AND aircraft_type != '' "
+            "AND aircraft_type NOT LIKE '% %'"
+        ).fetchall()
+        for row in rows:
+            resolved = conn.execute(
+                "SELECT name FROM aircraft_types WHERE iata_code = ?",
+                (row["aircraft_type"].upper(),),
+            ).fetchone()
+            if resolved:
+                conn.execute(
+                    "UPDATE flights SET aircraft_type = ? WHERE id = ?",
+                    (resolved["name"], row["id"]),
+                )
+
+
+_AIRCRAFT_TYPES: list[tuple[str, str, str]] = [
+    # (iata_code, name, manufacturer)
+    # Airbus narrow-body
+    ('A318', 'Airbus A318', 'Airbus'),
+    ('A319', 'Airbus A319', 'Airbus'),
+    ('A320', 'Airbus A320', 'Airbus'),
+    ('A321', 'Airbus A321', 'Airbus'),
+    ('A19N', 'Airbus A319neo', 'Airbus'),
+    ('A20N', 'Airbus A320neo', 'Airbus'),
+    ('A21N', 'Airbus A321neo', 'Airbus'),
+    ('A21X', 'Airbus A321XLR', 'Airbus'),
+    # Airbus wide-body
+    ('A225', 'Airbus A220-100', 'Airbus'),
+    ('A223', 'Airbus A220-300', 'Airbus'),
+    ('BCS1', 'Airbus A220-100', 'Airbus'),
+    ('BCS3', 'Airbus A220-300', 'Airbus'),
+    ('A332', 'Airbus A330-200', 'Airbus'),
+    ('A333', 'Airbus A330-300', 'Airbus'),
+    ('A338', 'Airbus A330-800neo', 'Airbus'),
+    ('A339', 'Airbus A330-900neo', 'Airbus'),
+    ('A342', 'Airbus A340-200', 'Airbus'),
+    ('A343', 'Airbus A340-300', 'Airbus'),
+    ('A345', 'Airbus A340-500', 'Airbus'),
+    ('A346', 'Airbus A340-600', 'Airbus'),
+    ('A359', 'Airbus A350-900', 'Airbus'),
+    ('A35K', 'Airbus A350-1000', 'Airbus'),
+    ('A380', 'Airbus A380-800', 'Airbus'),
+    ('A388', 'Airbus A380-800', 'Airbus'),
+    # Boeing narrow-body
+    ('B712', 'Boeing 717-200', 'Boeing'),
+    ('B721', 'Boeing 727-100', 'Boeing'),
+    ('B722', 'Boeing 727-200', 'Boeing'),
+    ('B732', 'Boeing 737-200', 'Boeing'),
+    ('B733', 'Boeing 737-300', 'Boeing'),
+    ('B734', 'Boeing 737-400', 'Boeing'),
+    ('B735', 'Boeing 737-500', 'Boeing'),
+    ('B736', 'Boeing 737-600', 'Boeing'),
+    ('B737', 'Boeing 737-700', 'Boeing'),
+    ('B738', 'Boeing 737-800', 'Boeing'),
+    ('B739', 'Boeing 737-900', 'Boeing'),
+    ('B37M', 'Boeing 737 MAX 7', 'Boeing'),
+    ('B38M', 'Boeing 737 MAX 8', 'Boeing'),
+    ('B39M', 'Boeing 737 MAX 9', 'Boeing'),
+    ('B3XM', 'Boeing 737 MAX 10', 'Boeing'),
+    # Boeing wide-body
+    ('B741', 'Boeing 747-100', 'Boeing'),
+    ('B742', 'Boeing 747-200', 'Boeing'),
+    ('B743', 'Boeing 747-300', 'Boeing'),
+    ('B744', 'Boeing 747-400', 'Boeing'),
+    ('B748', 'Boeing 747-8', 'Boeing'),
+    ('B74S', 'Boeing 747SP', 'Boeing'),
+    ('B752', 'Boeing 757-200', 'Boeing'),
+    ('B753', 'Boeing 757-300', 'Boeing'),
+    ('B762', 'Boeing 767-200', 'Boeing'),
+    ('B763', 'Boeing 767-300', 'Boeing'),
+    ('B764', 'Boeing 767-400', 'Boeing'),
+    ('B772', 'Boeing 777-200', 'Boeing'),
+    ('B77L', 'Boeing 777-200LR', 'Boeing'),
+    ('B773', 'Boeing 777-300', 'Boeing'),
+    ('B77W', 'Boeing 777-300ER', 'Boeing'),
+    ('B778', 'Boeing 777X-8', 'Boeing'),
+    ('B779', 'Boeing 777X-9', 'Boeing'),
+    ('B788', 'Boeing 787-8 Dreamliner', 'Boeing'),
+    ('B789', 'Boeing 787-9 Dreamliner', 'Boeing'),
+    ('B78X', 'Boeing 787-10 Dreamliner', 'Boeing'),
+    # Embraer
+    ('E135', 'Embraer ERJ-135', 'Embraer'),
+    ('E140', 'Embraer ERJ-140', 'Embraer'),
+    ('E145', 'Embraer ERJ-145', 'Embraer'),
+    ('E170', 'Embraer E170', 'Embraer'),
+    ('E175', 'Embraer E175', 'Embraer'),
+    ('E190', 'Embraer E190', 'Embraer'),
+    ('E195', 'Embraer E195', 'Embraer'),
+    ('E75L', 'Embraer E175-E2', 'Embraer'),
+    ('E75S', 'Embraer E175-E2', 'Embraer'),
+    ('E290', 'Embraer E190-E2', 'Embraer'),
+    ('E295', 'Embraer E195-E2', 'Embraer'),
+    # ATR
+    ('AT43', 'ATR 42-300', 'ATR'),
+    ('AT45', 'ATR 42-500', 'ATR'),
+    ('AT46', 'ATR 42-600', 'ATR'),
+    ('AT72', 'ATR 72-200', 'ATR'),
+    ('AT73', 'ATR 72-300', 'ATR'),
+    ('AT75', 'ATR 72-500', 'ATR'),
+    ('AT76', 'ATR 72-600', 'ATR'),
+    # Bombardier / CRJ
+    ('CRJ1', 'Bombardier CRJ-100', 'Bombardier'),
+    ('CRJ2', 'Bombardier CRJ-200', 'Bombardier'),
+    ('CRJ7', 'Bombardier CRJ-700', 'Bombardier'),
+    ('CRJ9', 'Bombardier CRJ-900', 'Bombardier'),
+    ('CRJX', 'Bombardier CRJ-1000', 'Bombardier'),
+    ('DH8A', 'Bombardier Dash 8-100', 'Bombardier'),
+    ('DH8B', 'Bombardier Dash 8-200', 'Bombardier'),
+    ('DH8C', 'Bombardier Dash 8-300', 'Bombardier'),
+    ('DH8D', 'Bombardier Dash 8-400', 'Bombardier'),
+    # McDonnell Douglas / MD
+    ('MD11', 'McDonnell Douglas MD-11', 'McDonnell Douglas'),
+    ('MD81', 'McDonnell Douglas MD-81', 'McDonnell Douglas'),
+    ('MD82', 'McDonnell Douglas MD-82', 'McDonnell Douglas'),
+    ('MD83', 'McDonnell Douglas MD-83', 'McDonnell Douglas'),
+    ('MD87', 'McDonnell Douglas MD-87', 'McDonnell Douglas'),
+    ('MD88', 'McDonnell Douglas MD-88', 'McDonnell Douglas'),
+    ('MD90', 'McDonnell Douglas MD-90', 'McDonnell Douglas'),
+    ('DC10', 'Douglas DC-10', 'McDonnell Douglas'),
+    # Fokker
+    ('F100', 'Fokker 100', 'Fokker'),
+    ('F70',  'Fokker 70', 'Fokker'),
+    ('F50',  'Fokker 50', 'Fokker'),
+    ('F27',  'Fokker 27 Friendship', 'Fokker'),
+    # Sukhoi / Irkut
+    ('SU95', 'Sukhoi Superjet 100', 'Sukhoi'),
+    ('SU9S', 'Sukhoi Superjet 100', 'Sukhoi'),
+    # Comac
+    ('C919', 'Comac C919', 'Comac'),
+    ('ARJ1', 'Comac ARJ21', 'Comac'),
+    # Saab
+    ('SB20', 'Saab 2000', 'Saab'),
+    ('SF34', 'Saab 340', 'Saab'),
+    # Cessna / Beechcraft
+    ('C208', 'Cessna 208 Caravan', 'Cessna'),
+    ('B190', 'Beechcraft 1900', 'Beechcraft'),
+    # De Havilland Canada
+    ('DHC6', 'De Havilland Canada Twin Otter', 'De Havilland Canada'),
+    ('DH6',  'De Havilland Canada Twin Otter', 'De Havilland Canada'),
+]
+
+
+def load_aircraft_types_if_empty():
+    """Pre-populate the aircraft_types table on first run."""
+    with db_conn() as conn:
+        row = conn.execute('SELECT COUNT(*) FROM aircraft_types').fetchone()
+        if row[0] > 0:
+            return
+
+    logger.info("Populating aircraft_types table with %d entries", len(_AIRCRAFT_TYPES))
+    with db_write() as conn:
+        conn.executemany(
+            'INSERT OR IGNORE INTO aircraft_types (iata_code, name, manufacturer) VALUES (?, ?, ?)',
+            _AIRCRAFT_TYPES,
+        )
+
+
+def load_airports_if_empty():
+    """
+    Load airports from data/airports.csv if the airports table is empty.
+    The CSV should be downloaded from https://ourairports.com/data/airports.csv
+    and placed in the data/ directory.
+    """
+    import csv
+    from pathlib import Path
+
+    with db_conn() as conn:
+        row = conn.execute('SELECT COUNT(*) FROM airports').fetchone()
+        if row[0] > 0:
+            logger.debug("Airports table already populated (%d rows)", row[0])
+            return
+
+    csv_path = Path(get_db_path()).parent / 'airports.csv'
+    if not csv_path.exists():
+        logger.info("airports.csv not found — downloading from ourairports.com ...")
+        try:
+            import urllib.request
+            url = 'https://davidmegginson.github.io/ourairports-data/airports.csv'
+            urllib.request.urlretrieve(url, csv_path)
+            logger.info("Downloaded airports.csv to %s", csv_path)
+        except Exception as e:
+            logger.warning("Could not download airports.csv: %s — airport lookups unavailable", e)
+            return
+
+    logger.info("Loading airports from %s ...", csv_path)
+    rows = []
+    try:
+        with open(csv_path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for record in reader:
+                iata = (record.get('iata_code') or '').strip().upper()
+                if not iata or len(iata) != 3:
+                    continue
+                rows.append((
+                    iata,
+                    (record.get('icao_code') or '').strip().upper() or None,
+                    (record.get('name') or '').strip(),
+                    (record.get('municipality') or '').strip() or None,
+                    (record.get('iso_country') or '').strip() or None,
+                    _float_or_none(record.get('latitude_deg')),
+                    _float_or_none(record.get('longitude_deg')),
+                ))
+    except Exception as e:
+        logger.error("Failed to read airports.csv: %s", e)
+        return
+
+    with db_write() as conn:
+        conn.executemany(
+            'INSERT OR IGNORE INTO airports '
+            '(iata_code, icao_code, name, city_name, country_code, latitude, longitude) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            rows,
+        )
+    logger.info("Loaded %d airports", len(rows))
+
+
+def _float_or_none(val):
+    try:
+        return float(val) if val else None
+    except (ValueError, TypeError):
+        return None

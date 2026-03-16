@@ -1,0 +1,204 @@
+"""
+Built-in airline parsing rules (code-only, not stored in the database).
+
+Adapted from AdventureLog — Django dependencies removed.
+Added Norwegian Air Shuttle (DY).
+"""
+
+from dataclasses import dataclass
+
+# Increment this version whenever rules are added or modified.
+# When a sync detects a version mismatch, it performs a full rescan
+# instead of an incremental one (deduplication prevents duplicate flights).
+RULES_VERSION = '15'  # bumped to force full rescan + BCBP boarding pass parsing
+
+# ---------------------------------------------------------------------------
+# Flexible date sub-pattern (reusable)
+# ---------------------------------------------------------------------------
+_DATE = r'\d{1,2}\s+(?:de\s+)?[A-Za-zÀ-ÿ]+\.?\s+(?:de\s+)?\d{4}'
+_TIME = r'\d{1,2}:\d{2}'
+
+BUILTIN_AIRLINE_RULES = [
+    # =========================================================================
+    # LATAM Airlines (LA / JJ / 4C / 4M)
+    # =========================================================================
+    {
+        'airline_name': 'LATAM Airlines',
+        'airline_code': 'LA',
+        'sender_pattern': r'(latam\.com|latamairlines\.com|info\.latam\.|@latam\.)',
+        'subject_pattern': (
+            r'(itinerar|confirm|reserv|booking|e-?ticket|'
+            r'compr|viage|viaje|vuelo|voo|trip|travel)'
+        ),
+        'body_pattern': (
+            r'\((?P<departure_airport>[A-Z]{3})\)'
+            r'\s+'
+            r'(?P<flight_number>[A-Z0-9]{2}\s*\d{3,5})(?!\w)'
+            r'.*?'
+            r'\((?P<arrival_airport>[A-Z]{3})\)'
+        ),
+        'date_format': '%d %b %Y',
+        'time_format': '%H:%M',
+        'custom_extractor': 'latam',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 10,
+    },
+    # =========================================================================
+    # SAS Scandinavian Airlines (SK)
+    # =========================================================================
+    {
+        'airline_name': 'SAS Scandinavian Airlines',
+        'airline_code': 'SK',
+        'sender_pattern': r'(flysas\.com|sas\.se|sas\.dk|sas\.no|@sas\.)',
+        'subject_pattern': (
+            r'(booking\s*confirm|itinerary|e-?ticket|receipt|'
+            r'reservation|billet|resa|rejse|reise|trip|travel|'
+            r'flight|flygning|bokningsbek|bokning|Din\s+resa|Your\s+Flight)'
+        ),
+        'body_pattern': (
+            r'(?P<departure_airport>[A-Z]{3})'
+            r'\s*[-–]\s*'
+            r'(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?'
+            r'(?P<arrival_airport>[A-Z]{3})'
+            r'\s+'
+            r'(?P<departure_time>' + _TIME + r')'
+            r'\s*[-–]\s*'
+            r'(?P<arrival_time>' + _TIME + r')'
+            r'.*?'
+            r'(?P<flight_number>(?:SK|VS|LH|LX|OS|TP|A3|SN|BA|AF)\s*\d{2,5})'
+        ),
+        'date_format': '%d %b %Y',
+        'time_format': '%H:%M',
+        'custom_extractor': 'sas',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 10,
+    },
+    # =========================================================================
+    # Norwegian Air Shuttle (DY)
+    # =========================================================================
+    {
+        'airline_name': 'Norwegian Air Shuttle',
+        'airline_code': 'DY',
+        'sender_pattern': r'(norwegian\.com|@norwegian\.no|noreply@norwegian)',
+        'subject_pattern': (
+            r'(booking\s*confirm|itinerary|e-?ticket|receipt|'
+            r'reservation|bestilling|trip|travel|order)'
+        ),
+        'body_pattern': (
+            r'(?P<departure_airport>[A-Z]{3})'
+            r'\s*[-–]\s*'
+            r'(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?'
+            r'(?P<arrival_airport>[A-Z]{3})'
+            r'\s+'
+            r'(?P<departure_time>' + _TIME + r')'
+            r'\s*[-–]\s*'
+            r'(?P<arrival_time>' + _TIME + r')'
+            r'.*?'
+            r'(?P<flight_number>(?:DY|D8)\s*\d{2,5})'
+        ),
+        'date_format': '%d %b %Y',
+        'time_format': '%H:%M',
+        'custom_extractor': 'norwegian',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 10,
+    },
+    # =========================================================================
+    # Lufthansa (LH)
+    # =========================================================================
+    {
+        'airline_name': 'Lufthansa',
+        'airline_code': 'LH',
+        'sender_pattern': r'(lufthansa\.com|@lh\.com|noreply@lufthansa)',
+        'subject_pattern': (
+            r'(booking\s*confirm|itinerary|e-?ticket|receipt|'
+            r'buchungsbest[äa]tigung|flugbest[äa]tigung|reservation|'
+            r'Reise|trip|travel)'
+        ),
+        'body_pattern': (
+            r'(?:'
+            r'(?P<departure_date>' + _DATE + r')'
+            r'\s+'
+            r'(?P<departure_time>' + _TIME + r')'
+            r'.*?'
+            r'\((?P<departure_airport>[A-Z]{3})\)'
+            r'.*?'
+            r'(?P<flight_number>LH\s*\d{3,5})'
+            r'.*?'
+            r'(?P<arrival_date>' + _DATE + r')'
+            r'\s+'
+            r'(?P<arrival_time>' + _TIME + r')'
+            r'.*?'
+            r'\((?P<arrival_airport>[A-Z]{3})\)'
+            r')'
+        ),
+        'date_format': '%d %b %Y',
+        'time_format': '%H:%M',
+        'custom_extractor': 'lufthansa',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 10,
+    },
+    # =========================================================================
+    # Azul Brazilian Airlines (AD)
+    # =========================================================================
+    {
+        'airline_name': 'Azul Brazilian Airlines',
+        'airline_code': 'AD',
+        'sender_pattern': r'(voeazul[\w-]*\.com\.br|azullinhasaereas\.com|@azul\.com)',
+        'subject_pattern': (
+            r'(itinerar|confirm|reserv|booking|e-?ticket|'
+            r'compr|viage|voo|passagem|bilhete|trip|travel)'
+        ),
+        'body_pattern': (
+            r'\n\s*(?P<departure_airport>[A-Z]{3})\s*\n'
+            r'.*?'
+            r'(?P<departure_date>\d{2}/\d{2})'
+            r'\s*[•·]\s*'
+            r'(?P<departure_time>' + _TIME + r')'
+            r'.*?'
+            r'(?:Voo|Flight)\s+(?P<flight_number>\d{3,5})'
+            r'.*?'
+            r'\n\s*(?P<arrival_airport>[A-Z]{3})\s*\n'
+            r'.*?'
+            r'(?P<arrival_date>\d{2}/\d{2})'
+            r'\s*[•·]\s*'
+            r'(?P<arrival_time>' + _TIME + r')'
+        ),
+        'date_format': '%d/%m',
+        'time_format': '%H:%M',
+        'custom_extractor': 'azul',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 10,
+    },
+]
+
+
+@dataclass
+class BuiltinAirlineRule:
+    """
+    Lightweight, in-memory representation of an airline parsing rule.
+    """
+    airline_name: str
+    airline_code: str
+    sender_pattern: str
+    body_pattern: str
+    date_format: str
+    time_format: str
+    is_active: bool
+    is_builtin: bool
+    priority: int
+    subject_pattern: str = ''
+    custom_extractor: str = ''
+
+
+def get_builtin_rules() -> list[BuiltinAirlineRule]:
+    """Return all active built-in airline rules as in-memory objects (no DB query)."""
+    return [
+        BuiltinAirlineRule(**rule)
+        for rule in BUILTIN_AIRLINE_RULES
+        if rule.get('is_active', True)
+    ]

@@ -1,0 +1,11 @@
+services:
+  app:
+    image: ghcr.io/thiagodsti/partiu:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # Web UI + API
+      - "2525:2525"   # Inbound SMTP
+    volumes:
+      - ./data:/app/data   # SQLite db + email cache persisted on host
+    env_file:
+      - .env
