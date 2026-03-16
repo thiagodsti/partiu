@@ -10,14 +10,21 @@ sys.path.insert(0, str(ROOT))
 import pytest
 
 CACHE_PATH = ROOT / 'data' / 'email_cache.json'
+FIXTURE_PATH = ROOT / 'tests' / 'fixtures' / 'email_cache.json'
 
 
 @pytest.fixture(scope='session')
 def email_cache():
-    """Load the email cache JSON for parsing tests."""
-    if not CACHE_PATH.exists():
+    """Load the email cache for parsing tests.
+
+    Priority:
+      1. data/email_cache.json  — real emails from a local sync (gitignored)
+      2. tests/fixtures/email_cache.json — anonymized fixture emails (committed)
+    """
+    path = CACHE_PATH if CACHE_PATH.exists() else FIXTURE_PATH
+    if not path.exists():
         return []
-    with open(CACHE_PATH, encoding='utf-8') as f:
+    with open(path, encoding='utf-8') as f:
         return json.load(f)
 
 
