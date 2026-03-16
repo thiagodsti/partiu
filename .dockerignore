@@ -1,0 +1,29 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Frontend deps (rebuilt inside Docker for the correct platform)
+frontend/node_modules/
+
+# Data — never bake credentials or DB into the image
+data/
+.env
+
+# Dev/test artifacts
+tests/
+pytest.ini
+requirements-dev.txt
+*.egg-info/
+
+# Git / IDE
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
