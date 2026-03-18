@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { authApi } from '../api/client';
-  import { currentUser } from '../lib/authStore';
+  import { authApi } from "../api/client";
+  import { currentUser } from "../lib/authStore";
+  import { t } from "svelte-i18n";
 
   interface Props {
     title: string;
@@ -18,10 +19,9 @@
       // ignore
     }
     currentUser.set(null);
-    window.location.hash = '/login';
+    window.location.hash = "/login";
     loggingOut = false;
   }
-
 </script>
 
 <nav class="top-nav">
@@ -32,8 +32,13 @@
   <span style="flex: 1;"></span>
   {#if $currentUser}
     <span class="nav-username">{$currentUser.username}</span>
-    <button class="nav-logout" onclick={handleLogout} disabled={loggingOut} title="Sign out">
-      {loggingOut ? '...' : '↩'}
+    <button
+      class="nav-logout"
+      onclick={handleLogout}
+      disabled={loggingOut}
+      title={$t("signout")}
+    >
+      {loggingOut ? "..." : "↩"}
     </button>
   {/if}
 </nav>
@@ -54,7 +59,9 @@
     padding: 4px 6px;
     border-radius: var(--radius-sm);
     line-height: 1;
-    transition: color 0.15s, background 0.15s;
+    transition:
+      color 0.15s,
+      background 0.15s;
   }
 
   .nav-logout:hover:not(:disabled) {

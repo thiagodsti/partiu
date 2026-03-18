@@ -221,5 +221,6 @@
   "settings.change_pw_btn": "Alterar Senha",
   "settings.changing_pw": "Salvando…",
   "completed": "concluída",
-  "upcoming": "próxima"
+  "upcoming": "próxima",
+  "signout": "Deslogar"
 }

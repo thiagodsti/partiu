@@ -220,6 +220,7 @@
   "settings.pw_totp_placeholder": "000000",
   "settings.change_pw_btn": "Change Password",
   "settings.changing_pw": "Saving…",
-  "completed": "concluída",
-  "upcoming": "próxima"
+  "completed": "completed",
+  "upcoming": "upcoming",
+  "signout": "Sign out"
 }
