@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "qrcode": "^1.5.4",
+    "svelte-i18n": "^4.0.1",
     "svelte-spa-router": "^4.0.1"
   },
   "devDependencies": {

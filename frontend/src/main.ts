@@ -1,5 +1,6 @@
 import './app.css';
 import './lib/themeStore'; // apply saved theme before first render
+import './lib/i18n';
 import App from './App.svelte';
 import { mount } from 'svelte';
 

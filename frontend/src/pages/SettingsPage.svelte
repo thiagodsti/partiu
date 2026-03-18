@@ -9,6 +9,7 @@
   import TopNav from '../components/TopNav.svelte';
   import { currentUser } from '../lib/authStore';
   import { theme } from '../lib/themeStore';
+  import { t, locale, setLocale, LOCALES } from '../lib/i18n';
 
   // ---- State ----
   let loading = $state(true);
@@ -104,7 +105,7 @@
     regrouping = true;
     try {
       await syncApi.regroup();
-      showMsg('Re-grouping started in background', 'success');
+      showMsg($t('settings.regroup_ok'), 'success');
     } catch (err) {
       showMsg(`Error: ${(err as Error).message}`, 'error');
     } finally {
@@ -180,7 +181,7 @@
     data.smtp_allowed_senders = smtpAllowedSenders.trim();
     try {
       await settingsApi.update(data);
-      showMsg('Settings saved!', 'success');
+      showMsg($t('settings.saved'), 'success');
       appPassword = '';
     } catch (err) {
       showMsg(`Error: ${(err as Error).message}`, 'error');
@@ -216,7 +217,7 @@
     try {
       const result = await settingsApi.reloadAirports();
       airportCount = result?.count ?? 0;
-      showMsg(`Loaded ${airportCount.toLocaleString()} airports`, 'success');
+      showMsg($t('settings.airports_loaded', { values: { n: airportCount.toLocaleString() } }), 'success');
     } catch (err) {
       showMsg(`Error: ${(err as Error).message}`, 'error');
     } finally {
@@ -378,25 +379,25 @@
   }
 </script>
 
-<TopNav title="⚙ Settings" />
+<TopNav title={$t('settings.title')} />
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen icon="⚙" message="Loading settings..." />
+    <LoadingScreen icon="⚙" message={$t('settings.loading')} />
   {:else if error}
-    <EmptyState icon="⚠️" title="Failed to load settings" description={error} />
+    <EmptyState icon="⚠️" title={$t('settings.load_error')} description={error} />
   {:else}
     <!-- Sync Status Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Sync Status</div>
+      <div class="settings-section-title">{$t('settings.sync_status')}</div>
       <div class="sync-status-bar" style="margin-bottom:var(--space-md)">
         <span class="sync-dot {syncRunning ? 'running' : syncHasError ? 'error' : 'idle'}"></span>
         <div>
-          <div>{syncRunning ? 'Syncing...' : syncHasError ? 'Sync error' : 'Ready'}</div>
+          <div>{syncRunning ? $t('settings.sync_running') : syncHasError ? $t('settings.sync_error') : $t('settings.sync_ready')}</div>
           <div style="font-size:0.75rem;color:var(--text-muted)">
-            Last sync: {formatDateTimeLocale(syncStatus?.last_synced_at)}
+            {$t('settings.last_sync', { values: { time: formatDateTimeLocale(syncStatus?.last_synced_at) } })}
             {#if nextSyncLabel && !syncRunning}
-              <span style="color:var(--text-muted);opacity:0.7">({nextSyncLabel})</span>
+              <span style="color:var(--text-muted);opacity:0.7">{$t('settings.next_sync', { values: { label: nextSyncLabel } })}</span>
             {/if}
           </div>
           {#if syncHasError}
@@ -411,7 +412,7 @@
         style="margin-top:var(--space-sm)"
         onclick={regroup}
       >
-        {regrouping ? 'Re-grouping...' : '⟳ Re-group All Flights'}
+        {regrouping ? $t('settings.regrouping') : $t('settings.regroup')}
       </button>
 
       {#if !resetConfirmStep}
@@ -421,21 +422,21 @@
           style="margin-top:var(--space-sm);border-color:var(--danger);color:var(--danger)"
           onclick={() => resetConfirmStep = true}
         >
-          {resetting ? 'Resetting...' : '⚠ Reset Data & Re-sync from Email'}
+          {resetting ? $t('settings.resetting') : $t('settings.reset')}
         </button>
       {:else}
         <div style="margin-top:var(--space-sm);padding:var(--space-md);border:1px solid var(--danger);border-radius:var(--radius-sm);background:color-mix(in srgb, var(--danger) 8%, transparent)">
           <p style="margin:0 0 var(--space-sm);font-size:0.875rem;color:var(--danger);font-weight:600">
-            ⚠ This will permanently delete all auto-synced flights and trips, then re-sync from your email.
+            {$t('settings.reset_warning')}
           </p>
           <p style="margin:0 0 var(--space-sm);font-size:0.875rem;color:var(--text-secondary)">
-            Type <strong>RESET</strong> to confirm:
+            {$t('settings.reset_type')}
           </p>
           <input
             class="form-input"
             type="text"
             bind:value={resetConfirmText}
-            placeholder="RESET"
+            placeholder={$t('settings.reset_placeholder')}
             style="margin-bottom:var(--space-sm);font-family:monospace"
             onkeydown={(e) => { if (e.key === 'Enter' && resetConfirmText === 'RESET') resetAndSync(); if (e.key === 'Escape') cancelReset(); }}
           />
@@ -446,9 +447,9 @@
               style="background:var(--danger);color:#fff;border-color:var(--danger)"
               onclick={resetAndSync}
             >
-              {resetting ? 'Resetting...' : 'Confirm Reset'}
+              {resetting ? $t('settings.resetting') : $t('settings.reset_confirm')}
             </button>
-            <button class="btn btn-secondary" onclick={cancelReset}>Cancel</button>
+            <button class="btn btn-secondary" onclick={cancelReset}>{$t('settings.cancel')}</button>
           </div>
         </div>
       {/if}
@@ -456,40 +457,40 @@
 
     <!-- Email Account Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Email Account</div>
+      <div class="settings-section-title">{$t('settings.email_account')}</div>
 
       <form onsubmit={saveSettings}>
         <div class="form-group">
-          <label class="form-label" for="gmail-address">Email Address</label>
+          <label class="form-label" for="gmail-address">{$t('settings.email_address')}</label>
           <input
             class="form-input"
             id="gmail-address"
             type="email"
             bind:value={gmailAddress}
-            placeholder="you@gmail.com"
+            placeholder={$t('settings.email_placeholder')}
             autocomplete="email"
           />
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="app-password">Password / App Password</label>
+          <label class="form-label" for="app-password">{$t('settings.password')}</label>
           <input
             class="form-input"
             id="app-password"
             type="password"
             bind:value={appPassword}
             placeholder={currentSettings?.gmail_app_password_set
-              ? '(already set — paste to change)'
-              : 'xxxx-xxxx-xxxx-xxxx'}
+              ? $t('settings.password_set')
+              : $t('settings.password_placeholder')}
             autocomplete="current-password"
           />
           <div class="form-hint">
-            For Gmail, generate an App Password at: Google Account → Security → 2-Step Verification → App passwords.
+            {$t('settings.password_hint')}
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="imap-provider">IMAP Server</label>
+          <label class="form-label" for="imap-provider">{$t('settings.imap_server')}</label>
           <select
             class="form-input"
             id="imap-provider"
@@ -508,7 +509,7 @@
               id="imap-host"
               type="text"
               bind:value={imapHost}
-              placeholder="imap.example.com"
+              placeholder={$t('settings.imap_host_placeholder')}
               style="flex:1"
             />
             <input
@@ -528,7 +529,7 @@
             disabled={testingImap}
             onclick={testImapConnection}
           >
-            {testingImap ? 'Testing…' : '⇄ Test Connection'}
+            {testingImap ? $t('settings.testing') : $t('settings.test_connection')}
           </button>
           {#if imapTestMsg}
             <div style="margin-top:var(--space-xs);font-size:0.8rem;color:{imapTestOk ? 'var(--success)' : 'var(--danger)'}">
@@ -548,7 +549,7 @@
         {/if}
 
         <button class="btn btn-primary btn-full" type="submit" disabled={savingSettings}>
-          {savingSettings ? 'Saving...' : 'Save Settings'}
+          {savingSettings ? $t('settings.saving') : $t('settings.save')}
         </button>
       </form>
     </div>
@@ -556,9 +557,9 @@
     <!-- Inbound SMTP Server (admin only — enable/port) -->
     {#if $currentUser?.is_admin}
     <div class="settings-section">
-      <div class="settings-section-title">Inbound Email Server</div>
+      <div class="settings-section-title">{$t('settings.inbound_smtp')}</div>
       <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-        Run a simple SMTP server so users can forward flight confirmation emails directly to this app.
+        {$t('settings.smtp_desc')}
       </div>
 
       <form onsubmit={saveSettings}>
@@ -569,24 +570,24 @@
               bind:checked={smtpEnabled}
               style="width:auto;margin:0"
             />
-            Enable SMTP server
+            {$t('settings.smtp_enable')}
           </label>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="smtp-domain">Domain</label>
+          <label class="form-label" for="smtp-domain">{$t('settings.smtp_domain')}</label>
           <input
             class="form-input"
             id="smtp-domain"
             type="text"
             bind:value={smtpDomain}
-            placeholder="teda.work"
+            placeholder={$t('settings.smtp_domain_placeholder')}
           />
-          <div class="form-hint">Users without a custom forwarding address will default to <em>username@domain</em>.</div>
+          <div class="form-hint">{$t('settings.smtp_domain_hint')}</div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="sync-interval">Sync Interval (minutes)</label>
+          <label class="form-label" for="sync-interval">{$t('settings.sync_interval')}</label>
           <input
             class="form-input"
             id="sync-interval"
@@ -595,11 +596,11 @@
             min="1"
             max="1440"
           />
-          <div class="form-hint">How often the server polls Gmail for new emails. Takes effect after restart.</div>
+          <div class="form-hint">{$t('settings.sync_interval_hint')}</div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="max-emails">Max Emails per Sync</label>
+          <label class="form-label" for="max-emails">{$t('settings.max_emails')}</label>
           <input
             class="form-input"
             id="max-emails"
@@ -608,11 +609,11 @@
             min="1"
             max="10000"
           />
-          <div class="form-hint">Maximum number of emails to fetch in a single sync run.</div>
+          <div class="form-hint">{$t('settings.max_emails_hint')}</div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="first-sync-days">Initial Sync Window (days)</label>
+          <label class="form-label" for="first-sync-days">{$t('settings.first_sync_days')}</label>
           <input
             class="form-input"
             id="first-sync-days"
@@ -621,12 +622,12 @@
             min="1"
             max="3650"
           />
-          <div class="form-hint">How far back to look when syncing for the first time.</div>
+          <div class="form-hint">{$t('settings.first_sync_days_hint')}</div>
         </div>
 
         {#if smtpEnabled}
           <div class="form-group">
-            <label class="form-label" for="smtp-port">Port</label>
+            <label class="form-label" for="smtp-port">{$t('settings.smtp_port')}</label>
             <input
               class="form-input"
               id="smtp-port"
@@ -636,7 +637,7 @@
               max="65535"
               placeholder="2525"
             />
-            <div class="form-hint">Use 2525 (or any port above 1024) to avoid needing root. Map port 25 → 2525 in Docker or your firewall.</div>
+            <div class="form-hint">{$t('settings.smtp_port_hint')}</div>
           </div>
         {/if}
 
@@ -651,7 +652,7 @@
         {/if}
 
         <button class="btn btn-primary btn-full" type="submit" disabled={savingSettings}>
-          {savingSettings ? 'Saving...' : 'Save Settings'}
+          {savingSettings ? $t('settings.saving') : $t('settings.save')}
         </button>
       </form>
     </div>
@@ -660,34 +661,34 @@
     <!-- Email Forwarding (per-user — shown when SMTP server is enabled) -->
     {#if smtpEnabled}
     <div class="settings-section">
-      <div class="settings-section-title">Email Forwarding</div>
+      <div class="settings-section-title">{$t('settings.email_forwarding')}</div>
       <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-        Forward flight confirmation emails to your personal address below. Each user has their own forwarding address.
+        {$t('settings.forwarding_desc')}
       </div>
 
       <form onsubmit={saveSettings}>
         <div class="form-group">
-          <label class="form-label" for="smtp-recipient">Your forwarding address</label>
+          <label class="form-label" for="smtp-recipient">{$t('settings.your_address')}</label>
           <input
             class="form-input"
             id="smtp-recipient"
             type="email"
             bind:value={smtpRecipient}
-            placeholder="trips@your-domain.com"
+            placeholder={$t('settings.your_address_placeholder')}
           />
-          <div class="form-hint">Emails sent to this address will be processed and assigned to your account.</div>
+          <div class="form-hint">{$t('settings.your_address_hint')}</div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="smtp-senders">Allowed senders</label>
+          <label class="form-label" for="smtp-senders">{$t('settings.allowed_senders')}</label>
           <input
             class="form-input"
             id="smtp-senders"
             type="text"
             bind:value={smtpAllowedSenders}
-            placeholder="you@gmail.com, partner@gmail.com"
+            placeholder={$t('settings.allowed_senders_placeholder')}
           />
-          <div class="form-hint">Comma-separated list of email addresses allowed to forward to you. Leave blank to accept from anyone.</div>
+          <div class="form-hint">{$t('settings.allowed_senders_hint')}</div>
         </div>
 
         {#if settingsMsg}
@@ -701,7 +702,7 @@
         {/if}
 
         <button class="btn btn-primary btn-full" type="submit" disabled={savingSettings}>
-          {savingSettings ? 'Saving...' : 'Save Settings'}
+          {savingSettings ? $t('settings.saving') : $t('settings.save')}
         </button>
       </form>
     </div>
@@ -709,12 +710,12 @@
 
     <!-- Airport Data Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Airport Data</div>
+      <div class="settings-section-title">{$t('settings.airports')}</div>
       <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
         {#if airportCount > 0}
-          {airportCount.toLocaleString()} airports loaded.
+          {$t('settings.airports_loaded', { values: { n: airportCount.toLocaleString() } })}
         {:else}
-          No airports loaded. Download <code>airports.csv</code> from
+          {$t('settings.airports_none')} Download <code>airports.csv</code> from
           <a href="https://ourairports.com/data/airports.csv" target="_blank">ourairports.com</a>
           and place it in the <code>data/</code> directory.
         {/if}
@@ -725,7 +726,7 @@
           disabled={reloadingAirports}
           onclick={reloadAirports}
         >
-          {reloadingAirports ? 'Reloading...' : '↺ Reload Airports'}
+          {reloadingAirports ? $t('settings.reloading_airports') : $t('settings.reload_airports')}
         </button>
       {/if}
     </div>
@@ -733,16 +734,16 @@
     <!-- Admin: User Management -->
     {#if $currentUser?.is_admin}
       <div class="settings-section">
-        <div class="settings-section-title">Administration</div>
+        <div class="settings-section-title">{$t('settings.admin')}</div>
         <a href="#/admin/users" class="btn btn-secondary btn-full" style="display:block;text-align:center;">
-          Manage Users
+          {$t('settings.manage_users')}
         </a>
       </div>
     {/if}
 
     <!-- Two-Factor Authentication -->
     <div class="settings-section">
-      <div class="settings-section-title">Two-Factor Authentication</div>
+      <div class="settings-section-title">{$t('settings.2fa')}</div>
 
       {#if twoFaMsg}
         <div style="font-size:0.875rem;margin-bottom:var(--space-sm);color:{twoFaMsgType === 'success' ? 'var(--success)' : 'var(--danger)'}">
@@ -752,41 +753,43 @@
 
       {#if twoFaState === 'enabled'}
         <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          Two-factor authentication is <strong style="color:var(--success)">enabled</strong> on your account.
+          {$t('settings.2fa_enabled_msg').replace('enabled', '')}
+          <strong style="color:var(--success)">{$t('settings.2fa_enabled_badge')}</strong>
+          {' '}on your account.
         </div>
         {#if disablingTwoFa}
           <form onsubmit={confirmDisable2fa}>
             <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-              Enter your TOTP code <em>or</em> current password to disable 2FA:
+              {$t('settings.2fa_disable_hint')}
             </div>
             <div class="form-group">
-              <label class="form-label" for="disable-totp-code">Authenticator Code</label>
+              <label class="form-label" for="disable-totp-code">{$t('settings.2fa_totp_code')}</label>
               <input
                 class="form-input"
                 id="disable-totp-code"
                 type="text"
                 inputmode="numeric"
                 maxlength="6"
-                placeholder="000000"
+                placeholder={$t('settings.2fa_totp_placeholder')}
                 bind:value={disableCode}
                 autocomplete="one-time-code"
               />
             </div>
-            <div style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-bottom:var(--space-sm)">— or —</div>
+            <div style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-bottom:var(--space-sm)">{$t('settings.2fa_or')}</div>
             <div class="form-group">
-              <label class="form-label" for="disable-pw">Current Password</label>
+              <label class="form-label" for="disable-pw">{$t('settings.2fa_current_pw')}</label>
               <input
                 class="form-input"
                 id="disable-pw"
                 type="password"
                 bind:value={disablePassword}
-                placeholder="Current password"
+                placeholder={$t('settings.2fa_current_pw_placeholder')}
                 autocomplete="current-password"
               />
             </div>
             <div style="display:flex;gap:var(--space-sm)">
               <button class="btn btn-secondary" type="button" onclick={cancelDisable} disabled={disableLoading}>
-                Cancel
+                {$t('settings.cancel')}
               </button>
               <button
                 class="btn btn-primary"
@@ -794,7 +797,7 @@
                 style="flex:1;border-color:var(--danger);background:var(--danger)"
                 disabled={disableLoading || (!disableCode && !disablePassword)}
               >
-                {disableLoading ? 'Disabling...' : 'Disable 2FA'}
+                {disableLoading ? $t('settings.2fa_disabling') : $t('settings.2fa_disable')}
               </button>
             </div>
           </form>
@@ -804,13 +807,13 @@
             style="border-color:var(--danger);color:var(--danger)"
             onclick={() => { disablingTwoFa = true; twoFaMsg = ''; }}
           >
-            Disable 2FA
+            {$t('settings.2fa_disable')}
           </button>
         {/if}
 
       {:else if twoFaState === 'setup'}
         <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          Scan this QR code with your authenticator app (e.g. Google Authenticator, Authy), then enter the 6-digit code to confirm.
+          {$t('settings.2fa_setup_hint')}
         </div>
         {#if twoFaQrSvg}
           <div style="text-align:center;margin-bottom:var(--space-md)">
@@ -819,11 +822,11 @@
           </div>
         {/if}
         <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:var(--space-md);word-break:break-all">
-          Manual entry key: <code style="font-size:0.85rem">{twoFaSecret}</code>
+          {$t('settings.2fa_manual_key')} <code style="font-size:0.85rem">{twoFaSecret}</code>
         </div>
         <form onsubmit={confirmEnable2fa}>
           <div class="form-group">
-            <label class="form-label" for="enable-totp-code">6-digit code from your app</label>
+            <label class="form-label" for="enable-totp-code">{$t('settings.2fa_code_label')}</label>
             <input
               class="form-input"
               id="enable-totp-code"
@@ -838,7 +841,7 @@
           </div>
           <div style="display:flex;gap:var(--space-sm)">
             <button class="btn btn-secondary" type="button" onclick={cancelSetup} disabled={twoFaLoading}>
-              Cancel
+              {$t('settings.cancel')}
             </button>
             <button
               class="btn btn-primary"
@@ -846,30 +849,30 @@
               style="flex:1"
               disabled={twoFaLoading || twoFaCode.length !== 6}
             >
-              {twoFaLoading ? 'Enabling...' : 'Enable 2FA'}
+              {twoFaLoading ? $t('settings.2fa_enabling') : $t('settings.2fa_enable')}
             </button>
           </div>
         </form>
 
       {:else}
         <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          Add an extra layer of security to your account with an authenticator app.
+          {$t('settings.2fa_idle_hint')}
         </div>
         <button
           class="btn btn-primary btn-full"
           disabled={twoFaLoading}
           onclick={startSetup2fa}
         >
-          {twoFaLoading ? 'Loading...' : 'Enable 2FA'}
+          {twoFaLoading ? $t('settings.2fa_loading') : $t('settings.2fa_idle_btn')}
         </button>
       {/if}
     </div>
 
     <!-- Appearance -->
     <div class="settings-section">
-      <div class="settings-section-title">Appearance</div>
+      <div class="settings-section-title">{$t('settings.appearance')}</div>
       <div class="theme-toggle">
-        {#each [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']] as [value, label]}
+        {#each [['system', $t('settings.theme_system')], ['light', $t('settings.theme_light')], ['dark', $t('settings.theme_dark')]] as [value, label]}
           <button
             class="theme-btn"
             class:active={$theme === value}
@@ -877,37 +880,50 @@
           >{label}</button>
         {/each}
       </div>
+      <div class="form-group" style="margin-top:var(--space-md)">
+        <label class="form-label" for="language-select">{$t('settings.language')}</label>
+        <select
+          id="language-select"
+          class="form-input"
+          value={$locale}
+          onchange={(e) => setLocale((e.target as HTMLSelectElement).value)}
+        >
+          {#each LOCALES as loc}
+            <option value={loc.value}>{loc.label}</option>
+          {/each}
+        </select>
+      </div>
     </div>
 
     <!-- Change Password -->
     <div class="settings-section">
-      <div class="settings-section-title">Change Password</div>
+      <div class="settings-section-title">{$t('settings.change_password')}</div>
       <form onsubmit={changePassword}>
         <div class="form-group">
-          <label class="form-label" for="cur-pw">Current Password</label>
+          <label class="form-label" for="cur-pw">{$t('settings.current_pw')}</label>
           <input
             class="form-input"
             id="cur-pw"
             type="password"
             bind:value={currentPw}
-            placeholder="Current password"
+            placeholder={$t('settings.current_pw_placeholder')}
             autocomplete="current-password"
           />
         </div>
         <div class="form-group">
-          <label class="form-label" for="new-pw">New Password</label>
+          <label class="form-label" for="new-pw">{$t('settings.new_pw')}</label>
           <input
             class="form-input"
             id="new-pw"
             type="password"
             bind:value={newPw}
-            placeholder="New password (min 8 chars)"
+            placeholder={$t('settings.new_pw_placeholder')}
             autocomplete="new-password"
           />
         </div>
         {#if $currentUser?.totp_enabled}
           <div class="form-group">
-            <label class="form-label" for="pw-totp">Authenticator Code</label>
+            <label class="form-label" for="pw-totp">{$t('settings.pw_totp')}</label>
             <input
               class="form-input"
               id="pw-totp"
@@ -915,7 +931,7 @@
               inputmode="numeric"
               maxlength="6"
               bind:value={pwTotpCode}
-              placeholder="000000"
+              placeholder={$t('settings.pw_totp_placeholder')}
               autocomplete="one-time-code"
             />
           </div>
@@ -926,7 +942,7 @@
           </div>
         {/if}
         <button class="btn btn-primary btn-full" type="submit" disabled={changingPw}>
-          {changingPw ? 'Saving...' : 'Change Password'}
+          {changingPw ? $t('settings.changing_pw') : $t('settings.change_pw_btn')}
         </button>
       </form>
     </div>

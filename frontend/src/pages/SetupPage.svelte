@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authApi } from '../api/client';
   import { currentUser } from '../lib/authStore';
+  import { t } from '../lib/i18n';
 
   let username = $state('');
   let password = $state('');
@@ -14,11 +15,11 @@
     if (!username.trim() || !password) return;
 
     if (password !== confirmPassword) {
-      error = 'Passwords do not match';
+      error = $t('setup.err_mismatch');
       return;
     }
-    if (password.length < 6) {
-      error = 'Password must be at least 6 characters';
+    if (password.length < 8) {
+      error = $t('setup.err_short');
       return;
     }
 
@@ -43,12 +44,12 @@
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-logo">✈</div>
-    <h1 class="auth-title">Welcome to Partiu</h1>
-    <p class="auth-subtitle">Create your admin account to get started</p>
+    <h1 class="auth-title">{$t('setup.title')}</h1>
+    <p class="auth-subtitle">{$t('setup.subtitle')}</p>
 
     <form onsubmit={handleSetup}>
       <div class="form-group">
-        <label class="form-label" for="setup-username">Username</label>
+        <label class="form-label" for="setup-username">{$t('setup.username')}</label>
         <input
           class="form-input"
           id="setup-username"
@@ -62,43 +63,43 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="setup-password">Password</label>
+        <label class="form-label" for="setup-password">{$t('setup.password')}</label>
         <input
           class="form-input"
           id="setup-password"
           type="password"
           bind:value={password}
-          placeholder="At least 6 characters"
+          placeholder={$t('setup.password_placeholder')}
           autocomplete="new-password"
-          minlength="6"
+          minlength="8"
           required
         />
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="setup-confirm">Confirm Password</label>
+        <label class="form-label" for="setup-confirm">{$t('setup.confirm_password')}</label>
         <input
           class="form-input"
           id="setup-confirm"
           type="password"
           bind:value={confirmPassword}
-          placeholder="Repeat password"
+          placeholder={$t('setup.confirm_placeholder')}
           autocomplete="new-password"
           required
         />
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="setup-smtp">Email recipient address <span class="optional">(optional)</span></label>
+        <label class="form-label" for="setup-smtp">{$t('setup.recipient')} <span class="optional">{$t('setup.recipient_optional')}</span></label>
         <input
           class="form-input"
           id="setup-smtp"
           type="email"
           bind:value={smtpRecipient}
-          placeholder="trips@yourdomain.com"
+          placeholder={$t('setup.recipient_placeholder')}
         />
         <div class="form-hint">
-          If using the inbound SMTP server, forward flight emails to this address.
+          {$t('setup.recipient_hint')}
         </div>
       </div>
 
@@ -107,7 +108,7 @@
       {/if}
 
       <button class="btn btn-primary btn-full" type="submit" disabled={loading}>
-        {loading ? 'Creating account...' : 'Create Admin Account'}
+        {loading ? $t('setup.submitting') : $t('setup.submit')}
       </button>
     </form>
   </div>

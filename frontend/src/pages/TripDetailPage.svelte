@@ -19,6 +19,7 @@
   import LegDivider from '../components/LegDivider.svelte';
   import ConnectionBadge from '../components/ConnectionBadge.svelte';
   import DateDivider from '../components/DateDivider.svelte';
+  import { t } from '../lib/i18n';
 
   interface Props {
     params: { id: string };
@@ -58,14 +59,14 @@
   }
 </script>
 
-<TopNav title={loading ? 'Loading...' : (trip?.name ?? 'Error')} backHref="#/trips" />
+<TopNav title={loading ? $t('trip.loading') : (trip?.name ?? 'Error')} backHref="#/trips" />
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen message="Loading trip..." />
+    <LoadingScreen message={$t('trip.loading')} />
   {:else if error}
-    <EmptyState icon="⚠️" title="Failed to load trip" description={error}>
-      <a href="#/trips" class="btn btn-primary">Back to Trips</a>
+    <EmptyState icon="⚠️" title={$t('trip.load_error')} description={error}>
+      <a href="#/trips" class="btn btn-primary">{$t('trip.back')}</a>
     </EmptyState>
   {:else if trip}
     <!-- Trip Header -->
@@ -74,7 +75,7 @@
       {#if dateRange}
         <div class="trip-header-dates">
           <span>📅 {dateRange}</span>
-          <span>✈ {flightList.length} flight{flightList.length !== 1 ? 's' : ''}</span>
+          <span>✈ {flightList.length !== 1 ? $t('trips.flight_count_plural', { values: { n: flightList.length } }) : $t('trips.flight_count', { values: { n: flightList.length } })}</span>
         </div>
       {/if}
       <div style="margin-top:var(--space-sm);display:flex;gap:var(--space-xs);flex-wrap:wrap">
@@ -89,10 +90,10 @@
 
     <!-- Flight List -->
     {#if flightList.length === 0}
-      <EmptyState title="No flights in this trip" />
+      <EmptyState title={$t('trip.empty')} />
     {:else}
       <!-- Outbound leg -->
-      <LegDivider label="Outbound" flights={legs.outbound} />
+      <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
       {#each legs.outbound as flight, i (flight.id)}
         <FlightRow {flight} />
         {#if i < legs.outbound.length - 1}
@@ -109,7 +110,7 @@
 
       <!-- Return leg -->
       {#if legs.returning}
-        <LegDivider label="↩ Return" flights={legs.returning} />
+        <LegDivider label={$t('trip.return')} flights={legs.returning} />
         {#each legs.returning as flight, i (flight.id)}
           <FlightRow {flight} />
           {#if i < (legs.returning?.length ?? 0) - 1}

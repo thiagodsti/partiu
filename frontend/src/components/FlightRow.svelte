@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Flight } from '../api/types';
   import { formatTime, formatDate, formatDuration, flightStatus } from '../lib/utils';
+  import { t } from '../lib/i18n';
 
   interface Props {
     flight: Flight;
@@ -34,7 +35,7 @@
     {#if status === 'completed'}
       <span class="flight-status-badge flight-status-completed">✓</span>
     {:else if status === 'active'}
-      <span class="flight-status-badge flight-status-active">● In flight</span>
+      <span class="flight-status-badge flight-status-active">{$t('flight.in_flight')}</span>
     {/if}
   </div>
 </a>

@@ -5,6 +5,7 @@
   import TopNav from '../components/TopNav.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
+  import { t } from '../lib/i18n';
 
   let users = $state<UserListItem[]>([]);
   let loading = $state(true);
@@ -55,7 +56,7 @@
         is_admin: newIsAdmin,
         smtp_recipient_address: newSmtpRecipient.trim() || undefined,
       });
-      showMsg(`User "${newUsername.trim()}" created`);
+      showMsg($t('users.created', { values: { name: newUsername.trim() } }));
       newUsername = '';
       newPassword = '';
       newIsAdmin = false;
@@ -69,10 +70,10 @@
   }
 
   async function deleteUser(u: UserListItem) {
-    if (!confirm(`Delete user "${u.username}"? This cannot be undone.`)) return;
+    if (!confirm($t('users.delete_confirm', { values: { name: u.username } }))) return;
     try {
       await usersApi.delete(u.id);
-      showMsg(`User "${u.username}" deleted`);
+      showMsg($t('users.deleted', { values: { name: u.username } }));
       await load();
     } catch (err) {
       showMsg((err as Error).message, 'error');
@@ -80,14 +81,14 @@
   }
 
   async function resetUserPassword(userId: number) {
-    if (!resetPassword || resetPassword.length < 6) {
-      showMsg('Password must be at least 6 characters', 'error');
+    if (!resetPassword || resetPassword.length < 8) {
+      showMsg($t('users.err_pw_short'), 'error');
       return;
     }
     resetting = true;
     try {
       await usersApi.update(userId, { new_password: resetPassword });
-      showMsg('Password updated');
+      showMsg($t('users.pw_updated'));
       resetUserId = null;
       resetPassword = '';
     } catch (err) {
@@ -99,13 +100,13 @@
 
 </script>
 
-<TopNav title="Users" />
+<TopNav title={$t('users.title')} />
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen icon="👤" message="Loading users..." />
+    <LoadingScreen icon="👤" message={$t('users.loading')} />
   {:else if error}
-    <EmptyState icon="⚠️" title="Failed to load users" description={error} />
+    <EmptyState icon="⚠️" title={$t('users.load_error')} description={error} />
   {:else}
     {#if msg}
       <div class="msg-banner {msgType}">{msg}</div>
@@ -113,10 +114,10 @@
 
     <!-- User list -->
     <div class="settings-section">
-      <div class="settings-section-title">All Users</div>
+      <div class="settings-section-title">{$t('users.all_users')}</div>
 
       {#if users.length === 0}
-        <p style="color: var(--text-secondary); font-size: 0.875rem;">No users found.</p>
+        <p style="color: var(--text-secondary); font-size: 0.875rem;">{$t('users.none')}</p>
       {:else}
         <div class="user-list">
           {#each users as u (u.id)}
@@ -124,10 +125,10 @@
               <div class="user-info">
                 <span class="user-name">{u.username}</span>
                 {#if u.is_admin}
-                  <span class="badge-admin">Admin</span>
+                  <span class="badge-admin">{$t('users.badge_admin')}</span>
                 {/if}
                 {#if u.totp_enabled}
-                  <span class="badge-2fa">2FA</span>
+                  <span class="badge-2fa">{$t('users.badge_2fa')}</span>
                 {/if}
                 {#if u.smtp_recipient_address}
                   <span class="user-email">{u.smtp_recipient_address}</span>
@@ -139,17 +140,17 @@
                     class="btn btn-secondary btn-sm"
                     onclick={() => { resetUserId = resetUserId === u.id ? null : u.id; resetPassword = ''; }}
                   >
-                    Reset PW
+                    {$t('users.reset_pw')}
                   </button>
                   <button
                     class="btn btn-sm"
                     style="border-color: var(--danger); color: var(--danger);"
                     onclick={() => deleteUser(u)}
                   >
-                    Delete
+                    {$t('users.delete')}
                   </button>
                 {:else}
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">(you)</span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">{$t('users.badge_you')}</span>
 
                 {/if}
               </div>
@@ -161,7 +162,7 @@
                   class="form-input"
                   type="password"
                   bind:value={resetPassword}
-                  placeholder="New password (min 6 chars)"
+                  placeholder={$t('users.new_pw_placeholder')}
                   style="margin-bottom: var(--space-sm);"
                 />
                 <div style="display: flex; gap: var(--space-sm);">
@@ -170,13 +171,13 @@
                     disabled={resetting}
                     onclick={() => resetUserPassword(u.id)}
                   >
-                    {resetting ? 'Saving...' : 'Save Password'}
+                    {resetting ? $t('users.btn_saving_pw') : $t('users.btn_save_pw')}
                   </button>
                   <button
                     class="btn btn-secondary btn-sm"
                     onclick={() => { resetUserId = null; resetPassword = ''; }}
                   >
-                    Cancel
+                    {$t('users.btn_cancel')}
                   </button>
                 </div>
               </div>
@@ -188,10 +189,10 @@
 
     <!-- Create user form -->
     <div class="settings-section">
-      <div class="settings-section-title">Add User</div>
+      <div class="settings-section-title">{$t('users.add_user')}</div>
       <form onsubmit={createUser}>
         <div class="form-group">
-          <label class="form-label" for="new-username">Username</label>
+          <label class="form-label" for="new-username">{$t('users.new_username')}</label>
           <input
             class="form-input"
             id="new-username"
@@ -204,38 +205,38 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="new-password">Password</label>
+          <label class="form-label" for="new-password">{$t('users.new_password')}</label>
           <input
             class="form-input"
             id="new-password"
             type="password"
             bind:value={newPassword}
-            placeholder="At least 6 characters"
-            minlength="6"
+            placeholder={$t('users.new_password_placeholder')}
+            minlength="8"
             required
           />
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="new-smtp">Email recipient address <span style="color:var(--text-muted);font-weight:400;font-size:0.8em;">(optional)</span></label>
+          <label class="form-label" for="new-smtp">{$t('users.new_recipient')} <span style="color:var(--text-muted);font-weight:400;font-size:0.8em;">(optional)</span></label>
           <input
             class="form-input"
             id="new-smtp"
             type="email"
             bind:value={newSmtpRecipient}
-            placeholder="trips@yourdomain.com"
+            placeholder={$t('users.new_recipient_placeholder')}
           />
         </div>
 
         <div class="form-group">
           <label class="form-label" style="display: flex; align-items: center; gap: var(--space-sm);">
             <input type="checkbox" bind:checked={newIsAdmin} style="width: auto; margin: 0;" />
-            Grant admin privileges
+            {$t('users.grant_admin')}
           </label>
         </div>
 
         <button class="btn btn-primary" type="submit" disabled={creating}>
-          {creating ? 'Creating...' : '+ Add User'}
+          {creating ? $t('users.btn_adding') : $t('users.btn_add')}
         </button>
       </form>
     </div>

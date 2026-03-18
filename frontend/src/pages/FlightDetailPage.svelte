@@ -14,6 +14,7 @@
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
+  import { t } from '../lib/i18n';
 
   interface Props {
     params: { tripId: string; flightId: string };
@@ -128,7 +129,7 @@
 
   // ---- Derived ----
   const backUrl = $derived(params.tripId ? `#/trips/${params.tripId}` : '#/trips');
-  const title = $derived(flight ? `${flight.departure_airport ?? '?'} → ${flight.arrival_airport ?? '?'}` : 'Loading...');
+  const title = $derived(flight ? `${flight.departure_airport ?? '?'} → ${flight.arrival_airport ?? '?'}` : $t('flight.loading'));
   const duration = $derived(formatDuration(flight?.duration_minutes));
   const depDate = $derived(formatDateLong(flight?.departure_datetime));
   const arrDate = $derived(formatDateLong(flight?.arrival_datetime));
@@ -144,10 +145,10 @@
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen message="Loading flight..." />
+    <LoadingScreen message={$t('flight.loading')} />
   {:else if error || !flight}
-    <EmptyState icon="⚠️" title="Failed to load flight" description={error ?? 'Unknown error'}>
-      <a href={backUrl} class="btn btn-primary">Back</a>
+    <EmptyState icon="⚠️" title={$t('flight.load_error')} description={error ?? 'Unknown error'}>
+      <a href={backUrl} class="btn btn-primary">{$t('flight.back')}</a>
     </EmptyState>
   {:else}
     <!-- Hero card -->
@@ -157,7 +158,7 @@
           <span class="airline-badge airline-{flight.airline_code}">{flight.airline_code}</span>
         {/if}
         <span style="font-size:1.1rem;font-weight:600;font-family:monospace">{flight.flight_number}</span>
-        <span class="badge badge-{flight.status ?? 'upcoming'}">{flight.status ?? 'upcoming'}</span>
+        <span class="badge badge-{flight.status ?? 'upcoming'}">{flight.status ?? $t('flight.status_upcoming')}</span>
       </div>
 
       <div class="flight-detail-route">
@@ -172,10 +173,10 @@
             </div>
           {/if}
           {#if flight.departure_terminal}
-            <div class="airport-date">Terminal {flight.departure_terminal}</div>
+            <div class="airport-date">{$t('flight.terminal', { values: { t: flight.departure_terminal } })}</div>
           {/if}
           {#if flight.departure_gate}
-            <div class="airport-date">Gate {flight.departure_gate}</div>
+            <div class="airport-date">{$t('flight.gate', { values: { g: flight.departure_gate } })}</div>
           {/if}
         </div>
 
@@ -202,10 +203,10 @@
             </div>
           {/if}
           {#if flight.arrival_terminal}
-            <div class="airport-date">Terminal {flight.arrival_terminal}</div>
+            <div class="airport-date">{$t('flight.terminal', { values: { t: flight.arrival_terminal } })}</div>
           {/if}
           {#if flight.arrival_gate}
-            <div class="airport-date">Gate {flight.arrival_gate}</div>
+            <div class="airport-date">{$t('flight.gate', { values: { g: flight.arrival_gate } })}</div>
           {/if}
         </div>
       </div>
@@ -220,9 +221,9 @@
             {/if}
           </div>
         {:else if aircraftLoading}
-          <div style="color:var(--text-muted);font-size:0.8rem">Looking up aircraft...</div>
+          <div style="color:var(--text-muted);font-size:0.8rem">{$t('flight.aircraft_loading')}</div>
         {:else if aircraftNotAvailable}
-          <span style="color:var(--text-muted);font-size:0.8rem">Aircraft type not available</span>
+          <span style="color:var(--text-muted);font-size:0.8rem">{$t('flight.aircraft_unavailable')}</span>
         {/if}
       </div>
     </div>
@@ -231,49 +232,49 @@
     <div class="detail-grid">
       {#if flight.airline_name || flight.airline_code}
         <div class="detail-item">
-          <div class="detail-label">Airline</div>
+          <div class="detail-label">{$t('flight.airline')}</div>
           <div class="detail-value">{flight.airline_name ?? flight.airline_code}</div>
         </div>
       {/if}
       {#if flight.flight_number}
         <div class="detail-item">
-          <div class="detail-label">Flight</div>
+          <div class="detail-label">{$t('flight.number')}</div>
           <div class="detail-value mono">{flight.flight_number}</div>
         </div>
       {/if}
       {#if flight.booking_reference}
         <div class="detail-item">
-          <div class="detail-label">Booking Ref</div>
+          <div class="detail-label">{$t('flight.booking_ref')}</div>
           <div class="detail-value mono">{flight.booking_reference}</div>
         </div>
       {/if}
       {#if flight.passenger_name}
         <div class="detail-item">
-          <div class="detail-label">Passenger</div>
+          <div class="detail-label">{$t('flight.passenger')}</div>
           <div class="detail-value">{flight.passenger_name}</div>
         </div>
       {/if}
       {#if flight.seat}
         <div class="detail-item">
-          <div class="detail-label">Seat</div>
+          <div class="detail-label">{$t('flight.seat')}</div>
           <div class="detail-value">{flight.seat}</div>
         </div>
       {/if}
       {#if flight.cabin_class}
         <div class="detail-item">
-          <div class="detail-label">Class</div>
+          <div class="detail-label">{$t('flight.class')}</div>
           <div class="detail-value">{cabinLabel(flight.cabin_class)}</div>
         </div>
       {/if}
       {#if duration}
         <div class="detail-item">
-          <div class="detail-label">Duration</div>
+          <div class="detail-label">{$t('flight.duration')}</div>
           <div class="detail-value">{duration}</div>
         </div>
       {/if}
       {#if flight.status}
         <div class="detail-item">
-          <div class="detail-label">Status</div>
+          <div class="detail-label">{$t('flight.status')}</div>
           <div class="detail-value">{flight.status}</div>
         </div>
       {/if}
@@ -283,7 +284,7 @@
     {#if flight.email_subject}
       <div class="detail-grid" style="margin-top:var(--space-sm)">
         <div class="detail-item" style="grid-column:1/-1">
-          <div class="detail-label">Email Source</div>
+          <div class="detail-label">{$t('flight.email_source')}</div>
           <div class="detail-value text-sm" style="color:var(--text-muted)">{flight.email_subject}</div>
           {#if flight.email_date}
             <div class="detail-value text-sm" style="color:var(--text-muted)">{formatDateLong(flight.email_date)}</div>
@@ -295,7 +296,7 @@
     <!-- Notes -->
     {#if flight.notes}
       <div class="card" style="margin-top:var(--space-md)">
-        <div class="detail-label">Notes</div>
+        <div class="detail-label">{$t('flight.notes')}</div>
         <div class="detail-value">{flight.notes}</div>
       </div>
     {/if}
@@ -310,7 +311,7 @@
             style="width:100%;text-align:left"
             onclick={() => (depMapOpen = !depMapOpen)}
           >
-            🗺 Departure Airport Map — {depAirport.iata_code}
+            {$t('flight.dep_map', { values: { code: depAirport.iata_code } })}
           </button>
           {#if depMapOpen}
             <div style="margin-top:var(--space-xs)">
@@ -332,7 +333,7 @@
             style="width:100%;text-align:left"
             onclick={() => (arrMapOpen = !arrMapOpen)}
           >
-            🗺 Arrival Airport Map — {arrAirport.iata_code}
+            {$t('flight.arr_map', { values: { code: arrAirport.iata_code } })}
           </button>
           {#if arrMapOpen}
             <div style="margin-top:var(--space-xs)">
@@ -359,7 +360,7 @@
           class="btn btn-secondary"
           style="width:100%;text-align:center;text-decoration:none"
         >
-          💺 View Seat Map
+          {$t('flight.seat_map')}
         </a>
       {/if}
       <button
@@ -368,7 +369,7 @@
         disabled={emailLoading}
         onclick={openRawEmail}
       >
-        {emailLoading ? 'Loading...' : '📧 View Raw Email'}
+        {emailLoading ? $t('flight.btn_loading') : $t('flight.view_email')}
       </button>
     </div>
   {/if}
@@ -387,7 +388,7 @@
   >
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface, var(--bg-secondary));border-bottom:1px solid var(--border);flex-shrink:0;">
       <div style="font-size:0.85rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">
-        {emailData.email_subject ?? 'Raw Email'}
+        {emailData.email_subject ?? $t('flight.raw_email_title')}
       </div>
       <button
         style="background:none;border:none;color:var(--text-primary);font-size:1.4rem;cursor:pointer;padding:0 0 0 12px;line-height:1;flex-shrink:0;"
@@ -405,7 +406,7 @@
           title="Email content"
         ></iframe>
       {:else}
-        <pre style="margin:0;padding:16px;font-size:0.75rem;white-space:pre-wrap;word-break:break-all;color:var(--text-primary);">No HTML body available for this flight.</pre>
+        <pre style="margin:0;padding:16px;font-size:0.75rem;white-space:pre-wrap;word-break:break-all;color:var(--text-primary);">{$t('flight.no_html')}</pre>
       {/if}
     </div>
   </div>

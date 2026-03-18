@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authApi } from '../api/client';
   import { currentUser } from '../lib/authStore';
+  import { t } from '../lib/i18n';
   import type { User } from '../api/types';
 
   let username = $state('');
@@ -98,33 +99,33 @@
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-logo">✈</div>
-    <h1 class="auth-title">Partiu</h1>
+    <h1 class="auth-title">{$t('login.title')}</h1>
 
     {#if step === 'credentials'}
-      <p class="auth-subtitle">Sign in to your account</p>
+      <p class="auth-subtitle">{$t('login.subtitle')}</p>
 
       <form onsubmit={handleLogin}>
         <div class="form-group">
-          <label class="form-label" for="login-username">Username</label>
+          <label class="form-label" for="login-username">{$t('login.username')}</label>
           <input
             class="form-input"
             id="login-username"
             type="text"
             bind:value={username}
-            placeholder="username"
+            placeholder={$t('login.username_placeholder')}
             autocomplete="username"
             required
           />
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="login-password">Password</label>
+          <label class="form-label" for="login-password">{$t('login.password')}</label>
           <input
             class="form-input"
             id="login-password"
             type="password"
             bind:value={password}
-            placeholder="••••••"
+            placeholder={$t('login.password_placeholder')}
             autocomplete="current-password"
             required
           />
@@ -135,20 +136,20 @@
         {/if}
 
         <button class="btn btn-primary btn-full" type="submit" disabled={loading}>
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? $t('login.submitting') : $t('login.submit')}
         </button>
       </form>
 
     {:else}
-      <p class="auth-subtitle">Two-factor authentication</p>
+      <p class="auth-subtitle">{$t('totp.title')}</p>
       <p class="totp-hint">
-        Enter the 6-digit code from your authenticator app.
-        <span class="totp-timer">Code expires in {secondsLeft}s</span>
+        {$t('totp.hint')}
+        <span class="totp-timer">{$t('totp.expires', { values: { s: secondsLeft } })}</span>
       </p>
 
       <form onsubmit={submitTotp}>
         <div class="form-group">
-          <label class="form-label" for="totp-code">Authenticator Code</label>
+          <label class="form-label" for="totp-code">{$t('totp.code_label')}</label>
           <input
             class="form-input totp-input"
             id="totp-code"
@@ -156,7 +157,7 @@
             inputmode="numeric"
             pattern="[0-9]*"
             maxlength="6"
-            placeholder="000000"
+            placeholder={$t('totp.code_placeholder')}
             autocomplete="one-time-code"
             value={totpCode}
             oninput={handleTotpInput}
@@ -170,12 +171,12 @@
         {/if}
 
         <button class="btn btn-primary btn-full" type="submit" disabled={totpLoading || totpCode.length !== 6}>
-          {totpLoading ? 'Verifying...' : 'Verify'}
+          {totpLoading ? $t('totp.submitting') : $t('totp.submit')}
         </button>
       </form>
 
       <button class="btn-back" onclick={backToCredentials}>
-        ← Back to sign in
+        {$t('totp.back')}
       </button>
     {/if}
   </div>

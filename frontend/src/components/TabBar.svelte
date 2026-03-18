@@ -1,6 +1,7 @@
 <script lang="ts">
   // svelte-spa-router provides the current location as a store
   import { location } from 'svelte-spa-router';
+  import { t } from '../lib/i18n';
 </script>
 
 <nav class="tab-bar">
@@ -10,7 +11,7 @@
     href="#/trips"
   >
     <span class="tab-icon">✈</span>
-    <span>Trips</span>
+    <span>{$t('nav.trips')}</span>
   </a>
   <a
     class="tab-item"
@@ -18,7 +19,7 @@
     href="#/history"
   >
     <span class="tab-icon">◷</span>
-    <span>History</span>
+    <span>{$t('nav.history')}</span>
   </a>
   <a
     class="tab-item"
@@ -26,6 +27,6 @@
     href="#/settings"
   >
     <span class="tab-icon">⚙︎</span>
-    <span>Settings</span>
+    <span>{$t('nav.settings')}</span>
   </a>
 </nav>

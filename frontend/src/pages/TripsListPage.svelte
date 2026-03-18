@@ -6,6 +6,7 @@
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
+  import { t } from '../lib/i18n';
 
   // ---- State ----
   let loading = $state(true);
@@ -112,14 +113,14 @@
   });
 </script>
 
-<TopNav title="✈ My Trips" />
+<TopNav title={$t('trips.title')} />
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen message="Loading trips..." />
+    <LoadingScreen message={$t('trips.loading')} />
   {:else if error}
-    <EmptyState icon="⚠️" title="Failed to load trips" description={error}>
-      <button class="btn btn-primary" onclick={() => load()}>Retry</button>
+    <EmptyState icon="⚠️" title={$t('trips.load_error')} description={error}>
+      <button class="btn btn-primary" onclick={() => load()}>{$t('trips.retry')}</button>
     </EmptyState>
   {:else}
     <!-- Sync Status Bar -->
@@ -127,14 +128,14 @@
       <span class="sync-dot {syncRunning ? 'running' : syncHasError ? 'error' : 'idle'}"></span>
       <span>
         {#if syncRunning}
-          Syncing emails...
+          {$t('trips.sync_running')}
         {:else if syncHasError}
-          Sync error: {syncStatus?.last_error ?? ''}
+          {$t('trips.sync_error')}: {syncStatus?.last_error ?? ''}
         {:else if lastSynced}
-          Last synced: {formatDateTimeLocale(lastSynced)}
-          {#if nextSyncLabel}<span style="opacity:0.6"> ({nextSyncLabel})</span>{/if}
+          {$t('trips.last_sync', { values: { time: formatDateTimeLocale(lastSynced) } })}
+          {#if nextSyncLabel}<span style="opacity:0.6"> {$t('trips.next_sync', { values: { label: nextSyncLabel } })}</span>{/if}
         {:else}
-          Never synced
+          {$t('trips.never_synced')}
         {/if}
       </span>
       <span style="flex:1"></span>
@@ -147,7 +148,7 @@
         {#if syncRunning || syncingNow}
           <span class="spinner"></span>
         {:else}
-          ↻ Sync
+          {$t('trips.btn_sync')}
         {/if}
       </button>
     </div>
@@ -155,11 +156,11 @@
     <!-- Trips List -->
     {#if !loading && activeTrips.length === 0}
       <EmptyState
-        title="No upcoming flights"
-        description="All your trips are in the past. Check History, or configure Gmail in Settings to import new confirmations."
+        title={$t('trips.empty_title')}
+        description={$t('trips.empty_desc')}
       >
-        <a href="#/history" class="btn btn-secondary">View History</a>
-        <a href="#/settings" class="btn btn-primary">Go to Settings</a>
+        <a href="#/history" class="btn btn-secondary">{$t('trips.view_history')}</a>
+        <a href="#/settings" class="btn btn-primary">{$t('trips.go_settings')}</a>
       </EmptyState>
     {:else}
       {#each activeTrips as trip (trip.id)}
@@ -172,18 +173,18 @@
             <div class="trip-card-header">
               <h2 class="trip-card-title">{trip.name}</h2>
               <span class="badge badge-{status}">
-                {status === 'completed' ? 'Completed' : status === 'ongoing' ? 'Ongoing' : 'Upcoming'}
+                {status === 'completed' ? $t('trips.completed') : status === 'ongoing' ? $t('trips.ongoing') : $t('trips.upcoming')}
               </span>
             </div>
             {#if dateRange}
               <div class="trip-card-meta">
                 <span>📅 {dateRange}</span>
-                <span>✈ {flightCount} flight{flightCount !== 1 ? 's' : ''}</span>
+                <span>✈ {flightCount !== 1 ? $t('trips.flight_count_plural', { values: { n: flightCount } }) : $t('trips.flight_count', { values: { n: flightCount } })}</span>
               </div>
             {/if}
             <div class="trip-card-footer">
               {#if refs}
-                <span class="text-sm text-muted">Ref: {refs}</span>
+                <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
               {/if}
             </div>
           </article>

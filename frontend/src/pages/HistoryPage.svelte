@@ -5,6 +5,7 @@
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
+  import { t } from "../lib/i18n";
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -30,19 +31,19 @@
   );
 </script>
 
-<TopNav title="◷ History" />
+<TopNav title={$t('history.title')} />
 
 <div class="main-content">
   {#if loading}
-    <LoadingScreen message="Loading history..." />
+    <LoadingScreen message={$t('history.loading')} />
   {:else if error}
-    <EmptyState icon="⚠️" title="Failed to load history" description={error}>
-      <button class="btn btn-primary" onclick={() => load()}>Retry</button>
+    <EmptyState icon="⚠️" title={$t('history.load_error')} description={error}>
+      <button class="btn btn-primary" onclick={() => load()}>{$t('history.retry')}</button>
     </EmptyState>
   {:else if completedTrips.length === 0}
     <EmptyState
-      title="No past trips"
-      description="Completed trips will appear here."
+      title={$t('history.empty_title')}
+      description={$t('history.empty_desc')}
     />
   {:else}
     {#each completedTrips as trip (trip.id)}
@@ -53,17 +54,17 @@
         <article class="card trip-card">
           <div class="trip-card-header">
             <h2 class="trip-card-title">{trip.name}</h2>
-            <span class="badge badge-completed">Completed</span>
+            <span class="badge badge-completed">{$t('trips.completed')}</span>
           </div>
           {#if dateRange}
             <div class="trip-card-meta">
               <span>📅 {dateRange}</span>
-              <span>✈ {flightCount} flight{flightCount !== 1 ? "s" : ""}</span>
+              <span>✈ {flightCount !== 1 ? $t('trips.flight_count_plural', { values: { n: flightCount } }) : $t('trips.flight_count', { values: { n: flightCount } })}</span>
             </div>
           {/if}
           <div class="trip-card-footer">
             {#if refs}
-              <span class="text-sm text-muted">Ref: {refs}</span>
+              <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
             {/if}
           </div>
         </article>
