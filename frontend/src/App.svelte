@@ -79,8 +79,19 @@
     Loading...
   </div>
 {:else}
-  <Router {routes} on:routeEvent={routeNotFound} />
-  {#if showTabBar}
-    <TabBar />
-  {/if}
+  <svelte:boundary>
+    <Router {routes} on:routeEvent={routeNotFound} />
+    {#if showTabBar}
+      <TabBar />
+    {/if}
+    {#snippet failed()}
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:1rem;padding:2rem;text-align:center;">
+        <p style="color:var(--text-muted);font-size:1.1rem;">Something went wrong.</p>
+        <button onclick={() => window.location.reload()}
+                style="padding:0.5rem 1.25rem;border-radius:6px;border:none;background:var(--accent,#6366f1);color:#fff;cursor:pointer;font-size:1rem;">
+          Reload
+        </button>
+      </div>
+    {/snippet}
+  </svelte:boundary>
 {/if}

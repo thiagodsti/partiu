@@ -1,7 +1,7 @@
 // TypeScript interfaces matching the FastAPI backend response shapes
 
 export interface User {
-  id: number;
+  id: string;
   username: string;
   is_admin: boolean;
   smtp_recipient_address: string | null;
@@ -10,7 +10,7 @@ export interface User {
 
 export interface LoginResponse {
   requires_2fa?: boolean;
-  id?: number;
+  id?: string;
   username?: string;
   is_admin?: boolean;
   smtp_recipient_address?: string | null;
@@ -22,7 +22,7 @@ export interface UserListItem extends User {
 }
 
 export interface Trip {
-  id: number;
+  id: string;
   name: string;
   start_date: string | null;
   end_date: string | null;
@@ -34,8 +34,8 @@ export interface Trip {
 }
 
 export interface Flight {
-  id: number;
-  trip_id: number | null;
+  id: string;
+  trip_id: string | null;
   flight_number: string;
   airline_code: string | null;
   airline_name: string | null;
@@ -101,6 +101,13 @@ export interface AircraftInfo {
 export interface EmailData {
   email_subject: string | null;
   html_body: string | null;
+}
+
+export interface PaginatedFlights {
+  flights: Flight[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface TripsListResponse {

@@ -6,6 +6,7 @@
 import type {
   Trip,
   Flight,
+  PaginatedFlights,
   Airport,
   SyncStatus,
   Settings,
@@ -86,9 +87,9 @@ export const usersApi = {
   list: () => get<UserListItem[]>('/api/users'),
   create: (data: { username: string; password: string; is_admin?: boolean; smtp_recipient_address?: string }) =>
     post<User>('/api/users', data),
-  update: (id: number, data: { is_admin?: boolean; smtp_recipient_address?: string; new_password?: string }) =>
+  update: (id: string | number, data: { is_admin?: boolean; smtp_recipient_address?: string; new_password?: string }) =>
     _request<{ ok: boolean }>('PATCH', `/api/users/${id}`, data),
-  delete: (id: number) => del<{ ok: boolean }>(`/api/users/${id}`),
+  delete: (id: string | number) => del<{ ok: boolean }>(`/api/users/${id}`),
 };
 
 // ---- Trips ----
@@ -122,7 +123,7 @@ export const flightsApi = {
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.offset) qs.set('offset', String(params.offset));
     const q = qs.toString() ? `?${qs}` : '';
-    return get<Flight[]>(`/api/flights${q}`);
+    return get<PaginatedFlights>(`/api/flights${q}`);
   },
   get: (id: number | string) => get<Flight>(`/api/flights/${id}`),
   aircraft: (id: number | string) => get<AircraftInfo>(`/api/flights/${id}/aircraft`),

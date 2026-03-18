@@ -1,7 +1,7 @@
 """
 Authentication helpers: password hashing, session cookies, FastAPI dependencies.
 """
-import os
+
 import secrets
 
 import bcrypt
@@ -11,40 +11,25 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 _serializer = None
 
 
-def _get_serializer():
+def _get_serializer() -> URLSafeTimedSerializer:
     global _serializer
     if _serializer is None:
         from .config import settings
+
         key = settings.SECRET_KEY
         if not key:
-            key = _ensure_secret_key()
+            raise RuntimeError(
+                "SECRET_KEY is not set. Generate one with:\n"
+                '  python -c "import secrets; print(secrets.token_hex(32))"\n'
+                "and add SECRET_KEY=<value> to your .env file."
+            )
         _serializer = URLSafeTimedSerializer(key, salt="session")
     return _serializer
 
 
-def _ensure_secret_key() -> str:
-    """Generate and persist a SECRET_KEY to .env if missing."""
-    key = secrets.token_hex(32)
-    env_path = ".env"
-    try:
-        lines = []
-        if os.path.exists(env_path):
-            with open(env_path) as f:
-                lines = f.readlines()
-        # Replace or append SECRET_KEY
-        found = False
-        for i, line in enumerate(lines):
-            if line.startswith("SECRET_KEY="):
-                lines[i] = f"SECRET_KEY={key}\n"
-                found = True
-                break
-        if not found:
-            lines.append(f"\nSECRET_KEY={key}\n")
-        with open(env_path, "w") as f:
-            f.writelines(lines)
-    except Exception:
-        pass  # Non-fatal; key will be regenerated next restart
-    return key
+def validate_secret_key() -> None:
+    """Call at startup to fail loudly if SECRET_KEY is missing."""
+    _get_serializer()
 
 
 def hash_password(plain: str) -> str:
@@ -59,17 +44,64 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_session_cookie(user_id: int) -> str:
-    return _get_serializer().dumps({"uid": user_id})
+    from datetime import UTC, datetime, timedelta
+
+    from .config import settings
+    from .database import db_write
+
+    sid = secrets.token_urlsafe(32)
+    now = datetime.now(UTC)
+    expires = now + timedelta(days=settings.SESSION_MAX_AGE_DAYS)
+    with db_write() as conn:
+        conn.execute(
+            "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (sid, user_id, now.isoformat(), expires.isoformat()),
+        )
+    return _get_serializer().dumps({"uid": user_id, "sid": sid})
+
+
+def _decode_session_token_raw(token: str) -> dict | None:
+    """Decode a session token without checking revocation — use only for logout."""
+    try:
+        from .config import settings
+
+        max_age = settings.SESSION_MAX_AGE_DAYS * 86400
+        return _get_serializer().loads(token, max_age=max_age)
+    except Exception:
+        return None
 
 
 def decode_session_cookie(token: str) -> int | None:
     try:
         from .config import settings
+        from .database import db_conn
+
         max_age = settings.SESSION_MAX_AGE_DAYS * 86400
         data = _get_serializer().loads(token, max_age=max_age)
-        return data.get("uid")
+        uid = data.get("uid")
+        sid = data.get("sid")
+        if not uid or not sid:
+            return None
+        with db_conn() as conn:
+            row = conn.execute("SELECT revoked FROM sessions WHERE id = ?", (sid,)).fetchone()
+        if row is None or row["revoked"]:
+            return None
+        return uid
     except (BadSignature, SignatureExpired, Exception):
         return None
+
+
+def revoke_session_cookie(token: str) -> None:
+    """Mark the session identified by token as revoked in the DB."""
+    data = _decode_session_token_raw(token)
+    if data and data.get("sid"):
+        try:
+            from .database import db_write
+
+            with db_write() as conn:
+                conn.execute("UPDATE sessions SET revoked = 1 WHERE id = ?", (data["sid"],))
+        except Exception:
+            pass
 
 
 def create_pending_2fa_cookie(user_id: int) -> str:
@@ -88,6 +120,7 @@ def decode_pending_2fa_cookie(token: str) -> int | None:
 
 def has_any_users() -> bool:
     from .database import db_conn
+
     with db_conn() as conn:
         row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
         return row[0] > 0
@@ -101,10 +134,11 @@ async def get_current_user(request: Request) -> dict:
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     from .database import db_conn
+
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, username, is_admin, smtp_recipient_address, smtp_allowed_senders, gmail_address, gmail_app_password, imap_host, imap_port, totp_enabled, sync_interval_minutes FROM users WHERE id = ?",
-            (user_id,)
+            (user_id,),
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=401, detail="User not found")
