@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { tripsApi } from '../api/client';
-  import type { Trip } from '../api/types';
-  import { formatDateRange, inferTripStatus } from '../lib/utils';
-  import LoadingScreen from '../components/LoadingScreen.svelte';
-  import EmptyState from '../components/EmptyState.svelte';
-  import TopNav from '../components/TopNav.svelte';
+  import { tripsApi } from "../api/client";
+  import type { Trip } from "../api/types";
+  import { formatDateRange, inferTripStatus } from "../lib/utils";
+  import LoadingScreen from "../components/LoadingScreen.svelte";
+  import EmptyState from "../components/EmptyState.svelte";
+  import TopNav from "../components/TopNav.svelte";
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -25,10 +25,12 @@
 
   load();
 
-  const completedTrips = $derived(tripsList.filter(t => inferTripStatus(t) === 'completed'));
+  const completedTrips = $derived(
+    tripsList.filter((t) => inferTripStatus(t) === "completed"),
+  );
 </script>
 
-<TopNav title="🕐 History" />
+<TopNav title="◷ History" />
 
 <div class="main-content">
   {#if loading}
@@ -46,7 +48,7 @@
     {#each completedTrips as trip (trip.id)}
       {@const dateRange = formatDateRange(trip.start_date, trip.end_date)}
       {@const flightCount = trip.flight_count ?? 0}
-      {@const refs = (trip.booking_refs ?? []).join(', ')}
+      {@const refs = (trip.booking_refs ?? []).join(", ")}
       <a class="card-link" href="#/trips/{trip.id}">
         <article class="card trip-card">
           <div class="trip-card-header">
@@ -56,7 +58,7 @@
           {#if dateRange}
             <div class="trip-card-meta">
               <span>📅 {dateRange}</span>
-              <span>✈ {flightCount} flight{flightCount !== 1 ? 's' : ''}</span>
+              <span>✈ {flightCount} flight{flightCount !== 1 ? "s" : ""}</span>
             </div>
           {/if}
           <div class="trip-card-footer">
