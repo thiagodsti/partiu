@@ -12,6 +12,7 @@ If SMTP_ALLOWED_SENDERS is empty, any sender is accepted (less secure).
 
 import email as email_lib
 import logging
+import re
 from datetime import datetime, timezone
 from email.header import decode_header as _decode_header
 from email.utils import parsedate_to_datetime
@@ -68,6 +69,40 @@ class _FlightEmailHandler:
         return '250 Message accepted for delivery'
 
 
+def _extract_original_sender(raw_msg) -> str | None:
+    """
+    For forwarded emails, try to find the original airline sender.
+    Checks two forwarding styles:
+      1. Proper forward: original email attached as message/rfc822 MIME part.
+      2. Inline forward: original headers quoted in the plain-text body.
+    """
+    # Style 1: message/rfc822 attachment
+    for part in raw_msg.walk():
+        if part.get_content_type() == 'message/rfc822':
+            inner = part.get_payload(decode=False)
+            if isinstance(inner, list) and inner:
+                from_hdr = inner[0].get('From', '')
+                if from_hdr:
+                    return _decode_mime_header(from_hdr)
+
+    # Style 2: scan plain-text body for "From: " lines (inline forward)
+    for part in raw_msg.walk():
+        if part.get_content_type() == 'text/plain':
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+            charset = part.get_content_charset() or 'utf-8'
+            text = payload.decode(charset, errors='replace')
+            for line in text.splitlines():
+                m = re.match(r'^(?:From|De|Von|Fra|Van):\s*(.+)$', line, re.IGNORECASE)
+                if m:
+                    candidate = m.group(1).strip()
+                    if '@' in candidate:
+                        return candidate
+
+    return None
+
+
 def _process_raw_message(raw_msg, sender_address: str):
     """Convert a raw email.message.Message to an EmailMessage and run it through the pipeline."""
     from .parsers.email_connector import get_email_body_and_html, EmailMessage
@@ -78,6 +113,14 @@ def _process_raw_message(raw_msg, sender_address: str):
     # forwarder's address, but the From header has the airline's address that rules match on.
     from_header = _decode_mime_header(raw_msg.get('From', '') or '')
     effective_sender = from_header or sender_address
+
+    # For forwarded emails (FWD:/FW: prefix), try to recover the original airline sender.
+    subject_check = _decode_mime_header(raw_msg.get('Subject', '') or '').lower().lstrip()
+    if re.match(r'^(fwd?|fw)\s*:', subject_check):
+        original = _extract_original_sender(raw_msg)
+        if original:
+            logger.debug('SMTP: forwarded email, original sender: %s → %s', effective_sender, original)
+            effective_sender = original
 
     subject = _decode_mime_header(raw_msg.get('Subject', '') or '')
     message_id = (raw_msg.get('Message-ID') or

@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"   # Web UI + API
-      - "2525:2525"   # Inbound SMTP
+      - "25:2525"     # Inbound SMTP (standard port, maps to app's 2525)
     volumes:
       - ./data:/app/data   # SQLite db + email cache persisted on host
     env_file:
