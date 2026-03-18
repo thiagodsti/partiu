@@ -2,7 +2,6 @@
   "nav.trips": "Viagens",
   "nav.history": "Histórico",
   "nav.settings": "Configurações",
-
   "login.title": "Partiu",
   "login.subtitle": "Entre na sua conta",
   "login.username": "Usuário",
@@ -11,7 +10,6 @@
   "login.password_placeholder": "••••••••",
   "login.submit": "Entrar",
   "login.submitting": "Entrando…",
-
   "totp.title": "Autenticação em dois fatores",
   "totp.hint": "Digite o código de 6 dígitos do seu aplicativo autenticador.",
   "totp.expires": "Código expira em {s}s",
@@ -20,7 +18,6 @@
   "totp.submit": "Verificar",
   "totp.submitting": "Verificando…",
   "totp.back": "← Voltar ao login",
-
   "setup.title": "Bem-vindo ao Partiu",
   "setup.subtitle": "Crie sua conta de administrador para começar",
   "setup.username": "Usuário",
@@ -36,7 +33,6 @@
   "setup.submitting": "Criando conta…",
   "setup.err_mismatch": "As senhas não coincidem",
   "setup.err_short": "A senha deve ter pelo menos 8 caracteres",
-
   "trips.title": "✈ Minhas Viagens",
   "trips.loading": "Carregando viagens…",
   "trips.load_error": "Falha ao carregar viagens",
@@ -50,6 +46,8 @@
   "trips.sync_ready": "Pronto",
   "trips.last_sync": "Última sincronização: {time}",
   "trips.next_sync": "({label})",
+  "trips.next_sync_at": "em {rel} ás {absTime}",
+  "trips.next_sync_at_any_moment": "qualquer momento",
   "trips.never_synced": "Nunca sincronizado",
   "trips.btn_sync": "↻ Sincronizar",
   "trips.completed": "Concluída",
@@ -58,14 +56,12 @@
   "trips.flight_count": "{n} voo",
   "trips.flight_count_plural": "{n} voos",
   "trips.ref": "Ref: {refs}",
-
   "trip.loading": "Carregando viagem…",
   "trip.load_error": "Falha ao carregar viagem",
   "trip.back": "Voltar para Viagens",
   "trip.empty": "Nenhum voo nesta viagem",
   "trip.outbound": "Ida",
   "trip.return": "↩ Volta",
-
   "flight.loading": "Carregando voo…",
   "flight.load_error": "Falha ao carregar voo",
   "flight.back": "Voltar",
@@ -93,14 +89,12 @@
   "flight.status_upcoming": "futuro",
   "flight.status_completed": "concluído",
   "flight.in_flight": "● Em voo",
-
   "history.title": "◷ Histórico",
   "history.loading": "Carregando histórico…",
   "history.load_error": "Falha ao carregar histórico",
   "history.retry": "Tentar novamente",
   "history.empty_title": "Nenhuma viagem passada",
   "history.empty_desc": "Viagens concluídas aparecerão aqui.",
-
   "users.title": "Usuários",
   "users.loading": "Carregando usuários…",
   "users.load_error": "Falha ao carregar usuários",
@@ -129,13 +123,10 @@
   "users.created": "Usuário \"{name}\" criado",
   "users.pw_updated": "Senha atualizada",
   "users.err_pw_short": "A senha deve ter pelo menos 8 caracteres",
-
   "connection.layover": "{label} de conexão em {airport}",
-
   "settings.title": "⚙ Configurações",
   "settings.loading": "Carregando configurações…",
   "settings.load_error": "Falha ao carregar configurações",
-
   "settings.sync_status": "Status da Sincronização",
   "settings.sync_running": "Sincronizando…",
   "settings.sync_error": "Erro na sincronização",
@@ -152,7 +143,6 @@
   "settings.reset_confirm": "Confirmar Redefinição",
   "settings.cancel": "Cancelar",
   "settings.regroup_ok": "Reagrupamento iniciado em segundo plano",
-
   "settings.email_account": "Conta de E-mail",
   "settings.email_address": "Endereço de E-mail",
   "settings.email_placeholder": "voce@gmail.com",
@@ -167,7 +157,6 @@
   "settings.save": "Salvar Configurações",
   "settings.saving": "Salvando…",
   "settings.saved": "Configurações salvas!",
-
   "settings.inbound_smtp": "Servidor de E-mail Recebido",
   "settings.smtp_desc": "Execute um servidor SMTP simples para que os usuários possam encaminhar e-mails de confirmação de voos diretamente para este app.",
   "settings.smtp_enable": "Ativar servidor SMTP",
@@ -182,7 +171,6 @@
   "settings.first_sync_days_hint": "Quantos dias atrás buscar na primeira sincronização.",
   "settings.smtp_port": "Porta",
   "settings.smtp_port_hint": "Use 2525 (ou qualquer porta acima de 1024) para evitar precisar de root. Mapeie a porta 25 → 2525 no Docker ou no firewall.",
-
   "settings.email_forwarding": "Encaminhamento de E-mail",
   "settings.forwarding_desc": "Encaminhe e-mails de confirmação de voos para seu endereço pessoal abaixo. Cada usuário tem seu próprio endereço.",
   "settings.your_address": "Seu endereço de encaminhamento",
@@ -191,17 +179,14 @@
   "settings.allowed_senders": "Remetentes permitidos",
   "settings.allowed_senders_placeholder": "voce@gmail.com, parceiro@gmail.com",
   "settings.allowed_senders_hint": "Lista separada por vírgulas de endereços de e-mail com permissão para encaminhar para você. Deixe em branco para aceitar de qualquer pessoa.",
-
   "settings.airports": "Dados de Aeroportos",
   "settings.airports_loaded": "{n} aeroportos carregados.",
   "settings.airports_none": "Nenhum aeroporto carregado.",
   "settings.airports_download": "Baixe o airports.csv de ourairports.com e coloque na pasta data/.",
   "settings.reload_airports": "↺ Recarregar Aeroportos",
   "settings.reloading_airports": "Recarregando…",
-
   "settings.admin": "Administração",
   "settings.manage_users": "Gerenciar Usuários",
-
   "settings.2fa": "Autenticação em Dois Fatores",
   "settings.2fa_enabled_msg": "A autenticação em dois fatores está ativada na sua conta.",
   "settings.2fa_disable": "Desativar 2FA",
@@ -221,13 +206,11 @@
   "settings.2fa_idle_btn": "Ativar 2FA",
   "settings.2fa_loading": "Carregando…",
   "settings.2fa_enabled_badge": "ativada",
-
   "settings.appearance": "Aparência",
   "settings.theme_system": "Sistema",
   "settings.theme_light": "Claro",
   "settings.theme_dark": "Escuro",
   "settings.language": "Idioma",
-
   "settings.change_password": "Alterar Senha",
   "settings.current_pw": "Senha Atual",
   "settings.current_pw_placeholder": "Senha atual",
@@ -236,5 +219,7 @@
   "settings.pw_totp": "Código do Autenticador",
   "settings.pw_totp_placeholder": "000000",
   "settings.change_pw_btn": "Alterar Senha",
-  "settings.changing_pw": "Salvando…"
+  "settings.changing_pw": "Salvando…",
+  "completed": "concluída",
+  "upcoming": "próxima"
 }
