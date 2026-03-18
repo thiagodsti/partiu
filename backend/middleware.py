@@ -1,5 +1,5 @@
 """
-Middleware for first-run detection and authentication enforcement.
+Middleware for first-run detection, authentication enforcement, and security headers.
 """
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -9,10 +9,26 @@ ALLOWED_UNAUTHENTICATED_PATHS = {
     "/api/auth/me",
 }
 
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    # CSP: same-origin scripts/styles; inline styles allowed (Svelte); data: for QR SVGs
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    ),
+}
+
 
 class FirstRunMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        # Only intercept API calls (not static assets)
+        # Block unauthenticated API access before setup is complete
         if request.url.path.startswith("/api/"):
             if request.url.path not in ALLOWED_UNAUTHENTICATED_PATHS:
                 from .auth import has_any_users
@@ -22,4 +38,11 @@ class FirstRunMiddleware(BaseHTTPMiddleware):
                         {"detail": "Setup required", "setup_required": True},
                         status_code=503
                     )
-        return await call_next(request)
+
+        response = await call_next(request)
+
+        # Add security headers to every response
+        for header, value in _SECURITY_HEADERS.items():
+            response.headers[header] = value
+
+        return response

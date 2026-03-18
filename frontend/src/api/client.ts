@@ -159,6 +159,8 @@ export interface SettingsUpdatePayload {
 export const settingsApi = {
   get: () => get<Settings>('/api/settings'),
   update: (data: SettingsUpdatePayload) => post<Settings>('/api/settings', data),
+  testImap: (data: { imap_host?: string; imap_port?: number; gmail_address?: string; gmail_app_password?: string }) =>
+    post<{ ok: boolean; message: string }>('/api/settings/test-imap', data),
   airportCount: () => get<AirportCountResponse>('/api/settings/airports/count'),
   reloadAirports: () => post<AirportCountResponse>('/api/settings/airports/reload'),
 };

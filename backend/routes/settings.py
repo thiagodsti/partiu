@@ -3,11 +3,37 @@ Settings routes — read/write Gmail credentials and app configuration.
 Per-user settings stored in users table. Global settings stored in global_settings table.
 """
 
+import imaplib
+import ipaddress
+import socket
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
 from ..database import db_conn, db_write, get_global_setting, set_global_setting
+
+
+def _validate_imap_host(host: str):
+    """Reject private/loopback addresses to prevent SSRF."""
+    host = host.strip().lower()
+    if not host:
+        raise HTTPException(400, "IMAP host cannot be empty")
+    # Block obvious internal names
+    if host in ("localhost", "localhost.localdomain"):
+        raise HTTPException(400, "IMAP host cannot be a local address")
+    # Try to resolve and check if it's a private/loopback IP
+    try:
+        infos = socket.getaddrinfo(host, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast:
+                raise HTTPException(400, "IMAP host cannot be a private or local address")
+    except HTTPException:
+        raise
+    except Exception:
+        # DNS resolution failed — still allow it (offline/dev environments)
+        pass
 
 router = APIRouter(prefix='/api/settings', tags=['settings'])
 
@@ -69,7 +95,8 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
     if body.gmail_app_password is not None:
         user_updates['gmail_app_password'] = body.gmail_app_password
     if body.imap_host is not None:
-        user_updates['imap_host'] = body.imap_host
+        _validate_imap_host(body.imap_host)
+        user_updates['imap_host'] = body.imap_host.strip()
     if body.imap_port is not None:
         user_updates['imap_port'] = body.imap_port
     if body.smtp_recipient_address is not None:
@@ -124,6 +151,42 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
             set_global_setting('smtp_domain', body.smtp_domain)
 
     return {'ok': True, 'message': 'Settings saved'}
+
+
+class TestImapRequest(BaseModel):
+    imap_host: str | None = None
+    imap_port: int | None = None
+    gmail_address: str | None = None
+    gmail_app_password: str | None = None
+
+
+@router.post('/test-imap')
+def test_imap(body: TestImapRequest, user: dict = Depends(get_current_user)):
+    """Try connecting and authenticating to the IMAP server with the given (or stored) credentials."""
+    host = (body.imap_host or user.get('imap_host') or 'imap.gmail.com').strip()
+    port = body.imap_port or user.get('imap_port') or 993
+    address = body.gmail_address or user.get('gmail_address') or ''
+    password = body.gmail_app_password or user.get('gmail_app_password') or ''
+
+    if not address:
+        raise HTTPException(400, 'Email address is required')
+    if not password:
+        raise HTTPException(400, 'Password is required — save your settings first or enter it above')
+
+    _validate_imap_host(host)
+
+    try:
+        imap = imaplib.IMAP4_SSL(host, port, timeout=10)
+        imap.login(address, password)
+        imap.logout()
+    except imaplib.IMAP4.error as e:
+        raise HTTPException(400, f'Authentication failed: {e}')
+    except OSError as e:
+        raise HTTPException(400, f'Could not connect to {host}:{port} — {e}')
+    except Exception as e:
+        raise HTTPException(400, f'Connection error: {e}')
+
+    return {'ok': True, 'message': f'Connected to {host}:{port} successfully'}
 
 
 @router.get('/airports/count')

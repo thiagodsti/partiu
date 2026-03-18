@@ -9,6 +9,8 @@ from ..auth import (hash_password, verify_password, create_session_cookie,
                     decode_session_cookie, get_current_user, has_any_users,
                     create_pending_2fa_cookie, decode_pending_2fa_cookie)
 from ..database import db_conn, db_write
+from ..limiter import limiter
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -43,7 +45,8 @@ class TwoFADisableRequest(BaseModel):
 
 
 @router.post("/setup")
-def setup(body: SetupRequest, response: Response):
+@limiter.limit("5/minute")
+def setup(request: Request, body: SetupRequest, response: Response):
     if has_any_users():
         raise HTTPException(409, "Setup already completed")
     if len(body.username.strip()) < 2:
@@ -61,8 +64,8 @@ def setup(body: SetupRequest, response: Response):
             conn.execute("UPDATE flights SET user_id = ? WHERE user_id IS NULL", (user_id,))
             conn.execute("UPDATE trips SET user_id = ? WHERE user_id IS NULL", (user_id,))
             conn.execute("UPDATE email_sync_state SET user_id = ? WHERE user_id IS NULL", (user_id,))
-        except Exception as e:
-            raise HTTPException(400, f"Could not create user: {e}")
+        except Exception:
+            raise HTTPException(400, "Could not create user")
     token = create_session_cookie(user_id)
     response.set_cookie("session", token, httponly=True, samesite="lax", secure=True, max_age=30 * 86400)
     return {"id": user_id, "username": body.username.strip(), "is_admin": True,
@@ -70,7 +73,8 @@ def setup(body: SetupRequest, response: Response):
 
 
 @router.post("/login")
-def login(body: LoginRequest, response: Response):
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest, response: Response):
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled FROM users WHERE username = ?",
@@ -80,8 +84,6 @@ def login(body: LoginRequest, response: Response):
         raise HTTPException(401, "Invalid username or password")
 
     if row["totp_enabled"]:
-        # Set a short-lived pending_2fa cookie directly on the JSONResponse —
-        # FastAPI does NOT merge response-parameter cookies when returning a Response subclass.
         pending_token = create_pending_2fa_cookie(row["id"])
         resp = JSONResponse({"requires_2fa": True}, status_code=200)
         resp.set_cookie(
@@ -98,7 +100,8 @@ def login(body: LoginRequest, response: Response):
 
 
 @router.post("/2fa/verify")
-def verify_2fa(body: TwoFAVerifyRequest, request: Request, response: Response):
+@limiter.limit("10/minute")
+def verify_2fa(request: Request, body: TwoFAVerifyRequest, response: Response):
     pending_token = request.cookies.get("pending_2fa")
     if not pending_token:
         raise HTTPException(401, "No pending 2FA session")
@@ -119,8 +122,7 @@ def verify_2fa(body: TwoFAVerifyRequest, request: Request, response: Response):
     if not pyotp.TOTP(row["totp_secret"]).verify(body.code, valid_window=1):
         raise HTTPException(401, "Invalid 2FA code")
 
-    # Delete pending cookie, set full session cookie
-    response.delete_cookie("pending_2fa", httponly=True, samesite="lax")
+    response.delete_cookie("pending_2fa", httponly=True, samesite="lax", secure=True)
     token = create_session_cookie(row["id"])
     response.set_cookie("session", token, httponly=True, samesite="lax", secure=True, max_age=30 * 86400)
     return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"]),
@@ -193,13 +195,12 @@ def disable_2fa(body: TwoFADisableRequest, user: dict = Depends(get_current_user
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie("session", httponly=True, samesite="lax")
+    response.delete_cookie("session", httponly=True, samesite="lax", secure=True)
     return {"ok": True}
 
 
 @router.get("/me")
 def me(request: Request):
-    # Check setup_required first (before auth check)
     if not has_any_users():
         return JSONResponse(
             {"detail": "Setup required", "setup_required": True},
@@ -226,7 +227,6 @@ def me(request: Request):
 
 @router.post("/change-password")
 def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
-    # Re-fetch to get password_hash and totp_secret
     with db_conn() as conn:
         row = conn.execute(
             "SELECT password_hash, totp_secret, totp_enabled FROM users WHERE id = ?",

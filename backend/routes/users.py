@@ -45,8 +45,8 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
                  1 if body.is_admin else 0, body.smtp_recipient_address)
             )
             user_id = cursor.lastrowid
-        except Exception as e:
-            raise HTTPException(400, f"Could not create user: {e}")
+        except Exception:
+            raise HTTPException(400, "Could not create user")
     return {"id": user_id, "username": body.username.strip(),
             "is_admin": body.is_admin, "smtp_recipient_address": body.smtp_recipient_address}
 
@@ -63,7 +63,7 @@ def update_user(user_id: int, body: UpdateUserRequest, admin: dict = Depends(req
     if body.smtp_recipient_address is not None:
         updates["smtp_recipient_address"] = body.smtp_recipient_address
     if body.new_password is not None:
-        if len(body.new_password) < 6:
+        if len(body.new_password) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")
         updates["password_hash"] = hash_password(body.new_password)
     if updates:

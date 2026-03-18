@@ -52,6 +52,10 @@
   let settingsMsg = $state('');
   let settingsMsgType = $state<'success' | 'error' | 'info'>('info');
 
+  let testingImap = $state(false);
+  let imapTestMsg = $state('');
+  let imapTestOk = $state(false);
+
   let regrouping = $state(false);
   let resetting = $state(false);
   let resetConfirmStep = $state(false);
@@ -182,6 +186,27 @@
       showMsg(`Error: ${(err as Error).message}`, 'error');
     } finally {
       savingSettings = false;
+    }
+  }
+
+  // ---- IMAP test ----
+  async function testImapConnection() {
+    testingImap = true;
+    imapTestMsg = '';
+    try {
+      const result = await settingsApi.testImap({
+        imap_host: imapHost.trim(),
+        imap_port: imapPort,
+        gmail_address: gmailAddress.trim() || undefined,
+        gmail_app_password: appPassword || undefined,
+      });
+      imapTestMsg = result.message;
+      imapTestOk = true;
+    } catch (err) {
+      imapTestMsg = (err as Error).message;
+      imapTestOk = false;
+    } finally {
+      testingImap = false;
     }
   }
 
@@ -496,6 +521,20 @@
               style="width:90px"
             />
           </div>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            style="margin-top:var(--space-sm);width:100%"
+            disabled={testingImap}
+            onclick={testImapConnection}
+          >
+            {testingImap ? 'Testing…' : '⇄ Test Connection'}
+          </button>
+          {#if imapTestMsg}
+            <div style="margin-top:var(--space-xs);font-size:0.8rem;color:{imapTestOk ? 'var(--success)' : 'var(--danger)'}">
+              {imapTestMsg}
+            </div>
+          {/if}
         </div>
 
         {#if settingsMsg}
