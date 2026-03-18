@@ -71,7 +71,7 @@ export const authApi = {
     post<LoginResponse>('/api/auth/login', data),
   logout: () => post<{ ok: boolean }>('/api/auth/logout'),
   me: () => get<User>('/api/auth/me'),
-  changePassword: (data: { current_password: string; new_password: string }) =>
+  changePassword: (data: { current_password: string; new_password: string; totp_code?: string }) =>
     post<{ ok: boolean }>('/api/auth/change-password', data),
   setup2fa: () => get<{ secret: string; uri: string }>('/api/auth/2fa/setup'),
   enable2fa: (code: string) => post<{ ok: boolean }>('/api/auth/2fa/enable', { code }),

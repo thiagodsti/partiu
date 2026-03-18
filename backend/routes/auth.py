@@ -9,11 +9,6 @@ from ..auth import (hash_password, verify_password, create_session_cookie,
                     decode_session_cookie, get_current_user, has_any_users,
                     create_pending_2fa_cookie, decode_pending_2fa_cookie)
 from ..database import db_conn, db_write
-from ..config import settings as _settings
-
-def _secure() -> bool:
-    return _settings.COOKIE_SECURE
-
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -31,6 +26,7 @@ class LoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+    totp_code: str | None = None
 
 
 class TwoFAVerifyRequest(BaseModel):
@@ -68,7 +64,7 @@ def setup(body: SetupRequest, response: Response):
         except Exception as e:
             raise HTTPException(400, f"Could not create user: {e}")
     token = create_session_cookie(user_id)
-    response.set_cookie("session", token, httponly=True, samesite="lax", secure=_secure(), max_age=30 * 86400)
+    response.set_cookie("session", token, httponly=True, samesite="lax", secure=True, max_age=30 * 86400)
     return {"id": user_id, "username": body.username.strip(), "is_admin": True,
             "smtp_recipient_address": body.smtp_recipient_address, "totp_enabled": False}
 
@@ -90,12 +86,12 @@ def login(body: LoginRequest, response: Response):
         resp = JSONResponse({"requires_2fa": True}, status_code=200)
         resp.set_cookie(
             "pending_2fa", pending_token,
-            httponly=True, samesite="lax", secure=_secure(), max_age=300
+            httponly=True, samesite="lax", secure=True, max_age=300
         )
         return resp
 
     token = create_session_cookie(row["id"])
-    response.set_cookie("session", token, httponly=True, samesite="lax", secure=_secure(), max_age=30 * 86400)
+    response.set_cookie("session", token, httponly=True, samesite="lax", secure=True, max_age=30 * 86400)
     return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"]),
             "smtp_recipient_address": row["smtp_recipient_address"],
             "totp_enabled": bool(row["totp_enabled"])}
@@ -126,7 +122,7 @@ def verify_2fa(body: TwoFAVerifyRequest, request: Request, response: Response):
     # Delete pending cookie, set full session cookie
     response.delete_cookie("pending_2fa", httponly=True, samesite="lax")
     token = create_session_cookie(row["id"])
-    response.set_cookie("session", token, httponly=True, samesite="lax", secure=_secure(), max_age=30 * 86400)
+    response.set_cookie("session", token, httponly=True, samesite="lax", secure=True, max_age=30 * 86400)
     return {"id": row["id"], "username": row["username"], "is_admin": bool(row["is_admin"]),
             "smtp_recipient_address": row["smtp_recipient_address"],
             "totp_enabled": bool(row["totp_enabled"])}
@@ -230,13 +226,22 @@ def me(request: Request):
 
 @router.post("/change-password")
 def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
-    # Re-fetch to get password_hash (get_current_user doesn't return it)
+    # Re-fetch to get password_hash and totp_secret
     with db_conn() as conn:
-        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+        row = conn.execute(
+            "SELECT password_hash, totp_secret, totp_enabled FROM users WHERE id = ?",
+            (user["id"],)
+        ).fetchone()
     if not row or not verify_password(body.current_password, row["password_hash"]):
         raise HTTPException(400, "Current password is incorrect")
-    if len(body.new_password) < 6:
-        raise HTTPException(400, "New password must be at least 6 characters")
+    if row["totp_enabled"]:
+        if not body.totp_code:
+            raise HTTPException(400, "2FA code required")
+        totp = pyotp.TOTP(row["totp_secret"])
+        if not totp.verify(body.totp_code, valid_window=1):
+            raise HTTPException(400, "Invalid 2FA code")
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
     with db_write() as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (hash_password(body.new_password), user["id"]))

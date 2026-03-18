@@ -1,13 +1,13 @@
 """
 Inbound SMTP server — accepts forwarded flight confirmation emails.
 
-Configure via .env:
+Global config (admin UI or .env):
   SMTP_SERVER_ENABLED=true
-  SMTP_SERVER_PORT=2525          # port to listen on (use 2525 to avoid needing root)
-  SMTP_ALLOWED_SENDERS=you@gmail.com,partner@gmail.com   # comma-separated allowlist
+  SMTP_SERVER_PORT=2525   # port to listen on (use 2525 to avoid needing root)
 
-Per-user recipient addresses are stored in the users table (smtp_recipient_address).
-If SMTP_ALLOWED_SENDERS is empty, any sender is accepted (less secure).
+Per-user config (Settings page):
+  smtp_recipient_address  — the address routed to this user (e.g. trips@your-domain.com)
+  smtp_allowed_senders    — comma-separated sender allowlist for this user
 """
 
 import email as email_lib
@@ -43,7 +43,7 @@ def _find_user_by_recipient(address: str) -> dict | None:
     addr_lower = address.lower().strip()
     with db_conn() as conn:
         row = conn.execute(
-            'SELECT id, smtp_recipient_address FROM users WHERE lower(smtp_recipient_address) = ?',
+            'SELECT id, smtp_recipient_address, smtp_allowed_senders FROM users WHERE lower(smtp_recipient_address) = ?',
             (addr_lower,)
         ).fetchone()
     return dict(row) if row else None
@@ -53,32 +53,21 @@ class _FlightEmailHandler:
     """aiosmtpd handler: validates sender/recipient then routes through the parsing pipeline."""
 
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
-        from .config import settings
-
-        # First check per-user smtp_recipient_address in DB
         user = _find_user_by_recipient(address)
-        if user:
-            envelope.rcpt_tos.append(address)
-            # Store user_id on envelope for use in handle_DATA
-            if not hasattr(envelope, 'smtp_user_id'):
-                envelope.smtp_user_id = user['id']
-            return '250 OK'
-
-        # Fall back to global SMTP_RECIPIENT_ADDRESS from config
-        expected = (settings.SMTP_RECIPIENT_ADDRESS or '').lower().strip()
-        if expected and address.lower().strip() != expected:
+        if not user:
             logger.debug('SMTP: rejected mail to unknown recipient %s', address)
             return '550 5.1.1 Recipient not accepted'
 
-        # No per-user match and no global recipient configured — reject
-        logger.debug('SMTP: rejected mail to unknown recipient %s', address)
-        return '550 5.1.1 Recipient not accepted'
+        envelope.rcpt_tos.append(address)
+        # Store user info on envelope for use in handle_DATA
+        if not hasattr(envelope, 'smtp_user_id'):
+            envelope.smtp_user_id = user['id']
+            envelope.smtp_allowed_senders = user.get('smtp_allowed_senders') or ''
+        return '250 OK'
 
     async def handle_DATA(self, server, session, envelope):
-        from .config import settings
-
         sender = (envelope.mail_from or '').lower().strip()
-        allowed_raw = (settings.SMTP_ALLOWED_SENDERS or '').strip()
+        allowed_raw = getattr(envelope, 'smtp_allowed_senders', '').strip()
         if allowed_raw:
             allowed = {s.strip().lower() for s in allowed_raw.split(',') if s.strip()}
             if sender not in allowed:
@@ -212,19 +201,16 @@ def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = Non
 
 
 def start_smtp_server():
-    from .config import settings
+    from .database import get_global_setting
     global _controller
-    if not settings.SMTP_SERVER_ENABLED:
-        logger.debug('SMTP server disabled (SMTP_SERVER_ENABLED not set)')
+    if get_global_setting('smtp_server_enabled', 'false') != 'true':
+        logger.debug('SMTP server disabled')
         return
+    port = int(get_global_setting('smtp_server_port', '2525'))
     handler = _FlightEmailHandler()
-    _controller = Controller(handler, hostname='0.0.0.0', port=settings.SMTP_SERVER_PORT)
+    _controller = Controller(handler, hostname='0.0.0.0', port=port)
     _controller.start()
-    logger.info(
-        'SMTP server listening on port %d (allowed=%s)',
-        settings.SMTP_SERVER_PORT,
-        settings.SMTP_ALLOWED_SENDERS or '*',
-    )
+    logger.info('SMTP server listening on port %d', port)
 
 
 def stop_smtp_server():

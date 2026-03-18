@@ -126,6 +126,9 @@
                 {#if u.is_admin}
                   <span class="badge-admin">Admin</span>
                 {/if}
+                {#if u.totp_enabled}
+                  <span class="badge-2fa">2FA</span>
+                {/if}
                 {#if u.smtp_recipient_address}
                   <span class="user-email">{u.smtp_recipient_address}</span>
                 {/if}
@@ -296,6 +299,15 @@
     padding: 2px 6px;
     border-radius: 10px;
     text-transform: uppercase;
+  }
+
+  .badge-2fa {
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--success);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 10px;
   }
 
   .user-actions {

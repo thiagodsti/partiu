@@ -75,6 +75,7 @@ export interface SyncStatus {
   status: 'idle' | 'running' | 'error';
   last_synced_at: string | null;
   last_error: string | null;
+  sync_interval_minutes: number | null;
 }
 
 export interface Settings {
@@ -84,9 +85,10 @@ export interface Settings {
   imap_host: string;
   imap_port: number;
   smtp_server_enabled: boolean;
-  smtp_server_port: number;
-  smtp_recipient_address: string;
-  smtp_allowed_senders: string;
+  smtp_domain: string;
+  smtp_server_port?: number;        // admin only
+  smtp_recipient_address: string;   // per-user
+  smtp_allowed_senders: string;     // per-user
 }
 
 export interface AircraftInfo {

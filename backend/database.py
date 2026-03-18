@@ -57,6 +57,31 @@ def db_write():
 
 
 # ---------------------------------------------------------------------------
+# Global settings helpers
+# ---------------------------------------------------------------------------
+
+def get_global_setting(key: str, default: str = '') -> str:
+    """Read a single value from the global_settings table."""
+    try:
+        with db_conn() as conn:
+            row = conn.execute(
+                'SELECT value FROM global_settings WHERE key = ?', (key,)
+            ).fetchone()
+        return row['value'] if row else default
+    except Exception:
+        return default
+
+
+def set_global_setting(key: str, value: str):
+    """Upsert a value in the global_settings table."""
+    with db_write() as conn:
+        conn.execute(
+            'INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)',
+            (key, value)
+        )
+
+
+# ---------------------------------------------------------------------------
 # Versioned migrations
 # Each entry: (version, description, [sql_statements])
 # Rules:
@@ -182,6 +207,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (6, "Add TOTP 2FA columns to users", [
         "ALTER TABLE users ADD COLUMN totp_secret TEXT",
         "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
+    ]),
+    (7, "Add per-user sync_interval_minutes to users", [
+        "ALTER TABLE users ADD COLUMN sync_interval_minutes INTEGER NOT NULL DEFAULT 10",
+    ]),
+    (8, "Move smtp_allowed_senders to per-user in users table", [
+        "ALTER TABLE users ADD COLUMN smtp_allowed_senders TEXT",
+    ]),
+    (9, "Add global_settings table for admin-configured values", [
+        """CREATE TABLE IF NOT EXISTS global_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )""",
     ]),
 ]
 

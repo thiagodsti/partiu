@@ -17,14 +17,16 @@ _sync_lock = threading.Lock()
 @router.get('/status')
 def get_sync_status(user: dict = Depends(get_current_user)):
     """Return the current sync state for this user."""
+    interval = user.get('sync_interval_minutes') or 10
     with db_conn() as conn:
         row = conn.execute(
             'SELECT * FROM email_sync_state WHERE user_id = ? ORDER BY id DESC LIMIT 1',
             (user['id'],)
         ).fetchone()
     if not row:
-        return {'status': 'idle', 'last_synced_at': None, 'last_error': None, 'last_rules_version': None}
-    return dict(row)
+        return {'status': 'idle', 'last_synced_at': None, 'last_error': None,
+                'last_rules_version': None, 'sync_interval_minutes': interval}
+    return {**dict(row), 'sync_interval_minutes': interval}
 
 
 @router.post('/now')

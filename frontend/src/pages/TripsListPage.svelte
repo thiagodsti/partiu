@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import { tripsApi, syncApi } from '../api/client';
   import type { Trip, SyncStatus } from '../api/types';
-  import { formatDate, formatDateRange, inferTripStatus } from '../lib/utils';
+  import { formatDate, formatDateTimeLocale, formatDateRange, inferTripStatus } from '../lib/utils';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
@@ -96,6 +96,20 @@
   const syncHasError = $derived(syncStatus?.status === 'error');
   const lastSynced = $derived(syncStatus?.last_synced_at);
   const activeTrips = $derived(tripsList.filter(t => inferTripStatus(t) !== 'completed'));
+
+  const nextSyncLabel = $derived.by(() => {
+    if (!syncStatus?.last_synced_at || !syncStatus?.sync_interval_minutes) return null;
+    const nextMs = new Date(syncStatus.last_synced_at).getTime() + syncStatus.sync_interval_minutes * 60 * 1000;
+    const nowMs = Date.now();
+    if (nextMs <= nowMs) return 'any moment';
+    const diffMin = Math.round((nextMs - nowMs) / 60000);
+    if (diffMin < 1) return 'any moment';
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    const rel = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    const absTime = new Date(nextMs).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return `in ${rel} at ${absTime}`;
+  });
 </script>
 
 <TopNav title="✈ My Trips" />
@@ -117,7 +131,8 @@
         {:else if syncHasError}
           Sync error: {syncStatus?.last_error ?? ''}
         {:else if lastSynced}
-          Last synced: {formatDate(lastSynced)}
+          Last synced: {formatDateTimeLocale(lastSynced)}
+          {#if nextSyncLabel}<span style="opacity:0.6"> ({nextSyncLabel})</span>{/if}
         {:else}
           Never synced
         {/if}

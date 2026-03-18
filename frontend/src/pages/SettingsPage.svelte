@@ -8,6 +8,7 @@
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
   import { currentUser } from '../lib/authStore';
+  import { theme } from '../lib/themeStore';
 
   // ---- State ----
   let loading = $state(true);
@@ -22,6 +23,7 @@
   let syncInterval = $state(10);
   let smtpEnabled = $state(false);
   let smtpPort = $state(2525);
+  let smtpDomain = $state('');
   let smtpRecipient = $state('');
   let smtpAllowedSenders = $state('');
 
@@ -56,7 +58,9 @@
       syncInterval = s.sync_interval_minutes ?? 10;
       smtpEnabled = s.smtp_server_enabled ?? false;
       smtpPort = s.smtp_server_port ?? 2525;
-      smtpRecipient = s.smtp_recipient_address ?? '';
+      smtpDomain = s.smtp_domain ?? '';
+      smtpRecipient = s.smtp_recipient_address
+        || (s.smtp_domain && $currentUser ? `${$currentUser.username}@${s.smtp_domain}` : '');
       smtpAllowedSenders = s.smtp_allowed_senders ?? '';
     } catch (err) {
       error = (err as Error).message;
@@ -137,6 +141,7 @@
     if (!isNaN(syncInterval) && syncInterval > 0) data.sync_interval_minutes = syncInterval;
     data.smtp_server_enabled = smtpEnabled;
     data.smtp_server_port = smtpPort;
+    data.smtp_domain = smtpDomain.trim();
     data.smtp_recipient_address = smtpRecipient.trim();
     data.smtp_allowed_senders = smtpAllowedSenders.trim();
     try {
@@ -173,6 +178,7 @@
   // ---- Change password ----
   let currentPw = $state('');
   let newPw = $state('');
+  let pwTotpCode = $state('');
   let changingPw = $state(false);
   let pwMsg = $state('');
   let pwMsgType = $state<'success' | 'error'>('success');
@@ -183,11 +189,17 @@
     changingPw = true;
     pwMsg = '';
     try {
-      await authApi.changePassword({ current_password: currentPw, new_password: newPw });
+      const payload: { current_password: string; new_password: string; totp_code?: string } = {
+        current_password: currentPw,
+        new_password: newPw,
+      };
+      if ($currentUser?.totp_enabled) payload.totp_code = pwTotpCode;
+      await authApi.changePassword(payload);
       pwMsg = 'Password changed successfully';
       pwMsgType = 'success';
       currentPw = '';
       newPw = '';
+      pwTotpCode = '';
     } catch (err) {
       pwMsg = (err as Error).message;
       pwMsgType = 'error';
@@ -201,8 +213,8 @@
   const syncHasError = $derived(syncStatus?.status === 'error');
 
   const nextSyncLabel = $derived.by(() => {
-    if (!syncStatus?.last_synced_at || !syncInterval) return null;
-    const nextMs = new Date(syncStatus.last_synced_at).getTime() + syncInterval * 60 * 1000;
+    if (!syncStatus?.last_synced_at || !syncStatus?.sync_interval_minutes) return null;
+    const nextMs = new Date(syncStatus.last_synced_at).getTime() + syncStatus.sync_interval_minutes * 60 * 1000;
     const nowMs = Date.now();
     if (nextMs <= nowMs) return 'any moment';
     const diffMin = Math.round((nextMs - nowMs) / 60000);
@@ -450,13 +462,12 @@
       </form>
     </div>
 
-    <!-- Inbound SMTP Section (admin only) -->
+    <!-- Inbound SMTP Server (admin only — enable/port) -->
     {#if $currentUser?.is_admin}
     <div class="settings-section">
       <div class="settings-section-title">Inbound Email Server</div>
       <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-        Run a simple SMTP server so you can forward flight confirmation emails directly to this app.
-        Configure your mail client or email alias to forward to <strong>this server's IP</strong> on the port below.
+        Run a simple SMTP server so users can forward flight confirmation emails directly to this app.
       </div>
 
       <form onsubmit={saveSettings}>
@@ -471,6 +482,18 @@
           </label>
         </div>
 
+        <div class="form-group">
+          <label class="form-label" for="smtp-domain">Domain</label>
+          <input
+            class="form-input"
+            id="smtp-domain"
+            type="text"
+            bind:value={smtpDomain}
+            placeholder="teda.work"
+          />
+          <div class="form-hint">Users without a custom forwarding address will default to <em>username@domain</em>.</div>
+        </div>
+
         {#if smtpEnabled}
           <div class="form-group">
             <label class="form-label" for="smtp-port">Port</label>
@@ -483,33 +506,59 @@
               max="65535"
               placeholder="2525"
             />
-            <div class="form-hint">Use 2525 (or any port above 1024) to avoid needing root. Forward your domain's MX or an alias to this port.</div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="smtp-recipient">Accept mail to</label>
-            <input
-              class="form-input"
-              id="smtp-recipient"
-              type="email"
-              bind:value={smtpRecipient}
-              placeholder="trips@your-domain.com"
-            />
-            <div class="form-hint">Only emails addressed to this recipient will be processed. Leave blank to accept any recipient.</div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="smtp-senders">Allowed senders</label>
-            <input
-              class="form-input"
-              id="smtp-senders"
-              type="text"
-              bind:value={smtpAllowedSenders}
-              placeholder="you@gmail.com, partner@gmail.com"
-            />
-            <div class="form-hint">Comma-separated list of email addresses allowed to send. Leave blank to accept from anyone (less secure).</div>
+            <div class="form-hint">Use 2525 (or any port above 1024) to avoid needing root. Map port 25 → 2525 in Docker or your firewall.</div>
           </div>
         {/if}
+
+        {#if settingsMsg}
+          <div
+            style="min-height:24px;margin-bottom:var(--space-sm);color:{settingsMsgType === 'success' ? 'var(--success)' : settingsMsgType === 'error' ? 'var(--danger)' : 'var(--text-secondary)'}"
+          >
+            {settingsMsg}
+          </div>
+        {:else}
+          <div style="min-height:24px;margin-bottom:var(--space-sm)"></div>
+        {/if}
+
+        <button class="btn btn-primary btn-full" type="submit" disabled={savingSettings}>
+          {savingSettings ? 'Saving...' : 'Save Settings'}
+        </button>
+      </form>
+    </div>
+    {/if}
+
+    <!-- Email Forwarding (per-user — shown when SMTP server is enabled) -->
+    {#if smtpEnabled}
+    <div class="settings-section">
+      <div class="settings-section-title">Email Forwarding</div>
+      <div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
+        Forward flight confirmation emails to your personal address below. Each user has their own forwarding address.
+      </div>
+
+      <form onsubmit={saveSettings}>
+        <div class="form-group">
+          <label class="form-label" for="smtp-recipient">Your forwarding address</label>
+          <input
+            class="form-input"
+            id="smtp-recipient"
+            type="email"
+            bind:value={smtpRecipient}
+            placeholder="trips@your-domain.com"
+          />
+          <div class="form-hint">Emails sent to this address will be processed and assigned to your account.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="smtp-senders">Allowed senders</label>
+          <input
+            class="form-input"
+            id="smtp-senders"
+            type="text"
+            bind:value={smtpAllowedSenders}
+            placeholder="you@gmail.com, partner@gmail.com"
+          />
+          <div class="form-hint">Comma-separated list of email addresses allowed to forward to you. Leave blank to accept from anyone.</div>
+        </div>
 
         {#if settingsMsg}
           <div
@@ -686,6 +735,20 @@
       {/if}
     </div>
 
+    <!-- Appearance -->
+    <div class="settings-section">
+      <div class="settings-section-title">Appearance</div>
+      <div class="theme-toggle">
+        {#each [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']] as [value, label]}
+          <button
+            class="theme-btn"
+            class:active={$theme === value}
+            onclick={() => theme.set(value as 'system' | 'light' | 'dark')}
+          >{label}</button>
+        {/each}
+      </div>
+    </div>
+
     <!-- Change Password -->
     <div class="settings-section">
       <div class="settings-section-title">Change Password</div>
@@ -708,10 +771,25 @@
             id="new-pw"
             type="password"
             bind:value={newPw}
-            placeholder="New password (min 6 chars)"
+            placeholder="New password (min 8 chars)"
             autocomplete="new-password"
           />
         </div>
+        {#if $currentUser?.totp_enabled}
+          <div class="form-group">
+            <label class="form-label" for="pw-totp">Authenticator Code</label>
+            <input
+              class="form-input"
+              id="pw-totp"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              bind:value={pwTotpCode}
+              placeholder="000000"
+              autocomplete="one-time-code"
+            />
+          </div>
+        {/if}
         {#if pwMsg}
           <div style="font-size:0.875rem;margin-bottom:var(--space-sm);color:{pwMsgType === 'success' ? 'var(--success)' : 'var(--danger)'}">
             {pwMsg}
@@ -741,3 +819,32 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .theme-toggle {
+    display: flex;
+    gap: var(--space-xs);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 3px;
+  }
+
+  .theme-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: none;
+    border-radius: calc(var(--radius-sm) - 2px);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .theme-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+</style>

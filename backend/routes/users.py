@@ -26,7 +26,7 @@ class UpdateUserRequest(BaseModel):
 def list_users(admin: dict = Depends(require_admin)):
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT id, username, is_admin, smtp_recipient_address, created_at FROM users ORDER BY id"
+            "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled, created_at FROM users ORDER BY id"
         ).fetchall()
     return [dict(r) for r in rows]
 

@@ -9,13 +9,14 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 ## What it does
 
 - Connects to your Gmail via IMAP and scans for flight confirmation emails
-- Parses booking details (flight number, airports, times, seat, cabin class, passenger name, booking reference) from HTML emails and PDF attachments
+- Parses booking details (flight number, airports, times, seat, cabin class, passenger name, booking reference) from HTML emails
 - Groups flights into trips automatically — by booking reference or time proximity
 - Shows outbound / return legs with connection badges and layover times
 - Tracks flight status (upcoming / completed) in real time
 - Looks up aircraft type while a flight is airborne (Boeing 737, Airbus A320, etc.)
 - Works as a PWA — installable on iOS and Android as a home screen app
 - Accepts forwarded emails via a built-in inbound SMTP server (no Gmail required for that path)
+- Multi-user support with per-user email accounts, admin management, and optional 2FA (TOTP)
 
 ## Supported airlines
 
@@ -24,7 +25,6 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 | LATAM Airlines | LA |
 | SAS Scandinavian Airlines | SK |
 | Norwegian Air Shuttle | DY |
-| Lufthansa | LH |
 | Azul Brazilian Airlines | AD |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
@@ -38,43 +38,47 @@ Partiu is designed to run on your own server — a VPS, a Raspberry Pi, or anyth
 ### Requirements
 
 - Docker + Docker Compose
-- A Gmail account with an **App Password** (or any IMAP-compatible mailbox)
-- A domain name (optional, but recommended for the inbound SMTP feature)
+- A domain with HTTPS (required — session cookies use `Secure` flag)
+- A Gmail account with an **App Password** per user (or any IMAP-compatible mailbox)
 
 ### Deploy with Docker Compose
 
 ```bash
 git clone https://github.com/your-username/partiu
 cd partiu
-cp .env.example .env   # edit with your credentials
+cp .env.example .env
+# Edit .env — at minimum set SECRET_KEY (see below)
 docker compose up -d --build
 ```
 
-Open `http://your-server-ip:8000`.
+Open `https://your-domain` and complete the first-run setup to create your admin account.
 
 ### Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `GMAIL_ADDRESS` | ✓ | Your Gmail address |
-| `GMAIL_APP_PASSWORD` | ✓ | 16-character App Password (not your regular password) |
-| `DB_PATH` | | Path to the SQLite database (default: `./data/partiu.db`) |
-| `SYNC_INTERVAL_MINUTES` | | How often to check for new emails (default: `10`) |
-| `FIRST_SYNC_DAYS` | | How far back to scan on first run (default: `90`) |
-| `DISABLE_SCHEDULER` | | Set to `true` to disable background sync (useful for dev) |
+| `SECRET_KEY` | ✓ | Secret key for signing session cookies. Generate with `openssl rand -hex 32` |
+| `DB_PATH` | | Path to the SQLite database (default: `./data/tripit.db`) |
+| `DISABLE_SCHEDULER` | | Set to `true` to disable background email sync (useful for dev) |
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
-| `SMTP_SERVER_ENABLED` | | Set to `true` to enable inbound email forwarding |
-| `SMTP_SERVER_PORT` | | Port for the inbound SMTP server (default: `2525`) |
-| `SMTP_RECIPIENT_ADDRESS` | | Only accept emails addressed to this address |
-| `SMTP_ALLOWED_SENDERS` | | Comma-separated sender allowlist (leave blank to accept all) |
 
-#### Gmail App Password
+All other settings (Gmail credentials, sync interval, SMTP server) are configured per-user or by the admin through the Settings page in the UI.
+
+### First-run setup
+
+On first visit, Partiu shows a setup page to create the admin account. After logging in, go to **Settings** to configure your Gmail address and App Password.
+
+### Gmail App Password (per user)
 
 1. Google Account → Security → 2-Step Verification → App passwords
 2. Create one for "Mail" + "Other (Partiu)"
-3. Paste the 16-character key as `GMAIL_APP_PASSWORD`
+3. Paste the 16-character key in Settings → Gmail Account
 
-#### AviationStack API Key (optional)
+### Two-Factor Authentication
+
+Each user can enable TOTP-based 2FA from Settings → Two-Factor Authentication. Use any authenticator app (Google Authenticator, Authy, 1Password, etc.).
+
+### AviationStack API Key (optional)
 
 Provides aircraft type (e.g. Boeing 737-800) for airborne flights. The free plan includes 100 requests/month, enough for personal use.
 
@@ -87,7 +91,7 @@ Falls back to [OpenSky Network](https://opensky-network.org) (free, no account n
 
 Instead of — or in addition to — Gmail IMAP sync, you can forward emails directly to Partiu:
 
-1. Set `SMTP_SERVER_ENABLED=true` and choose a port (default `2525`)
+1. Enable the SMTP server in Settings (admin only) and choose a port (default `2525`)
 2. Point your domain's MX record to your server, or set up an email alias that forwards to `your-server:2525`
 3. Forward any flight confirmation email to the configured recipient address
 
@@ -100,7 +104,7 @@ This is useful if you use a non-Gmail provider or want instant processing withou
 | `A mail.yourdomain.com` | Your server's public IP |
 | `MX yourdomain.com` | `mail.yourdomain.com` (priority 10) |
 
-Forward port `2525` (or `25`) on your router to the server running Partiu.
+Forward port `25` (or `2525`) on your router/firewall to the server running Partiu.
 
 ---
 
@@ -134,7 +138,7 @@ npm run dev   # Vite dev server at localhost:5173
 uvicorn backend.main:app --reload
 ```
 
-Open [http://localhost:8000](http://localhost:8000) (or port 5173 for the Vite dev server with HMR).
+> **Note:** Session cookies require HTTPS (`Secure` flag). For local development, access the app via a reverse proxy with a self-signed certificate or a tool like [mkcert](https://github.com/FiloSottile/mkcert).
 
 ### Tests
 
@@ -158,10 +162,10 @@ pytest
 |---|---|
 | Backend | FastAPI + APScheduler + SQLite (WAL mode) |
 | Frontend | Svelte 5 + Vite (PWA) |
-| Email fetch | Gmail IMAP with App Password |
+| Auth | Session cookies (itsdangerous) + bcrypt + TOTP 2FA |
+| Email fetch | Gmail IMAP with App Password (per user) |
 | Email receive | aiosmtpd (inbound SMTP server) |
 | HTML parsing | BeautifulSoup4 + lxml |
-| PDF parsing | pdfplumber |
 | Aircraft data | AviationStack (primary) + OpenSky Network (fallback) |
 
 ---

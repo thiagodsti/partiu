@@ -22,16 +22,9 @@ class Settings:
     FIRST_SYNC_DAYS: int = int(os.getenv('FIRST_SYNC_DAYS', '90'))
     DISABLE_SCHEDULER: bool = os.getenv('DISABLE_SCHEDULER', 'false').lower() == 'true'
     AVIATIONSTACK_API_KEY: str = os.getenv('AVIATIONSTACK_API_KEY', '')
-    # Inbound SMTP server
-    SMTP_SERVER_ENABLED: bool = os.getenv('SMTP_SERVER_ENABLED', 'false').lower() == 'true'
-    SMTP_SERVER_PORT: int = int(os.getenv('SMTP_SERVER_PORT', '2525'))
-    SMTP_RECIPIENT_ADDRESS: str = os.getenv('SMTP_RECIPIENT_ADDRESS', '')
-    SMTP_ALLOWED_SENDERS: str = os.getenv('SMTP_ALLOWED_SENDERS', '')
     # Auth
     SECRET_KEY: str = os.getenv('SECRET_KEY', '')
     SESSION_MAX_AGE_DAYS: int = int(os.getenv('SESSION_MAX_AGE_DAYS', '30'))
-    # Set COOKIE_SECURE=false to allow cookies over HTTP (local dev only)
-    COOKIE_SECURE: bool = os.getenv('COOKIE_SECURE', 'true').lower() != 'false'
 
 
 settings = Settings()

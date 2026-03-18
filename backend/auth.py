@@ -102,7 +102,7 @@ async def get_current_user(request: Request) -> dict:
     from .database import db_conn
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, is_admin, smtp_recipient_address, gmail_address, gmail_app_password, imap_host, imap_port, totp_enabled FROM users WHERE id = ?",
+            "SELECT id, username, is_admin, smtp_recipient_address, smtp_allowed_senders, gmail_address, gmail_app_password, imap_host, imap_port, totp_enabled, sync_interval_minutes FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
     if row is None:

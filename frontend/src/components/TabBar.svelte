@@ -25,7 +25,7 @@
     class:active={$location.startsWith('/settings')}
     href="#/settings"
   >
-    <span class="tab-icon">⚙</span>
+    <span class="tab-icon">⚙︎</span>
     <span>Settings</span>
   </a>
 </nav>
