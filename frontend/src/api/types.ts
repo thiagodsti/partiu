@@ -82,6 +82,8 @@ export interface Settings {
   gmail_address: string | null;
   gmail_app_password_set: boolean;
   sync_interval_minutes: number;
+  max_emails_per_sync: number;
+  first_sync_days: number;
   imap_host: string;
   imap_port: number;
   smtp_server_enabled: boolean;

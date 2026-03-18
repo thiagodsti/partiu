@@ -117,11 +117,10 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 def get_user_imap_settings(user: dict) -> dict:
-    """Return per-user IMAP settings. No global fallback — each user configures their own."""
-    from .config import settings
+    """Return per-user IMAP settings, falling back to Gmail defaults."""
     return {
         "gmail_address": user.get("gmail_address") or None,
         "gmail_app_password": user.get("gmail_app_password") or None,
-        "imap_host": user.get("imap_host") or settings.IMAP_HOST,
-        "imap_port": user.get("imap_port") or settings.IMAP_PORT,
+        "imap_host": user.get("imap_host") or "imap.gmail.com",
+        "imap_port": user.get("imap_port") or 993,
     }

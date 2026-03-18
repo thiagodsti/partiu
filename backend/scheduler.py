@@ -7,8 +7,6 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from .config import settings
-
 logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
@@ -18,12 +16,16 @@ def start_scheduler():
     """Start the background scheduler for email sync."""
     global _scheduler
 
+    from .config import settings
     if settings.DISABLE_SCHEDULER:
         logger.info("Scheduler disabled (DISABLE_SCHEDULER=true) — skipping")
         return
 
     from .sync_job import run_email_sync
     from .aircraft_sync import run_aircraft_sync
+    from .database import get_global_setting
+
+    sync_interval = int(get_global_setting('sync_interval_minutes', '10'))
 
     _scheduler = BackgroundScheduler(
         job_defaults={'coalesce': True, 'max_instances': 1},
@@ -32,7 +34,7 @@ def start_scheduler():
 
     _scheduler.add_job(
         run_email_sync,
-        trigger=IntervalTrigger(minutes=settings.SYNC_INTERVAL_MINUTES),
+        trigger=IntervalTrigger(minutes=sync_interval),
         id='email_sync',
         name='Email Sync',
         replace_existing=True,
@@ -49,7 +51,7 @@ def start_scheduler():
     _scheduler.start()
     logger.info(
         "Scheduler started — email sync every %d minutes, aircraft sync daily",
-        settings.SYNC_INTERVAL_MINUTES,
+        sync_interval,
     )
 
 

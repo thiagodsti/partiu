@@ -17,10 +17,30 @@
   let syncStatus = $state<SyncStatus | null>(null);
   let airportCount = $state(0);
 
+  const IMAP_PRESETS = [
+    { label: 'Gmail',   host: 'imap.gmail.com',             port: 993 },
+    { label: 'Outlook', host: 'outlook.office365.com',       port: 993 },
+    { label: 'Zoho',    host: 'imap.zoho.com',              port: 993 },
+    { label: 'Yahoo',   host: 'imap.mail.yahoo.com',        port: 993 },
+  ];
+
   // Form fields
   let gmailAddress = $state('');
   let appPassword = $state('');
+  let imapHost = $state('imap.gmail.com');
+  let imapPort = $state(993);
+
+  const imapPreset = $derived(
+    IMAP_PRESETS.find(p => p.host === imapHost && p.port === imapPort)?.label ?? 'custom'
+  );
+
+  function applyImapPreset(label: string) {
+    const preset = IMAP_PRESETS.find(p => p.label === label);
+    if (preset) { imapHost = preset.host; imapPort = preset.port; }
+  }
   let syncInterval = $state(10);
+  let maxEmailsPerSync = $state(200);
+  let firstSyncDays = $state(90);
   let smtpEnabled = $state(false);
   let smtpPort = $state(2525);
   let smtpDomain = $state('');
@@ -55,7 +75,11 @@
       airportCount = airportData?.count ?? 0;
       // Populate form
       gmailAddress = s.gmail_address ?? '';
+      imapHost = s.imap_host ?? 'imap.gmail.com';
+      imapPort = s.imap_port ?? 993;
       syncInterval = s.sync_interval_minutes ?? 10;
+      maxEmailsPerSync = s.max_emails_per_sync ?? 200;
+      firstSyncDays = s.first_sync_days ?? 90;
       smtpEnabled = s.smtp_server_enabled ?? false;
       smtpPort = s.smtp_server_port ?? 2525;
       smtpDomain = s.smtp_domain ?? '';
@@ -138,10 +162,16 @@
     const data: Record<string, unknown> = {};
     if (gmailAddress.trim()) data.gmail_address = gmailAddress.trim();
     if (appPassword) data.gmail_app_password = appPassword;
-    if (!isNaN(syncInterval) && syncInterval > 0) data.sync_interval_minutes = syncInterval;
-    data.smtp_server_enabled = smtpEnabled;
-    data.smtp_server_port = smtpPort;
-    data.smtp_domain = smtpDomain.trim();
+    data.imap_host = imapHost.trim();
+    data.imap_port = imapPort;
+    if ($currentUser?.is_admin) {
+      if (!isNaN(syncInterval) && syncInterval > 0) data.sync_interval_minutes = syncInterval;
+      if (!isNaN(maxEmailsPerSync) && maxEmailsPerSync > 0) data.max_emails_per_sync = maxEmailsPerSync;
+      if (!isNaN(firstSyncDays) && firstSyncDays > 0) data.first_sync_days = firstSyncDays;
+      data.smtp_server_enabled = smtpEnabled;
+      data.smtp_server_port = smtpPort;
+      data.smtp_domain = smtpDomain.trim();
+    }
     data.smtp_recipient_address = smtpRecipient.trim();
     data.smtp_allowed_senders = smtpAllowedSenders.trim();
     try {
@@ -399,13 +429,13 @@
       {/if}
     </div>
 
-    <!-- Gmail Account Section -->
+    <!-- Email Account Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Gmail Account</div>
+      <div class="settings-section-title">Email Account</div>
 
       <form onsubmit={saveSettings}>
         <div class="form-group">
-          <label class="form-label" for="gmail-address">Gmail Address</label>
+          <label class="form-label" for="gmail-address">Email Address</label>
           <input
             class="form-input"
             id="gmail-address"
@@ -417,7 +447,7 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="app-password">App Password</label>
+          <label class="form-label" for="app-password">Password / App Password</label>
           <input
             class="form-input"
             id="app-password"
@@ -429,21 +459,43 @@
             autocomplete="current-password"
           />
           <div class="form-hint">
-            Generate at: Google Account → Security → 2-Step Verification → App passwords.
-            Use <strong>Mail</strong> + <strong>Other (Partiu)</strong>.
+            For Gmail, generate an App Password at: Google Account → Security → 2-Step Verification → App passwords.
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="sync-interval">Sync Interval (minutes)</label>
-          <input
+          <label class="form-label" for="imap-provider">IMAP Server</label>
+          <select
             class="form-input"
-            id="sync-interval"
-            type="number"
-            bind:value={syncInterval}
-            min="1"
-            max="1440"
-          />
+            id="imap-provider"
+            value={imapPreset}
+            onchange={(e) => applyImapPreset((e.target as HTMLSelectElement).value)}
+            style="margin-bottom:var(--space-sm)"
+          >
+            {#each IMAP_PRESETS as p}
+              <option value={p.label}>{p.label}</option>
+            {/each}
+            <option value="custom">Custom…</option>
+          </select>
+          <div style="display:flex;gap:var(--space-sm)">
+            <input
+              class="form-input"
+              id="imap-host"
+              type="text"
+              bind:value={imapHost}
+              placeholder="imap.example.com"
+              style="flex:1"
+            />
+            <input
+              class="form-input"
+              id="imap-port"
+              type="number"
+              bind:value={imapPort}
+              min="1"
+              max="65535"
+              style="width:90px"
+            />
+          </div>
         </div>
 
         {#if settingsMsg}
@@ -492,6 +544,45 @@
             placeholder="teda.work"
           />
           <div class="form-hint">Users without a custom forwarding address will default to <em>username@domain</em>.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sync-interval">Sync Interval (minutes)</label>
+          <input
+            class="form-input"
+            id="sync-interval"
+            type="number"
+            bind:value={syncInterval}
+            min="1"
+            max="1440"
+          />
+          <div class="form-hint">How often the server polls Gmail for new emails. Takes effect after restart.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="max-emails">Max Emails per Sync</label>
+          <input
+            class="form-input"
+            id="max-emails"
+            type="number"
+            bind:value={maxEmailsPerSync}
+            min="1"
+            max="10000"
+          />
+          <div class="form-hint">Maximum number of emails to fetch in a single sync run.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="first-sync-days">Initial Sync Window (days)</label>
+          <input
+            class="form-input"
+            id="first-sync-days"
+            type="number"
+            bind:value={firstSyncDays}
+            min="1"
+            max="3650"
+          />
+          <div class="form-hint">How far back to look when syncing for the first time.</div>
         </div>
 
         {#if smtpEnabled}
@@ -801,22 +892,6 @@
       </form>
     </div>
 
-    <!-- About Section -->
-    <div class="settings-section">
-      <div class="settings-section-title">About</div>
-      <div style="font-size:0.875rem;color:var(--text-secondary)">
-        <p>Partiu — Personal flight tracker PWA</p>
-        <p style="margin-top:var(--space-sm)">
-          Reads Gmail for airline confirmation emails from LATAM, SAS, Norwegian,
-          Lufthansa, Azul, and more. Parses them automatically every
-          {currentSettings?.sync_interval_minutes ?? 10} minutes.
-        </p>
-        <p style="margin-top:var(--space-sm)">
-          IMAP Host: <code>{currentSettings?.imap_host ?? 'imap.gmail.com'}</code> :
-          {currentSettings?.imap_port ?? 993}
-        </p>
-      </div>
-    </div>
   {/if}
 </div>
 

@@ -6,7 +6,7 @@ import threading
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 
-from ..database import db_conn
+from ..database import db_conn, get_global_setting
 from ..auth import get_current_user
 
 router = APIRouter(prefix='/api/sync', tags=['sync'])
@@ -17,7 +17,7 @@ _sync_lock = threading.Lock()
 @router.get('/status')
 def get_sync_status(user: dict = Depends(get_current_user)):
     """Return the current sync state for this user."""
-    interval = user.get('sync_interval_minutes') or 10
+    interval = int(get_global_setting('sync_interval_minutes', '10'))
     with db_conn() as conn:
         row = conn.execute(
             'SELECT * FROM email_sync_state WHERE user_id = ? ORDER BY id DESC LIMIT 1',

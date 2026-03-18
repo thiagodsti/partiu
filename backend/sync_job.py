@@ -8,8 +8,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from .config import settings
-from .database import db_conn, db_write
+from .database import db_conn, db_write, get_global_setting
 from .parsers.builtin_rules import RULES_VERSION, get_builtin_rules
 from .parsers.email_connector import fetch_emails_imap
 from .parsers.engine import match_rule_to_email, extract_flights_from_email
@@ -413,7 +412,8 @@ def run_email_sync_for_user(user: dict) -> dict:
                 since_date = None
 
         if since_date is None:
-            since_date = datetime.now(timezone.utc) - timedelta(days=settings.FIRST_SYNC_DAYS)
+            first_sync_days = int(get_global_setting('first_sync_days', '90'))
+            since_date = datetime.now(timezone.utc) - timedelta(days=first_sync_days)
 
         if force_full:
             logger.info("User %d: Rules version changed — performing full rescan since %s",
@@ -433,7 +433,7 @@ def run_email_sync_for_user(user: dict) -> dict:
             use_ssl=True,
             sender_patterns=sender_patterns,
             since_date=since_date,
-            max_results=settings.MAX_EMAILS_PER_SYNC,
+            max_results=int(get_global_setting('max_emails_per_sync', '200')),
         )
 
         logger.info("User %d: Fetched %d matching emails", user_id, len(emails))
