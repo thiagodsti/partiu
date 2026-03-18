@@ -24,4 +24,4 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run backend tests
-        run: pytest tests/backend/ -v
+        run: pytest backend/tests/ -v
