@@ -2,33 +2,17 @@
  * Service Worker for Partiu PWA.
  * Implements a cache-first strategy for static assets,
  * network-first for API calls.
+ *
+ * Note: Vite outputs hashed filenames (e.g. index-Bo8Xdg-k.js) so we
+ * cannot pre-cache a fixed list. Instead we cache assets on first fetch.
  */
 
-const CACHE_VERSION = 'v9';
-const STATIC_CACHE = `tripit-static-${CACHE_VERSION}`;
-const API_CACHE = `tripit-api-${CACHE_VERSION}`;
+const CACHE_VERSION = 'v10';
+const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
+const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
-const STATIC_ASSETS = [
-  '/',
-  '/css/app.css',
-  '/js/app.js',
-  '/js/api.js',
-  '/js/pages/trips-list.js',
-  '/js/pages/trip-detail.js',
-  '/js/pages/flight-detail.js',
-  '/js/pages/settings.js',
-  '/manifest.json',
-];
-
-// ---- Install: pre-cache static assets ----
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.warn('[SW] Pre-cache failed:', err);
-      });
-    })
-  );
+// ---- Install: skip waiting immediately ----
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -55,7 +39,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // Static assets: cache-first (caches on first fetch)
   event.respondWith(cacheFirst(event.request, STATIC_CACHE));
 });
 
@@ -71,7 +55,6 @@ async function cacheFirst(request, cacheName) {
     }
     return response;
   } catch {
-    // Return offline fallback
     return new Response('<h1>Offline</h1>', {
       headers: { 'Content-Type': 'text/html' },
     });
