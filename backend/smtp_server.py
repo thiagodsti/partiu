@@ -72,10 +72,14 @@ class _FlightEmailHandler:
 def _extract_original_sender(raw_msg) -> str | None:
     """
     For forwarded emails, try to find the original airline sender.
-    Checks two forwarding styles:
+    Checks three forwarding styles:
       1. Proper forward: original email attached as message/rfc822 MIME part.
-      2. Inline forward: original headers quoted in the plain-text body.
+      2. Inline plain-text forward: "From: email@airline.com" in body.
+      3. Inline HTML forward (e.g. Tutanota): "From:" and address in separate
+         table cells, recovered after html_to_text conversion.
     """
+    from .parsers.email_connector import html_to_text
+
     # Style 1: message/rfc822 attachment
     for part in raw_msg.walk():
         if part.get_content_type() == 'message/rfc822':
@@ -85,20 +89,51 @@ def _extract_original_sender(raw_msg) -> str | None:
                 if from_hdr:
                     return _decode_mime_header(from_hdr)
 
-    # Style 2: scan plain-text body for "From: " lines (inline forward)
+    # Styles 2 & 3: scan plain-text and HTML bodies.
+    # Collect ALL From: addresses — the LAST one is the deepest/original sender
+    # in the forwarding chain (each forward prepends its own From: to the body).
+    candidates: list[str] = []
+
     for part in raw_msg.walk():
-        if part.get_content_type() == 'text/plain':
-            payload = part.get_payload(decode=True)
-            if not payload:
+        ct = part.get_content_type()
+        if ct not in ('text/plain', 'text/html'):
+            continue
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        charset = part.get_content_charset() or 'utf-8'
+        text = payload.decode(charset, errors='replace')
+        if ct == 'text/html':
+            text = html_to_text(text)
+
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            m = re.match(r'^(?:From|De|Von|Fra|Van):\s*(.*)$', line.strip(), re.IGNORECASE)
+            if not m:
                 continue
-            charset = part.get_content_charset() or 'utf-8'
-            text = payload.decode(charset, errors='replace')
-            for line in text.splitlines():
-                m = re.match(r'^(?:From|De|Von|Fra|Van):\s*(.+)$', line, re.IGNORECASE)
-                if m:
-                    candidate = m.group(1).strip()
-                    if '@' in candidate:
-                        return candidate
+            value = m.group(1).strip()
+            if '@' in value:
+                candidates.append(value)
+            else:
+                # HTML table case: address may be on next non-empty line(s)
+                for next_line in lines[i + 1:i + 4]:
+                    next_line = next_line.strip()
+                    if re.search(r'\S+@\S+\.\S+', next_line):
+                        candidates.append(next_line)
+                        break
+                    if next_line:
+                        break  # non-empty, non-email line — stop looking
+
+    if not candidates:
+        return None
+
+    # Return the first candidate that matches a known airline sender pattern
+    from .parsers.engine import get_rules
+    rules = get_rules()
+    for candidate in candidates:
+        for rule in rules:
+            if re.search(rule.sender_pattern, candidate, re.IGNORECASE):
+                return candidate
 
     return None
 
@@ -119,7 +154,7 @@ def _process_raw_message(raw_msg, sender_address: str):
     if re.match(r'^(fwd?|fw)\s*:', subject_check):
         original = _extract_original_sender(raw_msg)
         if original:
-            logger.debug('SMTP: forwarded email, original sender: %s → %s', effective_sender, original)
+            logger.info('SMTP: forwarded email, original sender extracted: %s → %s', effective_sender, original)
             effective_sender = original
 
     subject = _decode_mime_header(raw_msg.get('Subject', '') or '')
