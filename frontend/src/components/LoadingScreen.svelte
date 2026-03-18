@@ -1,14 +1,12 @@
 <script lang="ts">
-  import { t } from "svelte-i18n";
-
   interface Props {
     icon?: string;
     message?: string;
   }
-  const { icon = "✈" }: Props = $props();
+  const { icon = '✈', message = 'Loading...' }: Props = $props();
 </script>
 
 <div class="loading-screen">
   <div class="loading-icon">{icon}</div>
-  <p>{$t("loading")}}...</p>
+  <p>{message}</p>
 </div>
