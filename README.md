@@ -1,7 +1,7 @@
 # Partiu ✈️
 
 [![CI](https://github.com/thiagodsti/partiu/actions/workflows/pr.yml/badge.svg?branch=main)](https://github.com/thiagodsti/partiu/actions/workflows/pr.yml)
-[![Coverage](https://codecov.io/gh/thiagodsti/partiu/graph/badge.svg)](https://codecov.io/gh/thiagodsti/partiu)
+[![Coverage](https://codecov.io/github/thiagodsti/partiu/graph/badge.svg?token=7UC9WJZP8J)](https://codecov.io/github/thiagodsti/partiu)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Partiu** is a self-hosted personal flight tracker PWA. It automatically reads your airline confirmation emails, parses the flight details, and organises everything into trips — no third-party account needed, no data leaving your server.
