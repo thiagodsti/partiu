@@ -13,7 +13,7 @@
   const duration = $derived(formatDuration(f.duration_minutes));
 </script>
 
-<a class="flight-row flight-row-{status}" href="#{basePath}/{f.trip_id}/flights/{f.id}">
+<a class="flight-row flight-row-{status}" href="#/{basePath}/{f.trip_id}/flights/{f.id}">
   <div class="flight-row-route" style="flex:1">
     <div class="flight-route">
       <span>{f.departure_airport}</span>
