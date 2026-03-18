@@ -10,11 +10,13 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "qrcode": "^1.5.4",
     "svelte-spa-router": "^4.0.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tsconfig/svelte": "^5.0.0",
+    "@types/qrcode": "^1.5.6",
     "svelte": "^5.46.4",
     "svelte-check": "^4.0.0",
     "typescript": "^5.5.0",

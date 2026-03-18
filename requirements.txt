@@ -9,3 +9,6 @@ python-multipart>=0.0.6
 timezonefinder>=6.2.0
 pdfplumber>=0.10.0
 aiosmtpd>=1.4.0
+bcrypt>=4.0.0
+itsdangerous>=2.1.0
+pyotp>=2.9.0

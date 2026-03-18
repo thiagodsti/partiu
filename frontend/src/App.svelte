@@ -1,12 +1,17 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Router from 'svelte-spa-router';
-  import { wrap } from 'svelte-spa-router/wrap';
   import TabBar from './components/TabBar.svelte';
   import TripsListPage from './pages/TripsListPage.svelte';
   import TripDetailPage from './pages/TripDetailPage.svelte';
   import FlightDetailPage from './pages/FlightDetailPage.svelte';
   import SettingsPage from './pages/SettingsPage.svelte';
   import HistoryPage from './pages/HistoryPage.svelte';
+  import LoginPage from './pages/LoginPage.svelte';
+  import SetupPage from './pages/SetupPage.svelte';
+  import UsersPage from './pages/UsersPage.svelte';
+  import { authApi } from './api/client';
+  import { currentUser, authLoading } from './lib/authStore';
 
   const routes = {
     '/': TripsListPage,
@@ -15,12 +20,67 @@
     '/trips/:tripId/flights/:flightId': FlightDetailPage,
     '/history': HistoryPage,
     '/settings': SettingsPage,
+    '/admin/users': UsersPage,
+    '/login': LoginPage,
+    '/setup': SetupPage,
   };
+
+  // Auth pages that should not show the TabBar
+  const AUTH_ROUTES = new Set(['/login', '/setup']);
+
+  let currentHash = $state(window.location.hash.replace('#', '') || '/');
+  let showTabBar = $derived(!AUTH_ROUTES.has(currentHash));
 
   function routeNotFound() {
     window.location.hash = '/trips';
   }
+
+  onMount(async () => {
+    // Track hash changes to hide TabBar on auth pages
+    const onHashChange = () => {
+      currentHash = window.location.hash.replace('#', '') || '/';
+    };
+    window.addEventListener('hashchange', onHashChange);
+
+    try {
+      const user = await authApi.me();
+      currentUser.set(user);
+      authLoading.set(false);
+
+      // Redirect away from auth pages if already logged in
+      const hash = window.location.hash.replace('#', '');
+      if (hash === '/login' || hash === '/setup' || hash === '') {
+        window.location.hash = '/trips';
+      }
+    } catch (err: unknown) {
+      authLoading.set(false);
+      // Check if setup is required
+      const raw = (err as Error)?.message ?? '';
+      if (raw === 'setup_required') {
+        window.location.hash = '/setup';
+      } else {
+        // 401 or other — redirect to login
+        const hash = window.location.hash.replace('#', '');
+        if (hash !== '/setup') {
+          window.location.hash = '/login';
+        }
+      }
+    }
+
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  });
 </script>
 
-<Router {routes} on:routeEvent={routeNotFound} />
-<TabBar />
+{#if $authLoading}
+  <!-- Blank while checking auth to avoid flash -->
+  <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--text-muted);">
+    Loading...
+  </div>
+{:else}
+  <Router {routes} on:routeEvent={routeNotFound} />
+  {#if showTabBar}
+    <TabBar />
+  {/if}
+{/if}

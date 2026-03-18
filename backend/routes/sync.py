@@ -4,9 +4,10 @@ Sync control routes.
 
 import threading
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from ..database import db_conn
+from ..auth import get_current_user
 
 router = APIRouter(prefix='/api/sync', tags=['sync'])
 
@@ -14,25 +15,37 @@ _sync_lock = threading.Lock()
 
 
 @router.get('/status')
-def get_sync_status():
-    """Return the current sync state."""
+def get_sync_status(user: dict = Depends(get_current_user)):
+    """Return the current sync state for this user."""
     with db_conn() as conn:
-        row = conn.execute('SELECT * FROM email_sync_state WHERE id = 1').fetchone()
+        row = conn.execute(
+            'SELECT * FROM email_sync_state WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+            (user['id'],)
+        ).fetchone()
     if not row:
         return {'status': 'idle', 'last_synced_at': None, 'last_error': None, 'last_rules_version': None}
     return dict(row)
 
 
 @router.post('/now')
-def sync_now(background_tasks: BackgroundTasks):
+def sync_now(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Trigger an immediate email sync (runs in background)."""
     if not _sync_lock.acquire(blocking=False):
         return {'status': 'already_running', 'message': 'Sync is already in progress'}
 
+    user_id = user['id']
+
     def _run():
         try:
-            from ..sync_job import run_email_sync
-            run_email_sync()
+            from ..sync_job import run_email_sync_for_user
+            from ..database import db_conn
+            with db_conn() as conn:
+                u = conn.execute(
+                    'SELECT id, gmail_address, gmail_app_password, imap_host, imap_port FROM users WHERE id = ?',
+                    (user_id,)
+                ).fetchone()
+            if u:
+                run_email_sync_for_user(dict(u))
         finally:
             _sync_lock.release()
 
@@ -40,64 +53,49 @@ def sync_now(background_tasks: BackgroundTasks):
     return {'status': 'started', 'message': 'Sync started in background'}
 
 
-@router.post('/cached')
-def sync_cached(background_tasks: BackgroundTasks):
-    """Re-process locally cached emails — no Gmail connection needed."""
-    from ..email_cache import cache_exists
-    if not cache_exists():
-        return {'status': 'error', 'message': 'No email cache found. Run a full sync first.'}
-
-    if not _sync_lock.acquire(blocking=False):
-        return {'status': 'already_running', 'message': 'Sync is already in progress'}
-
-    def _run():
-        try:
-            from ..sync_job import run_cached_sync
-            run_cached_sync()
-        finally:
-            _sync_lock.release()
-
-    background_tasks.add_task(_run)
-    return {'status': 'started', 'message': 'Cached sync started'}
-
 
 @router.post('/regroup')
-def regroup(background_tasks: BackgroundTasks):
+def regroup(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Re-run grouping on all flights (re-creates auto-generated trips)."""
+    user_id = user['id']
+
     def _run():
         from ..grouping import regroup_all_flights
-        regroup_all_flights()
+        regroup_all_flights(user_id=user_id)
 
     background_tasks.add_task(_run)
     return {'status': 'started', 'message': 'Regrouping started in background'}
 
 
 @router.post('/reset-and-sync')
-def reset_and_sync(background_tasks: BackgroundTasks):
+def reset_and_sync(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """
-    Delete all auto-synced flights/trips and re-process from cached emails.
+    Delete all auto-synced flights/trips for this user, then re-sync from IMAP.
     Use this to fix stale data (wrong durations, timezones, etc.).
     """
-    from ..sync_job import reset_auto_flights, run_cached_sync
-    from ..email_cache import cache_exists
-
-    if not cache_exists():
-        return {'status': 'error', 'message': 'No email cache found. Run a full sync first.'}
+    from ..sync_job import reset_auto_flights, run_email_sync_for_user
 
     if not _sync_lock.acquire(blocking=False):
         return {'status': 'already_running', 'message': 'Sync is already in progress'}
 
-    reset_result = reset_auto_flights()
+    user_id = user['id']
+    reset_result = reset_auto_flights(user_id=user_id)
 
     def _run():
         try:
-            run_cached_sync()
+            with db_conn() as conn:
+                u = conn.execute(
+                    'SELECT id, gmail_address, gmail_app_password, imap_host, imap_port FROM users WHERE id = ?',
+                    (user_id,)
+                ).fetchone()
+            if u:
+                run_email_sync_for_user(dict(u))
         finally:
             _sync_lock.release()
 
     background_tasks.add_task(_run)
     return {
         'status': 'started',
-        'message': 'Data reset and re-sync started from cache',
+        'message': 'Data reset and re-sync from email started',
         **reset_result,
     }

@@ -4,9 +4,9 @@ Inbound SMTP server — accepts forwarded flight confirmation emails.
 Configure via .env:
   SMTP_SERVER_ENABLED=true
   SMTP_SERVER_PORT=2525          # port to listen on (use 2525 to avoid needing root)
-  SMTP_RECIPIENT_ADDRESS=trips@your-domain.com   # only accept mail to this address
   SMTP_ALLOWED_SENDERS=you@gmail.com,partner@gmail.com   # comma-separated allowlist
 
+Per-user recipient addresses are stored in the users table (smtp_recipient_address).
 If SMTP_ALLOWED_SENDERS is empty, any sender is accepted (less secure).
 """
 
@@ -37,17 +37,42 @@ def _decode_mime_header(value: str) -> str:
     return ''.join(parts)
 
 
+def _find_user_by_recipient(address: str) -> dict | None:
+    """Look up a user whose smtp_recipient_address matches the given address."""
+    from .database import db_conn
+    addr_lower = address.lower().strip()
+    with db_conn() as conn:
+        row = conn.execute(
+            'SELECT id, smtp_recipient_address FROM users WHERE lower(smtp_recipient_address) = ?',
+            (addr_lower,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 class _FlightEmailHandler:
     """aiosmtpd handler: validates sender/recipient then routes through the parsing pipeline."""
 
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
         from .config import settings
+
+        # First check per-user smtp_recipient_address in DB
+        user = _find_user_by_recipient(address)
+        if user:
+            envelope.rcpt_tos.append(address)
+            # Store user_id on envelope for use in handle_DATA
+            if not hasattr(envelope, 'smtp_user_id'):
+                envelope.smtp_user_id = user['id']
+            return '250 OK'
+
+        # Fall back to global SMTP_RECIPIENT_ADDRESS from config
         expected = (settings.SMTP_RECIPIENT_ADDRESS or '').lower().strip()
         if expected and address.lower().strip() != expected:
             logger.debug('SMTP: rejected mail to unknown recipient %s', address)
             return '550 5.1.1 Recipient not accepted'
-        envelope.rcpt_tos.append(address)
-        return '250 OK'
+
+        # No per-user match and no global recipient configured — reject
+        logger.debug('SMTP: rejected mail to unknown recipient %s', address)
+        return '550 5.1.1 Recipient not accepted'
 
     async def handle_DATA(self, server, session, envelope):
         from .config import settings
@@ -60,9 +85,11 @@ class _FlightEmailHandler:
                 logger.warning('SMTP: rejected email from unauthorized sender: %s', sender)
                 return '550 5.7.1 Sender not authorized'
 
+        user_id = getattr(envelope, 'smtp_user_id', None)
+
         try:
             raw_msg = email_lib.message_from_bytes(envelope.content)
-            _process_raw_message(raw_msg, envelope.mail_from)
+            _process_raw_message(raw_msg, envelope.mail_from, user_id=user_id)
         except Exception as e:
             logger.error('SMTP: error processing message from %s: %s', envelope.mail_from, e, exc_info=True)
 
@@ -138,7 +165,7 @@ def _extract_original_sender(raw_msg) -> str | None:
     return None
 
 
-def _process_raw_message(raw_msg, sender_address: str):
+def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = None):
     """Convert a raw email.message.Message to an EmailMessage and run it through the pipeline."""
     from .parsers.email_connector import get_email_body_and_html, EmailMessage
     from .sync_job import process_inbound_email
@@ -181,7 +208,7 @@ def _process_raw_message(raw_msg, sender_address: str):
         pdf_attachments=pdf_attachments,
     )
 
-    process_inbound_email(email_msg)
+    process_inbound_email(email_msg, user_id=user_id)
 
 
 def start_smtp_server():
@@ -194,9 +221,8 @@ def start_smtp_server():
     _controller = Controller(handler, hostname='0.0.0.0', port=settings.SMTP_SERVER_PORT)
     _controller.start()
     logger.info(
-        'SMTP server listening on port %d (recipient=%s, allowed=%s)',
+        'SMTP server listening on port %d (allowed=%s)',
         settings.SMTP_SERVER_PORT,
-        settings.SMTP_RECIPIENT_ADDRESS or '*',
         settings.SMTP_ALLOWED_SENDERS or '*',
     )
 

@@ -35,7 +35,7 @@ def _dt_from_iso(s: str) -> datetime | None:
         return None
 
 
-def auto_group_flights() -> dict:
+def auto_group_flights(user_id: int | None = None) -> dict:
     """
     Auto-group ungrouped flights into trips.
 
@@ -46,10 +46,17 @@ def auto_group_flights() -> dict:
 
     Returns a summary dict.
     """
-    with db_conn() as conn:
-        rows = conn.execute(
-            'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
-        ).fetchall()
+    if user_id is not None:
+        with db_conn() as conn:
+            rows = conn.execute(
+                'SELECT * FROM flights WHERE trip_id IS NULL AND user_id = ? ORDER BY departure_datetime',
+                (user_id,)
+            ).fetchall()
+    else:
+        with db_conn() as conn:
+            rows = conn.execute(
+                'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
+            ).fetchall()
 
     ungrouped = [dict(r) for r in rows]
 
@@ -57,7 +64,7 @@ def auto_group_flights() -> dict:
     flights_grouped = 0
 
     if not ungrouped:
-        merged = _merge_overlapping_groups(max_gap=_MAX_GAP)
+        merged = _merge_overlapping_groups(max_gap=_MAX_GAP, user_id=user_id)
         return {
             'groups_created': 0,
             'flights_grouped': 0,
@@ -77,29 +84,36 @@ def auto_group_flights() -> dict:
             no_booking.append(flight)
 
     for booking_ref, flights in by_booking.items():
-        trip_id = _create_trip_for_flights(flights, booking_ref)
+        trip_id = _create_trip_for_flights(flights, booking_ref, user_id=user_id)
         if trip_id:
             groups_created += 1
             flights_grouped += len(flights)
 
     # Phase 2: Group remaining ungrouped flights by time proximity
-    with db_conn() as conn:
-        rows = conn.execute(
-            'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
-        ).fetchall()
+    if user_id is not None:
+        with db_conn() as conn:
+            rows = conn.execute(
+                'SELECT * FROM flights WHERE trip_id IS NULL AND user_id = ? ORDER BY departure_datetime',
+                (user_id,)
+            ).fetchall()
+    else:
+        with db_conn() as conn:
+            rows = conn.execute(
+                'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
+            ).fetchall()
     remaining = [dict(r) for r in rows]
 
     if remaining:
         proximity_groups = _group_by_proximity(remaining, max_gap=_MAX_GAP)
         for cluster in proximity_groups:
             if len(cluster) >= 2:
-                trip_id = _create_trip_for_flights(cluster)
+                trip_id = _create_trip_for_flights(cluster, user_id=user_id)
                 if trip_id:
                     groups_created += 1
                     flights_grouped += len(cluster)
 
     # Phase 3: Merge overlapping groups
-    merged = _merge_overlapping_groups(max_gap=_MAX_GAP)
+    merged = _merge_overlapping_groups(max_gap=_MAX_GAP, user_id=user_id)
     if merged:
         logger.info("Merged %d overlapping groups", merged)
 
@@ -183,7 +197,8 @@ def _build_trip_name(flights: list[dict], booking_ref: str = '') -> str:
     return name
 
 
-def _create_trip_for_flights(flights: list[dict], booking_ref: str = '') -> str | None:
+def _create_trip_for_flights(flights: list[dict], booking_ref: str = '',
+                              user_id: int | None = None) -> str | None:
     """Create a trip row and assign flights to it. Returns the new trip_id."""
     if not flights:
         return None
@@ -202,14 +217,19 @@ def _create_trip_for_flights(flights: list[dict], booking_ref: str = '') -> str 
     now = _now_iso()
     trip_id = str(uuid.uuid4())
 
+    # Use user_id from the flights if not explicitly passed
+    effective_user_id = user_id
+    if effective_user_id is None and flights:
+        effective_user_id = flights[0].get('user_id')
+
     try:
         with db_write() as conn:
             conn.execute(
                 '''INSERT INTO trips (id, name, booking_refs, start_date, end_date,
-                   origin_airport, destination_airport, is_auto_generated, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)''',
+                   origin_airport, destination_airport, is_auto_generated, user_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)''',
                 (trip_id, name, json.dumps(refs), start_date, end_date,
-                 origin, destination, now, now),
+                 origin, destination, effective_user_id, now, now),
             )
             flight_ids = [f['id'] for f in flights]
             conn.executemany(
@@ -251,7 +271,7 @@ def _group_by_proximity(flights: list[dict], max_gap: timedelta) -> list[list[di
     return groups
 
 
-def _merge_overlapping_groups(max_gap: timedelta) -> int:
+def _merge_overlapping_groups(max_gap: timedelta, user_id: int | None = None) -> int:
     """
     Merge auto-generated trip groups whose flights overlap or are within max_gap.
     Returns the number of merges performed.
@@ -263,9 +283,15 @@ def _merge_overlapping_groups(max_gap: timedelta) -> int:
         changed = False
 
         with db_conn() as conn:
-            trips = conn.execute(
-                'SELECT id, name FROM trips WHERE is_auto_generated = 1 ORDER BY start_date'
-            ).fetchall()
+            if user_id is not None:
+                trips = conn.execute(
+                    'SELECT id, name FROM trips WHERE is_auto_generated = 1 AND user_id = ? ORDER BY start_date',
+                    (user_id,)
+                ).fetchall()
+            else:
+                trips = conn.execute(
+                    'SELECT id, name FROM trips WHERE is_auto_generated = 1 ORDER BY start_date'
+                ).fetchall()
             trip_list = [dict(t) for t in trips]
 
         # Load flights for each trip
@@ -335,19 +361,28 @@ def _merge_overlapping_groups(max_gap: timedelta) -> int:
     return merges
 
 
-def regroup_all_flights() -> dict:
+def regroup_all_flights(user_id: int | None = None) -> dict:
     """
     Unassign all auto-generated trips and re-run grouping from scratch.
     Manually added flights and manually created trips are preserved.
     """
     now = _now_iso()
     with db_write() as conn:
-        # Unlink flights from auto-generated trips
-        conn.execute(
-            '''UPDATE flights SET trip_id = NULL, updated_at = ?
-               WHERE trip_id IN (SELECT id FROM trips WHERE is_auto_generated = 1)''',
-            (now,),
-        )
-        conn.execute('DELETE FROM trips WHERE is_auto_generated = 1')
+        if user_id is not None:
+            # Unlink flights from auto-generated trips for this user
+            conn.execute(
+                '''UPDATE flights SET trip_id = NULL, updated_at = ?
+                   WHERE trip_id IN (SELECT id FROM trips WHERE is_auto_generated = 1 AND user_id = ?)
+                   AND user_id = ?''',
+                (now, user_id, user_id),
+            )
+            conn.execute('DELETE FROM trips WHERE is_auto_generated = 1 AND user_id = ?', (user_id,))
+        else:
+            conn.execute(
+                '''UPDATE flights SET trip_id = NULL, updated_at = ?
+                   WHERE trip_id IN (SELECT id FROM trips WHERE is_auto_generated = 1)''',
+                (now,),
+            )
+            conn.execute('DELETE FROM trips WHERE is_auto_generated = 1')
 
-    return auto_group_flights()
+    return auto_group_flights(user_id=user_id)

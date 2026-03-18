@@ -5,10 +5,11 @@ Flight CRUD routes.
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from pydantic import BaseModel
 
 from ..database import db_conn, db_write
+from ..auth import get_current_user
 
 router = APIRouter(prefix='/api/flights', tags=['flights'])
 
@@ -23,10 +24,11 @@ def list_flights(
     status: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    user: dict = Depends(get_current_user),
 ):
     """Return flights, optionally filtered by trip or status."""
-    query = 'SELECT * FROM flights WHERE 1=1'
-    params: list = []
+    query = 'SELECT * FROM flights WHERE user_id = ?'
+    params: list = [user['id']]
 
     if trip_id:
         query += ' AND trip_id = ?'
@@ -38,14 +40,19 @@ def list_flights(
     query += ' ORDER BY departure_datetime DESC LIMIT ? OFFSET ?'
     params.extend([limit, offset])
 
+    # Build count query params (same as main query without limit/offset)
+    count_params: list = [user['id']]
+    count_query = 'SELECT COUNT(*) FROM flights WHERE user_id = ?'
+    if trip_id:
+        count_query += ' AND trip_id = ?'
+        count_params.append(trip_id)
+    if status:
+        count_query += ' AND status = ?'
+        count_params.append(status)
+
     with db_conn() as conn:
         rows = conn.execute(query, params).fetchall()
-        total = conn.execute(
-            'SELECT COUNT(*) FROM flights WHERE 1=1' +
-            (' AND trip_id = ?' if trip_id else '') +
-            (' AND status = ?' if status else ''),
-            [p for p in params[:-2]],
-        ).fetchone()[0]
+        total = conn.execute(count_query, count_params).fetchone()[0]
 
     return {
         'flights': [dict(r) for r in rows],
@@ -56,22 +63,24 @@ def list_flights(
 
 
 @router.get('/{flight_id}')
-def get_flight(flight_id: str):
+def get_flight(flight_id: str, user: dict = Depends(get_current_user)):
     """Return a single flight."""
     with db_conn() as conn:
-        row = conn.execute('SELECT * FROM flights WHERE id = ?', (flight_id,)).fetchone()
+        row = conn.execute(
+            'SELECT * FROM flights WHERE id = ? AND user_id = ?', (flight_id, user['id'])
+        ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='Flight not found')
     return dict(row)
 
 
 @router.get('/{flight_id}/email')
-def get_flight_email(flight_id: str):
+def get_flight_email(flight_id: str, user: dict = Depends(get_current_user)):
     """Return the raw email body (HTML + text) stored for this flight."""
     with db_conn() as conn:
         row = conn.execute(
-            'SELECT email_body, email_subject, email_date FROM flights WHERE id = ?',
-            (flight_id,)
+            'SELECT email_body, email_subject, email_date FROM flights WHERE id = ? AND user_id = ?',
+            (flight_id, user['id'])
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='Flight not found')
@@ -83,7 +92,7 @@ def get_flight_email(flight_id: str):
 
 
 @router.get('/{flight_id}/aircraft')
-async def get_flight_aircraft(flight_id: str):
+async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_user)):
     """Return cached aircraft info, or fetch from OpenSky if the flight is still active.
 
     Completed flights are not queried against OpenSky — the background aircraft
@@ -92,8 +101,8 @@ async def get_flight_aircraft(flight_id: str):
     with db_conn() as conn:
         row = conn.execute(
             'SELECT flight_number, arrival_datetime, aircraft_type, aircraft_icao, '
-            'aircraft_registration, aircraft_fetched_at FROM flights WHERE id = ?',
-            (flight_id,),
+            'aircraft_registration, aircraft_fetched_at FROM flights WHERE id = ? AND user_id = ?',
+            (flight_id, user['id']),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='Flight not found')
@@ -115,8 +124,8 @@ async def get_flight_aircraft(flight_id: str):
                 from datetime import datetime, timezone
                 with db_write() as conn:
                     conn.execute(
-                        'UPDATE flights SET aircraft_type = ?, aircraft_registration = ?, updated_at = ? WHERE id = ?',
-                        (type_name, registration, datetime.now(timezone.utc).isoformat(), flight_id),
+                        'UPDATE flights SET aircraft_type = ?, aircraft_registration = ?, updated_at = ? WHERE id = ? AND user_id = ?',
+                        (type_name, registration, datetime.now(timezone.utc).isoformat(), flight_id, user['id']),
                     )
 
         return {
@@ -184,7 +193,8 @@ class FlightUpdate(BaseModel):
 
 
 @router.post('', status_code=201)
-def create_flight(body: FlightCreate, background_tasks: BackgroundTasks):
+def create_flight(body: FlightCreate, background_tasks: BackgroundTasks,
+                  user: dict = Depends(get_current_user)):
     """Manually create a flight."""
     now = _now_iso()
     flight_id = str(uuid.uuid4())
@@ -208,13 +218,13 @@ def create_flight(body: FlightCreate, background_tasks: BackgroundTasks):
                 booking_reference, departure_airport, departure_datetime,
                 departure_terminal, departure_gate, arrival_airport, arrival_datetime,
                 arrival_terminal, arrival_gate, passenger_name, seat, cabin_class,
-                duration_minutes, status, is_manually_added, notes, created_at, updated_at
+                duration_minutes, status, is_manually_added, notes, user_id, created_at, updated_at
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
-                ?, 'upcoming', 1, ?, ?, ?
+                ?, 'upcoming', 1, ?, ?, ?, ?
             )''',
             (
                 flight_id, body.trip_id,
@@ -225,7 +235,7 @@ def create_flight(body: FlightCreate, background_tasks: BackgroundTasks):
                 body.arrival_terminal, body.arrival_gate,
                 body.passenger_name, body.seat, body.cabin_class,
                 duration_minutes,
-                body.notes, now, now,
+                body.notes, user['id'], now, now,
             ),
         )
 
@@ -236,10 +246,12 @@ def create_flight(body: FlightCreate, background_tasks: BackgroundTasks):
 
 
 @router.patch('/{flight_id}')
-def update_flight(flight_id: str, body: FlightUpdate):
+def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_current_user)):
     """Update flight fields."""
     with db_conn() as conn:
-        if not conn.execute('SELECT id FROM flights WHERE id = ?', (flight_id,)).fetchone():
+        if not conn.execute(
+            'SELECT id FROM flights WHERE id = ? AND user_id = ?', (flight_id, user['id'])
+        ).fetchone():
             raise HTTPException(status_code=404, detail='Flight not found')
 
     updates = {}
@@ -259,16 +271,16 @@ def update_flight(flight_id: str, body: FlightUpdate):
 
     updates['updated_at'] = _now_iso()
     set_clause = ', '.join(f'{k} = ?' for k in updates)
-    values = list(updates.values()) + [flight_id]
+    values = list(updates.values()) + [flight_id, user['id']]
 
     with db_write() as conn:
-        conn.execute(f'UPDATE flights SET {set_clause} WHERE id = ?', values)
+        conn.execute(f'UPDATE flights SET {set_clause} WHERE id = ? AND user_id = ?', values)
 
     return {'id': flight_id}
 
 
 @router.delete('/{flight_id}', status_code=204)
-def delete_flight(flight_id: str):
+def delete_flight(flight_id: str, user: dict = Depends(get_current_user)):
     """Delete a flight."""
     with db_write() as conn:
-        conn.execute('DELETE FROM flights WHERE id = ?', (flight_id,))
+        conn.execute('DELETE FROM flights WHERE id = ? AND user_id = ?', (flight_id, user['id']))

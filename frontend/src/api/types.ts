@@ -1,5 +1,26 @@
 // TypeScript interfaces matching the FastAPI backend response shapes
 
+export interface User {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  smtp_recipient_address: string | null;
+  totp_enabled?: boolean;
+}
+
+export interface LoginResponse {
+  requires_2fa?: boolean;
+  id?: number;
+  username?: string;
+  is_admin?: boolean;
+  smtp_recipient_address?: string | null;
+  totp_enabled?: boolean;
+}
+
+export interface UserListItem extends User {
+  created_at: string;
+}
+
 export interface Trip {
   id: number;
   name: string;

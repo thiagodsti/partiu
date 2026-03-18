@@ -18,6 +18,9 @@ from .database import init_database, load_airports_if_empty
 from .scheduler import start_scheduler, stop_scheduler
 from .smtp_server import start_smtp_server, stop_smtp_server
 from .routes import trips, flights, sync, settings, airports
+from .routes import auth as auth_routes
+from .routes import users as users_routes
+from .middleware import FirstRunMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,13 +60,16 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
+    allow_origins=[],  # No cross-origin access — app is served same-origin
+    allow_credentials=False,
+    allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allow_headers=['Content-Type'],
 )
+app.add_middleware(FirstRunMiddleware)
 
 # Include API routers
+app.include_router(auth_routes.router)
+app.include_router(users_routes.router)
 app.include_router(trips.router)
 app.include_router(flights.router)
 app.include_router(sync.router)

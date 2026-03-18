@@ -142,6 +142,47 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE flights ADD COLUMN email_body TEXT",
         "ALTER TABLE flights ADD COLUMN aircraft_registration TEXT",
     ]),
+    (3, "Add users table", [
+        """CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            smtp_recipient_address TEXT,
+            gmail_address TEXT,
+            gmail_app_password TEXT,
+            imap_host TEXT,
+            imap_port INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+    ]),
+    (4, "Add user_id column to flights and trips", [
+        "ALTER TABLE flights ADD COLUMN user_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE trips ADD COLUMN user_id INTEGER REFERENCES users(id)",
+        "CREATE INDEX IF NOT EXISTS idx_flights_user_id ON flights(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id)",
+    ]),
+    (5, "Migrate email_sync_state to support per-user rows", [
+        """CREATE TABLE IF NOT EXISTS email_sync_state_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            last_synced_at TEXT,
+            last_rules_version TEXT,
+            status TEXT DEFAULT 'idle',
+            last_error TEXT
+        )""",
+        """INSERT OR IGNORE INTO email_sync_state_new
+               (id, user_id, last_synced_at, last_rules_version, status, last_error)
+           SELECT id, NULL, last_synced_at, last_rules_version, status, last_error
+           FROM email_sync_state""",
+        "DROP TABLE IF EXISTS email_sync_state",
+        "ALTER TABLE email_sync_state_new RENAME TO email_sync_state",
+        "CREATE INDEX IF NOT EXISTS idx_email_sync_state_user_id ON email_sync_state(user_id)",
+    ]),
+    (6, "Add TOTP 2FA columns to users", [
+        "ALTER TABLE users ADD COLUMN totp_secret TEXT",
+        "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
+    ]),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
@@ -173,14 +214,14 @@ def _run_migrations():
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='flights'"
             ).fetchone()
             if existing:
-                # Pre-versioning DB — already set up, just stamp the version.
-                conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+                # Pre-versioning DB — already had migrations 1 & 2 applied manually.
+                # Stamp at v2 so new migrations (3+) still run.
+                conn.execute("PRAGMA user_version = 2")
                 conn.commit()
+                current = 2
                 logger.info(
-                    "Existing DB detected — stamped schema version %d",
-                    CURRENT_SCHEMA_VERSION,
+                    "Existing pre-versioning DB detected — stamped at v2, will apply new migrations",
                 )
-                return
 
         pending = [(v, desc, stmts) for v, desc, stmts in MIGRATIONS if v > current]
         if not pending:
