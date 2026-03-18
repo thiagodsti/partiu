@@ -222,5 +222,6 @@
   "settings.changing_pw": "Saving…",
   "completed": "completed",
   "upcoming": "upcoming",
-  "signout": "Sign out"
+  "signout": "Sign out",
+  "loading": "Loading"
 }

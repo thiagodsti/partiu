@@ -222,5 +222,6 @@
   "settings.changing_pw": "Salvando…",
   "completed": "concluída",
   "upcoming": "próxima",
-  "signout": "Deslogar"
+  "signout": "Deslogar",
+  "loading": "Carregando"
 }
