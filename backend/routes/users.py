@@ -1,9 +1,10 @@
 """
 User management routes (admin only).
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..auth import hash_password, require_admin, get_current_user
+
+from ..auth import hash_password, require_admin
 from ..database import db_conn, db_write
 
 router = APIRouter(prefix="/api/users", tags=["users"])

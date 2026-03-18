@@ -13,7 +13,7 @@ Aircraft type name resolution order:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -26,7 +26,7 @@ _TIMEOUT = 10.0
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _lookup_type_name(iata_code: str) -> str | None:

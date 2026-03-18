@@ -1,10 +1,10 @@
 """Tests for the email parsing engine using real cached emails."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 
-from backend.parsers.email_connector import EmailMessage
 from backend.parsers.builtin_rules import get_builtin_rules
+from backend.parsers.email_connector import EmailMessage
 from backend.parsers.engine import extract_flights_from_email, match_rule_to_email
 
 
@@ -18,9 +18,9 @@ def _make_email(entry: dict) -> EmailMessage:
     try:
         date = datetime.fromisoformat(date_str)
         if date.tzinfo is None:
-            date = date.replace(tzinfo=timezone.utc)
+            date = date.replace(tzinfo=UTC)
     except (ValueError, TypeError):
-        date = datetime.now(timezone.utc)
+        date = datetime.now(UTC)
 
     return EmailMessage(
         message_id=entry.get('message_id', ''),

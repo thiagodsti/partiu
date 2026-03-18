@@ -8,12 +8,12 @@ custom_extractor field.
 
 import logging
 
-from .latam import extract_bs4 as _latam
-from .sas import extract_bs4 as _sas
-from .norwegian import extract_bs4 as _norwegian
-from .lufthansa import extract_bs4 as _lufthansa
 from .azul import extract_bs4 as _azul
 from .kiwi import extract_bs4 as _kiwi
+from .latam import extract_bs4 as _latam
+from .lufthansa import extract_bs4 as _lufthansa
+from .norwegian import extract_bs4 as _norwegian
+from .sas import extract_bs4 as _sas
 
 logger = logging.getLogger(__name__)
 

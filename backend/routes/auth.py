@@ -2,12 +2,20 @@
 Authentication routes: setup, login, logout, me, change-password, 2FA.
 """
 import pyotp
-from fastapi import APIRouter, Request, Response, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from ..auth import (hash_password, verify_password, create_session_cookie,
-                    decode_session_cookie, get_current_user, has_any_users,
-                    create_pending_2fa_cookie, decode_pending_2fa_cookie)
+
+from ..auth import (
+    create_pending_2fa_cookie,
+    create_session_cookie,
+    decode_pending_2fa_cookie,
+    decode_session_cookie,
+    get_current_user,
+    has_any_users,
+    hash_password,
+    verify_password,
+)
 from ..database import db_conn, db_write
 from ..limiter import limiter
 

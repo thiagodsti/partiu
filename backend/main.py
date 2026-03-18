@@ -11,19 +11,19 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from slowapi.errors import RateLimitExceeded
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-from .limiter import limiter
 from .database import init_database, load_airports_if_empty
-from .scheduler import start_scheduler, stop_scheduler
-from .smtp_server import start_smtp_server, stop_smtp_server
-from .routes import trips, flights, sync, settings, airports
+from .limiter import limiter
+from .middleware import FirstRunMiddleware
+from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
 from .routes import users as users_routes
-from .middleware import FirstRunMiddleware
+from .scheduler import start_scheduler, stop_scheduler
+from .smtp_server import start_smtp_server, stop_smtp_server
 
 logging.basicConfig(
     level=logging.INFO,

@@ -3,19 +3,19 @@ Flight CRUD routes.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..database import db_conn, db_write
 from ..auth import get_current_user
+from ..database import db_conn, db_write
 
 router = APIRouter(prefix='/api/flights', tags=['flights'])
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @router.get('')
@@ -120,12 +120,13 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
             if recovered_reg and not registration:
                 registration = recovered_reg
             if type_name:
+                from datetime import datetime
+
                 from ..database import db_write
-                from datetime import datetime, timezone
                 with db_write() as conn:
                     conn.execute(
                         'UPDATE flights SET aircraft_type = ?, aircraft_registration = ?, updated_at = ? WHERE id = ? AND user_id = ?',
-                        (type_name, registration, datetime.now(timezone.utc).isoformat(), flight_id, user['id']),
+                        (type_name, registration, datetime.now(UTC).isoformat(), flight_id, user['id']),
                     )
 
         return {
@@ -140,8 +141,8 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
         try:
             arr = datetime.fromisoformat(row['arrival_datetime'])
             if arr.tzinfo is None:
-                arr = arr.replace(tzinfo=timezone.utc)
-            if arr < datetime.now(timezone.utc):
+                arr = arr.replace(tzinfo=UTC)
+            if arr < datetime.now(UTC):
                 return {}
         except ValueError:
             pass

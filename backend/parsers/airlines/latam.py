@@ -9,19 +9,20 @@ Two extraction strategies:
 
 import logging
 import re
-from datetime import datetime, date as date_type, timedelta
+from datetime import date as date_type
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
 from ..shared import (
-    _get_text,
-    _make_aware,
+    _airport_distance,
     _build_datetime,
-    _make_flight_dict,
     _extract_booking_reference,
     _extract_passenger_name,
-    _airport_distance,
+    _get_text,
+    _make_aware,
+    _make_flight_dict,
 )
 
 logger = logging.getLogger(__name__)

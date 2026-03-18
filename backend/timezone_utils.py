@@ -5,7 +5,7 @@ Uses the airports table (lat/lon) + timezonefinder to determine the correct
 IANA timezone for an airport, then converts naive local datetimes to UTC.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def localize_to_utc(naive_dt: datetime, airport_iata: str) -> datetime:
 
     # Already timezone-aware — convert to UTC
     if naive_dt.tzinfo is not None:
-        return naive_dt.astimezone(timezone.utc)
+        return naive_dt.astimezone(UTC)
 
     tz_name = _get_airport_timezone(airport_iata)
     if tz_name:
@@ -53,12 +53,12 @@ def localize_to_utc(naive_dt: datetime, airport_iata: str) -> datetime:
             from zoneinfo import ZoneInfo
             local_tz = ZoneInfo(tz_name)
             aware = naive_dt.replace(tzinfo=local_tz)
-            return aware.astimezone(timezone.utc)
+            return aware.astimezone(UTC)
         except Exception as e:
             logger.debug("Timezone conversion failed for %s (%s): %s", airport_iata, tz_name, e)
 
     # Fallback: treat as UTC (better than crashing)
-    return naive_dt.replace(tzinfo=timezone.utc)
+    return naive_dt.replace(tzinfo=UTC)
 
 
 def get_airport_timezone_name(iata_code: str) -> str | None:
@@ -93,9 +93,9 @@ def apply_airport_timezones(flight_data: dict) -> dict:
 
     # Strip UTC tzinfo if it was incorrectly applied by _make_aware()
     # (i.e., the time is actually local time mislabelled as UTC)
-    if dep_dt and dep_dt.tzinfo == timezone.utc:
+    if dep_dt and dep_dt.tzinfo == UTC:
         dep_dt = dep_dt.replace(tzinfo=None)
-    if arr_dt and arr_dt.tzinfo == timezone.utc:
+    if arr_dt and arr_dt.tzinfo == UTC:
         arr_dt = arr_dt.replace(tzinfo=None)
 
     result = dict(flight_data)

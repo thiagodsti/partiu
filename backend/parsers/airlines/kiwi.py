@@ -21,7 +21,7 @@ import re
 from datetime import timedelta
 
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, _make_aware
+from ..shared import _build_datetime
 
 logger = logging.getLogger(__name__)
 

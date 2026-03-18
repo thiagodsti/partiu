@@ -8,10 +8,10 @@ from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
 from ..shared import (
-    _get_text,
     _build_datetime,
-    _make_flight_dict,
     _extract_booking_reference,
+    _get_text,
+    _make_flight_dict,
 )
 
 

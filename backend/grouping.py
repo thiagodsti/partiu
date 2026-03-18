@@ -9,7 +9,7 @@ import json
 import logging
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .database import db_conn, db_write
 
@@ -20,7 +20,7 @@ _CONNECTION_THRESHOLD = timedelta(hours=24)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _dt_from_iso(s: str) -> datetime | None:
@@ -29,7 +29,7 @@ def _dt_from_iso(s: str) -> datetime | None:
     try:
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         return None

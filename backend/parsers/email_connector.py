@@ -5,13 +5,13 @@ Supports IMAP (Gmail, generic).
 Adapted from AdventureLog — Django dependencies removed.
 """
 
-import imaplib
 import email
 import email.header
 import email.utils
+import imaplib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)

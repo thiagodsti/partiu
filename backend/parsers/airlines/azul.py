@@ -3,15 +3,16 @@ Azul Brazilian Airlines flight extractor (BS4 only).
 """
 
 import re
-from datetime import datetime, date as date_type
+from datetime import date as date_type
+from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from ..shared import (
-    _get_text,
     _build_datetime,
-    _make_flight_dict,
     _extract_booking_reference,
+    _get_text,
+    _make_flight_dict,
 )
 
 

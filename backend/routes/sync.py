@@ -6,8 +6,8 @@ import threading
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 
-from ..database import db_conn, get_global_setting
 from ..auth import get_current_user
+from ..database import db_conn, get_global_setting
 
 router = APIRouter(prefix='/api/sync', tags=['sync'])
 
@@ -39,8 +39,8 @@ def sync_now(background_tasks: BackgroundTasks, user: dict = Depends(get_current
 
     def _run():
         try:
-            from ..sync_job import run_email_sync_for_user
             from ..database import db_conn
+            from ..sync_job import run_email_sync_for_user
             with db_conn() as conn:
                 u = conn.execute(
                     'SELECT id, gmail_address, gmail_app_password, imap_host, imap_port FROM users WHERE id = ?',

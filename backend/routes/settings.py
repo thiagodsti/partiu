@@ -7,7 +7,7 @@ import imaplib
 import ipaddress
 import socket
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin

@@ -12,9 +12,9 @@ Flow:
 import calendar
 import logging
 import re
-from datetime import datetime, date as date_type, timezone
+from datetime import UTC, datetime
+from datetime import date as date_type
 
-from .builtin_rules import get_builtin_rules
 from .email_connector import EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -334,7 +334,7 @@ def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:
     try:
         h, m = time_str.split(":")
         dt = datetime(date_obj.year, date_obj.month, date_obj.day, int(h), int(m))
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return None
 

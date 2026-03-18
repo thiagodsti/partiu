@@ -2,7 +2,7 @@
 import email as stdlib_email
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -75,7 +75,7 @@ def load_eml_as_email_message(eml_filename: str):
         sender=msg["From"] or "",
         subject=msg["Subject"] or "",
         body=body,
-        date=datetime.now(tz=timezone.utc),
+        date=datetime.now(tz=UTC),
         html_body=html_body,
         pdf_attachments=pdf_attachments,
     )

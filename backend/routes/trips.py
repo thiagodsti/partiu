@@ -4,19 +4,19 @@ Trip CRUD routes.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..database import db_conn, db_write
 from ..auth import get_current_user
+from ..database import db_conn, db_write
 
 router = APIRouter(prefix='/api/trips', tags=['trips'])
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _row_to_trip(row) -> dict:

@@ -10,17 +10,18 @@ The regex extractor is also reused by Norwegian (similar email format).
 
 import logging
 import re
-from datetime import datetime, date as date_type, timedelta
+from datetime import date as date_type
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 
-from ..engine import parse_flight_date, MONTH_MAP
+from ..engine import MONTH_MAP, parse_flight_date
 from ..shared import (
+    _build_datetime,
+    _extract_booking_reference,
     _get_text,
     _make_aware,
-    _build_datetime,
     _make_flight_dict,
-    _extract_booking_reference,
 )
 
 logger = logging.getLogger(__name__)

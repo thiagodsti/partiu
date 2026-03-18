@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort
+    "UP",  # pyupgrade
+    "W",   # pycodestyle warnings
+]
+ignore = [
+    "E501",  # line too long (handled per-file where needed)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["F401"]  # test files may re-export for fixture use
+
+[tool.pytest.ini_options]
+# pytest config is kept in pytest.ini

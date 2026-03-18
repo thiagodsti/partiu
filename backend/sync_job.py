@@ -6,22 +6,26 @@ Runs every 10 minutes via APScheduler.
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .database import db_conn, db_write, get_global_setting
+from .email_cache import cache_exists, load_emails, save_emails
+from .grouping import auto_group_flights
+from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from .parsers.builtin_rules import RULES_VERSION, get_builtin_rules
 from .parsers.email_connector import fetch_emails_imap
-from .parsers.engine import match_rule_to_email, extract_flights_from_email, try_generic_pdf_extraction
-from .grouping import auto_group_flights
+from .parsers.engine import (
+    extract_flights_from_email,
+    match_rule_to_email,
+    try_generic_pdf_extraction,
+)
 from .timezone_utils import apply_airport_timezones
-from .email_cache import save_emails, load_emails, cache_exists
-from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
 
 logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _dt_to_iso(dt) -> str | None:
@@ -29,7 +33,7 @@ def _dt_to_iso(dt) -> str | None:
         return None
     if isinstance(dt, datetime):
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.isoformat()
     return str(dt)
 
@@ -123,10 +127,10 @@ def _insert_flight(flight_data: dict, email_msg, user_id: int) -> str:
         if minutes > 0:
             duration_minutes = minutes
 
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     arr_dt_aware = arr_dt
     if arr_dt_aware and arr_dt_aware.tzinfo is None:
-        arr_dt_aware = arr_dt_aware.replace(tzinfo=timezone.utc)
+        arr_dt_aware = arr_dt_aware.replace(tzinfo=UTC)
     status = 'completed' if (arr_dt_aware and arr_dt_aware < now_dt) else 'upcoming'
 
     msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
@@ -198,10 +202,10 @@ def _update_flight(existing_id: str, flight_data: dict, email_msg):
         if minutes > 0:
             duration_minutes = minutes
 
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     arr_dt_aware = arr_dt
     if arr_dt_aware and arr_dt_aware.tzinfo is None:
-        arr_dt_aware = arr_dt_aware.replace(tzinfo=timezone.utc)
+        arr_dt_aware = arr_dt_aware.replace(tzinfo=UTC)
     status = 'completed' if (arr_dt_aware and arr_dt_aware < now_dt) else 'upcoming'
 
     msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
@@ -414,7 +418,7 @@ def run_email_sync_for_user(user: dict) -> dict:
 
         if since_date is None:
             first_sync_days = int(get_global_setting('first_sync_days', '90'))
-            since_date = datetime.now(timezone.utc) - timedelta(days=first_sync_days)
+            since_date = datetime.now(UTC) - timedelta(days=first_sync_days)
 
         if force_full:
             logger.info("User %d: Rules version changed — performing full rescan since %s",

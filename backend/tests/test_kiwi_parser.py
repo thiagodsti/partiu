@@ -12,16 +12,15 @@ The email was forwarded from a personal Gmail address, so the outer From header
 is not @kiwi.com.  The parser must resolve the rule via forwarded-sender
 detection (scanning the email body for "From: … @kiwi.com").
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
-
 from conftest import load_eml_as_email_message
 
 
 def dt(year, month, day, hour, minute) -> datetime:
     """UTC-aware datetime helper."""
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 @pytest.fixture(scope="module")
@@ -31,8 +30,8 @@ def kiwi_email():
 
 @pytest.fixture(scope="module")
 def kiwi_rule(kiwi_email):
-    from backend.parsers.engine import match_rule_to_email
     from backend.parsers.builtin_rules import get_builtin_rules
+    from backend.parsers.engine import match_rule_to_email
 
     rules = sorted(get_builtin_rules(), key=lambda r: r.priority, reverse=True)
     return match_rule_to_email(kiwi_email, rules)

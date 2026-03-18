@@ -6,7 +6,7 @@ PDF attachments are stored as base64 so they can be re-extracted later.
 import base64
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import settings
@@ -56,7 +56,7 @@ def load_emails() -> list[EmailMessage]:
             try:
                 date = datetime.fromisoformat(item['date'])
                 if date.tzinfo is None:
-                    date = date.replace(tzinfo=timezone.utc)
+                    date = date.replace(tzinfo=UTC)
             except ValueError:
                 pass
         # Load PDF attachments from base64

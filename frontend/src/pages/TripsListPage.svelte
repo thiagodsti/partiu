@@ -3,7 +3,6 @@
   import { tripsApi, syncApi } from "../api/client";
   import type { Trip, SyncStatus } from "../api/types";
   import {
-    formatDate,
     formatDateTimeLocale,
     formatDateRange,
     inferTripStatus,

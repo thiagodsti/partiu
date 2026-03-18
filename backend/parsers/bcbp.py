@@ -22,7 +22,6 @@ Each additional leg repeats from position 23 with the same layout.
 
 import re
 from datetime import date, timedelta
-from typing import Generator
 
 # Minimum length for a valid single-leg BCBP string
 _BCBP_MIN_LEN = 58
@@ -211,10 +210,10 @@ def find_bcbp_in_text(text: str) -> list[str]:
 
     # Strategy 1: regex match on the text
     for m in _BCBP_RE.finditer(text):
-        candidate = m.group(0)
+        m.group(0)
         # Extend greedily: BCBP can be longer for conditional fields
         start = m.start()
-        end = m.end()
+        m.end()
         # Try to grab up to 300 chars from start (multi-leg boarding passes)
         extended = text[start:start + 300].split('\n')[0].split('\r')[0]
         candidates.append(extended)

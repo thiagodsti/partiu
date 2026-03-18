@@ -13,7 +13,7 @@ Per-user config (Settings page):
 import email as email_lib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.header import decode_header as _decode_header
 from email.utils import parsedate_to_datetime
 
@@ -156,7 +156,7 @@ def _extract_original_sender(raw_msg) -> str | None:
 
 def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = None):
     """Convert a raw email.message.Message to an EmailMessage and run it through the pipeline."""
-    from .parsers.email_connector import get_email_body_and_html, EmailMessage
+    from .parsers.email_connector import EmailMessage, get_email_body_and_html
     from .sync_job import process_inbound_email
 
     # Prefer the From header inside the email (original sender) over the SMTP envelope
@@ -175,7 +175,7 @@ def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = Non
 
     subject = _decode_mime_header(raw_msg.get('Subject', '') or '')
     message_id = (raw_msg.get('Message-ID') or
-                  f'smtp-inbound-{datetime.now(timezone.utc).timestamp()}').strip()
+                  f'smtp-inbound-{datetime.now(UTC).timestamp()}').strip()
 
     date = None
     date_str = raw_msg.get('Date', '')

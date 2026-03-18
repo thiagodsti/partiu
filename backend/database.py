@@ -2,11 +2,11 @@
 SQLite database schema initialization and connection helpers.
 Uses WAL journal mode for concurrent reads during background sync.
 """
+import logging
 import sqlite3
 import threading
-import logging
-from pathlib import Path
 from contextlib import contextmanager
+from pathlib import Path
 
 from .config import settings
 

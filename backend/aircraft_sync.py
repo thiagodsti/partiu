@@ -10,7 +10,7 @@ Strategy:
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .database import db_conn, db_write
 
@@ -48,7 +48,7 @@ async def _recover_missing_aircraft_names() -> int:
 
     logger.info('Aircraft recovery: %d flight(s) with ICAO24 but missing name/reg', len(rows))
     recovered = 0
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     for row in rows:
         type_name, _, registration = await _fetch_type_name_from_hexdb(row['aircraft_icao'])
@@ -65,14 +65,13 @@ async def _recover_missing_aircraft_names() -> int:
 
 
 async def _run_aircraft_sync() -> dict:
-    from .aircraft_api import fetch_aircraft_info
 
     # First recover any flights that have ICAO24 but lost their name/registration
     recovered = await _recover_missing_aircraft_names()
     if recovered:
         logger.info('Aircraft sync: recovered %d flight(s) from stored ICAO24', recovered)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_start = (now - timedelta(hours=24)).isoformat()
 
     with db_conn() as conn:
@@ -133,7 +132,7 @@ async def _fetch_for_flight_ids(flight_ids: list[str]) -> None:
 async def _fetch_rows(rows) -> dict:
     from .aircraft_api import fetch_aircraft_info
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     now_iso = now.isoformat()
     attempted = updated = given_up = 0
 
@@ -144,7 +143,7 @@ async def _fetch_rows(rows) -> dict:
             try:
                 arr = datetime.fromisoformat(arr_str)
                 if arr.tzinfo is None:
-                    arr = arr.replace(tzinfo=timezone.utc)
+                    arr = arr.replace(tzinfo=UTC)
                 if now - arr > _GIVE_UP_AFTER:
                     with db_write() as conn:
                         conn.execute(

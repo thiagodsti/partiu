@@ -316,7 +316,6 @@
 
   let twoFaSetupActive = $state(false);
   let twoFaSecret = $state("");
-  let twoFaUri = $state("");
   let twoFaQrSvg = $state("");
   let twoFaCode = $state("");
   let twoFaLoading = $state(false);
@@ -334,7 +333,6 @@
     try {
       const data = await authApi.setup2fa();
       twoFaSecret = data.secret;
-      twoFaUri = data.uri;
       twoFaQrSvg = await QRCode.toString(data.uri, {
         type: "svg",
         margin: 2,

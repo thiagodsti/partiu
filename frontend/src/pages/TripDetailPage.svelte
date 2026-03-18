@@ -4,13 +4,7 @@
   import {
     formatDateRange,
     splitLegs,
-    legStats,
-    formatDuration,
     dateDividerInfo,
-    connectionInfo,
-    flightStatus,
-    formatTime,
-    formatDate,
   } from '../lib/utils';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
@@ -49,14 +43,6 @@
   const airlines = $derived([...new Set(flightList.map((f) => f.airline_code).filter(Boolean))]);
   const legs = $derived(trip ? splitLegs(flightList, trip) : { outbound: flightList, returning: null });
 
-  function getLegInfo(flights: Flight[]) {
-    const stats = legStats(flights);
-    const flyingStr = formatDuration(stats.flyingMinutes);
-    const totalStr = formatDuration(stats.totalMinutes);
-    return stats.flyingMinutes > 0
-      ? ` · ${flyingStr} flying${stats.totalMinutes > stats.flyingMinutes ? ` · ${totalStr} total` : ''}`
-      : '';
-  }
 </script>
 
 <TopNav title={loading ? $t('trip.loading') : (trip?.name ?? 'Error')} backHref="#/trips" />

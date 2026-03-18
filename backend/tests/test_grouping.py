@@ -1,11 +1,10 @@
 """Tests for auto_group_flights and parse_flight_date."""
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
 from backend.parsers.engine import parse_flight_date
-
 
 # ---------------------------------------------------------------------------
 # parse_flight_date — pure function, no DB needed
@@ -41,7 +40,7 @@ class TestParseFlightDate:
 
 def _make_flight(dep_airport, arr_airport, dep_dt, arr_dt,
                  booking_ref='', flight_number='LA001', airline_code='LA'):
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     return {
         'id': str(uuid.uuid4()),
         'airline_code': airline_code,
@@ -93,7 +92,7 @@ class TestAutoGroupFlights:
         import backend.database as db_module
         monkeypatch.setattr(db_module.settings, 'DB_PATH', test_db)
 
-        now = datetime(2026, 3, 10, 10, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 3, 10, 10, 0, tzinfo=UTC)
         f1 = _make_flight('GRU', 'LIS', now, now + timedelta(hours=10), booking_ref='ABC123')
         f2 = _make_flight('LIS', 'ARN', now + timedelta(hours=12),
                           now + timedelta(hours=14), booking_ref='ABC123')
@@ -117,8 +116,8 @@ class TestAutoGroupFlights:
         import backend.database as db_module
         monkeypatch.setattr(db_module.settings, 'DB_PATH', test_db)
 
-        t1 = datetime(2026, 3, 10, 10, 0, tzinfo=timezone.utc)
-        t2 = datetime(2026, 4, 20, 10, 0, tzinfo=timezone.utc)  # 41 days later
+        t1 = datetime(2026, 3, 10, 10, 0, tzinfo=UTC)
+        t2 = datetime(2026, 4, 20, 10, 0, tzinfo=UTC)  # 41 days later
 
         f1 = _make_flight('GRU', 'LIS', t1, t1 + timedelta(hours=10), booking_ref='AAA111')
         f2 = _make_flight('LIS', 'ARN', t2, t2 + timedelta(hours=3), booking_ref='BBB222')
@@ -139,7 +138,7 @@ class TestAutoGroupFlights:
         import backend.database as db_module
         monkeypatch.setattr(db_module.settings, 'DB_PATH', test_db)
 
-        t = datetime(2026, 5, 1, 8, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
         f1 = _make_flight('ARN', 'CPH', t, t + timedelta(hours=1))
         f2 = _make_flight('CPH', 'LHR', t + timedelta(hours=3), t + timedelta(hours=4, minutes=30))
         _insert_flight(db_conn_for_test, f1)
@@ -169,7 +168,7 @@ class TestAutoGroupFlights:
         import backend.database as db_module
         monkeypatch.setattr(db_module.settings, 'DB_PATH', test_db)
 
-        t = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 6, 15, 9, 0, tzinfo=UTC)
         f = _make_flight('GRU', 'MIA', t, t + timedelta(hours=9), booking_ref='XYZ789')
         _insert_flight(db_conn_for_test, f)
 

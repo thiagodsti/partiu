@@ -3,9 +3,10 @@ Authentication helpers: password hashing, session cookies, FastAPI dependencies.
 """
 import os
 import secrets
+
 import bcrypt
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-from fastapi import Request, HTTPException, Depends
+from fastapi import Depends, HTTPException, Request
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 _serializer = None
 

@@ -5,7 +5,8 @@ Shared utilities for BS4-based flight email extractors.
 import logging
 import math
 import re
-from datetime import datetime, date as date_type, timezone
+from datetime import UTC, datetime
+from datetime import date as date_type
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ def _make_aware(dt: datetime) -> datetime:
     """Ensure a naive datetime is timezone-aware (UTC). No-op if already aware."""
     if dt.tzinfo is not None:
         return dt
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=UTC)
 
 
 def _build_datetime(date_obj: date_type, time_str: str) -> datetime | None:
