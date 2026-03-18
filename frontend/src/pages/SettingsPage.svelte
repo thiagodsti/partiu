@@ -623,6 +623,51 @@
           {/if}
         </div>
 
+        {#if $currentUser?.is_admin}
+          <div class="form-group">
+            <label class="form-label" for="sync-interval"
+              >{$t("settings.sync_interval")}</label
+            >
+            <input
+              class="form-input"
+              id="sync-interval"
+              type="number"
+              bind:value={syncInterval}
+              min="1"
+              max="1440"
+            />
+            <div class="form-hint">{$t("settings.sync_interval_hint")}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="max-emails"
+              >{$t("settings.max_emails")}</label
+            >
+            <input
+              class="form-input"
+              id="max-emails"
+              type="number"
+              bind:value={maxEmailsPerSync}
+              min="1"
+              max="10000"
+            />
+            <div class="form-hint">{$t("settings.max_emails_hint")}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="first-sync-days"
+              >{$t("settings.first_sync_days")}</label
+            >
+            <input
+              class="form-input"
+              id="first-sync-days"
+              type="number"
+              bind:value={firstSyncDays}
+              min="1"
+              max="3650"
+            />
+            <div class="form-hint">{$t("settings.first_sync_days_hint")}</div>
+          </div>
+        {/if}
+
         {#if settingsMsg}
           <div
             style="min-height:24px;margin-bottom:var(--space-sm);color:{settingsMsgType ===
@@ -685,51 +730,6 @@
               placeholder={$t("settings.smtp_domain_placeholder")}
             />
             <div class="form-hint">{$t("settings.smtp_domain_hint")}</div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="sync-interval"
-              >{$t("settings.sync_interval")}</label
-            >
-            <input
-              class="form-input"
-              id="sync-interval"
-              type="number"
-              bind:value={syncInterval}
-              min="1"
-              max="1440"
-            />
-            <div class="form-hint">{$t("settings.sync_interval_hint")}</div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="max-emails"
-              >{$t("settings.max_emails")}</label
-            >
-            <input
-              class="form-input"
-              id="max-emails"
-              type="number"
-              bind:value={maxEmailsPerSync}
-              min="1"
-              max="10000"
-            />
-            <div class="form-hint">{$t("settings.max_emails_hint")}</div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="first-sync-days"
-              >{$t("settings.first_sync_days")}</label
-            >
-            <input
-              class="form-input"
-              id="first-sync-days"
-              type="number"
-              bind:value={firstSyncDays}
-              min="1"
-              max="3650"
-            />
-            <div class="form-hint">{$t("settings.first_sync_days_hint")}</div>
           </div>
 
           {#if smtpEnabled}

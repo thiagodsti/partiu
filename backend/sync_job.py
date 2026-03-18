@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from .database import db_conn, db_write, get_global_setting
 from .parsers.builtin_rules import RULES_VERSION, get_builtin_rules
 from .parsers.email_connector import fetch_emails_imap
-from .parsers.engine import match_rule_to_email, extract_flights_from_email
+from .parsers.engine import match_rule_to_email, extract_flights_from_email, try_generic_pdf_extraction
 from .grouping import auto_group_flights
 from .timezone_utils import apply_airport_timezones
 from .email_cache import save_emails, load_emails, cache_exists
@@ -323,10 +323,11 @@ def _process_emails(emails: list, user_id: int) -> dict:
 
             # --- HTML / rule-based parsing ---
             rule = match_rule_to_email(email_msg, sorted_rules)
-            if not rule:
-                continue
+            if rule:
+                flights_data = extract_flights_from_email(email_msg, rule)
+            else:
+                flights_data = try_generic_pdf_extraction(email_msg)
 
-            flights_data = extract_flights_from_email(email_msg, rule)
             if not flights_data:
                 continue
 
@@ -456,12 +457,11 @@ def run_email_sync_for_user(user: dict) -> dict:
                     emails_processed += 1
 
                 rule = match_rule_to_email(email_msg, sorted_rules)
-                if not rule:
-                    if bcbp_legs:
-                        pass
-                    continue
+                if rule:
+                    flights_data = extract_flights_from_email(email_msg, rule)
+                else:
+                    flights_data = try_generic_pdf_extraction(email_msg)
 
-                flights_data = extract_flights_from_email(email_msg, rule)
                 if not flights_data:
                     continue
 

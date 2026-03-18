@@ -10,7 +10,7 @@ from dataclasses import dataclass
 # Increment this version whenever rules are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-RULES_VERSION = '15'  # bumped to force full rescan + BCBP boarding pass parsing
+RULES_VERSION = '16'  # added Kiwi.com rule + generic PDF fallback
 
 # ---------------------------------------------------------------------------
 # Flexible date sub-pattern (reusable)
@@ -140,6 +140,22 @@ BUILTIN_AIRLINE_RULES = [
         'is_active': True,
         'is_builtin': True,
         'priority': 10,
+    },
+    # =========================================================================
+    # Kiwi.com (multi-carrier OTA — flight data lives in the PDF attachment)
+    # =========================================================================
+    {
+        'airline_name': 'Kiwi.com',
+        'airline_code': '',
+        'sender_pattern': r'(kiwi\.com|tickets@kiwi)',
+        'subject_pattern': r'(Reserva|Booking|itinerary|reservation|viagem|trip)',
+        'body_pattern': r'',  # unused — custom_extractor handles everything
+        'date_format': '%d %b %Y',
+        'time_format': '%H:%M',
+        'custom_extractor': 'kiwi',
+        'is_active': True,
+        'is_builtin': True,
+        'priority': 5,  # lower than direct airline emails
     },
     # =========================================================================
     # Azul Brazilian Airlines (AD)

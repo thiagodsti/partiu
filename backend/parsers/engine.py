@@ -1,139 +1,103 @@
 """
 Flight email parsing engine.
-Applies airline rules (regex patterns) to email messages to extract flight data.
 
-Adapted from AdventureLog parsers.py — Django dependencies removed.
-Returns plain Python dicts (not ORM model instances).
+Main entry point: extract_flights_from_email()
+
+Flow:
+  1. Try BS4 (HTML) extraction via the per-airline extractor.
+  2. Fall back to the airline's custom regex extractor (LATAM, SAS/Norwegian).
+  3. Fall back to generic body_pattern regex matching defined in the rule.
 """
 
+import calendar
 import logging
 import re
-from datetime import datetime, date as date_type, timedelta, timezone
+from datetime import datetime, date as date_type, timezone
 
 from .builtin_rules import get_builtin_rules
 from .email_connector import EmailMessage
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Multilingual month-name map (lowercase, no trailing dot)
+# Multilingual month-name → month-number map
 # ---------------------------------------------------------------------------
-MONTH_MAP: dict[str, int] = {
-    # English
-    "jan": 1,
-    "january": 1,
-    "feb": 2,
-    "february": 2,
-    "mar": 3,
-    "march": 3,
-    "apr": 4,
-    "april": 4,
-    "may": 5,
-    "jun": 6,
-    "june": 6,
-    "jul": 7,
-    "july": 7,
-    "aug": 8,
-    "august": 8,
-    "sep": 9,
-    "sept": 9,
-    "september": 9,
-    "oct": 10,
-    "october": 10,
-    "nov": 11,
-    "november": 11,
-    "dec": 12,
-    "december": 12,
-    # Portuguese
-    "fev": 2,
-    "fevereiro": 2,
-    "março": 3,
-    "abr": 4,
-    "abril": 4,
-    "mai": 5,
-    "maio": 5,
-    "ago": 8,
-    "agosto": 8,
-    "set": 9,
-    "setembro": 9,
-    "out": 10,
-    "outubro": 10,
-    "dez": 12,
-    "dezembro": 12,
-    "janeiro": 1,
-    "junho": 6,
-    "julho": 7,
-    "novembro": 11,
-    # Spanish
-    "ene": 1,
-    "enero": 1,
-    "febrero": 2,
-    "marzo": 3,
-    "mayo": 5,
-    "junio": 6,
-    "julio": 7,
-    "septiembre": 9,
-    "octubre": 10,
-    "noviembre": 11,
-    "dic": 12,
-    "diciembre": 12,
-    # German
-    "mär": 3,
-    "märz": 3,
-    "okt": 10,
-    "oktober": 10,
-    "dezember": 12,
-    # Scandinavian / Norwegian / Danish extras
-    "maj": 5,
-    "marts": 3,
-    "juni": 6,
-    "juli": 7,
-    "augusti": 8,
-    "des": 12,
-}
+
+def _build_month_map() -> dict[str, int]:
+    """
+    Build a lowercase month-name → month-number mapping.
+
+    English names and abbreviations are generated from the standard library so
+    we don't have to hardcode them. Only the non-English extras are listed
+    explicitly, grouped by language.
+    """
+    mapping: dict[str, int] = {}
+
+    # English — full names ("january") and 3-letter abbreviations ("jan")
+    for n in range(1, 13):
+        mapping[calendar.month_name[n].lower()] = n
+        mapping[calendar.month_abbr[n].lower()] = n
+    mapping["sept"] = 9  # common 4-letter variant not produced by calendar
+
+    # Non-English month names (only entries not already covered by English)
+    _EXTRA: dict[str, int] = {
+        # Portuguese
+        "janeiro": 1, "fevereiro": 2, "março": 3, "abril": 4,
+        "maio": 5, "junho": 6, "julho": 7, "agosto": 8,
+        "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
+        "fev": 2, "abr": 4, "mai": 5, "ago": 8, "set": 9, "out": 10, "dez": 12,
+        # Spanish
+        "enero": 1, "febrero": 2, "marzo": 3, "mayo": 5,
+        "junio": 6, "julio": 7, "septiembre": 9,
+        "octubre": 10, "noviembre": 11, "diciembre": 12,
+        "ene": 1, "dic": 12,
+        # German
+        "märz": 3, "oktober": 10, "dezember": 12, "mär": 3,
+        # Scandinavian (Swedish / Norwegian / Danish)
+        "marts": 3, "maj": 5, "juni": 6, "juli": 7, "augusti": 8, "des": 12,
+    }
+    mapping.update(_EXTRA)
+    return mapping
+
+MONTH_MAP = _build_month_map()
 
 
 def parse_flight_date(raw: str) -> date_type | None:
     """
-    Parse a date string that may use Portuguese/Spanish/German/Scandinavian month
-    names. Handles e.g. "16 de mar. de 2026", "16 Mar 2026", "2026-03-16".
+    Parse a date string that may use multilingual month names.
+    Handles formats like "16 de mar. de 2026", "16 Mar 2026", "2026-03-16".
     """
     raw = raw.strip()
 
-    # ISO / numeric formats first
+    # ISO and common numeric formats
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y"):
         try:
             return datetime.strptime(raw, fmt).date()
         except ValueError:
             continue
 
-    # "16 de mar. de 2026"  or  "16 Mar 2026"
+    # "16 de mar. de 2026" or "16 Mar 2026"
     m = re.match(r"(\d{1,2})\s+(?:de\s+)?([A-Za-zÀ-ÿ]+)\.?\s+(?:de\s+)?(\d{4})", raw)
     if m:
-        day = int(m.group(1))
-        month_name = m.group(2).lower().rstrip(".")
-        year = int(m.group(3))
-        month = MONTH_MAP.get(month_name)
+        month = MONTH_MAP.get(m.group(2).lower().rstrip("."))
         if month:
             try:
-                return date_type(year, month, day)
+                return date_type(int(m.group(3)), month, int(m.group(1)))
             except ValueError:
                 pass
 
-    # English "Mar 16, 2026"
+    # "Mar 16, 2026"
     m = re.match(r"([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})", raw)
     if m:
-        month_name = m.group(1).lower()
-        day = int(m.group(2))
-        year = int(m.group(3))
-        month = MONTH_MAP.get(month_name)
+        month = MONTH_MAP.get(m.group(1).lower())
         if month:
             try:
-                return date_type(year, month, day)
+                return date_type(int(m.group(3)), month, int(m.group(2)))
             except ValueError:
                 pass
 
-    # Last resort: strftime with current locale
+    # Last resort: Python's strptime with locale month names
     for fmt in ("%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y"):
         try:
             return datetime.strptime(raw, fmt).date()
@@ -143,854 +107,358 @@ def parse_flight_date(raw: str) -> date_type | None:
     return None
 
 
-def _make_aware(dt: datetime) -> datetime:
-    """Ensure a datetime is timezone-aware (UTC)."""
-    if dt.tzinfo is not None:
-        return dt
-    return dt.replace(tzinfo=timezone.utc)
-
-
 def match_rule_to_email(email_msg: EmailMessage, rules):
     """
-    Find the first matching airline rule for an email message.
-    Checks sender_pattern and optionally subject_pattern.
+    Find the first airline rule matching the email's sender (and optionally subject).
+
+    Also checks From:/Subject: lines embedded in forwarded message headers, so
+    emails forwarded via Gmail ("---------- Forwarded message ---------") still
+    match the original sender's rule.
     """
+    senders = [email_msg.sender] + _extract_forwarded_senders(email_msg.body)
+    subjects = [email_msg.subject] + _extract_forwarded_subjects(email_msg.body)
+
     for rule in rules:
         try:
-            if not re.search(rule.sender_pattern, email_msg.sender, re.IGNORECASE):
+            if not any(re.search(rule.sender_pattern, s, re.IGNORECASE) for s in senders):
                 continue
             if rule.subject_pattern:
-                if not re.search(
-                    rule.subject_pattern, email_msg.subject, re.IGNORECASE
-                ):
+                if not any(re.search(rule.subject_pattern, s, re.IGNORECASE) for s in subjects):
                     continue
             return rule
         except re.error as e:
             logger.warning("Invalid regex in rule %s: %s", rule.airline_name, e)
-            continue
     return None
 
 
-# ---------------------------------------------------------------------------
-# LATAM custom extractor
-# ---------------------------------------------------------------------------
+def _extract_forwarded_senders(body: str) -> list[str]:
+    """Extract From: addresses from forwarded-message headers in the email body."""
+    return re.findall(r'^From:\s*(.+)$', body[:5000], re.MULTILINE)
 
 
-def _extract_latam_flights(email_msg: EmailMessage, rule) -> list[dict]:
-    """Custom LATAM extractor that handles connection flights."""
-    body = email_msg.body
-    flights_data: list[dict] = []
-
-    shared_booking = ""
-    booking_match = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        email_msg.subject + "\n" + body,
-        re.IGNORECASE,
-    )
-    if booking_match:
-        shared_booking = booking_match.group(1).strip()
-
-    shared_passenger = ""
-    passenger_match = re.search(
-        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name))"
-        r"[\s:]*[-•·]?\s*"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
-        body,
-        re.IGNORECASE,
-    )
-    if not passenger_match:
-        passenger_match = re.search(
-            r"(?:Ol[áa]|Hello|Hola)\s+(?:<b[^>]*>)?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)",
-            body,
-            re.IGNORECASE,
-        )
-    if passenger_match:
-        shared_passenger = passenger_match.group(1).strip()
-
-    _DATE_RE = r"(\d{1,2}\s+(?:de\s+)?[A-Za-zÀ-ÿ]+\.?\s+(?:de\s+)?\d{4})"
-    _TIME_RE = r"(\d{1,2}:\d{2})"
-    _AIRPORT_RE = r"\(([A-Z]{3})\)"
-    _FLIGHT_NUM_RE = r"([A-Z0-9]{2}\s*\d{3,5})(?!\w)"
-
-    direction_starts = list(
-        re.finditer(
-            r"Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
-            body,
-            re.IGNORECASE,
-        )
-    )
-
-    if not direction_starts:
-        trecho_starts = list(re.finditer(r"Trecho\s+\d+", body, re.IGNORECASE))
-        if trecho_starts:
-            sections = []
-            for i, m in enumerate(trecho_starts):
-                start = m.start()
-                end = (
-                    trecho_starts[i + 1].start()
-                    if i + 1 < len(trecho_starts)
-                    else len(body)
-                )
-                sections.append(body[start:end])
-        else:
-            itin_match = re.search(r"Itiner[áa]rio", body, re.IGNORECASE)
-            sections = [body[itin_match.start() :] if itin_match else body]
-    else:
-        sections = []
-        for i, m in enumerate(direction_starts):
-            start = m.start()
-            end = (
-                direction_starts[i + 1].start()
-                if i + 1 < len(direction_starts)
-                else len(body)
-            )
-            sections.append(body[start:end])
-
-    for section in sections:
-        dep_match = re.search(
-            _DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE,
-            section,
-            re.DOTALL,
-        )
-        if not dep_match:
-            continue
-
-        dep_date_str = dep_match.group(1)
-        dep_time_str = dep_match.group(2)
-        dep_airport = dep_match.group(3)
-
-        arr_matches = list(
-            re.finditer(
-                _DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE,
-                section,
-                re.DOTALL,
-            )
-        )
-        if len(arr_matches) < 2:
-            flight_match = re.search(
-                r"\("
-                + re.escape(dep_airport)
-                + r"\)\s+"
-                + _FLIGHT_NUM_RE
-                + r".*?"
-                + _AIRPORT_RE,
-                section,
-            )
-            if flight_match:
-                flight_num = flight_match.group(1).strip()
-                arr_airport = flight_match.group(2)
-                fd = _make_latam_flight(
-                    rule,
-                    dep_date_str,
-                    dep_time_str,
-                    dep_airport,
-                    dep_date_str,
-                    dep_time_str,
-                    arr_airport,
-                    flight_num,
-                    shared_booking,
-                    shared_passenger,
-                )
-                if fd:
-                    flights_data.append(fd)
-            continue
-
-        arr_match = arr_matches[-1]
-        arr_date_str = arr_match.group(1)
-        arr_time_str = arr_match.group(2)
-        arr_airport = arr_match.group(3)
-
-        connection_re = (
-            r"Troca\s+de\s+avi[ãa]o\s+em:\s*"
-            r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]*?)\s*"
-            r"\(([A-Z]{3})\)\s+"
-            r"([A-Z0-9]{2}\s*\d{3,5})"
-            r".*?"
-            r"Tempo\s+de\s+espera:\s*(\d+)\s*hr?\s*(\d+)\s*min"
-        )
-        connections = list(
-            re.finditer(connection_re, section, re.DOTALL | re.IGNORECASE)
-        )
-
-        first_flight_match = re.search(
-            r"\(" + re.escape(dep_airport) + r"\)\s+" + _FLIGHT_NUM_RE,
-            section,
-        )
-        first_flight_num = (
-            first_flight_match.group(1).strip() if first_flight_match else ""
-        )
-
-        if connections:
-            segments = []
-            prev_airport = dep_airport
-
-            first_conn = connections[0]
-            conn_airport = first_conn.group(2)
-            conn_flight = first_conn.group(3).strip()
-            layover_h = int(first_conn.group(4))
-            layover_m = int(first_conn.group(5))
-            segments.append(
-                {
-                    "dep_airport": prev_airport,
-                    "arr_airport": conn_airport,
-                    "flight_number": first_flight_num,
-                    "layover_after_minutes": layover_h * 60 + layover_m,
-                    "next_flight": conn_flight,
-                }
-            )
-            prev_airport = conn_airport
-
-            for i in range(1, len(connections)):
-                conn = connections[i]
-                conn_airport = conn.group(2)
-                conn_flight = conn.group(3).strip()
-                layover_h = int(conn.group(4))
-                layover_m = int(conn.group(5))
-                segments.append(
-                    {
-                        "dep_airport": prev_airport,
-                        "arr_airport": conn_airport,
-                        "flight_number": segments[-1]["next_flight"],
-                        "layover_after_minutes": layover_h * 60 + layover_m,
-                        "next_flight": conn_flight,
-                    }
-                )
-                prev_airport = conn_airport
-
-            segments.append(
-                {
-                    "dep_airport": prev_airport,
-                    "arr_airport": arr_airport,
-                    "flight_number": segments[-1]["next_flight"],
-                    "layover_after_minutes": 0,
-                    "next_flight": "",
-                }
-            )
-
-            dep_date = parse_flight_date(dep_date_str)
-            arr_date = parse_flight_date(arr_date_str)
-            if dep_date is None or arr_date is None:
-                continue
-
-            dep_h, dep_m_val = map(int, dep_time_str.split(":"))
-            arr_h, arr_m_val = map(int, arr_time_str.split(":"))
-
-            dep_dt = datetime(
-                dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m_val
-            )
-            arr_dt = datetime(
-                arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val
-            )
-
-            total_elapsed = (arr_dt - dep_dt).total_seconds()
-            total_layover = sum(s["layover_after_minutes"] * 60 for s in segments)
-            total_flight = total_elapsed - total_layover
-            n_segments = len(segments)
-
-            if total_flight <= 0 or n_segments == 0:
-                continue
-
-            flight_per_segment = total_flight / n_segments
-            current_dt = dep_dt
-
-            for seg in segments:
-                seg_dep_dt = current_dt
-                seg_arr_dt = seg_dep_dt + timedelta(seconds=flight_per_segment)
-
-                flight_data = {
-                    "airline_name": rule.airline_name,
-                    "airline_code": rule.airline_code,
-                    "flight_number": seg["flight_number"],
-                    "departure_airport": seg["dep_airport"],
-                    "arrival_airport": seg["arr_airport"],
-                    "departure_datetime": _make_aware(seg_dep_dt),
-                    "arrival_datetime": _make_aware(seg_arr_dt),
-                    "booking_reference": shared_booking,
-                    "passenger_name": shared_passenger,
-                    "seat": "",
-                    "cabin_class": "",
-                    "departure_terminal": "",
-                    "arrival_terminal": "",
-                    "departure_gate": "",
-                    "arrival_gate": "",
-                }
-
-                if (
-                    flight_data["flight_number"]
-                    and flight_data["departure_airport"]
-                    and flight_data["arrival_airport"]
-                ):
-                    flights_data.append(flight_data)
-
-                current_dt = seg_arr_dt + timedelta(
-                    minutes=seg["layover_after_minutes"]
-                )
-        else:
-            if first_flight_num:
-                fd = _make_latam_flight(
-                    rule,
-                    dep_date_str,
-                    dep_time_str,
-                    dep_airport,
-                    arr_date_str,
-                    arr_time_str,
-                    arr_airport,
-                    first_flight_num,
-                    shared_booking,
-                    shared_passenger,
-                )
-                if fd:
-                    flights_data.append(fd)
-
-    return flights_data
-
-
-def _make_latam_flight(
-    rule,
-    dep_date_str,
-    dep_time_str,
-    dep_airport,
-    arr_date_str,
-    arr_time_str,
-    arr_airport,
-    flight_number,
-    booking_ref,
-    passenger,
-) -> dict | None:
-    """Helper to create a flight dict for a direct LATAM segment."""
-    dep_date = parse_flight_date(dep_date_str)
-    arr_date = parse_flight_date(arr_date_str) or dep_date
-    if dep_date is None:
-        return None
-
-    try:
-        dep_h, dep_m = map(int, dep_time_str.split(":"))
-        dep_dt = _make_aware(
-            datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m)
-        )
-
-        arr_h, arr_m = map(int, arr_time_str.split(":"))
-        arr_dt = _make_aware(
-            datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m)
-        )
-    except (ValueError, TypeError):
-        return None
-
-    return {
-        "airline_name": rule.airline_name,
-        "airline_code": rule.airline_code,
-        "flight_number": flight_number,
-        "departure_airport": dep_airport,
-        "arrival_airport": arr_airport,
-        "departure_datetime": dep_dt,
-        "arrival_datetime": arr_dt,
-        "booking_reference": booking_ref,
-        "passenger_name": passenger,
-        "seat": "",
-        "cabin_class": "",
-        "departure_terminal": "",
-        "arrival_terminal": "",
-        "departure_gate": "",
-        "arrival_gate": "",
-    }
-
-
-# ---------------------------------------------------------------------------
-# SAS custom extractor
-# ---------------------------------------------------------------------------
-
-# Well-known airport name → IATA mappings used by SAS/Amadeus e-tickets.
-_SAS_KNOWN_AIRPORTS: dict[str, str] = {
-    "stockholm arlanda": "ARN",
-    "london heathrow": "LHR",
-    "london gatwick": "LGW",
-    "london city": "LCY",
-    "london stansted": "STN",
-    "london luton": "LTN",
-    "paris charles de gaulle": "CDG",
-    "paris orly": "ORY",
-    "copenhagen kastrup": "CPH",
-    "oslo gardermoen": "OSL",
-    "gothenburg landvetter": "GOT",
-    "bergen flesland": "BGO",
-    "helsinki vantaa": "HEL",
-    "amsterdam schiphol": "AMS",
-    "frankfurt": "FRA",
-    "munich": "MUC",
-    "zurich": "ZRH",
-    "brussels": "BRU",
-    "vienna": "VIE",
-    "lisbon": "LIS",
-    "dublin": "DUB",
-    "madrid": "MAD",
-    "barcelona": "BCN",
-    "rome fiumicino": "FCO",
-    "milan malpensa": "MXP",
-    "new york jfk": "JFK",
-    "new york newark": "EWR",
-    "los angeles": "LAX",
-    "chicago": "ORD",
-    "cape town": "CPT",
-    "johannesburg": "JNB",
-    "tokyo narita": "NRT",
-    "tokyo haneda": "HND",
-    "bangkok": "BKK",
-    "singapore": "SIN",
-    "hong kong": "HKG",
-    "shanghai pudong": "PVG",
-    "beijing": "PEK",
-    "dubai": "DXB",
-    "doha": "DOH",
-    "istanbul": "IST",
-    "arlanda": "ARN",
-    "heathrow": "LHR",
-    "gatwick": "LGW",
-    "kastrup": "CPH",
-    "gardermoen": "OSL",
-    "landvetter": "GOT",
-    "schiphol": "AMS",
-    "fiumicino": "FCO",
-    "malpensa": "MXP",
-    # Oslo airport (Norwegian)
-    "oslo airport": "OSL",
-    "oslo lufthavn": "OSL",
-}
-
-
-def _extract_airports_from_sas_route(route_text: str) -> tuple[str, str]:
-    """Extract departure and arrival IATA codes from a SAS PDF route string."""
-    parts = re.split(r"\s+-\s+", route_text, maxsplit=1)
-    if len(parts) != 2:
-        return ("", "")
-    dep_code = _resolve_sas_airport(parts[0].strip())
-    arr_code = _resolve_sas_airport(parts[1].strip())
-    return (dep_code, arr_code)
-
-
-def _resolve_sas_airport(text: str) -> str:
-    """Resolve IATA code from a SAS PDF airport/city string."""
-    m = re.search(r"\b([A-Z]{3})$", text)
-    if m:
-        return m.group(1)
-
-    name_lower = text.lower().strip()
-
-    if name_lower in _SAS_KNOWN_AIRPORTS:
-        return _SAS_KNOWN_AIRPORTS[name_lower]
-
-    words = text.split()
-    if words:
-        last_word = words[-1].lower()
-        if last_word in _SAS_KNOWN_AIRPORTS:
-            return _SAS_KNOWN_AIRPORTS[last_word]
-
-    # DB fallback: try airports table
-    try:
-        from ..database import db_conn
-
-        with db_conn() as conn:
-            if len(words) > 1:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE name LIKE ? LIMIT 1",
-                    (f"%{words[-1]}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-            row = conn.execute(
-                "SELECT iata_code FROM airports WHERE name LIKE ? OR city_name LIKE ? LIMIT 1",
-                (f"%{name_lower}%", f"%{name_lower}%"),
-            ).fetchone()
-            if row:
-                return row["iata_code"]
-    except Exception:
-        pass
-
-    return ""
-
-
-def _extract_sas_flights(email_msg: EmailMessage, rule) -> list[dict]:
-    """Custom SAS extractor. Supports block-style (Din resa) and PDF tabular formats."""
-    body = email_msg.body
-    flights_data: list[dict] = []
-
-    booking_match = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|Buchungscode|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        email_msg.subject + "\n" + body,
-        re.IGNORECASE,
-    )
-    shared_booking = booking_match.group(1).strip() if booking_match else ""
-
-    shared_passenger = ""
-    passenger_match = re.search(
-        r"(?:Mr|Mrs|Ms|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)\s+Date\s+of\s+Issue",
-        body,
-        re.IGNORECASE,
-    )
-    if passenger_match:
-        shared_passenger = passenger_match.group(1).strip()
-
-    # Try PDF tabular format first
-    pdf_line_re = re.compile(
-        r"(?P<flight_number>(?:SK|DY|D8|VS|LH|LX|OS|TP|A3|SN|BA|AF)\s*\d{2,5})"
-        r"\s*/\s*"
-        r"(?P<day>\d{1,2})(?P<month>[A-Z]{3})"
-        r"\s+"
-        r"(?P<route>.+?)"
-        r"\s+"
-        r"(?P<dep_time>\d{1,2}:\d{2})"
-        r"\s+"
-        r"(?P<arr_time>\d{1,2}:\d{2})"
-        r"(?:\s+\d{1,2}:\d{2})?"
-        r"(?:\s+Terminal\s+(?P<terminal>\S+))?",
-        re.IGNORECASE,
-    )
-
-    pdf_matches = list(pdf_line_re.finditer(body))
-    if pdf_matches:
-        ref_year = email_msg.date.year if email_msg.date else datetime.now().year
-
-        for m in pdf_matches:
-            flight_number = m.group("flight_number").strip().replace(" ", "")
-            day = int(m.group("day"))
-            month_str = m.group("month").upper()
-            route_text = m.group("route").strip()
-            dep_time_str = m.group("dep_time")
-            arr_time_str = m.group("arr_time")
-            terminal = m.group("terminal") or ""
-
-            month_num = MONTH_MAP.get(month_str.lower())
-            if not month_num:
-                continue
-
-            try:
-                flight_date = date_type(ref_year, month_num, day)
-            except ValueError:
-                continue
-            if email_msg.date and flight_date < email_msg.date.date():
-                try:
-                    flight_date = date_type(ref_year + 1, month_num, day)
-                except ValueError:
-                    continue
-
-            dep_airport, arr_airport = _extract_airports_from_sas_route(route_text)
-            if not dep_airport or not arr_airport:
-                continue
-
-            dep_h, dep_m_val = map(int, dep_time_str.split(":"))
-            arr_h, arr_m_val = map(int, arr_time_str.split(":"))
-
-            dep_dt = _make_aware(
-                datetime(
-                    flight_date.year,
-                    flight_date.month,
-                    flight_date.day,
-                    dep_h,
-                    dep_m_val,
-                )
-            )
-
-            arr_date = flight_date
-            if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
-                arr_date = flight_date + timedelta(days=1)
-
-            arr_dt = _make_aware(
-                datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val)
-            )
-
-            flights_data.append(
-                {
-                    "airline_name": rule.airline_name,
-                    "airline_code": rule.airline_code,
-                    "flight_number": flight_number,
-                    "departure_airport": dep_airport,
-                    "arrival_airport": arr_airport,
-                    "departure_datetime": dep_dt,
-                    "arrival_datetime": arr_dt,
-                    "booking_reference": shared_booking,
-                    "passenger_name": shared_passenger,
-                    "seat": "",
-                    "cabin_class": "",
-                    "departure_terminal": terminal,
-                    "arrival_terminal": "",
-                    "departure_gate": "",
-                    "arrival_gate": "",
-                }
-            )
-
-        if flights_data:
-            return flights_data
-
-    # Block-style fallback (Din resa / HTML-to-text)
-    date_re = re.compile(r"(?:^|\s)(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?:\s|$)")
-    route_re = re.compile(
-        r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})"
-    )
-    time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
-    flight_num_re = re.compile(r"((?:SK|DY|D8|VS|LH|LX|OS|TP|A3|SN|BA|AF)\s*\d{2,5})")
-
-    date_matches = list(date_re.finditer(body))
-
-    for i, date_m in enumerate(date_matches):
-        dep_date = parse_flight_date(date_m.group(1))
-        if not dep_date:
-            continue
-
-        block_start = date_m.start()
-        block_end = (
-            date_matches[i + 1].start() if i + 1 < len(date_matches) else len(body)
-        )
-        block = body[block_start:block_end]
-
-        routes = list(route_re.finditer(block))
-        times = list(time_re.finditer(block))
-        fns = list(flight_num_re.finditer(block))
-
-        for j in range(min(len(routes), len(times), len(fns))):
-            dep_airport = routes[j].group(1)
-            arr_airport = routes[j].group(2)
-            dep_time_str = times[j].group(1)
-            arr_time_str = times[j].group(2)
-            flight_number = fns[j].group(1).replace(" ", "")
-
-            dep_h, dep_m_val = map(int, dep_time_str.split(":"))
-            arr_h, arr_m_val = map(int, arr_time_str.split(":"))
-
-            dep_dt = _make_aware(
-                datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m_val)
-            )
-
-            arr_date = dep_date
-            if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
-                arr_date = dep_date + timedelta(days=1)
-
-            arr_dt = _make_aware(
-                datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val)
-            )
-
-            flight_data = {
-                "airline_name": rule.airline_name,
-                "airline_code": rule.airline_code,
-                "flight_number": flight_number,
-                "departure_airport": dep_airport,
-                "arrival_airport": arr_airport,
-                "departure_datetime": dep_dt,
-                "arrival_datetime": arr_dt,
-                "booking_reference": shared_booking,
-                "passenger_name": "",
-                "seat": "",
-                "cabin_class": "",
-                "departure_terminal": "",
-                "arrival_terminal": "",
-                "departure_gate": "",
-                "arrival_gate": "",
-            }
-
-            if (
-                flight_data["flight_number"]
-                and flight_data["departure_airport"]
-                and flight_data["arrival_airport"]
-            ):
-                flights_data.append(flight_data)
-
-    return flights_data
-
-
-# ---------------------------------------------------------------------------
-# Main extraction entry point
-# ---------------------------------------------------------------------------
+def _extract_forwarded_subjects(body: str) -> list[str]:
+    """Extract Subject: lines from forwarded-message headers in the email body."""
+    return re.findall(r'^Subject:\s*(.+)$', body[:5000], re.MULTILINE)
 
 
 def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     """
-    Apply a rule to an email and extract flight data as a list of dicts.
+    Extract flight data from an email that has been matched to an airline rule.
 
-    Tries BS4 (HTML) extraction first, then dispatches to custom extractors,
-    then falls back to generic regex body_pattern matching.
+    Tries three strategies in order:
+      1. BS4 (HTML) extraction — most accurate when an HTML body is present.
+      2. Custom regex extractor — per-airline plain-text fallback (LATAM, SAS/Norwegian).
+      3. Generic body_pattern regex — defined directly on the rule object.
     """
-    # Try BS4 extraction first if HTML body is available
+    # 1. BS4 extraction
     if email_msg.html_body:
-        from .bs4_extractors import extract_with_bs4
-
+        from .airlines import extract_with_bs4
         bs4_result = extract_with_bs4(email_msg.html_body, rule, email_msg)
         if bs4_result:
             return bs4_result
 
-    # Dispatch to custom extractors (regex-based fallback)
+    # 2. Custom per-airline regex fallback
     extractor = getattr(rule, "custom_extractor", "")
     if extractor == "latam":
-        return _extract_latam_flights(email_msg, rule)
-    elif extractor in ("sas", "norwegian"):
-        return _extract_sas_flights(email_msg, rule)
+        from .airlines.latam import extract_regex
+        return extract_regex(email_msg, rule)
+    if extractor in ("sas", "norwegian"):
+        from .airlines.sas import extract_regex
+        return extract_regex(email_msg, rule)
 
-    # Generic regex body_pattern matching
-    flights_data = []
+    # 3. Generic body_pattern regex (used by airlines without a custom extractor)
+    return _extract_generic(email_msg, rule)
+
+
+def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:
+    """
+    Last-resort extraction for emails that matched no rule.
+    Tries to pull flight data directly from any PDF attachment using
+    common itinerary patterns (time + IATA + date + flight-number + time + IATA).
+
+    Returns [] when nothing plausible is found, so callers can safely ignore it.
+    """
+    if not email_msg.pdf_attachments:
+        return []
+
+    from .email_connector import _extract_text_from_pdf
+    pdf_text = '\n'.join(
+        t for b in email_msg.pdf_attachments
+        if (t := _extract_text_from_pdf(b))
+    )
+    if not pdf_text:
+        return []
+
+    return _extract_generic_pdf(pdf_text, email_msg)
+
+
+def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
+    """
+    Generic regex-based extractor driven by rule.body_pattern named groups.
+
+    Expected named groups: flight_number, departure_airport, arrival_airport,
+    departure_date, departure_time, arrival_date, arrival_time, booking_reference,
+    passenger_name, seat, cabin_class, departure_terminal, arrival_terminal,
+    departure_gate, arrival_gate.
+    """
     body = email_msg.body
+    flights_data = []
 
-    shared_booking = ""
-    booking_match = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|reservation\s*code|"
-        r"confirmation\s*code|Reservierungscode)[:\s\[]+([A-Z0-9]{5,8})",
-        email_msg.subject + "\n" + body,
-        re.IGNORECASE,
-    )
-    if booking_match:
-        shared_booking = booking_match.group(1).strip()
+    shared_booking = _extract_booking_ref(email_msg.subject + "\n" + body)
+    shared_passenger = _extract_passenger(body)
 
-    shared_passenger = ""
-    passenger_match = re.search(
-        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name)|"
-        r"Passagier|Reisender|passager|passasjer)"
-        r"[\s:]*\n\s*(?:[-•·]\s*)?"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ ]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
-        body,
-        re.IGNORECASE,
-    )
-    if passenger_match:
-        shared_passenger = passenger_match.group(1).strip()
+    _CABIN_MAP = {
+        "economy": "economy", "eco": "economy", "y": "economy",
+        "econômica": "economy", "económica": "economy",
+        "premium economy": "premium_economy", "premium": "premium_economy", "w": "premium_economy",
+        "business": "business", "j": "business", "c": "business", "ejecutiva": "business",
+        "first": "first", "f": "first",
+    }
 
     try:
         matches = list(re.finditer(rule.body_pattern, body, re.IGNORECASE | re.DOTALL))
-        if not matches:
-            logger.debug(
-                "No body_pattern matches for rule '%s' in email %s",
-                rule.airline_name,
-                email_msg.message_id,
-            )
-            return flights_data
-
-        for match in matches:
-            groups = match.groupdict()
-            raw_flight_num = groups.get("flight_number", "").strip()
-            if raw_flight_num and raw_flight_num.isdigit() and rule.airline_code:
-                raw_flight_num = f"{rule.airline_code}{raw_flight_num}"
-
-            flight_data = {
-                "airline_name": rule.airline_name,
-                "airline_code": rule.airline_code,
-                "flight_number": raw_flight_num,
-                "departure_airport": groups.get("departure_airport", "")
-                .strip()
-                .upper(),
-                "arrival_airport": groups.get("arrival_airport", "").strip().upper(),
-                "booking_reference": groups.get("booking_reference", "").strip()
-                or shared_booking,
-                "passenger_name": groups.get("passenger_name", "").strip()
-                or shared_passenger,
-                "seat": groups.get("seat", "").strip(),
-                "cabin_class": groups.get("cabin_class", "").strip().lower(),
-                "departure_terminal": groups.get("departure_terminal", "").strip(),
-                "arrival_terminal": groups.get("arrival_terminal", "").strip(),
-                "departure_gate": groups.get("departure_gate", "").strip(),
-                "arrival_gate": groups.get("arrival_gate", "").strip(),
-            }
-
-            dep_date_str = groups.get("departure_date", "").strip()
-            dep_time_str = groups.get("departure_time", "").strip()
-
-            if not dep_date_str:
-                _ctx_date_re = r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})"
-                _ctx_dates = list(re.finditer(_ctx_date_re, body[: match.start()]))
-                if _ctx_dates:
-                    dep_date_str = _ctx_dates[-1].group(1)
-
-            arr_date_str = groups.get("arrival_date", "").strip() or dep_date_str
-            arr_time_str = groups.get("arrival_time", "").strip()
-
-            ref_year = email_msg.date.year if email_msg.date else datetime.now().year
-
-            dep_date = parse_flight_date(dep_date_str)
-            if dep_date is None and dep_date_str:
-                try:
-                    dep_date = datetime.strptime(dep_date_str, rule.date_format).date()
-                except (ValueError, TypeError):
-                    pass
-            if dep_date is not None and dep_date.year == 1900:
-                candidate = dep_date.replace(year=ref_year)
-                if email_msg.date and candidate < email_msg.date.date():
-                    candidate = dep_date.replace(year=ref_year + 1)
-                dep_date = candidate
-            if dep_date is None or not dep_time_str:
-                logger.warning(
-                    "Cannot parse departure datetime: %r %r", dep_date_str, dep_time_str
-                )
-                continue
-
-            try:
-                h, m = dep_time_str.split(":")
-                dep_dt = datetime(
-                    dep_date.year, dep_date.month, dep_date.day, int(h), int(m)
-                )
-                flight_data["departure_datetime"] = _make_aware(dep_dt)
-            except (ValueError, TypeError) as e:
-                logger.warning("Bad departure time %r: %s", dep_time_str, e)
-                continue
-
-            arr_date = parse_flight_date(arr_date_str)
-            if arr_date is None and arr_date_str:
-                try:
-                    arr_date = datetime.strptime(arr_date_str, rule.date_format).date()
-                except (ValueError, TypeError):
-                    pass
-            if arr_date is not None and arr_date.year == 1900:
-                candidate = arr_date.replace(year=ref_year)
-                if email_msg.date and candidate < email_msg.date.date():
-                    candidate = arr_date.replace(year=ref_year + 1)
-                arr_date = candidate
-            if arr_date is None:
-                arr_date = dep_date
-
-            if arr_time_str:
-                try:
-                    h, m = arr_time_str.split(":")
-                    arr_dt = datetime(
-                        arr_date.year, arr_date.month, arr_date.day, int(h), int(m)
-                    )
-                    flight_data["arrival_datetime"] = _make_aware(arr_dt)
-                except (ValueError, TypeError) as e:
-                    logger.warning("Bad arrival time %r: %s", arr_time_str, e)
-                    continue
-            else:
-                logger.warning("No arrival time found, skipping")
-                continue
-
-            # Normalise cabin class
-            cabin_map = {
-                "economy": "economy",
-                "eco": "economy",
-                "y": "economy",
-                "premium economy": "premium_economy",
-                "premium": "premium_economy",
-                "w": "premium_economy",
-                "business": "business",
-                "j": "business",
-                "c": "business",
-                "first": "first",
-                "f": "first",
-                "econômica": "economy",
-                "económica": "economy",
-                "ejecutiva": "business",
-            }
-            raw_cabin = flight_data.get("cabin_class", "")
-            flight_data["cabin_class"] = cabin_map.get(raw_cabin, "")
-
-            if (
-                flight_data["flight_number"]
-                and flight_data["departure_airport"]
-                and flight_data["arrival_airport"]
-            ):
-                flights_data.append(flight_data)
-            else:
-                logger.debug("Skipping incomplete flight match: %s", flight_data)
-
     except re.error as e:
         logger.error("Regex error in rule %s body_pattern: %s", rule.airline_name, e)
+        return flights_data
+
+    if not matches:
+        logger.debug("No body_pattern matches for rule '%s' in email %s", rule.airline_name, email_msg.message_id)
+        return flights_data
+
+    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
+
+    for match in matches:
+        g = match.groupdict()
+
+        raw_flight_num = g.get("flight_number", "").strip()
+        if raw_flight_num and raw_flight_num.isdigit() and rule.airline_code:
+            raw_flight_num = f"{rule.airline_code}{raw_flight_num}"
+
+        flight_data = {
+            "airline_name": rule.airline_name,
+            "airline_code": rule.airline_code,
+            "flight_number": raw_flight_num,
+            "departure_airport": g.get("departure_airport", "").strip().upper(),
+            "arrival_airport": g.get("arrival_airport", "").strip().upper(),
+            "booking_reference": g.get("booking_reference", "").strip() or shared_booking,
+            "passenger_name": g.get("passenger_name", "").strip() or shared_passenger,
+            "seat": g.get("seat", "").strip(),
+            "cabin_class": _CABIN_MAP.get(g.get("cabin_class", "").strip().lower(), ""),
+            "departure_terminal": g.get("departure_terminal", "").strip(),
+            "arrival_terminal": g.get("arrival_terminal", "").strip(),
+            "departure_gate": g.get("departure_gate", "").strip(),
+            "arrival_gate": g.get("arrival_gate", "").strip(),
+        }
+
+        dep_date_str = g.get("departure_date", "").strip()
+        dep_time_str = g.get("departure_time", "").strip()
+
+        # If no explicit date in the match, look for one in the preceding body text
+        if not dep_date_str:
+            ctx_dates = list(re.finditer(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})", body[: match.start()]))
+            if ctx_dates:
+                dep_date_str = ctx_dates[-1].group(1)
+
+        arr_date_str = g.get("arrival_date", "").strip() or dep_date_str
+        arr_time_str = g.get("arrival_time", "").strip()
+
+        dep_date = _parse_date_with_fallback(dep_date_str, rule, ref_year, email_msg)
+        if dep_date is None or not dep_time_str:
+            logger.warning("Cannot parse departure datetime: %r %r", dep_date_str, dep_time_str)
+            continue
+
+        dep_dt = _parse_time_on_date(dep_date, dep_time_str)
+        if dep_dt is None:
+            logger.warning("Bad departure time %r", dep_time_str)
+            continue
+        flight_data["departure_datetime"] = dep_dt
+
+        arr_date = _parse_date_with_fallback(arr_date_str, rule, ref_year, email_msg) or dep_date
+        if not arr_time_str:
+            logger.warning("No arrival time found, skipping")
+            continue
+        arr_dt = _parse_time_on_date(arr_date, arr_time_str)
+        if arr_dt is None:
+            logger.warning("Bad arrival time %r", arr_time_str)
+            continue
+        flight_data["arrival_datetime"] = arr_dt
+
+        if flight_data["flight_number"] and flight_data["departure_airport"] and flight_data["arrival_airport"]:
+            flights_data.append(flight_data)
+        else:
+            logger.debug("Skipping incomplete flight match: %s", flight_data)
 
     return flights_data
 
 
-def get_rules():
-    """Return all active built-in rules sorted by priority."""
-    return sorted(get_builtin_rules(), key=lambda r: (-r.priority, r.airline_name))
+def _extract_booking_ref(text: str) -> str:
+    m = re.search(
+        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
+        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|reservation\s*code|"
+        r"confirmation\s*code|Reservierungscode)[:\s\[]+([A-Z0-9]{5,8})",
+        text, re.IGNORECASE,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _extract_passenger(body: str) -> str:
+    m = re.search(
+        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name)|"
+        r"Passagier|Reisender|passager|passasjer)"
+        r"[\s:]*\n\s*(?:[-•·]\s*)?"
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ ]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
+        body, re.IGNORECASE,
+    )
+    return m.group(1).strip() if m else ""
+
+
+def _parse_date_with_fallback(date_str: str, rule, ref_year: int, email_msg) -> date_type | None:
+    """Parse a date string, trying the rule's date_format as a secondary format."""
+    d = parse_flight_date(date_str)
+    if d is None and date_str:
+        try:
+            d = datetime.strptime(date_str, rule.date_format).date()
+        except (ValueError, TypeError):
+            pass
+    # Year 1900 means strptime used a format without a year — inject ref_year
+    if d is not None and d.year == 1900:
+        candidate = d.replace(year=ref_year)
+        if email_msg.date and candidate < email_msg.date.date():
+            candidate = d.replace(year=ref_year + 1)
+        d = candidate
+    return d
+
+
+def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:
+    """Combine a date and HH:MM string into a timezone-aware UTC datetime."""
+    try:
+        h, m = time_str.split(":")
+        dt = datetime(date_obj.year, date_obj.month, date_obj.day, int(h), int(m))
+        return dt.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Generic PDF fallback (no matched rule required)
+# ---------------------------------------------------------------------------
+
+# Pattern: HH:MM IATA  ...  date-line  ...  flight-number  ...  HH:MM IATA
+# Each section allows a few intervening lines so it survives extra content
+# (airport names, carrier info, etc.) without matching across unrelated blocks.
+_GENERIC_PDF_RE = re.compile(
+    r'^(\d{1,2}:\d{2})\s+([A-Z]{3})\b[^\n]*\n'   # dep time + dep IATA
+    r'(?:[^\n]*\n){0,4}'                            # up to 4 content lines
+    r'([^\n]*\b\d{4}\b[^\n]*)\n'                   # date line (contains a 4-digit year)
+    r'(?:[^\n]*\n){0,4}'                            # up to 4 more lines
+    r'[^\n]*\b([A-Z]{2}\s*\d{2,5})\b[^\n]*\n'     # flight number
+    r'(?:[^\n]*\n){0,3}'                            # up to 3 more lines
+    r'^(\d{1,2}:\d{2})\s+([A-Z]{3})\b',            # arr time + arr IATA
+    re.MULTILINE,
+)
+
+_GENERIC_BOOKING_RE = re.compile(
+    r'(?:booking\s*(?:ref|code|reference|number)|PNR|confirmation\s*(?:code|number)|'
+    r'N[UÚ]MERO\s+DE\s+RESERVA|Buchungsnummer|Reservierungscode)'
+    r'[:\s#]+([\w\s]{5,20})',
+    re.IGNORECASE,
+)
+
+_GENERIC_PASSENGER_RE = re.compile(
+    r'(?:Ms\.|Mr\.|Mrs\.|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?=\s+\d|\s*\n)',
+)
+
+
+def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
+    """
+    Extract flights from a PDF using common itinerary patterns.
+    Used as a last resort when no airline rule matched the email.
+    """
+    booking_ref = ''
+    m = _GENERIC_BOOKING_RE.search(pdf_text)
+    if m:
+        booking_ref = m.group(1).strip().replace(' ', '')
+
+    passenger = ''
+    m = _GENERIC_PASSENGER_RE.search(pdf_text)
+    if m:
+        passenger = m.group(1).strip()
+
+    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
+    flights = []
+    seen = set()  # deduplicate by (flight_number, dep_airport, arr_airport)
+
+    for m in _GENERIC_PDF_RE.finditer(pdf_text):
+        dep_time_str = m.group(1)
+        dep_airport  = m.group(2)
+        date_line    = m.group(3)
+        flight_num   = m.group(4).replace(' ', '')
+        arr_time_str = m.group(5)
+        arr_airport  = m.group(6)
+
+        # Skip if airports are identical (false positive)
+        if dep_airport == arr_airport:
+            continue
+
+        # Skip duplicate matches (the Kiwi PDF repeats each segment twice)
+        key = (flight_num, dep_airport, arr_airport)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Extract a parseable date from the date line
+        date_m = re.search(r'(\d{1,2}\s+\w+\.?\s+\d{4})', date_line)
+        if not date_m:
+            # Try DD/MM/YYYY
+            date_m = re.search(r'(\d{1,2}/\d{2}/\d{4})', date_line)
+        if not date_m:
+            continue
+        dep_date = parse_flight_date(date_m.group(1))
+        if dep_date is None:
+            # Year-less date — inject ref_year
+            date_m2 = re.search(r'(\d{1,2}\s+\w+\.?)', date_line)
+            if date_m2:
+                dep_date = parse_flight_date(date_m2.group(1) + f' {ref_year}')
+        if dep_date is None:
+            continue
+
+        dep_dt = _parse_time_on_date(dep_date, dep_time_str)
+        if dep_dt is None:
+            continue
+
+        # Arrival date: same day unless time wraps past midnight
+        dep_h = int(dep_time_str.split(':')[0])
+        arr_h = int(arr_time_str.split(':')[0])
+        arr_date = dep_date
+        if arr_h < dep_h:
+            from datetime import timedelta
+            arr_date = dep_date + timedelta(days=1)
+        arr_dt = _parse_time_on_date(arr_date, arr_time_str)
+        if arr_dt is None:
+            continue
+
+        airline_code = flight_num[:2]
+        flights.append({
+            'airline_name': airline_code,   # best we can do without a rule
+            'airline_code': airline_code,
+            'flight_number': flight_num,
+            'departure_airport': dep_airport,
+            'arrival_airport': arr_airport,
+            'departure_datetime': dep_dt,
+            'arrival_datetime': arr_dt,
+            'booking_reference': booking_ref,
+            'passenger_name': passenger,
+            'seat': '',
+            'cabin_class': '',
+            'departure_terminal': '',
+            'arrival_terminal': '',
+            'departure_gate': '',
+            'arrival_gate': '',
+        })
+
+    if flights:
+        logger.info(
+            "Generic PDF fallback found %d flight(s) in email %s",
+            len(flights), email_msg.message_id,
+        )
+    return flights

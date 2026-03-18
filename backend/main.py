@@ -107,13 +107,20 @@ if _FRONTEND_DIR.exists():
     app.mount('/assets', StaticFiles(directory=str(_FRONTEND_DIR / 'assets')), name='assets') \
         if (_FRONTEND_DIR / 'assets').exists() else None
 
+    _FRONTEND_PUBLIC = Path(__file__).parent.parent / 'frontend' / 'public'
+
     @app.get('/{full_path:path}')
     def serve_spa(full_path: str):
-        """Serve the SPA shell for all non-API routes."""
-        # Don't catch API routes
+        """Serve static files or the SPA shell for all non-API routes."""
         if full_path.startswith('api/'):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail='Not found')
+        # Serve real static files (icons, manifest fall-through, etc.)
+        for base in (_FRONTEND_DIR, _FRONTEND_PUBLIC):
+            candidate = base / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(str(candidate))
+        # SPA: all other paths get index.html
         index = _FRONTEND_DIR / 'index.html'
         if index.exists():
             return FileResponse(str(index))
