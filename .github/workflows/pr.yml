@@ -1,6 +1,9 @@
-name: PR Checks
+name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -28,7 +31,13 @@ jobs:
         run: ruff check backend/
 
       - name: Run backend tests
-        run: pytest backend/tests/ -v
+        run: pytest backend/tests/ -v --cov=backend --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
 
   frontend:
     name: Frontend lint & type check

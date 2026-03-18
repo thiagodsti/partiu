@@ -35,37 +35,40 @@
     window.location.hash = '/trips';
   }
 
-  onMount(async () => {
+  onMount(() => {
     // Track hash changes to hide TabBar on auth pages
     const onHashChange = () => {
       currentHash = window.location.hash.replace('#', '') || '/';
     };
     window.addEventListener('hashchange', onHashChange);
 
-    try {
-      const user = await authApi.me();
-      currentUser.set(user);
-      authLoading.set(false);
+    // Auth check runs async but cleanup is returned synchronously
+    (async () => {
+      try {
+        const user = await authApi.me();
+        currentUser.set(user);
+        authLoading.set(false);
 
-      // Redirect away from auth pages if already logged in
-      const hash = window.location.hash.replace('#', '');
-      if (hash === '/login' || hash === '/setup' || hash === '') {
-        window.location.hash = '/trips';
-      }
-    } catch (err: unknown) {
-      authLoading.set(false);
-      // Check if setup is required
-      const raw = (err as Error)?.message ?? '';
-      if (raw === 'setup_required') {
-        window.location.hash = '/setup';
-      } else {
-        // 401 or other — redirect to login
+        // Redirect away from auth pages if already logged in
         const hash = window.location.hash.replace('#', '');
-        if (hash !== '/setup') {
-          window.location.hash = '/login';
+        if (hash === '/login' || hash === '/setup' || hash === '') {
+          window.location.hash = '/trips';
+        }
+      } catch (err: unknown) {
+        authLoading.set(false);
+        // Check if setup is required
+        const raw = (err as Error)?.message ?? '';
+        if (raw === 'setup_required') {
+          window.location.hash = '/setup';
+        } else {
+          // 401 or other — redirect to login
+          const hash = window.location.hash.replace('#', '');
+          if (hash !== '/setup') {
+            window.location.hash = '/login';
+          }
         }
       }
-    }
+    })();
 
     return () => {
       window.removeEventListener('hashchange', onHashChange);

@@ -21,7 +21,7 @@
   let creating = $state(false);
 
   // Reset password
-  let resetUserId = $state<number | null>(null);
+  let resetUserId = $state<string | null>(null);
   let resetPassword = $state('');
   let resetting = $state(false);
 
@@ -80,7 +80,7 @@
     }
   }
 
-  async function resetUserPassword(userId: number) {
+  async function resetUserPassword(userId: string | number) {
     if (!resetPassword || resetPassword.length < 8) {
       showMsg($t('users.err_pw_short'), 'error');
       return;
