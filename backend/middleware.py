@@ -1,6 +1,7 @@
 """
 Middleware for first-run detection, authentication enforcement, and security headers.
 """
+
 from starlette.middleware.base import BaseHTTPMiddleware
 
 ALLOWED_UNAUTHENTICATED_PATHS = {
@@ -15,12 +16,14 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
     # CSP: same-origin scripts/styles; inline styles allowed (Svelte); data: for QR SVGs
+    # frame-src allows the OpenStreetMap embed; img-src allows Wikipedia thumbnails served locally
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; "
+        "img-src 'self' data: blob:; "
         "connect-src 'self'; "
+        "frame-src https://www.openstreetmap.org; "
         "frame-ancestors 'none';"
     ),
 }
@@ -32,11 +35,12 @@ class FirstRunMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith("/api/"):
             if request.url.path not in ALLOWED_UNAUTHENTICATED_PATHS:
                 from .auth import has_any_users
+
                 if not has_any_users():
                     from fastapi.responses import JSONResponse
+
                     return JSONResponse(
-                        {"detail": "Setup required", "setup_required": True},
-                        status_code=503
+                        {"detail": "Setup required", "setup_required": True}, status_code=503
                     )
 
         response = await call_next(request)

@@ -344,6 +344,51 @@ img {
   flex-wrap: wrap;
 }
 
+/* ---- Trip Card Cover Image ---- */
+.trip-card-cover {
+  position: relative;
+  margin: calc(-1 * var(--space-md)) calc(-1 * var(--space-md)) var(--space-md);
+  height: 130px;
+  overflow: hidden;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.trip-card-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.trip-card-img-refresh {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.trip-card-cover:hover .trip-card-img-refresh {
+  opacity: 1;
+}
+
+.trip-card-img-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* ---- Status Badge ---- */
 .badge {
   display: inline-flex;
@@ -801,6 +846,22 @@ img {
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
   margin-bottom: var(--space-md);
+  overflow: hidden;
+}
+
+.trip-detail-cover {
+  position: relative;
+  margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) var(--space-md);
+  height: 180px;
+  overflow: hidden;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.trip-detail-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .trip-header-route {

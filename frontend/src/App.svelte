@@ -19,6 +19,8 @@
     '/trips/:id': TripDetailPage,
     '/trips/:tripId/flights/:flightId': FlightDetailPage,
     '/history': HistoryPage,
+    '/history/:id': TripDetailPage,
+    '/history/:tripId/flights/:flightId': FlightDetailPage,
     '/settings': SettingsPage,
     '/admin/users': UsersPage,
     '/login': LoginPage,

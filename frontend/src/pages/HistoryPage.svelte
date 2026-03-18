@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tripsApi } from "../api/client";
   import type { Trip } from "../api/types";
+  import { tripImageBust } from "../lib/tripImageStore";
   import { formatDateRange, inferTripStatus } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -27,8 +28,41 @@
   load();
 
   const completedTrips = $derived(
-    tripsList.filter((t) => inferTripStatus(t) === "completed"),
+    tripsList.filter((t) => inferTripStatus(t) === "completed").slice().reverse(),
   );
+
+  // ---- Image refresh ----
+  let refreshingImageId = $state<string | null>(null);
+  const retriedTrips = new Set<string>();
+
+  async function handleImageError(e: Event, tripId: string) {
+    const cover = (e.currentTarget as HTMLElement).closest('.trip-card-cover') as HTMLElement;
+    if (retriedTrips.has(tripId)) {
+      cover.style.display = 'none';
+      return;
+    }
+    retriedTrips.add(tripId);
+    try {
+      await tripsApi.refreshImage(tripId);
+      tripImageBust.bust(tripId);
+    } catch {
+      cover.style.display = 'none';
+    }
+  }
+
+  async function refreshImage(e: MouseEvent, tripId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    refreshingImageId = tripId;
+    try {
+      await tripsApi.refreshImage(tripId);
+      tripImageBust.bust(tripId);
+    } catch {
+      // no image found, leave as-is
+    } finally {
+      refreshingImageId = null;
+    }
+  }
 </script>
 
 <TopNav title={$t('history.title')} />
@@ -50,8 +84,25 @@
       {@const dateRange = formatDateRange(trip.start_date, trip.end_date)}
       {@const flightCount = trip.flight_count ?? 0}
       {@const refs = (trip.booking_refs ?? []).join(", ")}
-      <a class="card-link" href="#/trips/{trip.id}">
+      <a class="card-link" href="#/history/{trip.id}">
         <article class="card trip-card">
+          <div class="trip-card-cover" style="display:none">
+            <img
+              src={tripImageBust.urlFor(trip.id, $tripImageBust)}
+              alt=""
+              class="trip-card-cover-img"
+              onload={(e) => { ((e.currentTarget as HTMLElement).closest('.trip-card-cover') as HTMLElement).style.display = ''; }}
+              onerror={(e) => handleImageError(e, trip.id)}
+            />
+            <button
+              class="trip-card-img-refresh"
+              title="Find a different image"
+              disabled={refreshingImageId === trip.id}
+              onclick={(e) => refreshImage(e, trip.id)}
+            >
+              {refreshingImageId === trip.id ? '…' : '↻'}
+            </button>
+          </div>
           <div class="trip-card-header">
             <h2 class="trip-card-title">{trip.name}</h2>
             <span class="badge badge-completed">{$t('trips.completed')}</span>

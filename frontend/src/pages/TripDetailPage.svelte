@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { location } from 'svelte-spa-router';
   import { tripsApi } from '../api/client';
+  import { tripImageBust } from '../lib/tripImageStore';
   import type { Trip, Flight } from '../api/types';
   import {
     formatDateRange,
@@ -38,14 +40,46 @@
 
   load();
 
+  const fromHistory = $derived($location.startsWith('/history'));
+  const backUrl = $derived(fromHistory ? '#/history' : '#/trips');
+  const flightBasePath = $derived(fromHistory ? 'history' : 'trips');
+
   const flightList = $derived<Flight[]>(trip?.flights ?? []);
   const dateRange = $derived(formatDateRange(trip?.start_date, trip?.end_date));
   const airlines = $derived([...new Set(flightList.map((f) => f.airline_code).filter(Boolean))]);
   const legs = $derived(trip ? splitLegs(flightList, trip) : { outbound: flightList, returning: null });
 
+  // ---- Destination image ----
+  let refreshingImage = $state(false);
+  let imageRetried = false;
+
+  async function handleImageError(e: Event) {
+    const cover = (e.currentTarget as HTMLElement).closest('.trip-detail-cover') as HTMLElement;
+    if (imageRetried) { cover.style.display = 'none'; return; }
+    imageRetried = true;
+    try {
+      await tripsApi.refreshImage(params.id);
+      tripImageBust.bust(params.id);
+    } catch {
+      cover.style.display = 'none';
+    }
+  }
+
+  async function refreshImage(e: MouseEvent) {
+    e.stopPropagation();
+    if (!trip) return;
+    refreshingImage = true;
+    try {
+      await tripsApi.refreshImage(trip.id);
+      tripImageBust.bust(trip.id);
+    } finally {
+      refreshingImage = false;
+    }
+  }
+
 </script>
 
-<TopNav title={loading ? $t('trip.loading') : (trip?.name ?? 'Error')} backHref="#/trips" />
+<TopNav title={loading ? $t('trip.loading') : (trip?.name ?? 'Error')} backHref={backUrl} />
 
 <div class="main-content">
   {#if loading}
@@ -57,6 +91,23 @@
   {:else if trip}
     <!-- Trip Header -->
     <div class="trip-header">
+      <div class="trip-detail-cover" style="display:none">
+        <img
+          src={tripImageBust.urlFor(trip.id, $tripImageBust)}
+          alt=""
+          class="trip-detail-cover-img"
+          onload={(e) => { ((e.currentTarget as HTMLElement).closest('.trip-detail-cover') as HTMLElement).style.display = ''; }}
+          onerror={(e) => handleImageError(e)}
+        />
+        <button
+          class="trip-card-img-refresh"
+          title="Find a different image"
+          disabled={refreshingImage}
+          onclick={refreshImage}
+        >
+          {refreshingImage ? '…' : '↻'}
+        </button>
+      </div>
       <div class="trip-header-route">{trip.name}</div>
       {#if dateRange}
         <div class="trip-header-dates">
@@ -81,7 +132,7 @@
       <!-- Outbound leg -->
       <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
       {#each legs.outbound as flight, i (flight.id)}
-        <FlightRow {flight} />
+        <FlightRow {flight} basePath={flightBasePath} />
         {#if i < legs.outbound.length - 1}
           {@const prev = legs.outbound[i]}
           {@const next = legs.outbound[i + 1]}
@@ -98,7 +149,7 @@
       {#if legs.returning}
         <LegDivider label={$t('trip.return')} flights={legs.returning} />
         {#each legs.returning as flight, i (flight.id)}
-          <FlightRow {flight} />
+          <FlightRow {flight} basePath={flightBasePath} />
           {#if i < (legs.returning?.length ?? 0) - 1}
             {@const prev = legs.returning[i]}
             {@const next = legs.returning[i + 1]}

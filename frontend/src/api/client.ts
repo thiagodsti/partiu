@@ -104,6 +104,8 @@ export const tripsApi = {
     post<null>(`/api/trips/${tripId}/flights/${flightId}`),
   removeFlight: (tripId: number | string, flightId: number | string) =>
     del<null>(`/api/trips/${tripId}/flights/${flightId}`),
+  imageUrl: (id: string) => `/api/trips/${id}/image`,
+  refreshImage: (id: string) => post<{ ok: boolean }>(`/api/trips/${id}/image/refresh`),
 };
 
 // ---- Flights ----

@@ -29,7 +29,6 @@
     <a class="nav-back" href={backHref}>←</a>
   {/if}
   <span class="nav-title">{title}</span>
-  <span style="flex: 1;"></span>
   {#if $currentUser}
     <span class="nav-username">{$currentUser.username}</span>
     <button

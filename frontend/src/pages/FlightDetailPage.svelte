@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { location } from 'svelte-spa-router';
   import { flightsApi, airportsApi } from "../api/client";
   import type { Flight, Airport, AircraftInfo, EmailData } from "../api/types";
   import {
@@ -127,8 +128,9 @@
   }
 
   // ---- Derived ----
+  const basePath = $derived($location.startsWith('/history') ? 'history' : 'trips');
   const backUrl = $derived(
-    params.tripId ? `#/trips/${params.tripId}` : "#/trips",
+    params.tripId ? `#/${basePath}/${params.tripId}` : `#/${basePath}`,
   );
   const title = $derived(
     flight

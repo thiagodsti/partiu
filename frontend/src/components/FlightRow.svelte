@@ -5,14 +5,15 @@
 
   interface Props {
     flight: Flight;
+    basePath?: string;
   }
-  const { flight: f }: Props = $props();
+  const { flight: f, basePath = 'trips' }: Props = $props();
 
   const status = $derived(flightStatus(f));
   const duration = $derived(formatDuration(f.duration_minutes));
 </script>
 
-<a class="flight-row flight-row-{status}" href="#/trips/{f.trip_id}/flights/{f.id}">
+<a class="flight-row flight-row-{status}" href="#{basePath}/{f.trip_id}/flights/{f.id}">
   <div class="flight-row-route" style="flex:1">
     <div class="flight-route">
       <span>{f.departure_airport}</span>

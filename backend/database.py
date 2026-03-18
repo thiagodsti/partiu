@@ -291,6 +291,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE flights ADD COLUMN aircraft_next_retry_at TEXT",
         ],
     ),
+    (
+        13,
+        "Add image_fetched_at to trips for per-trip destination image caching",
+        [
+            "ALTER TABLE trips ADD COLUMN image_fetched_at TEXT",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
