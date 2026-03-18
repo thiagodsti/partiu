@@ -33,11 +33,6 @@ jobs:
       - name: Run backend tests
         run: pytest backend/tests/ -v --cov=backend --cov-report=xml
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-
   frontend:
     name: Frontend lint & type check
     runs-on: ubuntu-latest
