@@ -23,6 +23,7 @@ from .middleware import FirstRunMiddleware
 from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
 from .routes import notifications as notifications_routes
+from .routes import stats as stats_routes
 from .routes import users as users_routes
 from .scheduler import start_scheduler, stop_scheduler
 from .smtp_server import start_smtp_server, stop_smtp_server
@@ -87,6 +88,7 @@ app.include_router(flights.router)
 app.include_router(sync.router)
 app.include_router(settings.router)
 app.include_router(airports.router)
+app.include_router(stats_routes.router)
 app.include_router(notifications_routes.router)
 
 

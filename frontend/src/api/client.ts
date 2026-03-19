@@ -151,6 +151,26 @@ export const syncApi = {
 
 // ---- Airports ----
 
+// ---- Stats ----
+
+export const statsApi = {
+  get: (year?: number) =>
+    get<{
+      total_km: number;
+      total_flights: number;
+      total_hours: number;
+      unique_airports: number;
+      unique_countries: number;
+      earth_laps: number;
+      longest_flight_km: number;
+      longest_flight_route: string;
+      top_routes: { key: string; count: number }[];
+      top_airports: { key: string; count: number }[];
+      top_airlines: { key: string; count: number }[];
+      years: string[];
+    }>(`/api/stats${year ? `?year=${year}` : ''}`),
+};
+
 export const airportsApi = {
   get: (iata: string) => get<Airport>(`/api/airports/${iata}`),
   search: (q: string) => get<Airport[]>(`/api/airports/search?q=${encodeURIComponent(q)}`),

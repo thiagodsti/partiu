@@ -23,6 +23,14 @@
   </a>
   <a
     class="tab-item"
+    class:active={$location.startsWith('/stats')}
+    href="#/stats"
+  >
+    <span class="tab-icon">★</span>
+    <span>{$t('nav.stats')}</span>
+  </a>
+  <a
+    class="tab-item"
     class:active={$location.startsWith('/settings')}
     href="#/settings"
   >

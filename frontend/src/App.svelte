@@ -13,6 +13,7 @@
   import AddFlightPage from './pages/AddFlightPage.svelte';
   import AddTripPage from './pages/AddTripPage.svelte';
   import EditTripPage from './pages/EditTripPage.svelte';
+  import StatsPage from './pages/StatsPage.svelte';
   import { authApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
 
@@ -24,6 +25,7 @@
     '/trips/:id': TripDetailPage,
     '/trips/:tripId/flights/:flightId': FlightDetailPage,
     '/trips/:tripId/add-flight': AddFlightPage,
+    '/stats': StatsPage,
     '/history': HistoryPage,
     '/history/:id': TripDetailPage,
     '/history/:tripId/flights/:flightId': FlightDetailPage,
