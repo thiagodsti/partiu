@@ -9,11 +9,14 @@
 Think of it as a self-hosted TripIt, built for people who want full control over their travel data.
 
 ---
-![demo](https://github.com/user-attachments/assets/d31ee94b-5a7c-47bb-9fac-a4a7753d65ec)
 
-## What it does
+[demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
 
-- Connects to your Gmail via IMAP and scans for flight confirmation emails
+## What it does!
+
+
+- Connects to your Gmail via IMAP and scans for flight confirmation emails!
+
 - Parses booking details (flight number, airports, times, seat, cabin class, passenger name, booking reference) from HTML emails
 - Groups flights into trips automatically — by booking reference or time proximity
 - Shows outbound / return legs with connection badges and layover times
