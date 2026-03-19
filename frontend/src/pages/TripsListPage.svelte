@@ -141,8 +141,7 @@
   {:else}
     <!-- Sync Status Bar -->
     <SyncStatusBar {syncStatus} id="sync-status-bar">
-      <span style="flex:1"></span>
-      <a href="#/trips/new" class="btn btn-primary text-sm" style="padding:4px 12px">
+      <a href="#/trips/new" class="btn btn-primary text-sm" style="padding:4px 12px;margin-left:auto">
         + {$t("trips.btn_new_trip")}
       </a>
       <button
