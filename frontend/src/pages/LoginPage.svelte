@@ -150,6 +150,7 @@
       <form onsubmit={submitTotp}>
         <div class="form-group">
           <label class="form-label" for="totp-code">{$t('totp.code_label')}</label>
+          <!-- svelte-ignore a11y_autofocus -->
           <input
             class="form-input totp-input"
             id="totp-code"

@@ -16,6 +16,7 @@
   import LegDivider from '../components/LegDivider.svelte';
   import ConnectionBadge from '../components/ConnectionBadge.svelte';
   import DateDivider from '../components/DateDivider.svelte';
+  import ImmichAlbumButton from '../components/ImmichAlbumButton.svelte';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -93,31 +94,7 @@
     }
   }
 
-  // ---- Immich album ----
-  let creatingAlbum = $state(false);
-  let albumError = $state<string | null>(null);
-
   const isCompleted = $derived(trip ? inferTripStatus(trip) === 'completed' : false);
-
-  async function handleImmichAlbum() {
-    if (!trip) return;
-    // Album already exists — open it directly, no API call needed
-    if (trip.immich_album_id) {
-      window.open(`${immichBaseUrl}/albums/${trip.immich_album_id}`, '_blank', 'noopener');
-      return;
-    }
-    creatingAlbum = true;
-    albumError = null;
-    try {
-      const result = await tripsApi.createImmichAlbum(trip.id);
-      trip = { ...trip, immich_album_id: result.album_id };
-      if (result.album_url) window.open(result.album_url, '_blank', 'noopener');
-    } catch (err) {
-      albumError = (err as Error).message;
-    } finally {
-      creatingAlbum = false;
-    }
-  }
 
 </script>
 
@@ -173,25 +150,15 @@
           + {$t('trip.add_flight')}
         </a>
         {#if isCompleted && immichConfigured}
-          <button
-            class="btn btn-secondary"
-            disabled={creatingAlbum}
-            onclick={handleImmichAlbum}
+          <ImmichAlbumButton
+            tripId={trip.id}
+            immichAlbumId={trip.immich_album_id}
+            {immichBaseUrl}
             style="display:inline-flex;align-items:center;gap:var(--space-xs);font-size:0.85rem"
-          >
-            {#if creatingAlbum}
-              Creating album…
-            {:else if trip.immich_album_id}
-              Open Immich Album ↗
-            {:else}
-              Create Immich Album
-            {/if}
-          </button>
+            onAlbumCreated={(albumId) => { trip = { ...trip!, immich_album_id: albumId }; }}
+          />
         {/if}
       </div>
-      {#if albumError}
-        <p style="margin-top:var(--space-xs);font-size:0.8rem;color:var(--danger)">{albumError}</p>
-      {/if}
     </div>
 
     <!-- Flight List -->

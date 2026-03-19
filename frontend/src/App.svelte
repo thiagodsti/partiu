@@ -16,6 +16,7 @@
   import StatsPage from './pages/StatsPage.svelte';
   import { authApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
+  import ToastContainer from './components/ToastContainer.svelte';
 
   const routes = {
     '/': TripsListPage,
@@ -97,6 +98,7 @@
     {#if showTabBar}
       <TabBar />
     {/if}
+    <ToastContainer />
     {#snippet failed()}
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:1rem;padding:2rem;text-align:center;">
         <p style="color:var(--text-muted);font-size:1.1rem;">Something went wrong.</p>

@@ -5,13 +5,12 @@
   import TopNav from '../components/TopNav.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
+  import { toasts } from '../lib/toastStore';
   import { t } from '../lib/i18n';
 
   let users = $state<UserListItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let msg = $state('');
-  let msgType = $state<'success' | 'error'>('success');
 
   // New user form
   let newUsername = $state('');
@@ -39,12 +38,6 @@
 
   load();
 
-  function showMsg(text: string, type: 'success' | 'error' = 'success') {
-    msg = text;
-    msgType = type;
-    setTimeout(() => { msg = ''; }, 4000);
-  }
-
   async function createUser(e: Event) {
     e.preventDefault();
     if (!newUsername.trim() || !newPassword) return;
@@ -56,14 +49,14 @@
         is_admin: newIsAdmin,
         smtp_recipient_address: newSmtpRecipient.trim() || undefined,
       });
-      showMsg($t('users.created', { values: { name: newUsername.trim() } }));
+      toasts.show($t('users.created', { values: { name: newUsername.trim() } }));
       newUsername = '';
       newPassword = '';
       newIsAdmin = false;
       newSmtpRecipient = '';
       await load();
     } catch (err) {
-      showMsg((err as Error).message, 'error');
+      toasts.show((err as Error).message, 'error');
     } finally {
       creating = false;
     }
@@ -73,26 +66,26 @@
     if (!confirm($t('users.delete_confirm', { values: { name: u.username } }))) return;
     try {
       await usersApi.delete(u.id);
-      showMsg($t('users.deleted', { values: { name: u.username } }));
+      toasts.show($t('users.deleted', { values: { name: u.username } }));
       await load();
     } catch (err) {
-      showMsg((err as Error).message, 'error');
+      toasts.show((err as Error).message, 'error');
     }
   }
 
   async function resetUserPassword(userId: string | number) {
     if (!resetPassword || resetPassword.length < 8) {
-      showMsg($t('users.err_pw_short'), 'error');
+      toasts.show($t('users.err_pw_short'), 'error');
       return;
     }
     resetting = true;
     try {
       await usersApi.update(userId, { new_password: resetPassword });
-      showMsg($t('users.pw_updated'));
+      toasts.show($t('users.pw_updated'));
       resetUserId = null;
       resetPassword = '';
     } catch (err) {
-      showMsg((err as Error).message, 'error');
+      toasts.show((err as Error).message, 'error');
     } finally {
       resetting = false;
     }
@@ -108,10 +101,6 @@
   {:else if error}
     <EmptyState icon="⚠️" title={$t('users.load_error')} description={error} />
   {:else}
-    {#if msg}
-      <div class="msg-banner {msgType}">{msg}</div>
-    {/if}
-
     <!-- User list -->
     <div class="settings-section">
       <div class="settings-section-title">{$t('users.all_users')}</div>
@@ -244,21 +233,6 @@
 </div>
 
 <style>
-  .msg-banner {
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--space-md);
-    font-size: 0.875rem;
-  }
-  .msg-banner.success {
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 12%, transparent);
-  }
-  .msg-banner.error {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-  }
-
   .user-list {
     display: flex;
     flex-direction: column;

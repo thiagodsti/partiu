@@ -3,10 +3,10 @@
   import QRCode from "qrcode";
   import { settingsApi, syncApi, authApi, notificationsApi } from "../api/client";
   import type { Settings, SyncStatus, NotifPreferences } from "../api/types";
-  import { formatDateTimeLocale } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
+  import SyncStatusBar from "../components/SyncStatusBar.svelte";
   import { currentUser } from "../lib/authStore";
   import { theme } from "../lib/themeStore";
   import { t, locale, setLocale, LOCALES } from "../lib/i18n";
@@ -449,30 +449,6 @@
     }
   }
 
-  // ---- Derived ----
-  const syncRunning = $derived(syncStatus?.status === "running");
-  const syncHasError = $derived(syncStatus?.status === "error");
-
-  const nextSyncLabel = $derived.by(() => {
-    if (!syncStatus?.last_synced_at || !syncStatus?.sync_interval_minutes)
-      return null;
-    const nextMs =
-      new Date(syncStatus.last_synced_at).getTime() +
-      syncStatus.sync_interval_minutes * 60 * 1000;
-    const nowMs = Date.now();
-    if (nextMs <= nowMs) return $t("trips.next_sync_at_any_moment");
-    const diffMin = Math.round((nextMs - nowMs) / 60000);
-    if (diffMin < 1) return $t("trips.next_sync_at_any_moment");
-    const h = Math.floor(diffMin / 60);
-    const m = diffMin % 60;
-    const rel = h > 0 ? `${h}h ${m}m` : `${m}m`;
-    const absTime = new Date(nextMs).toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return $t("trips.next_sync_at", { values: { rel: rel, absTime: absTime } });
-  });
-
   // ---- 2FA state ----
   // 'idle' | 'setup' | 'enabled' | 'disabling'
   let twoFaState = $derived.by(() => {
@@ -590,43 +566,7 @@
     <!-- Sync Status Section -->
     <div class="settings-section">
       <div class="settings-section-title">{$t("settings.sync_status")}</div>
-      <div class="sync-status-bar" style="margin-bottom:var(--space-md)">
-        <span
-          class="sync-dot {syncRunning
-            ? 'running'
-            : syncHasError
-              ? 'error'
-              : 'idle'}"
-        ></span>
-        <div>
-          <div>
-            {syncRunning
-              ? $t("settings.sync_running")
-              : syncHasError
-                ? $t("settings.sync_error")
-                : $t("settings.sync_ready")}
-          </div>
-          <div style="font-size:0.75rem;color:var(--text-muted)">
-            {$t("settings.last_sync", {
-              values: {
-                time: formatDateTimeLocale(syncStatus?.last_synced_at),
-              },
-            })}
-            {#if nextSyncLabel && !syncRunning}
-              <span style="color:var(--text-muted);opacity:0.7"
-                >{$t("settings.next_sync", {
-                  values: { label: nextSyncLabel },
-                })}</span
-              >
-            {/if}
-          </div>
-          {#if syncHasError}
-            <div style="font-size:0.75rem;color:var(--danger)">
-              {syncStatus?.last_error ?? ""}
-            </div>
-          {/if}
-        </div>
-      </div>
+      <SyncStatusBar {syncStatus} style="margin-bottom:var(--space-md)" />
 
       <button
         class="btn btn-secondary btn-full"
@@ -1309,6 +1249,7 @@
             <label class="form-label" for="enable-totp-code"
               >{$t("settings.2fa_code_label")}</label
             >
+            <!-- svelte-ignore a11y_autofocus -->
             <input
               class="form-input"
               id="enable-totp-code"

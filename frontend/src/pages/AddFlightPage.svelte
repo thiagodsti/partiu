@@ -2,6 +2,7 @@
   import { push } from 'svelte-spa-router';
   import { flightsApi } from '../api/client';
   import TopNav from '../components/TopNav.svelte';
+  import FormSection from '../components/FormSection.svelte';
   import AirportCombobox from '../components/AirportCombobox.svelte';
   import { t } from '../lib/i18n';
 
@@ -77,12 +78,10 @@
 <TopNav title={$t('add_flight.title')} backHref={backUrl} />
 
 <div class="main-content">
-  <form class="add-flight-form" onsubmit={submit}>
+  <form class="page-form" onsubmit={submit}>
 
     <!-- Route (required) -->
-    <section class="form-section">
-      <div class="form-section-title">{$t('add_flight.section_route')}</div>
-
+    <FormSection title={$t('add_flight.section_route')}>
       <div class="form-row">
         <label class="form-field">
           <span class="form-label">{$t('add_flight.flight_number')} *</span>
@@ -120,12 +119,10 @@
           class="form-input"
         />
       </label>
-    </section>
+    </FormSection>
 
     <!-- Departure (required) -->
-    <section class="form-section">
-      <div class="form-section-title">{$t('add_flight.section_departure')}</div>
-
+    <FormSection title={$t('add_flight.section_departure')}>
       <div class="form-row">
         <div class="form-field" style="flex:0 0 180px">
           <span class="form-label">{$t('add_flight.airport')} *</span>
@@ -152,12 +149,10 @@
           <input type="text" bind:value={departureGate} placeholder="A12" class="form-input mono" />
         </label>
       </div>
-    </section>
+    </FormSection>
 
     <!-- Arrival (required) -->
-    <section class="form-section">
-      <div class="form-section-title">{$t('add_flight.section_arrival')}</div>
-
+    <FormSection title={$t('add_flight.section_arrival')}>
       <div class="form-row">
         <div class="form-field" style="flex:0 0 180px">
           <span class="form-label">{$t('add_flight.airport')} *</span>
@@ -184,12 +179,10 @@
           <input type="text" bind:value={arrivalGate} placeholder="B4" class="form-input mono" />
         </label>
       </div>
-    </section>
+    </FormSection>
 
     <!-- Booking details (optional) -->
-    <section class="form-section">
-      <div class="form-section-title">{$t('add_flight.section_booking')}</div>
-
+    <FormSection title={$t('add_flight.section_booking')}>
       <div class="form-row">
         <label class="form-field">
           <span class="form-label">{$t('add_flight.booking_ref')}</span>
@@ -229,10 +222,10 @@
           </select>
         </label>
       </div>
-    </section>
+    </FormSection>
 
     <!-- Notes (optional) -->
-    <section class="form-section">
+    <FormSection>
       <label class="form-field">
         <span class="form-label">{$t('add_flight.notes')}</span>
         <textarea
@@ -243,7 +236,7 @@
           style="resize:vertical"
         ></textarea>
       </label>
-    </section>
+    </FormSection>
 
     {#if error}
       <p class="form-error">{error}</p>
@@ -258,88 +251,3 @@
 
   </form>
 </div>
-
-<style>
-  .add-flight-form {
-    max-width: 540px;
-    margin: 0 auto;
-    padding: var(--space-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-
-  .form-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    padding: var(--space-md);
-    background: var(--surface);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-  }
-
-  .form-section-title {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-    margin-bottom: var(--space-xs);
-  }
-
-  .form-row {
-    display: flex;
-    gap: var(--space-sm);
-  }
-
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-  }
-
-  .form-label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .form-input {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
-    background: var(--bg);
-    color: var(--text);
-    font-size: 0.9rem;
-    box-sizing: border-box;
-  }
-
-  .form-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-  }
-
-  .mono {
-    font-family: monospace;
-  }
-
-  .form-error {
-    color: var(--error, #e53e3e);
-    font-size: 0.875rem;
-    padding: var(--space-sm);
-    background: color-mix(in srgb, var(--error, #e53e3e) 10%, transparent);
-    border-radius: var(--radius-sm, 6px);
-    border: 1px solid color-mix(in srgb, var(--error, #e53e3e) 30%, transparent);
-  }
-
-  .form-actions {
-    display: flex;
-    gap: var(--space-sm);
-    justify-content: flex-end;
-    padding-bottom: var(--space-xl, 80px);
-  }
-</style>

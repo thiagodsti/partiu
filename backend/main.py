@@ -33,6 +33,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("pdfminer.pdffont").setLevel(logging.ERROR)
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 

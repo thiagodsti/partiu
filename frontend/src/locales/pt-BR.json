@@ -292,5 +292,15 @@
   "settings.changing_pw": "Salvando…",
   "completed": "concluída",
   "upcoming": "próxima",
-  "signout": "Deslogar"
+  "signout": "Deslogar",
+  "sync.running": "Sincronizando…",
+  "sync.error": "Erro de sincronização",
+  "sync.last_sync": "Última sincronização: {time}",
+  "sync.next_sync": "({label})",
+  "sync.next_at": "em {rel} às {absTime}",
+  "sync.any_moment": "a qualquer momento",
+  "sync.never": "Nunca sincronizado",
+  "immich.create_album": "Criar Álbum no Immich",
+  "immich.open_album": "Abrir Álbum no Immich ↗",
+  "immich.creating_album": "Criando álbum…"
 }

@@ -2,10 +2,12 @@
   import { tripsApi, settingsApi } from "../api/client";
   import type { Trip } from "../api/types";
   import { tripImageBust } from "../lib/tripImageStore";
-  import { formatDateRange, inferTripStatus } from "../lib/utils";
+  import { inferTripStatus } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
+  import TripCard from "../components/TripCard.svelte";
+  import ImmichAlbumButton from "../components/ImmichAlbumButton.svelte";
   import { t } from "../lib/i18n";
 
   let loading = $state(true);
@@ -57,33 +59,6 @@
     }
   }
 
-  // ---- Immich album ----
-  let creatingAlbumId = $state<string | null>(null);
-  let albumErrors = $state<Record<string, string>>({});
-
-  async function handleImmichAlbum(e: MouseEvent, trip: Trip) {
-    e.preventDefault();
-    e.stopPropagation();
-    // Album already exists — open it directly, no API call needed
-    if (trip.immich_album_id) {
-      window.open(`${immichBaseUrl}/albums/${trip.immich_album_id}`, "_blank", "noopener");
-      return;
-    }
-    creatingAlbumId = trip.id;
-    albumErrors = { ...albumErrors, [trip.id]: "" };
-    try {
-      const result = await tripsApi.createImmichAlbum(trip.id);
-      tripsList = tripsList.map((t) =>
-        t.id === trip.id ? { ...t, immich_album_id: result.album_id } : t
-      );
-      if (result.album_url) window.open(result.album_url, "_blank", "noopener");
-    } catch (err) {
-      albumErrors = { ...albumErrors, [trip.id]: (err as Error).message };
-    } finally {
-      creatingAlbumId = null;
-    }
-  }
-
   async function refreshImage(e: MouseEvent, tripId: string) {
     e.preventDefault();
     e.stopPropagation();
@@ -117,67 +92,34 @@
     />
   {:else}
     {#each completedTrips as trip (trip.id)}
-      {@const dateRange = formatDateRange(trip.start_date, trip.end_date)}
-      {@const flightCount = trip.flight_count ?? 0}
-      {@const refs = (trip.booking_refs ?? []).join(", ")}
-      <a class="card-link" href="#/history/{trip.id}">
-        <article class="card trip-card">
-          <div class="trip-card-cover" class:no-image={imgFailed[trip.id]}>
-            {#if imgFailed[trip.id]}
-              <span class="trip-card-no-image-icon">✈</span>
-            {:else}
-              <img
-                src={tripImageBust.urlFor(trip.id, $tripImageBust)}
-                alt=""
-                class="trip-card-cover-img"
-                onerror={(e) => handleImageError(e, trip.id)}
-              />
-            {/if}
-            <button
-              class="trip-card-img-refresh"
-              title="Find a different image"
-              disabled={refreshingImageId === trip.id}
-              onclick={(e) => refreshImage(e, trip.id)}
-            >
-              {refreshingImageId === trip.id ? '…' : '↻'}
-            </button>
-          </div>
-          <div class="trip-card-header">
-            <h2 class="trip-card-title">{trip.name}</h2>
-            <span class="badge badge-completed">{$t('trips.completed')}</span>
-          </div>
-          {#if dateRange}
-            <div class="trip-card-meta">
-              <span>📅 {dateRange}</span>
-              <span>✈ {flightCount !== 1 ? $t('trips.flight_count_plural', { values: { n: flightCount } }) : $t('trips.flight_count', { values: { n: flightCount } })}</span>
-            </div>
+      <TripCard
+        {trip}
+        href="#/history/{trip.id}"
+        imageUrl={tripImageBust.urlFor(trip.id, $tripImageBust)}
+        imgFailed={imgFailed[trip.id] ?? false}
+        refreshing={refreshingImageId === trip.id}
+        onImageError={(e) => handleImageError(e, trip.id)}
+        onRefreshImage={(e) => refreshImage(e, trip.id)}
+      >
+        {#snippet badge()}
+          <span class="badge badge-completed">{$t('trips.completed')}</span>
+        {/snippet}
+        {#snippet footer()}
+          {#if immichConfigured}
+            <ImmichAlbumButton
+              tripId={trip.id}
+              immichAlbumId={trip.immich_album_id}
+              {immichBaseUrl}
+              style="margin-top:var(--space-sm);width:100%;font-size:0.8rem"
+              onAlbumCreated={(albumId) => {
+                tripsList = tripsList.map((t) =>
+                  t.id === trip.id ? { ...t, immich_album_id: albumId } : t
+                );
+              }}
+            />
           {/if}
-          <div class="trip-card-footer">
-            {#if refs}
-              <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
-            {/if}
-            {#if immichConfigured}
-              <button
-                class="btn btn-secondary"
-                style="margin-top:var(--space-sm);width:100%;font-size:0.8rem"
-                disabled={creatingAlbumId === trip.id}
-                onclick={(e) => handleImmichAlbum(e, trip)}
-              >
-                {#if creatingAlbumId === trip.id}
-                  Creating album…
-                {:else if trip.immich_album_id}
-                  Open Immich Album ↗
-                {:else}
-                  Create Immich Album
-                {/if}
-              </button>
-              {#if albumErrors[trip.id]}
-                <p style="font-size:0.75rem;color:var(--danger);margin-top:var(--space-xs)">{albumErrors[trip.id]}</p>
-              {/if}
-            {/if}
-          </div>
-        </article>
-      </a>
+        {/snippet}
+      </TripCard>
     {/each}
   {/if}
 </div>
