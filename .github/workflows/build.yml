@@ -41,6 +41,21 @@ jobs:
           files: coverage.xml
           fail_ci_if_error: false
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Vitest unit tests
+        run: npm test
+        working-directory: frontend
+
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
