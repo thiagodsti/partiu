@@ -165,8 +165,13 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     if extractor in ("sas", "norwegian"):
         from .airlines.sas import extract_regex
         return extract_regex(email_msg, rule)
+    if extractor == "kiwi":
+        from .airlines.kiwi import extract_bs4 as kiwi_extract
+        return kiwi_extract(email_msg.html_body or "", rule, email_msg)
 
     # 3. Generic body_pattern regex (used by airlines without a custom extractor)
+    if not getattr(rule, "body_pattern", ""):
+        return []
     return _extract_generic(email_msg, rule)
 
 
@@ -264,7 +269,10 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
 
         dep_date = _parse_date_with_fallback(dep_date_str, rule, ref_year, email_msg)
         if dep_date is None or not dep_time_str:
-            logger.warning("Cannot parse departure datetime: %r %r", dep_date_str, dep_time_str)
+            if dep_date_str or dep_time_str:
+                logger.warning("Cannot parse departure datetime: %r %r", dep_date_str, dep_time_str)
+            else:
+                logger.debug("Skipping match with no departure date/time captured")
             continue
 
         dep_dt = _parse_time_on_date(dep_date, dep_time_str)
