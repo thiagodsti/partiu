@@ -10,14 +10,20 @@
   import LoginPage from './pages/LoginPage.svelte';
   import SetupPage from './pages/SetupPage.svelte';
   import UsersPage from './pages/UsersPage.svelte';
+  import AddFlightPage from './pages/AddFlightPage.svelte';
+  import AddTripPage from './pages/AddTripPage.svelte';
+  import EditTripPage from './pages/EditTripPage.svelte';
   import { authApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
 
   const routes = {
     '/': TripsListPage,
     '/trips': TripsListPage,
+    '/trips/new': AddTripPage,
+    '/trips/:id/edit': EditTripPage,
     '/trips/:id': TripDetailPage,
     '/trips/:tripId/flights/:flightId': FlightDetailPage,
+    '/trips/:tripId/add-flight': AddFlightPage,
     '/history': HistoryPage,
     '/history/:id': TripDetailPage,
     '/history/:tripId/flights/:flightId': FlightDetailPage,

@@ -201,6 +201,9 @@
         {/if}
       </span>
       <span style="flex:1"></span>
+      <a href="#/trips/new" class="btn btn-primary text-sm" style="padding:4px 12px">
+        + {$t("trips.btn_new_trip")}
+      </a>
       <button
         class="btn btn-secondary text-sm"
         style="padding:4px 12px"
@@ -221,10 +224,13 @@
         title={$t("trips.empty_title")}
         description={$t("trips.empty_desc")}
       >
+        <a href="#/trips/new" class="btn btn-primary"
+          >{$t("trips.btn_new_trip")}</a
+        >
         <a href="#/history" class="btn btn-secondary"
           >{$t("trips.view_history")}</a
         >
-        <a href="#/settings" class="btn btn-primary"
+        <a href="#/settings" class="btn btn-secondary"
           >{$t("trips.go_settings")}</a
         >
       </EmptyState>

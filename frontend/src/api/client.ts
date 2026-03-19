@@ -99,7 +99,7 @@ export const usersApi = {
 export const tripsApi = {
   list: () => get<TripsListResponse>('/api/trips'),
   get: (id: number | string) => get<Trip>(`/api/trips/${id}`),
-  create: (data: Partial<Trip>) => post<Trip>('/api/trips', data),
+  create: (data: { name: string; start_date?: string; end_date?: string; origin_airport?: string; destination_airport?: string; booking_refs?: string[] }) => post<{ id: string }>('/api/trips', data),
   update: (id: number | string, data: Partial<Trip>) => patch<Trip>(`/api/trips/${id}`, data),
   delete: (id: number | string) => del<null>(`/api/trips/${id}`),
   addFlight: (tripId: number | string, flightId: number | string) =>
@@ -153,6 +153,7 @@ export const syncApi = {
 
 export const airportsApi = {
   get: (iata: string) => get<Airport>(`/api/airports/${iata}`),
+  search: (q: string) => get<Airport[]>(`/api/airports/search?q=${encodeURIComponent(q)}`),
 };
 
 // ---- Settings ----

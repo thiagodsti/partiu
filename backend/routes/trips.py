@@ -228,8 +228,11 @@ def _get_trip_city(trip_id: str, user_id: int) -> str | None:
             "SELECT city_name FROM airports WHERE iata_code = ?", (iata.upper(),)
         ).fetchone()
         city = airport["city_name"] if airport and airport["city_name"] else iata
-        # Strip region/state suffix (e.g. "London, Essex" → "London") for better Wikipedia results
-        return city.split(",")[0].strip() if city else city
+        # Strip parenthetical suffix (e.g. "Paris (Roissy-en-France)" → "Paris")
+        # then strip region/state suffix (e.g. "London, Essex" → "London")
+        if city:
+            city = city.split("(")[0].split(",")[0].strip()
+        return city or iata
 
 
 @router.get("/{trip_id}/image")

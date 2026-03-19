@@ -165,13 +165,19 @@
           <span class="text-sm text-muted">Ref: {ref}</span>
         {/each}
       </div>
-      {#if isCompleted && immichConfigured}
-        <div style="margin-top:var(--space-md)">
+      <div style="margin-top:var(--space-md);display:flex;gap:var(--space-sm);flex-wrap:wrap;align-items:center">
+        <a href="#/trips/{params.id}/edit" class="btn btn-secondary" style="font-size:0.85rem">
+          ✎ {$t('trip.edit')}
+        </a>
+        <a href="#/trips/{params.id}/add-flight" class="btn btn-secondary" style="font-size:0.85rem">
+          + {$t('trip.add_flight')}
+        </a>
+        {#if isCompleted && immichConfigured}
           <button
             class="btn btn-secondary"
             disabled={creatingAlbum}
             onclick={handleImmichAlbum}
-            style="display:inline-flex;align-items:center;gap:var(--space-xs)"
+            style="display:inline-flex;align-items:center;gap:var(--space-xs);font-size:0.85rem"
           >
             {#if creatingAlbum}
               Creating album…
@@ -181,16 +187,18 @@
               Create Immich Album
             {/if}
           </button>
-          {#if albumError}
-            <p style="margin-top:var(--space-xs);font-size:0.8rem;color:var(--danger)">{albumError}</p>
-          {/if}
-        </div>
+        {/if}
+      </div>
+      {#if albumError}
+        <p style="margin-top:var(--space-xs);font-size:0.8rem;color:var(--danger)">{albumError}</p>
       {/if}
     </div>
 
     <!-- Flight List -->
     {#if flightList.length === 0}
-      <EmptyState title={$t('trip.empty')} />
+      <EmptyState title={$t('trip.empty')}>
+        <a href="#/trips/{params.id}/add-flight" class="btn btn-primary">{$t('trip.add_flight')}</a>
+      </EmptyState>
     {:else}
       <!-- Outbound leg -->
       <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
