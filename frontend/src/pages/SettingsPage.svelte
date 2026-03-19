@@ -296,24 +296,24 @@
       if (notifStatus === "subscribed") {
         const { unsubscribe } = await import("../lib/notifications");
         await unsubscribe();
-        notifMsg = "Push notifications disabled";
+        notifMsg = $t("settings.notif_disabled_ok");
         notifMsgType = "success";
       } else {
         // Check server is ready before requesting browser permission
         try {
           await notificationsApi.vapidPublicKey();
         } catch {
-          notifMsg = "Push notifications are not configured on this server yet" + ($currentUser?.is_admin ? " — generate VAPID keys above." : ". Contact your admin.");
+          notifMsg = $t("settings.notif_not_configured") + ($currentUser?.is_admin ? $t("settings.notif_not_configured_admin") : $t("settings.notif_not_configured_user"));
           notifMsgType = "error";
           return;
         }
         const { subscribe } = await import("../lib/notifications");
         const ok = await subscribe();
         if (ok) {
-          notifMsg = "Push notifications enabled";
+          notifMsg = $t("settings.notif_enabled_ok");
           notifMsgType = "success";
         } else {
-          notifMsg = "Could not enable notifications — check browser permissions";
+          notifMsg = $t("settings.notif_permission_error");
           notifMsgType = "error";
         }
       }
@@ -336,7 +336,7 @@
     notifMsg = "";
     try {
       await notificationsApi.updatePreferences(notifPrefs);
-      notifMsg = "Preferences saved";
+      notifMsg = $t("settings.notif_prefs_saved");
       notifMsgType = "success";
     } catch (err) {
       notifMsg = (err as Error).message;
@@ -351,7 +351,7 @@
     notifMsg = "";
     try {
       const result = await notificationsApi.testPush();
-      notifMsg = result.ok ? "Test notification sent!" : "No subscriptions found";
+      notifMsg = result.ok ? $t("settings.notif_test_ok") : $t("settings.notif_test_none");
       notifMsgType = result.ok ? "success" : "error";
     } catch (err) {
       notifMsg = (err as Error).message;
@@ -950,13 +950,13 @@
     <!-- Admin: Push Notifications status (keys are auto-generated on startup) -->
     {#if $currentUser?.is_admin}
       <div class="settings-section">
-        <div class="settings-section-title">Push Notifications</div>
+        <div class="settings-section-title">{$t("settings.push_title")}</div>
         <div style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem">
           <span style="width:10px;height:10px;flex-shrink:0;border-radius:50%;background:{vapidConfigured ? 'var(--success)' : 'var(--warning, #f59e0b)'}"></span>
           {#if vapidConfigured}
-            Ready — VAPID keys configured ({vapidSource === "env" ? "from environment" : "auto-generated"})
+            {$t("settings.push_ready", { values: { source: vapidSource === "env" ? $t("settings.push_source_env") : $t("settings.push_source_auto") } })}
           {:else}
-            VAPID keys not yet generated — restart the server to auto-generate them
+            {$t("settings.push_not_ready")}
           {/if}
         </div>
       </div>
@@ -964,18 +964,18 @@
 
     <!-- Push Notifications Section -->
     <div class="settings-section">
-      <div class="settings-section-title">Notifications</div>
+      <div class="settings-section-title">{$t("settings.notif_title")}</div>
       {#if notifStatus === "unsupported"}
         <p style="font-size:0.875rem;color:var(--text-secondary)">
-          Push notifications are not supported in this browser.
+          {$t("settings.notif_unsupported")}
         </p>
       {:else if notifStatus === "denied"}
         <p style="font-size:0.875rem;color:var(--danger)">
-          Notifications are blocked by your browser. Reset the permission in your browser settings to enable them.
+          {$t("settings.notif_denied")}
         </p>
       {:else}
         <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          Get push notifications for upcoming flights, check-in reminders, and trip start alerts.
+          {$t("settings.notif_desc")}
         </p>
 
         <button
@@ -985,37 +985,37 @@
           style={notifStatus === "subscribed" ? "border-color:var(--danger);color:var(--danger)" : ""}
         >
           {togglingNotif
-            ? "..."
+            ? $t("settings.notif_toggling")
             : notifStatus === "subscribed"
-              ? "Disable push notifications"
-              : "Enable push notifications"}
+              ? $t("settings.notif_disable")
+              : $t("settings.notif_enable")}
         </button>
 
         {#if notifStatus === "subscribed"}
           <form onsubmit={saveNotifPrefs} style="margin-top:var(--space-md)">
-            <div class="settings-section-title" style="font-size:0.875rem;margin-bottom:var(--space-sm)">What to notify</div>
+            <div class="settings-section-title" style="font-size:0.875rem;margin-bottom:var(--space-sm)">{$t("settings.notif_what")}</div>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
               <input type="checkbox" bind:checked={notifPrefs.flight_reminder} style="width:auto;margin:0" />
-              Flight reminder (2 hours before departure)
+              {$t("settings.notif_flight_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
               <input type="checkbox" bind:checked={notifPrefs.checkin_reminder} style="width:auto;margin:0" />
-              Check-in reminder (24 hours before departure)
+              {$t("settings.notif_checkin_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
               <input type="checkbox" bind:checked={notifPrefs.trip_reminder} style="width:auto;margin:0" />
-              Trip reminder (1 day before trip starts)
+              {$t("settings.notif_trip_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
               <input type="checkbox" bind:checked={notifPrefs.delay_alert} style="width:auto;margin:0" />
-              Delay &amp; cancellation alerts (when departure is delayed ≥15 min or cancelled)
+              {$t("settings.notif_delay_alert")}
             </label>
             <div style="display:flex;gap:var(--space-sm)">
               <button class="btn btn-primary btn-full" type="submit" disabled={savingNotifPrefs}>
-                {savingNotifPrefs ? "Saving…" : "Save preferences"}
+                {savingNotifPrefs ? $t("settings.notif_saving") : $t("settings.notif_save")}
               </button>
               <button class="btn btn-secondary" type="button" disabled={testingPush} onclick={sendTestPush}>
-                {testingPush ? "…" : "Test"}
+                {testingPush ? $t("settings.notif_testing") : $t("settings.notif_test")}
               </button>
             </div>
           </form>
