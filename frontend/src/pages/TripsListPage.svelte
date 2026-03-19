@@ -102,7 +102,7 @@
   let coverVisible = $state<Record<string, boolean>>({});
   const retriedTrips = new Set<string>();
 
-  async function handleImageError(e: Event, tripId: string) {
+  async function handleImageError(_e: Event, tripId: string) {
     if (retriedTrips.has(tripId)) {
       coverVisible = { ...coverVisible, [tripId]: false };
       return;
