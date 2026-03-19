@@ -17,6 +17,7 @@
   import ConnectionBadge from '../components/ConnectionBadge.svelte';
   import DateDivider from '../components/DateDivider.svelte';
   import ImmichAlbumButton from '../components/ImmichAlbumButton.svelte';
+  import TripMap from '../components/TripMap.svelte';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -160,6 +161,11 @@
         {/if}
       </div>
     </div>
+
+    <!-- Route Map -->
+    {#if flightList.length > 0}
+      <TripMap flights={flightList} />
+    {/if}
 
     <!-- Flight List -->
     {#if flightList.length === 0}

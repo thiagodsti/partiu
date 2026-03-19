@@ -17,12 +17,13 @@ _SECURITY_HEADERS = {
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
     # CSP: same-origin scripts/styles; inline styles allowed (Svelte); data: for QR SVGs
     # frame-src allows the OpenStreetMap embed; img-src allows Wikipedia thumbnails served locally
+    # CartoDB tile servers and unpkg needed for the trip route map (Leaflet)
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; "
-        "connect-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "img-src 'self' data: blob: https://*.basemaps.cartocdn.com; "
+        "connect-src 'self' https://*.basemaps.cartocdn.com; "
         "frame-src https://www.openstreetmap.org; "
         "frame-ancestors 'none';"
     ),
