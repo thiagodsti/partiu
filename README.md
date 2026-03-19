@@ -10,7 +10,7 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 
 ---
 
-[demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
+![demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
 
 ## What it does!
 
