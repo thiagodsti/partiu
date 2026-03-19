@@ -56,6 +56,9 @@ def get_settings(user: dict = Depends(get_current_user)):
         # Per-user forwarding config
         "smtp_recipient_address": user.get("smtp_recipient_address") or "",
         "smtp_allowed_senders": user.get("smtp_allowed_senders") or "",
+        # Immich integration
+        "immich_url": user.get("immich_url") or "",
+        "immich_api_key_set": bool(user.get("immich_api_key")),
     }
 
     # Admin-only server config
@@ -73,6 +76,9 @@ class SettingsUpdate(BaseModel):
     imap_port: int | None = None
     smtp_recipient_address: str | None = None
     smtp_allowed_senders: str | None = None
+    # Immich integration
+    immich_url: str | None = None
+    immich_api_key: str | None = None
     # Global settings (admin only)
     sync_interval_minutes: int | None = None
     max_emails_per_sync: int | None = None
@@ -121,6 +127,10 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
         user_updates["smtp_recipient_address"] = recipient
     if body.smtp_allowed_senders is not None:
         user_updates["smtp_allowed_senders"] = body.smtp_allowed_senders
+    if body.immich_url is not None:
+        user_updates["immich_url"] = body.immich_url.strip()
+    if body.immich_api_key is not None:
+        user_updates["immich_api_key"] = body.immich_api_key
 
     if user_updates:
         set_clause = ", ".join(f"{k} = ?" for k in user_updates)
@@ -196,6 +206,30 @@ def test_imap(body: TestImapRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(400, f"Connection error: {e}")
 
     return {"ok": True, "message": f"Connected to {host}:{port} successfully"}
+
+
+@router.post("/test-immich")
+async def test_immich(user: dict = Depends(get_current_user)):
+    """Test the configured Immich connection."""
+    immich_url = (user.get("immich_url") or "").strip()
+    immich_api_key = (user.get("immich_api_key") or "").strip()
+    if not immich_url:
+        raise HTTPException(400, "Immich URL is not configured")
+    if not immich_api_key:
+        raise HTTPException(400, "Immich API key is not configured")
+    from ..immich import test_connection
+
+    try:
+        result = await test_connection(immich_url, immich_api_key)
+        version = result.get("version", "unknown")
+        msg = (
+            f"Connected to Immich {version}"
+            if version != "unknown"
+            else "Connected to Immich successfully"
+        )
+        return {"ok": True, "message": msg}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.get("/airports/count")

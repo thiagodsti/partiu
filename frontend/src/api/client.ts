@@ -14,6 +14,7 @@ import type {
   EmailData,
   TripsListResponse,
   AirportCountResponse,
+  ImmichAlbumResponse,
   User,
   UserListItem,
   LoginResponse,
@@ -106,6 +107,8 @@ export const tripsApi = {
     del<null>(`/api/trips/${tripId}/flights/${flightId}`),
   imageUrl: (id: string) => `/api/trips/${id}/image`,
   refreshImage: (id: string) => post<{ ok: boolean }>(`/api/trips/${id}/image/refresh`),
+  createImmichAlbum: (id: string) => post<ImmichAlbumResponse>(`/api/trips/${id}/immich-album`),
+  checkImmichAlbum: (id: string) => get<{ album_id: string | null; exists: boolean }>(`/api/trips/${id}/immich-album/status`),
 };
 
 // ---- Flights ----
@@ -157,6 +160,8 @@ export interface SettingsUpdatePayload {
   gmail_address?: string;
   gmail_app_password?: string;
   sync_interval_minutes?: number;
+  immich_url?: string;
+  immich_api_key?: string;
 }
 
 export const settingsApi = {
@@ -164,6 +169,7 @@ export const settingsApi = {
   update: (data: SettingsUpdatePayload) => post<Settings>('/api/settings', data),
   testImap: (data: { imap_host?: string; imap_port?: number; gmail_address?: string; gmail_app_password?: string }) =>
     post<{ ok: boolean; message: string }>('/api/settings/test-imap', data),
+  testImmich: () => post<{ ok: boolean; message: string }>('/api/settings/test-immich'),
   airportCount: () => get<AirportCountResponse>('/api/settings/airports/count'),
   reloadAirports: () => post<AirportCountResponse>('/api/settings/airports/reload'),
 };

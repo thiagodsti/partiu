@@ -31,6 +31,7 @@ export interface Trip {
   booking_refs: string[];
   flight_count?: number;
   flights?: Flight[];
+  immich_album_id?: string | null;
 }
 
 export interface Flight {
@@ -91,6 +92,15 @@ export interface Settings {
   smtp_server_port?: number;        // admin only
   smtp_recipient_address: string;   // per-user
   smtp_allowed_senders: string;     // per-user
+  immich_url: string;
+  immich_api_key_set: boolean;
+}
+
+export interface ImmichAlbumResponse {
+  album_id: string;
+  album_url: string | null;
+  asset_count: number | null;
+  already_exists: boolean;
 }
 
 export interface AircraftInfo {

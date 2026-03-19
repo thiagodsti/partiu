@@ -298,6 +298,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE trips ADD COLUMN image_fetched_at TEXT",
         ],
     ),
+    (
+        14,
+        "Add Immich integration columns",
+        [
+            "ALTER TABLE users ADD COLUMN immich_url TEXT",
+            "ALTER TABLE users ADD COLUMN immich_api_key TEXT",
+            "ALTER TABLE trips ADD COLUMN immich_album_id TEXT",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)

@@ -21,6 +21,7 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 - Works as a PWA — installable on iOS and Android as a home screen app
 - Accepts forwarded emails via a built-in inbound SMTP server (no Gmail required for that path)
 - Multi-user support with per-user email accounts, admin management, and optional 2FA (TOTP)
+- **Immich integration** — create photo albums from your completed trips automatically, based on trip date range
 
 ## Supported airlines
 
@@ -90,6 +91,35 @@ Provides aircraft type (e.g. Boeing 737-800) for airborne flights. The free plan
 2. Copy your Access Key and add it to `.env` as `AVIATIONSTACK_API_KEY`
 
 Falls back to [OpenSky Network](https://opensky-network.org) (free, no account needed) if not set.
+
+### Immich integration (optional)
+
+[Immich](https://immich.app) is a self-hosted photo management platform. Partiu can automatically create an Immich album for each completed trip using photos taken during the trip's date range.
+
+**Setup:**
+
+1. In your Immich instance, go to **Account Settings → API Keys** and create a new API key
+2. Grant the following permissions to the key:
+
+   | Permission | Why |
+   |---|---|
+   | `asset.read` | Find photos within the trip date range |
+   | `asset.view` | Access asset metadata |
+   | `asset.download` | Required alongside read for full access |
+   | `asset.copy` | Needed for album operations |
+   | `album.create` | Create the trip album |
+   | `album.read` | Read album details |
+   | `album.update` | Update album contents |
+   | `albumAsset.create` | Add photos to the album |
+
+3. In Partiu, go to **Settings → Immich** and enter:
+   - **Immich URL** — base URL of your Immich instance (e.g. `https://photos.yourdomain.com`)
+   - **API Key** — the key you created above
+4. Click **Test Connection** to verify — then **Save**
+
+Once configured, a **Create Immich Album** button will appear on any completed trip (in both the trip detail view and the history page). If an album was already created for that trip, the button changes to **Open Immich Album** and takes you directly to it.
+
+To recreate an album, delete it in Immich first — the button will revert to "Create".
 
 ### Inbound SMTP (email forwarding)
 
@@ -171,6 +201,7 @@ pytest
 | Email receive | aiosmtpd (inbound SMTP server) |
 | HTML parsing | BeautifulSoup4 + lxml |
 | Aircraft data | AviationStack (primary) + OpenSky Network (fallback) |
+| Photo albums | Immich (optional, self-hosted) |
 
 ---
 

@@ -52,6 +52,14 @@
   let smtpRecipient = $state("");
   let smtpAllowedSenders = $state("");
 
+  // Immich
+  let immichUrl = $state("");
+  let immichApiKey = $state("");
+  let savingImmich = $state(false);
+  let immichMsg = $state("");
+  let immichMsgType = $state<"success" | "error">("success");
+  let testingImmich = $state(false);
+
   // UI state
   let savingSettings = $state(false);
   let settingsMsg = $state("");
@@ -98,6 +106,7 @@
           ? `${$currentUser.username}@${s.smtp_domain}`
           : "");
       smtpAllowedSenders = s.smtp_allowed_senders ?? "";
+      immichUrl = s.immich_url ?? "";
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -237,6 +246,51 @@
       showMsg(`Error: ${(err as Error).message}`, "error");
     } finally {
       reloadingAirports = false;
+    }
+  }
+
+  // ---- Immich settings ----
+  async function saveImmich(e: Event) {
+    e.preventDefault();
+    savingImmich = true;
+    immichMsg = "";
+    try {
+      const data: Record<string, string> = { immich_url: immichUrl.trim() };
+      if (immichApiKey) data.immich_api_key = immichApiKey;
+      await settingsApi.update(data);
+      immichMsg = "Immich settings saved";
+      immichMsgType = "success";
+      immichApiKey = "";
+      if (currentSettings) currentSettings = { ...currentSettings, immich_url: immichUrl.trim(), immich_api_key_set: currentSettings.immich_api_key_set || !!immichApiKey };
+    } catch (err) {
+      immichMsg = (err as Error).message;
+      immichMsgType = "error";
+    } finally {
+      savingImmich = false;
+    }
+  }
+
+  async function testImmichConnection() {
+    testingImmich = true;
+    immichMsg = "";
+    // Save first so the server has the latest values
+    if (immichUrl.trim() || immichApiKey) {
+      try {
+        const data: Record<string, string> = { immich_url: immichUrl.trim() };
+        if (immichApiKey) data.immich_api_key = immichApiKey;
+        await settingsApi.update(data);
+        immichApiKey = "";
+      } catch { /* ignore save error, test will still fail with a clear message */ }
+    }
+    try {
+      const result = await settingsApi.testImmich();
+      immichMsg = result.message;
+      immichMsgType = "success";
+    } catch (err) {
+      immichMsg = (err as Error).message;
+      immichMsgType = "error";
+    } finally {
+      testingImmich = false;
     }
   }
 
@@ -840,6 +894,56 @@
         </form>
       </div>
     {/if}
+
+    <!-- Immich Integration Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Immich</div>
+      <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
+        Connect your self-hosted <a href="https://immich.app" target="_blank" rel="noopener" style="color:var(--accent)">Immich</a> instance to create photo albums from completed trips.
+      </p>
+      <form onsubmit={saveImmich}>
+        <div class="form-group">
+          <label class="form-label" for="immich-url">Immich URL</label>
+          <input
+            class="form-input"
+            id="immich-url"
+            type="url"
+            bind:value={immichUrl}
+            placeholder="https://immich.example.com"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="immich-api-key">API Key</label>
+          <input
+            class="form-input"
+            id="immich-api-key"
+            type="password"
+            bind:value={immichApiKey}
+            placeholder={currentSettings?.immich_api_key_set ? "••••••••  (set — enter new key to change)" : "Paste your Immich API key"}
+            autocomplete="off"
+          />
+        </div>
+        {#if immichMsg}
+          <p style="font-size:0.875rem;margin-bottom:var(--space-sm);color:{immichMsgType === 'success' ? 'var(--success)' : 'var(--danger)'}">
+            {immichMsg}
+          </p>
+        {/if}
+        <div style="display:flex;gap:var(--space-sm)">
+          <button class="btn btn-primary btn-full" type="submit" disabled={savingImmich}>
+            {savingImmich ? "Saving…" : "Save Immich Settings"}
+          </button>
+          <button
+            class="btn btn-secondary"
+            type="button"
+            disabled={testingImmich}
+            onclick={testImmichConnection}
+          >
+            {testingImmich ? "…" : "Test"}
+          </button>
+        </div>
+      </form>
+    </div>
 
     <!-- Airport Data Section -->
     <div class="settings-section">

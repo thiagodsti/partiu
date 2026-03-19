@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tripsApi } from "../api/client";
+  import { tripsApi, settingsApi } from "../api/client";
   import type { Trip } from "../api/types";
   import { tripImageBust } from "../lib/tripImageStore";
   import { formatDateRange, inferTripStatus } from "../lib/utils";
@@ -11,13 +11,20 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let tripsList = $state<Trip[]>([]);
+  let immichConfigured = $state(false);
+  let immichBaseUrl = $state('');
 
   async function load() {
     loading = true;
     error = null;
     try {
-      const data = await tripsApi.list();
+      const [data, s] = await Promise.all([
+        tripsApi.list(),
+        settingsApi.get().catch(() => null),
+      ]);
       tripsList = data?.trips ?? [];
+      immichConfigured = !!(s?.immich_url && s?.immich_api_key_set);
+      immichBaseUrl = s?.immich_url?.replace(/\/$/, '') ?? '';
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -47,6 +54,33 @@
       tripImageBust.bust(tripId);
     } catch {
       imgFailed = { ...imgFailed, [tripId]: true };
+    }
+  }
+
+  // ---- Immich album ----
+  let creatingAlbumId = $state<string | null>(null);
+  let albumErrors = $state<Record<string, string>>({});
+
+  async function handleImmichAlbum(e: MouseEvent, trip: Trip) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Album already exists — open it directly, no API call needed
+    if (trip.immich_album_id) {
+      window.open(`${immichBaseUrl}/albums/${trip.immich_album_id}`, "_blank", "noopener");
+      return;
+    }
+    creatingAlbumId = trip.id;
+    albumErrors = { ...albumErrors, [trip.id]: "" };
+    try {
+      const result = await tripsApi.createImmichAlbum(trip.id);
+      tripsList = tripsList.map((t) =>
+        t.id === trip.id ? { ...t, immich_album_id: result.album_id } : t
+      );
+      if (result.album_url) window.open(result.album_url, "_blank", "noopener");
+    } catch (err) {
+      albumErrors = { ...albumErrors, [trip.id]: (err as Error).message };
+    } finally {
+      creatingAlbumId = null;
     }
   }
 
@@ -121,6 +155,25 @@
           <div class="trip-card-footer">
             {#if refs}
               <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
+            {/if}
+            {#if immichConfigured}
+              <button
+                class="btn btn-secondary"
+                style="margin-top:var(--space-sm);width:100%;font-size:0.8rem"
+                disabled={creatingAlbumId === trip.id}
+                onclick={(e) => handleImmichAlbum(e, trip)}
+              >
+                {#if creatingAlbumId === trip.id}
+                  Creating album…
+                {:else if trip.immich_album_id}
+                  Open Immich Album ↗
+                {:else}
+                  Create Immich Album
+                {/if}
+              </button>
+              {#if albumErrors[trip.id]}
+                <p style="font-size:0.75rem;color:var(--danger);margin-top:var(--space-xs)">{albumErrors[trip.id]}</p>
+              {/if}
             {/if}
           </div>
         </article>

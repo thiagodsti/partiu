@@ -1,10 +1,11 @@
 <script lang="ts">
   import { location } from 'svelte-spa-router';
-  import { tripsApi } from '../api/client';
+  import { tripsApi, settingsApi } from '../api/client';
   import { tripImageBust } from '../lib/tripImageStore';
   import type { Trip, Flight } from '../api/types';
   import {
     formatDateRange,
+    inferTripStatus,
     splitLegs,
     dateDividerInfo,
   } from '../lib/utils';
@@ -25,12 +26,27 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let trip = $state<Trip | null>(null);
+  let immichConfigured = $state(false);
+  let immichBaseUrl = $state('');
 
   async function load() {
     loading = true;
     error = null;
     try {
-      trip = await tripsApi.get(params.id);
+      const [t, s] = await Promise.all([
+        tripsApi.get(params.id),
+        settingsApi.get().catch(() => null),
+      ]);
+      trip = t;
+      immichConfigured = !!(s?.immich_url && s?.immich_api_key_set);
+      immichBaseUrl = s?.immich_url?.replace(/\/$/, '') ?? '';
+      // If an album ID is stored, verify it still exists in Immich
+      if (trip.immich_album_id && immichConfigured) {
+        const status = await tripsApi.checkImmichAlbum(params.id).catch(() => null);
+        if (status && !status.exists) {
+          trip = { ...trip, immich_album_id: null };
+        }
+      }
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -74,6 +90,32 @@
       tripImageBust.bust(trip.id);
     } finally {
       refreshingImage = false;
+    }
+  }
+
+  // ---- Immich album ----
+  let creatingAlbum = $state(false);
+  let albumError = $state<string | null>(null);
+
+  const isCompleted = $derived(trip ? inferTripStatus(trip) === 'completed' : false);
+
+  async function handleImmichAlbum() {
+    if (!trip) return;
+    // Album already exists — open it directly, no API call needed
+    if (trip.immich_album_id) {
+      window.open(`${immichBaseUrl}/albums/${trip.immich_album_id}`, '_blank', 'noopener');
+      return;
+    }
+    creatingAlbum = true;
+    albumError = null;
+    try {
+      const result = await tripsApi.createImmichAlbum(trip.id);
+      trip = { ...trip, immich_album_id: result.album_id };
+      if (result.album_url) window.open(result.album_url, '_blank', 'noopener');
+    } catch (err) {
+      albumError = (err as Error).message;
+    } finally {
+      creatingAlbum = false;
     }
   }
 
@@ -123,6 +165,27 @@
           <span class="text-sm text-muted">Ref: {ref}</span>
         {/each}
       </div>
+      {#if isCompleted && immichConfigured}
+        <div style="margin-top:var(--space-md)">
+          <button
+            class="btn btn-secondary"
+            disabled={creatingAlbum}
+            onclick={handleImmichAlbum}
+            style="display:inline-flex;align-items:center;gap:var(--space-xs)"
+          >
+            {#if creatingAlbum}
+              Creating album…
+            {:else if trip.immich_album_id}
+              Open Immich Album ↗
+            {:else}
+              Create Immich Album
+            {/if}
+          </button>
+          {#if albumError}
+            <p style="margin-top:var(--space-xs);font-size:0.8rem;color:var(--danger)">{albumError}</p>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <!-- Flight List -->

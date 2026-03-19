@@ -3,6 +3,7 @@ Trip CRUD routes.
 """
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -13,6 +14,8 @@ from pydantic import BaseModel
 from ..auth import get_current_user
 from ..database import db_conn, db_write
 from ..trip_images import fetch_trip_image, trip_image_path
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
@@ -268,6 +271,118 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
         )
 
     raise HTTPException(status_code=404, detail="No image available")
+
+
+@router.get("/{trip_id}/immich-album/status")
+async def check_immich_album(trip_id: str, user: dict = Depends(get_current_user)):
+    """Check whether the stored Immich album still exists. Clears the DB entry if it was deleted."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = _row_to_trip(row)
+
+    album_id = trip.get("immich_album_id")
+    if not album_id:
+        return {"album_id": None, "exists": False}
+
+    with db_conn() as conn:
+        u = conn.execute(
+            "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()
+    immich_url = (u["immich_url"] or "").strip() if u else ""
+    immich_api_key = (u["immich_api_key"] or "").strip() if u else ""
+
+    if not immich_url or not immich_api_key:
+        return {"album_id": album_id, "exists": True}  # can't check — assume it exists
+
+    from ..immich import album_exists
+
+    exists = await album_exists(immich_url, immich_api_key, album_id)
+    # Don't modify DB here — let the create endpoint handle cleanup.
+    # Only update frontend local state via the response.
+    return {"album_id": album_id if exists else None, "exists": exists}
+
+
+@router.post("/{trip_id}/immich-album")
+async def create_immich_album(trip_id: str, user: dict = Depends(get_current_user)):
+    """Create an Immich album with photos from this trip's date range, or return the existing one."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = _row_to_trip(row)
+
+    if not trip.get("start_date") or not trip.get("end_date"):
+        raise HTTPException(
+            status_code=400, detail="Trip must have start and end dates to create an album"
+        )
+
+    with db_conn() as conn:
+        u = conn.execute(
+            "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()
+    immich_url = (u["immich_url"] or "").strip() if u else ""
+    immich_api_key = (u["immich_api_key"] or "").strip() if u else ""
+
+    # If an album ID is stored, verify it still exists in Immich before returning the cached link
+    if trip.get("immich_album_id") and immich_url and immich_api_key:
+        from ..immich import album_exists
+
+        if await album_exists(immich_url, immich_api_key, trip["immich_album_id"]):
+            base = immich_url.rstrip("/")
+            album_url = f"{base}/albums/{trip['immich_album_id']}"
+            return {
+                "album_id": trip["immich_album_id"],
+                "album_url": album_url,
+                "asset_count": None,
+                "already_exists": True,
+            }
+        # Album was deleted in Immich — clear the stored ID and recreate below
+        with db_write() as conn:
+            conn.execute(
+                "UPDATE trips SET immich_album_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?",
+                (_now_iso(), trip_id, user["id"]),
+            )
+
+    if not immich_url or not immich_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Immich is not configured. Add your Immich URL and API key in Settings.",
+        )
+
+    from ..immich import create_trip_album
+
+    try:
+        result = await create_trip_album(
+            base_url=immich_url,
+            api_key=immich_api_key,
+            album_name=trip["name"],
+            start_date=trip["start_date"],
+            end_date=trip["end_date"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error("Immich album creation failed for trip %s: %s", trip_id, e)
+        raise HTTPException(status_code=502, detail=f"Immich error: {e}")
+
+    with db_write() as conn:
+        conn.execute(
+            "UPDATE trips SET immich_album_id = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (result["album_id"], _now_iso(), trip_id, user["id"]),
+        )
+
+    return {
+        "album_id": result["album_id"],
+        "album_url": result["album_url"],
+        "asset_count": result["asset_count"],
+        "already_exists": False,
+    }
 
 
 @router.post("/{trip_id}/image/refresh")
