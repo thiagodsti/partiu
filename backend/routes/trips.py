@@ -224,7 +224,9 @@ def _get_trip_city(trip_id: str, user_id: int) -> str | None:
         airport = conn.execute(
             "SELECT city_name FROM airports WHERE iata_code = ?", (iata.upper(),)
         ).fetchone()
-        return airport["city_name"] if airport and airport["city_name"] else iata
+        city = airport["city_name"] if airport and airport["city_name"] else iata
+        # Strip region/state suffix (e.g. "London, Essex" → "London") for better Wikipedia results
+        return city.split(",")[0].strip() if city else city
 
 
 @router.get("/{trip_id}/image")

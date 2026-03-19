@@ -33,12 +33,12 @@
 
   // ---- Image refresh ----
   let refreshingImageId = $state<string | null>(null);
-  let coverVisible = $state<Record<string, boolean>>({});
+  let imgFailed = $state<Record<string, boolean>>({});
   const retriedTrips = new Set<string>();
 
   async function handleImageError(_e: Event, tripId: string) {
     if (retriedTrips.has(tripId)) {
-      coverVisible = { ...coverVisible, [tripId]: false };
+      imgFailed = { ...imgFailed, [tripId]: true };
       return;
     }
     retriedTrips.add(tripId);
@@ -46,7 +46,7 @@
       await tripsApi.refreshImage(tripId);
       tripImageBust.bust(tripId);
     } catch {
-      coverVisible = { ...coverVisible, [tripId]: false };
+      imgFailed = { ...imgFailed, [tripId]: true };
     }
   }
 
@@ -56,6 +56,8 @@
     refreshingImageId = tripId;
     try {
       await tripsApi.refreshImage(tripId);
+      imgFailed = { ...imgFailed, [tripId]: false };
+      retriedTrips.delete(tripId);
       tripImageBust.bust(tripId);
     } catch {
       // no image found, leave as-is
@@ -86,14 +88,17 @@
       {@const refs = (trip.booking_refs ?? []).join(", ")}
       <a class="card-link" href="#/history/{trip.id}">
         <article class="card trip-card">
-          <div class="trip-card-cover" style={coverVisible[trip.id] ? '' : 'display:none'}>
-            <img
-              src={tripImageBust.urlFor(trip.id, $tripImageBust)}
-              alt=""
-              class="trip-card-cover-img"
-              onload={() => { coverVisible = { ...coverVisible, [trip.id]: true }; }}
-              onerror={(e) => handleImageError(e, trip.id)}
-            />
+          <div class="trip-card-cover" class:no-image={imgFailed[trip.id]}>
+            {#if imgFailed[trip.id]}
+              <span class="trip-card-no-image-icon">✈</span>
+            {:else}
+              <img
+                src={tripImageBust.urlFor(trip.id, $tripImageBust)}
+                alt=""
+                class="trip-card-cover-img"
+                onerror={(e) => handleImageError(e, trip.id)}
+              />
+            {/if}
             <button
               class="trip-card-img-refresh"
               title="Find a different image"

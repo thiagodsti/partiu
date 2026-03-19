@@ -351,6 +351,21 @@ img {
   height: 130px;
   overflow: hidden;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 60%, #ddd6fe 100%);
+}
+
+.trip-card-no-image-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.2rem;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.trip-card-cover.no-image .trip-card-img-refresh {
+  opacity: 1;
 }
 
 .trip-card-cover-img {
