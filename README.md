@@ -211,18 +211,21 @@ Contributions are welcome! Here are the most impactful ways to help:
 
 ### Add support for a new airline
 
-Each airline is defined as a rule in `backend/parsers/builtin_rules.py`. A rule needs:
+See **[CONTRIBUTING_PARSERS.md](CONTRIBUTING_PARSERS.md)** for the full step-by-step guide.
 
-- `sender_pattern` — regex matching the airline's From address (e.g. `r'@latam\.com'`)
-- `subject_pattern` — regex matching the confirmation email subject
-- `custom_extractor` — name of the extractor function in `backend/parsers/engine.py`
-
-The extractor receives the parsed `EmailMessage` and returns a list of flight dicts. Look at `_extract_sas_flights` or `_extract_latam_flights` as a reference.
-
-To test your new extractor without a real email account, export a `.eml` file from your mail client and run:
+The short version:
 
 ```bash
-python /tmp/test_parse.py path/to/confirmation.eml
+# 1. Anonymize your .eml fixture
+python tools/anonymize_eml.py ~/Downloads/confirmation.eml \
+    --out backend/tests/fixtures/myairline_anonymized.eml
+
+# 2. See what gets extracted (or what's missing)
+python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
+
+# 3. Add rule + extractor, then scaffold a test automatically
+python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
+    --generate-test --out backend/tests/test_myairline_parser.py
 ```
 
 ### Report a parsing failure
