@@ -7,7 +7,7 @@
  * cannot pre-cache a fixed list. Instead we cache assets on first fetch.
  */
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
@@ -39,8 +39,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first (caches on first fetch)
-  event.respondWith(cacheFirst(event.request, STATIC_CACHE));
+  // Hashed static assets (/assets/*): cache-first — filenames change on deploy
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(event.request, STATIC_CACHE));
+    return;
+  }
+
+  // HTML / navigation (index.html, sw.js, manifest.json, icons…): network-first
+  // so the app shell is always fresh after a deploy and chunk hashes stay in sync
+  event.respondWith(networkFirst(event.request, STATIC_CACHE));
 });
 
 async function cacheFirst(request, cacheName) {
