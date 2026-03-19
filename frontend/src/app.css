@@ -493,6 +493,59 @@ img {
   color: var(--accent);
 }
 
+.flight-status-cancelled {
+  color: var(--error, #e53e3e);
+}
+
+.flight-status-diverted {
+  color: var(--warning, #dd6b20);
+}
+
+.flight-status-delayed {
+  color: var(--warning, #dd6b20);
+}
+
+.flight-row-cancelled {
+  opacity: 0.75;
+  border-color: var(--error, #e53e3e);
+}
+
+/* Live status banner on FlightDetailPage */
+.live-status-banner {
+  display: inline-block;
+  margin-top: var(--space-md);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.live-status-cancelled {
+  background: rgba(229, 62, 62, 0.15);
+  color: var(--error, #e53e3e);
+  border: 1px solid var(--error, #e53e3e);
+}
+
+.live-status-diverted,
+.live-status-incident {
+  background: rgba(221, 107, 32, 0.15);
+  color: var(--warning, #dd6b20);
+  border: 1px solid var(--warning, #dd6b20);
+}
+
+.live-status-delayed {
+  background: rgba(221, 107, 32, 0.1);
+  color: var(--warning, #dd6b20);
+  border: 1px solid rgba(221, 107, 32, 0.4);
+}
+
+.live-status-ontime {
+  background: rgba(72, 187, 120, 0.1);
+  color: var(--success, #48bb78);
+  border: 1px solid rgba(72, 187, 120, 0.4);
+}
+
 .flight-row-route {
   flex: 1;
 }

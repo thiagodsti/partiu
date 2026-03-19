@@ -150,6 +150,18 @@
   const displayAircraftReg = $derived(
     flight?.aircraft_registration ?? aircraftInfo?.registration ?? null,
   );
+
+  // Live status
+  const liveIsCancelled = $derived(flight?.live_status === 'cancelled');
+  const liveIsDiverted = $derived(flight?.live_status === 'diverted');
+  const liveIsIncident = $derived(flight?.live_status === 'incident');
+  const liveDepDelay = $derived((flight?.live_departure_delay ?? 0) > 0 ? flight!.live_departure_delay : null);
+  const liveArrDelay = $derived((flight?.live_arrival_delay ?? 0) > 0 ? flight!.live_arrival_delay : null);
+  const liveHasData = $derived(flight?.live_status_fetched_at != null);
+  const liveIsOnTime = $derived(
+    liveHasData && !liveIsCancelled && !liveIsDiverted && !liveIsIncident && !liveDepDelay && !liveArrDelay
+      && (flight?.live_status === 'scheduled' || flight?.live_status === 'active')
+  );
 </script>
 
 <TopNav {title} backHref={backUrl} />
@@ -283,6 +295,24 @@
           >
         {/if}
       </div>
+
+      <!-- Live status banner -->
+      {#if liveIsCancelled}
+        <div class="live-status-banner live-status-cancelled">✕ {$t("flight.live_status_cancelled")}</div>
+      {:else if liveIsDiverted}
+        <div class="live-status-banner live-status-diverted">⚠ {$t("flight.live_status_diverted")}</div>
+      {:else if liveIsIncident}
+        <div class="live-status-banner live-status-incident">⚠ {$t("flight.live_status_incident")}</div>
+      {:else if liveDepDelay}
+        <div class="live-status-banner live-status-delayed">
+          ⏱ {$t("flight.live_delay_dep", { values: { minutes: liveDepDelay } })}
+          {#if liveArrDelay && liveArrDelay !== liveDepDelay}
+            · {$t("flight.live_delay_arr", { values: { minutes: liveArrDelay } })}
+          {/if}
+        </div>
+      {:else if liveIsOnTime}
+        <div class="live-status-banner live-status-ontime">✓ {$t("flight.live_on_time")}</div>
+      {/if}
     </div>
 
     <!-- Detail Grid -->

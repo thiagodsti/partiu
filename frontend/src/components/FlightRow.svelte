@@ -11,9 +11,13 @@
 
   const status = $derived(flightStatus(f));
   const duration = $derived(formatDuration(f.duration_minutes));
+
+  const isCancelled = $derived(f.live_status === 'cancelled');
+  const isDiverted = $derived(f.live_status === 'diverted');
+  const depDelay = $derived((f.live_departure_delay ?? 0) > 0 ? f.live_departure_delay : null);
 </script>
 
-<a class="flight-row flight-row-{status}" href="#/{basePath}/{f.trip_id}/flights/{f.id}">
+<a class="flight-row flight-row-{isCancelled ? 'cancelled' : status}" href="#/{basePath}/{f.trip_id}/flights/{f.id}">
   <div class="flight-row-route" style="flex:1">
     <div class="flight-route">
       <span>{f.departure_airport}</span>
@@ -33,7 +37,13 @@
     {#if duration}
       <div style="color:var(--text-muted)">{duration}</div>
     {/if}
-    {#if status === 'completed'}
+    {#if isCancelled}
+      <span class="flight-status-badge flight-status-cancelled">{$t('flight.live_status_cancelled')}</span>
+    {:else if isDiverted}
+      <span class="flight-status-badge flight-status-diverted">{$t('flight.live_status_diverted')}</span>
+    {:else if depDelay}
+      <span class="flight-status-badge flight-status-delayed">+{depDelay}min</span>
+    {:else if status === 'completed'}
       <span class="flight-status-badge flight-status-completed">✓</span>
     {:else if status === 'active'}
       <span class="flight-status-badge flight-status-active">{$t('flight.in_flight')}</span>

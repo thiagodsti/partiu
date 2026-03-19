@@ -61,6 +61,12 @@ export interface Flight {
   notes: string | null;
   email_subject: string | null;
   email_date: string | null;
+  live_status: string | null;
+  live_departure_delay: number | null;
+  live_arrival_delay: number | null;
+  live_departure_actual: string | null;
+  live_arrival_estimated: string | null;
+  live_status_fetched_at: string | null;
 }
 
 export interface Airport {
@@ -100,6 +106,7 @@ export interface NotifPreferences {
   flight_reminder: boolean;
   checkin_reminder: boolean;
   trip_reminder: boolean;
+  delay_alert: boolean;
 }
 
 export interface ImmichAlbumResponse {

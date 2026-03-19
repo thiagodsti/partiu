@@ -24,6 +24,7 @@ def start_scheduler():
 
     from .aircraft_sync import run_aircraft_sync
     from .database import get_global_setting
+    from .flight_status_sync import run_flight_status_sync
     from .push_notifications import run_push_notifications
     from .sync_job import run_email_sync
 
@@ -58,9 +59,18 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    _scheduler.add_job(
+        run_flight_status_sync,
+        trigger=IntervalTrigger(hours=1),
+        id="flight_status_sync",
+        name="Flight Status Sync",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info(
-        "Scheduler started — email sync every %d minutes, aircraft sync daily, push notifications every 30 minutes",
+        "Scheduler started — email sync every %d minutes, aircraft sync daily, "
+        "push notifications every 30 minutes, flight status sync every 60 minutes",
         sync_interval,
     )
 

@@ -76,7 +76,7 @@
 
   // Notifications — per-user
   let notifStatus = $state<"unsupported" | "denied" | "default" | "subscribed" | "unsubscribed">("default");
-  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true });
+  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true });
   let savingNotifPrefs = $state(false);
   let togglingNotif = $state(false);
   let testingPush = $state(false);
@@ -1062,9 +1062,13 @@
               <input type="checkbox" bind:checked={notifPrefs.checkin_reminder} style="width:auto;margin:0" />
               Check-in reminder (24 hours before departure)
             </label>
-            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
               <input type="checkbox" bind:checked={notifPrefs.trip_reminder} style="width:auto;margin:0" />
               Trip reminder (1 day before trip starts)
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.delay_alert} style="width:auto;margin:0" />
+              Delay &amp; cancellation alerts (when departure is delayed ≥15 min or cancelled)
             </label>
             <div style="display:flex;gap:var(--space-sm)">
               <button class="btn btn-primary btn-full" type="submit" disabled={savingNotifPrefs}>

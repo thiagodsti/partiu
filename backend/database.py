@@ -348,6 +348,25 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_notif_log_lookup ON notification_log(user_id, flight_id, notif_type)",
         ],
     ),
+    (
+        18,
+        "Add live flight status columns for delay/cancellation tracking",
+        [
+            "ALTER TABLE flights ADD COLUMN live_status TEXT",
+            "ALTER TABLE flights ADD COLUMN live_departure_delay INTEGER",
+            "ALTER TABLE flights ADD COLUMN live_arrival_delay INTEGER",
+            "ALTER TABLE flights ADD COLUMN live_departure_actual TEXT",
+            "ALTER TABLE flights ADD COLUMN live_arrival_estimated TEXT",
+            "ALTER TABLE flights ADD COLUMN live_status_fetched_at TEXT",
+        ],
+    ),
+    (
+        19,
+        "Add delay_alert notification preference to users",
+        [
+            "ALTER TABLE users ADD COLUMN notif_delay_alert INTEGER NOT NULL DEFAULT 1",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
