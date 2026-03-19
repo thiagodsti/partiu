@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import 'leaflet/dist/leaflet.css';
   import type { Map as LeafletMap } from 'leaflet';
   import type { Flight } from '../api/types';
   import { airportsApi } from '../api/client';
@@ -17,7 +18,7 @@
   function greatCirclePoints(
     lat1: number, lon1: number,
     lat2: number, lon2: number,
-    n = 60,
+    n = 80,
   ): [number, number][] {
     const toRad = (d: number) => (d * Math.PI) / 180;
     const toDeg = (r: number) => (r * 180) / Math.PI;
@@ -43,7 +44,6 @@
   $effect(() => {
     if (!mapEl || flights.length === 0) return;
 
-    // Collect unique airport codes
     const codes = [...new Set(flights.flatMap((f) => [f.departure_airport, f.arrival_airport]))];
 
     let destroyed = false;
@@ -57,61 +57,92 @@
 
       if (destroyed || !mapEl) return;
 
-      // Build coord lookup
       const coords: Record<string, { lat: number; lon: number; name: string; city: string }> = {};
       codes.forEach((code, i) => {
         const a = airportResults[i];
         if (a?.latitude != null && a?.longitude != null) {
-          coords[code] = {
-            lat: a.latitude,
-            lon: a.longitude,
-            name: a.name,
-            city: a.city_name ?? code,
-          };
+          coords[code] = { lat: a.latitude, lon: a.longitude, name: a.name, city: a.city_name ?? code };
         }
       });
 
       const validCodes = Object.keys(coords);
       if (validCodes.length === 0) return;
 
-      // Init map
-      leafletMap = L.map(mapEl, { zoomControl: true, attributionControl: true });
+      leafletMap = L.map(mapEl, {
+        zoomControl: true,
+        attributionControl: true,
+        scrollWheelZoom: false,
+        // Disable drag on touch so the map doesn't trap page scrolling on mobile
+        dragging: !L.Browser.touch,
+      });
       map = leafletMap;
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+      // Voyager tiles with OSM fallback if blocked by adblocker
+      const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      });
+
+      let switchedToOsm = false;
+      const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 19,
-      }).addTo(leafletMap);
+      });
 
-      // Draw arcs for each flight
-      const arcStyle = { color: '#2563eb', weight: 2, opacity: 0.7, dashArray: '6 4' };
+      cartoLayer.on('tileerror', () => {
+        if (!switchedToOsm) {
+          switchedToOsm = true;
+          leafletMap!.removeLayer(cartoLayer);
+          osmLayer.addTo(leafletMap!);
+        }
+      });
+
+      cartoLayer.addTo(leafletMap);
+
+      // Draw arcs — two layers for a glow effect
       for (const flight of flights) {
         const dep = coords[flight.departure_airport];
         const arr = coords[flight.arrival_airport];
         if (!dep || !arr) continue;
         const pts = greatCirclePoints(dep.lat, dep.lon, arr.lat, arr.lon);
-        L.polyline(pts, arcStyle).addTo(leafletMap);
+        // Glow layer
+        L.polyline(pts, { color: '#3b82f6', weight: 10, opacity: 0.15, lineCap: 'round' }).addTo(leafletMap);
+        // Main line
+        L.polyline(pts, { color: '#3b82f6', weight: 2.5, opacity: 0.9, lineCap: 'round' }).addTo(leafletMap);
       }
 
-      // Draw airport markers
-      const dotIcon = L.divIcon({
-        className: '',
-        html: '<div style="width:10px;height:10px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>',
-        iconSize: [10, 10],
-        iconAnchor: [5, 5],
-      });
-
+      // Airport markers with IATA label
       for (const code of validCodes) {
         const { lat, lon, city } = coords[code];
-        L.marker([lat, lon], { icon: dotIcon })
-          .bindTooltip(`<b>${code}</b><br>${city}`, { direction: 'top', offset: [0, -8] })
+        const icon = L.divIcon({
+          className: '',
+          html: `
+            <div style="position:relative;width:0;height:0">
+              <div style="
+                width:11px;height:11px;border-radius:50%;
+                background:#3b82f6;border:2.5px solid #fff;
+                box-shadow:0 2px 8px rgba(59,130,246,.5);
+                position:absolute;transform:translate(-50%,-50%);
+              "></div>
+              <span style="
+                position:absolute;top:8px;left:50%;transform:translateX(-50%);
+                font-size:10px;font-weight:700;letter-spacing:.03em;
+                color:#1e3a5f;background:rgba(255,255,255,.88);
+                padding:1px 5px;border-radius:4px;white-space:nowrap;
+                box-shadow:0 1px 3px rgba(0,0,0,.15);
+              ">${code}</span>
+            </div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        });
+        L.marker([lat, lon], { icon })
+          .bindTooltip(`<b>${code}</b> · ${city}`, { direction: 'top', offset: [0, -14], opacity: 0.95 })
           .addTo(leafletMap);
       }
 
-      // Fit bounds to all airports
       const latLngs = validCodes.map((c) => L.latLng(coords[c].lat, coords[c].lon));
-      leafletMap.fitBounds(L.latLngBounds(latLngs), { padding: [32, 32] });
+      leafletMap.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40] });
     })();
 
     return () => {
@@ -127,22 +158,16 @@
   });
 </script>
 
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""
-/>
-
 <div class="trip-map" bind:this={mapEl}></div>
 
 <style>
   .trip-map {
     width: 100%;
-    height: 260px;
+    height: 280px;
     border-radius: var(--radius-lg, 12px);
     overflow: hidden;
     margin-bottom: var(--space-md);
-    background: var(--surface, #f5f5f5);
+    background: var(--surface, #f0f0f0);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   }
 </style>

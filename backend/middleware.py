@@ -21,9 +21,9 @@ _SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://unpkg.com; "
-        "img-src 'self' data: blob: https://*.basemaps.cartocdn.com; "
-        "connect-src 'self' https://*.basemaps.cartocdn.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; "
+        "connect-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; "
         "frame-src https://www.openstreetmap.org; "
         "frame-ancestors 'none';"
     ),
