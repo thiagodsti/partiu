@@ -12,21 +12,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ### Backend
+
+> **IMPORTANT:** `source venv/bin/activate` does not work in the Bash tool because the shell's `python` alias overrides the venv. Always use the full venv Python path for any Python command:
+> ```
+> /Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest ...
+> /Users/thiagods/projects/partiu/venv/bin/python3.14 -m uvicorn ...
+> ```
+
 ```bash
 # Setup
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 
 # Run
-uvicorn backend.main:app --reload
+/Users/thiagods/projects/partiu/venv/bin/python3.14 -m uvicorn backend.main:app --reload
 
 # Lint
-ruff check backend/
+/Users/thiagods/projects/partiu/venv/bin/python3.14 -m ruff check backend/
 
 # Tests
-pytest backend/tests/ -v
-pytest backend/tests/test_auth.py::TestAuth::test_login -v  # single test
-pytest --cov=backend --cov-fail-under=70                    # with coverage (70% minimum enforced)
+/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest backend/tests/ -v
+/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest backend/tests/test_api_auth.py::TestAuth::test_login -v  # single test
+/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest --cov=backend --cov-fail-under=70                        # with coverage (70% minimum enforced)
 ```
 
 ### Frontend

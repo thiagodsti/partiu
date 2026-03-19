@@ -16,6 +16,7 @@
   import StatsPage from './pages/StatsPage.svelte';
   import { authApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
+  import { applyUserLocale } from './lib/i18n';
   import ToastContainer from './components/ToastContainer.svelte';
 
   const routes = {
@@ -58,6 +59,7 @@
       try {
         const user = await authApi.me();
         currentUser.set(user);
+        applyUserLocale(user.locale);
         authLoading.set(false);
 
         // Redirect away from auth pages if already logged in

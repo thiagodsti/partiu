@@ -28,10 +28,13 @@ const BASE_PROPS = {
 describe('ImmichAlbumButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     vi.stubGlobal('open', vi.fn());
+    vi.stubGlobal('location', { href: '' });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -47,12 +50,24 @@ describe('ImmichAlbumButton', () => {
     expect(getByText('immich.open_album')).toBeInTheDocument();
   });
 
-  it('opens existing album URL without API call when album exists', async () => {
+  it('tries Immich deep link when opening existing album', async () => {
     const { getByText } = render(ImmichAlbumButton, {
       props: { ...BASE_PROPS, immichAlbumId: 'album-xyz' },
     });
 
     await fireEvent.click(getByText('immich.open_album'));
+
+    expect(window.location.href).toBe('immich://albums/album-xyz');
+    expect(mockCreateImmichAlbum).not.toHaveBeenCalled();
+  });
+
+  it('falls back to browser when app is not installed (timer fires)', async () => {
+    const { getByText } = render(ImmichAlbumButton, {
+      props: { ...BASE_PROPS, immichAlbumId: 'album-xyz' },
+    });
+
+    await fireEvent.click(getByText('immich.open_album'));
+    vi.advanceTimersByTime(1500);
 
     expect(window.open).toHaveBeenCalledWith(
       'https://immich.example.com/albums/album-xyz',
@@ -60,6 +75,23 @@ describe('ImmichAlbumButton', () => {
       'noopener',
     );
     expect(mockCreateImmichAlbum).not.toHaveBeenCalled();
+  });
+
+  it('does not open browser when app opens (visibilitychange fires)', async () => {
+    const { getByText } = render(ImmichAlbumButton, {
+      props: { ...BASE_PROPS, immichAlbumId: 'album-xyz' },
+    });
+
+    await fireEvent.click(getByText('immich.open_album'));
+
+    // Simulate app opening: page becomes hidden
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+
+    vi.advanceTimersByTime(2000);
+
+    expect(window.open).not.toHaveBeenCalled();
   });
 
   it('calls tripsApi.createImmichAlbum when no album exists', async () => {
@@ -106,20 +138,13 @@ describe('ImmichAlbumButton', () => {
     await waitFor(() => expect(onAlbumCreated).toHaveBeenCalledWith('created-id'));
   });
 
-  it('opens album_url in new tab after creation when provided', async () => {
-    mockCreateImmichAlbum.mockResolvedValue({
-      album_id: 'new-id',
-      album_url: 'https://immich.example.com/albums/new-id',
-    });
+  it('tries deep link for newly created album', async () => {
+    mockCreateImmichAlbum.mockResolvedValue({ album_id: 'new-id', album_url: null });
     const { getByText } = render(ImmichAlbumButton, { props: BASE_PROPS });
 
     await fireEvent.click(getByText('immich.create_album'));
     await waitFor(() =>
-      expect(window.open).toHaveBeenCalledWith(
-        'https://immich.example.com/albums/new-id',
-        '_blank',
-        'noopener',
-      ),
+      expect(window.location.href).toBe('immich://albums/new-id'),
     );
   });
 

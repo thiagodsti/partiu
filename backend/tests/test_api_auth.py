@@ -281,3 +281,50 @@ class TestTwoFA:
         self._setup_2fa(auth_client)
         r = auth_client.post("/api/auth/2fa/disable", json={"password": "wrongpassword"})
         assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# /api/auth/me PATCH — locale preference
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateMe:
+    def test_me_returns_locale(self, auth_client):
+        r = auth_client.get("/api/auth/me")
+        assert r.status_code == 200
+        assert r.json()["locale"] == "en"
+
+    def test_login_returns_locale(self, client):
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        client.cookies.clear()
+        r = client.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+        assert r.status_code == 200
+        assert r.json()["locale"] == "en"
+
+    def test_update_locale(self, auth_client):
+        r = auth_client.patch("/api/auth/me", json={"locale": "pt-BR"})
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+        r2 = auth_client.get("/api/auth/me")
+        assert r2.json()["locale"] == "pt-BR"
+
+    def test_locale_persists_after_relogin(self, auth_client, api_app):
+        auth_client.patch("/api/auth/me", json={"locale": "pt-BR"})
+        auth_client.post("/api/auth/logout")
+
+        from fastapi.testclient import TestClient
+
+        with TestClient(api_app, base_url="https://testserver") as c:
+            r = c.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+            assert r.json()["locale"] == "pt-BR"
+
+    def test_update_locale_invalid(self, auth_client):
+        r = auth_client.patch("/api/auth/me", json={"locale": "fr"})
+        assert r.status_code == 422
+
+    def test_update_locale_unauthenticated(self, client):
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        client.cookies.clear()
+        r = client.patch("/api/auth/me", json={"locale": "pt-BR"})
+        assert r.status_code == 401

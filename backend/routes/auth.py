@@ -58,6 +58,12 @@ class TwoFADisableRequest(BaseModel):
     password: str | None = None
 
 
+class UpdateMeRequest(BaseModel):
+    locale: str | None = None
+
+_VALID_LOCALES = {"en", "pt-BR"}
+
+
 def _check_totp_lockout(user_id: int) -> None:
     """Raise HTTP 429 if the user has too many recent TOTP failures."""
     with db_conn() as conn:
@@ -119,6 +125,7 @@ def setup(request: Request, body: SetupRequest, response: Response):
         "is_admin": True,
         "smtp_recipient_address": body.smtp_recipient_address,
         "totp_enabled": False,
+        "locale": "en",
     }
 
 
@@ -127,7 +134,7 @@ def setup(request: Request, body: SetupRequest, response: Response):
 def login(request: Request, body: LoginRequest, response: Response):
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE username = ?",
             (body.username,),
         ).fetchone()
     if row is None or not verify_password(body.password, row["password_hash"]):
@@ -167,6 +174,7 @@ def login(request: Request, body: LoginRequest, response: Response):
         "is_admin": bool(row["is_admin"]),
         "smtp_recipient_address": row["smtp_recipient_address"],
         "totp_enabled": bool(row["totp_enabled"]),
+        "locale": row["locale"] or "en",
     }
 
 
@@ -182,7 +190,7 @@ def verify_2fa(request: Request, body: TwoFAVerifyRequest, response: Response):
 
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, is_admin, smtp_recipient_address, totp_secret, totp_enabled FROM users WHERE id = ?",
+            "SELECT id, username, is_admin, smtp_recipient_address, totp_secret, totp_enabled, locale FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
     if row is None:
@@ -221,6 +229,7 @@ def verify_2fa(request: Request, body: TwoFAVerifyRequest, response: Response):
         "is_admin": bool(row["is_admin"]),
         "smtp_recipient_address": row["smtp_recipient_address"],
         "totp_enabled": bool(row["totp_enabled"]),
+        "locale": row["locale"] or "en",
     }
 
 
@@ -312,7 +321,7 @@ def me(request: Request):
         raise HTTPException(401, "Invalid or expired session")
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled FROM users WHERE id = ?",
+            "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
     if row is None:
@@ -323,7 +332,18 @@ def me(request: Request):
         "is_admin": bool(row["is_admin"]),
         "smtp_recipient_address": row["smtp_recipient_address"],
         "totp_enabled": bool(row["totp_enabled"]),
+        "locale": row["locale"] or "en",
     }
+
+
+@router.patch("/me")
+def update_me(body: UpdateMeRequest, user: dict = Depends(get_current_user)):
+    if body.locale is not None and body.locale not in _VALID_LOCALES:
+        raise HTTPException(422, f"Invalid locale. Valid values: {sorted(_VALID_LOCALES)}")
+    if body.locale is not None:
+        with db_write() as conn:
+            conn.execute("UPDATE users SET locale = ? WHERE id = ?", (body.locale, user["id"]))
+    return {"ok": True}
 
 
 @router.post("/change-password")

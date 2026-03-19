@@ -15,12 +15,38 @@
   let creating = $state(false);
   let error = $state<string | null>(null);
 
+  function openAlbum(albumId: string) {
+    const deepLink = `immich://albums/${albumId}`;
+    const webUrl = `${immichBaseUrl}/albums/${albumId}`;
+
+    let appOpened = false;
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        appOpened = true;
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        clearTimeout(fallbackTimer);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const fallbackTimer = setTimeout(() => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (!appOpened) {
+        window.open(webUrl, '_blank', 'noopener');
+      }
+    }, 1500);
+
+    window.location.href = deepLink;
+  }
+
   async function handleClick(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
 
     if (immichAlbumId) {
-      window.open(`${immichBaseUrl}/albums/${immichAlbumId}`, '_blank', 'noopener');
+      openAlbum(immichAlbumId);
       return;
     }
 
@@ -29,7 +55,7 @@
     try {
       const result = await tripsApi.createImmichAlbum(tripId);
       onAlbumCreated?.(result.album_id);
-      if (result.album_url) window.open(result.album_url, '_blank', 'noopener');
+      openAlbum(result.album_id);
     } catch (err) {
       error = (err as Error).message;
     } finally {

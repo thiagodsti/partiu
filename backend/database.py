@@ -367,6 +367,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE users ADD COLUMN notif_delay_alert INTEGER NOT NULL DEFAULT 1",
         ],
     ),
+    (
+        20,
+        "Add locale preference to users",
+        [
+            "ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)

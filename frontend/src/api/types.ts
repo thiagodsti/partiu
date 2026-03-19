@@ -6,6 +6,7 @@ export interface User {
   is_admin: boolean;
   smtp_recipient_address: string | null;
   totp_enabled?: boolean;
+  locale?: string;
 }
 
 export interface LoginResponse {
@@ -15,6 +16,7 @@ export interface LoginResponse {
   is_admin?: boolean;
   smtp_recipient_address?: string | null;
   totp_enabled?: boolean;
+  locale?: string;
 }
 
 export interface UserListItem extends User {
