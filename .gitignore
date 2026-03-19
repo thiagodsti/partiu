@@ -39,3 +39,7 @@ data/
 Thumbs.db
 node_modules
 .history/
+
+# Test / coverage
+.coverage
+htmlcov/

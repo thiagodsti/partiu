@@ -1,16 +1,28 @@
 """Shared pytest fixtures for backend tests."""
+
 import email as stdlib_email
 import json
+import os
 import sys
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+# MUST be set before any backend imports so Settings picks it up.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-minimum-32chars!")
+
 # Add the project root so that `backend` is importable as a package.
-# This lets modules that use relative imports (e.g. database.py) work correctly.
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
+
+# Disable rate limiting before route modules are first imported.
+import backend.limiter as _limiter_mod  # noqa: E402
+
+_noop_limiter = MagicMock()
+_noop_limiter.limit = lambda *a, **kw: lambda f: f
+_limiter_mod.limiter = _noop_limiter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -20,12 +32,7 @@ FIXTURE_CACHE_PATH = FIXTURES_DIR / "email_cache.json"
 
 @pytest.fixture(scope="session")
 def email_cache():
-    """Load the email cache for parsing tests.
-
-    Priority:
-      1. data/email_cache.json  — real emails from a local sync (gitignored)
-      2. backend/tests/fixtures/email_cache.json — anonymized fixture (committed)
-    """
+    """Load the email cache for parsing tests."""
     path = CACHE_PATH if CACHE_PATH.exists() else FIXTURE_CACHE_PATH
     if not path.exists():
         return []
@@ -39,19 +46,79 @@ def test_db(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
 
     import backend.database as db_module
+
     monkeypatch.setattr(db_module.settings, "DB_PATH", db_path)
 
+    # Also patch the config.settings so auth.py / audit_log.py see the same path.
+    import backend.config as cfg_module
+
+    monkeypatch.setattr(cfg_module.settings, "DB_PATH", db_path)
+    monkeypatch.setattr(
+        cfg_module.settings, "SECRET_KEY", "test-secret-key-for-testing-minimum-32chars!"
+    )
+
+    # Reset lazy singletons that depend on DB_PATH / SECRET_KEY.
+    import backend.auth as auth_mod
+
+    auth_mod._serializer = None
+
+    import backend.audit_log as audit_mod
+
+    audit_mod._audit_logger = None
+
     from backend.database import init_database
+
     init_database()
 
     yield db_path
 
 
+@pytest.fixture
+def api_app(test_db):
+    """Create a minimal FastAPI app with all API routers for integration testing."""
+    from fastapi import FastAPI
+
+    from backend.routes import airports as airports_routes
+    from backend.routes import auth as auth_routes
+    from backend.routes import flights as flights_routes
+    from backend.routes import settings as settings_routes
+    from backend.routes import sync as sync_routes
+    from backend.routes import trips as trips_routes
+    from backend.routes import users as users_routes
+
+    app = FastAPI()
+    app.include_router(auth_routes.router)
+    app.include_router(users_routes.router)
+    app.include_router(trips_routes.router)
+    app.include_router(flights_routes.router)
+    app.include_router(sync_routes.router)
+    app.include_router(settings_routes.router)
+    app.include_router(airports_routes.router)
+    return app
+
+
+@pytest.fixture
+def client(api_app):
+    """Unauthenticated TestClient."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(api_app, raise_server_exceptions=True, base_url="https://testserver") as c:
+        yield c
+
+
+@pytest.fixture
+def auth_client(api_app):
+    """TestClient pre-logged-in as admin."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(api_app, raise_server_exceptions=True, base_url="https://testserver") as c:
+        r = c.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        assert r.status_code == 200, r.text
+        yield c
+
+
 def load_eml_as_email_message(eml_filename: str):
-    """
-    Parse a .eml fixture file and return an EmailMessage ready for the parser
-    pipeline.  Extracts text/plain, text/html and PDF attachments.
-    """
+    """Parse a .eml fixture file into an EmailMessage for parser pipeline tests."""
     from backend.parsers.email_connector import EmailMessage
 
     raw = (FIXTURES_DIR / eml_filename).read_bytes()

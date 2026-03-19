@@ -33,12 +33,12 @@
 
   // ---- Image refresh ----
   let refreshingImageId = $state<string | null>(null);
+  let coverVisible = $state<Record<string, boolean>>({});
   const retriedTrips = new Set<string>();
 
   async function handleImageError(e: Event, tripId: string) {
-    const cover = (e.currentTarget as HTMLElement).closest('.trip-card-cover') as HTMLElement;
     if (retriedTrips.has(tripId)) {
-      cover.style.display = 'none';
+      coverVisible = { ...coverVisible, [tripId]: false };
       return;
     }
     retriedTrips.add(tripId);
@@ -46,7 +46,7 @@
       await tripsApi.refreshImage(tripId);
       tripImageBust.bust(tripId);
     } catch {
-      cover.style.display = 'none';
+      coverVisible = { ...coverVisible, [tripId]: false };
     }
   }
 
@@ -86,12 +86,12 @@
       {@const refs = (trip.booking_refs ?? []).join(", ")}
       <a class="card-link" href="#/history/{trip.id}">
         <article class="card trip-card">
-          <div class="trip-card-cover" style="display:none">
+          <div class="trip-card-cover" style={coverVisible[trip.id] ? '' : 'display:none'}>
             <img
               src={tripImageBust.urlFor(trip.id, $tripImageBust)}
               alt=""
               class="trip-card-cover-img"
-              onload={(e) => { ((e.currentTarget as HTMLElement).closest('.trip-card-cover') as HTMLElement).style.display = ''; }}
+              onload={() => { coverVisible = { ...coverVisible, [trip.id]: true }; }}
               onerror={(e) => handleImageError(e, trip.id)}
             />
             <button

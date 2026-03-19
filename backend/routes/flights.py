@@ -121,8 +121,6 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
             if recovered_reg and not registration:
                 registration = recovered_reg
             if type_name:
-                from datetime import datetime
-
                 from ..database import db_write
 
                 with db_write() as conn:
