@@ -44,11 +44,14 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
                 dep.latitude  AS dep_lat,  dep.longitude AS dep_lon,
                 dep.city_name AS dep_city, dep.country_code AS dep_country,
                 arr.latitude  AS arr_lat,  arr.longitude AS arr_lon,
-                arr.city_name AS arr_city, arr.country_code AS arr_country
+                arr.city_name AS arr_city, arr.country_code AS arr_country,
+                t.name AS trip_name
             FROM flights f
             LEFT JOIN airports dep ON dep.iata_code = f.departure_airport
             LEFT JOIN airports arr ON arr.iata_code = f.arrival_airport
+            LEFT JOIN trips t ON t.id = f.trip_id
             WHERE f.user_id = ? {year_clause}
+              AND f.arrival_datetime < datetime('now')
             ORDER BY f.departure_datetime
             """,
             base_params,
@@ -73,6 +76,7 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
     airline_counts: dict[str, int] = defaultdict(int)
     longest_flight_km = 0.0
     longest_flight_route = ""
+    flight_breakdown: list[dict] = []
 
     for r in rows:
         dep = r["departure_airport"]
@@ -86,6 +90,15 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
             if flight_km > longest_flight_km:
                 longest_flight_km = flight_km
                 longest_flight_route = f"{dep}→{arr}" if dep and arr else ""
+
+        flight_breakdown.append(
+            {
+                "route": f"{dep}→{arr}" if dep and arr else f"{dep or '?'}→{arr or '?'}",
+                "flight": r["flight_number"] or "",
+                "km": round(flight_km),
+                "trip_name": r["trip_name"] or "",
+            }
+        )
 
         if r["duration_minutes"]:
             total_minutes += r["duration_minutes"]
@@ -122,4 +135,5 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
         "top_airports": top(airport_counts),
         "top_airlines": top(airline_counts),
         "years": [r["y"] for r in year_rows if r["y"]],
+        "flight_breakdown": flight_breakdown,
     }

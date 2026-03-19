@@ -17,6 +17,8 @@
   "stats.top_routes": "Rotas mais frequentes",
   "stats.top_airports": "Aeroportos mais usados",
   "stats.airlines": "Companhias aéreas",
+  "stats.distance_breakdown": "Distância por voo",
+  "stats.total": "Total",
   "login.title": "Partiu",
   "login.subtitle": "Entre na sua conta",
   "login.username": "Usuário",

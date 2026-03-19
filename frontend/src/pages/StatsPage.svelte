@@ -175,6 +175,29 @@
         </div>
       {/if}
 
+      <!-- Distance breakdown -->
+      {#if stats.flight_breakdown && stats.flight_breakdown.length > 0}
+        <div class="stat-section">
+          <div class="stat-section-title">{$t('stats.distance_breakdown')}</div>
+          <div class="stat-list">
+            {#each stats.flight_breakdown as f}
+              <div class="stat-list-item">
+                <div class="breakdown-main">
+                  <span class="stat-list-label route-mono">{f.route.replace('→', ' → ')}</span>
+                  {#if f.trip_name}<span class="breakdown-trip">{f.trip_name}</span>{/if}
+                </div>
+                {#if f.flight}<span class="breakdown-flight">{f.flight}</span>{/if}
+                <span class="stat-list-count">{f.km > 0 ? f.km.toLocaleString() + ' km' : '—'}</span>
+              </div>
+            {/each}
+            <div class="stat-list-item breakdown-total">
+              <span class="stat-list-label">{$t('stats.total')}</span>
+              <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
+            </div>
+          </div>
+        </div>
+      {/if}
+
       <!-- Airlines -->
       {#if stats.top_airlines.length > 0}
         <div class="stat-section">
@@ -431,6 +454,45 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     font-weight: 600;
+  }
+
+  /* ---- Breakdown ---- */
+  .breakdown-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .breakdown-trip {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .breakdown-flight {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: monospace;
+    flex-shrink: 0;
+  }
+
+  .breakdown-total {
+    border-top: 1px solid var(--border) !important;
+    font-weight: 600;
+  }
+
+  .breakdown-total .stat-list-label {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .breakdown-total .stat-list-count {
+    color: var(--accent);
+    font-weight: 700;
   }
 
   /* ---- Empty / error ---- */
