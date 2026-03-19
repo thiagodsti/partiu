@@ -233,14 +233,15 @@ img {
   z-index: 100;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  height: var(--tab-height);
+  height: calc(var(--tab-height) + env(safe-area-inset-bottom));
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
 .tab-item {
   flex: 1;
+  height: var(--tab-height);
   display: flex;
   flex-direction: column;
   align-items: center;
