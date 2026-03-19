@@ -31,7 +31,7 @@ jobs:
         run: ruff check backend/
 
       - name: Run backend tests
-        run: pytest backend/tests/ -v --cov=backend --cov-report=xml
+        run: pytest backend/tests/ -v --cov=backend --cov-report=xml --cov-fail-under=70
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
