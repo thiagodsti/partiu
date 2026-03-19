@@ -9,6 +9,7 @@
 Think of it as a self-hosted TripIt, built for people who want full control over their travel data.
 
 ---
+![demo](https://github.com/user-attachments/assets/d31ee94b-5a7c-47bb-9fac-a4a7753d65ec)
 
 ## What it does
 
