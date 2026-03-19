@@ -37,7 +37,7 @@ class TestStartScheduler:
 
                 start_scheduler()
         mock_sched.start.assert_called_once()
-        assert mock_sched.add_job.call_count == 2
+        assert mock_sched.add_job.call_count == 3
 
     def test_uses_sync_interval_from_settings(self, test_db, monkeypatch):
         import backend.config as cfg
@@ -59,6 +59,7 @@ class TestStartScheduler:
         ids = [kw.get("id") for kw in job_kwargs]
         assert "email_sync" in ids
         assert "aircraft_sync" in ids
+        assert "push_notifications" in ids
 
 
 class TestStopScheduler:

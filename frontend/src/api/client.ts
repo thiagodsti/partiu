@@ -15,6 +15,7 @@ import type {
   TripsListResponse,
   AirportCountResponse,
   ImmichAlbumResponse,
+  NotifPreferences,
   User,
   UserListItem,
   LoginResponse,
@@ -163,6 +164,22 @@ export interface SettingsUpdatePayload {
   immich_url?: string;
   immich_api_key?: string;
 }
+
+// ---- Notifications ----
+
+export const notificationsApi = {
+  vapidPublicKey: () => get<{ public_key: string }>('/api/notifications/vapid-public-key'),
+  vapidStatus: () => get<{ configured: boolean; source: string; public_key: string | null }>('/api/notifications/vapid/status'),
+  generateVapidKeys: () => post<{ ok: boolean; public_key: string; source: string }>('/api/notifications/vapid/generate'),
+  subscribe: (subscription: PushSubscriptionJSON) =>
+    post<{ ok: boolean }>('/api/notifications/subscribe', { subscription }),
+  unsubscribe: (endpoint: string) =>
+    _request<{ ok: boolean }>('DELETE', '/api/notifications/subscribe', { endpoint }),
+  getPreferences: () => get<NotifPreferences>('/api/notifications/preferences'),
+  updatePreferences: (prefs: Partial<NotifPreferences>) =>
+    post<NotifPreferences & { ok: boolean }>('/api/notifications/preferences', prefs),
+  testPush: () => post<{ ok: boolean; sent: number }>('/api/notifications/test'),
+};
 
 export const settingsApi = {
   get: () => get<Settings>('/api/settings'),

@@ -96,6 +96,12 @@ export interface Settings {
   immich_api_key_set: boolean;
 }
 
+export interface NotifPreferences {
+  flight_reminder: boolean;
+  checkin_reminder: boolean;
+  trip_reminder: boolean;
+}
+
 export interface ImmichAlbumResponse {
   album_id: string;
   album_url: string | null;

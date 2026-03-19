@@ -307,6 +307,47 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE trips ADD COLUMN immich_album_id TEXT",
         ],
     ),
+    (
+        15,
+        "Add notification preference columns to users",
+        [
+            "ALTER TABLE users ADD COLUMN notif_flight_reminder INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE users ADD COLUMN notif_checkin_reminder INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE users ADD COLUMN notif_trip_reminder INTEGER NOT NULL DEFAULT 1",
+        ],
+    ),
+    (
+        16,
+        "Add push_subscriptions table",
+        [
+            """CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            endpoint TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            user_agent TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, endpoint)
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_push_subs_user_id ON push_subscriptions(user_id)",
+        ],
+    ),
+    (
+        17,
+        "Add notification_log table",
+        [
+            """CREATE TABLE IF NOT EXISTS notification_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            flight_id TEXT,
+            notif_type TEXT NOT NULL,
+            sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, flight_id, notif_type)
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_notif_log_lookup ON notification_log(user_id, flight_id, notif_type)",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)

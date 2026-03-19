@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi } from "../api/client";
-  import type { Settings, SyncStatus } from "../api/types";
+  import { settingsApi, syncApi, authApi, notificationsApi } from "../api/client";
+  import type { Settings, SyncStatus, NotifPreferences } from "../api/types";
   import { formatDateTimeLocale } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -59,6 +59,29 @@
   let immichMsg = $state("");
   let immichMsgType = $state<"success" | "error">("success");
   let testingImmich = $state(false);
+
+  // Notifications — admin VAPID config status
+  let vapidConfigured = $state(false);
+  let vapidSource = $state("");
+
+  async function loadVapidStatus() {
+    try {
+      const s = await notificationsApi.vapidStatus();
+      vapidConfigured = s.configured;
+      vapidSource = s.source;
+    } catch { /* non-admin — ignore */ }
+  }
+
+  if ($currentUser?.is_admin) loadVapidStatus();
+
+  // Notifications — per-user
+  let notifStatus = $state<"unsupported" | "denied" | "default" | "subscribed" | "unsubscribed">("default");
+  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true });
+  let savingNotifPrefs = $state(false);
+  let togglingNotif = $state(false);
+  let testingPush = $state(false);
+  let notifMsg = $state("");
+  let notifMsgType = $state<"success" | "error">("success");
 
   // UI state
   let savingSettings = $state(false);
@@ -246,6 +269,95 @@
       showMsg(`Error: ${(err as Error).message}`, "error");
     } finally {
       reloadingAirports = false;
+    }
+  }
+
+  // ---- Notifications ----
+  async function loadNotifStatus() {
+    const { getStatus, isSupported } = await import("../lib/notifications");
+    if (!isSupported()) {
+      notifStatus = "unsupported";
+      return;
+    }
+    notifStatus = await getStatus();
+    if (notifStatus === "subscribed" || notifStatus === "unsubscribed") {
+      try {
+        notifPrefs = await notificationsApi.getPreferences();
+      } catch { /* ignore */ }
+    }
+  }
+
+  loadNotifStatus();
+
+  async function togglePushSubscription() {
+    togglingNotif = true;
+    notifMsg = "";
+    try {
+      if (notifStatus === "subscribed") {
+        const { unsubscribe } = await import("../lib/notifications");
+        await unsubscribe();
+        notifMsg = "Push notifications disabled";
+        notifMsgType = "success";
+      } else {
+        // Check server is ready before requesting browser permission
+        try {
+          await notificationsApi.vapidPublicKey();
+        } catch {
+          notifMsg = "Push notifications are not configured on this server yet" + ($currentUser?.is_admin ? " — generate VAPID keys above." : ". Contact your admin.");
+          notifMsgType = "error";
+          return;
+        }
+        const { subscribe } = await import("../lib/notifications");
+        const ok = await subscribe();
+        if (ok) {
+          notifMsg = "Push notifications enabled";
+          notifMsgType = "success";
+        } else {
+          notifMsg = "Could not enable notifications — check browser permissions";
+          notifMsgType = "error";
+        }
+      }
+      const { getStatus } = await import("../lib/notifications");
+      notifStatus = await getStatus();
+      if (notifStatus === "subscribed") {
+        notifPrefs = await notificationsApi.getPreferences();
+      }
+    } catch (err) {
+      notifMsg = (err as Error).message;
+      notifMsgType = "error";
+    } finally {
+      togglingNotif = false;
+    }
+  }
+
+  async function saveNotifPrefs(e: Event) {
+    e.preventDefault();
+    savingNotifPrefs = true;
+    notifMsg = "";
+    try {
+      await notificationsApi.updatePreferences(notifPrefs);
+      notifMsg = "Preferences saved";
+      notifMsgType = "success";
+    } catch (err) {
+      notifMsg = (err as Error).message;
+      notifMsgType = "error";
+    } finally {
+      savingNotifPrefs = false;
+    }
+  }
+
+  async function sendTestPush() {
+    testingPush = true;
+    notifMsg = "";
+    try {
+      const result = await notificationsApi.testPush();
+      notifMsg = result.ok ? "Test notification sent!" : "No subscriptions found";
+      notifMsgType = result.ok ? "success" : "error";
+    } catch (err) {
+      notifMsg = (err as Error).message;
+      notifMsgType = "error";
+    } finally {
+      testingPush = false;
     }
   }
 
@@ -894,6 +1006,84 @@
         </form>
       </div>
     {/if}
+
+    <!-- Admin: Push Notifications status (keys are auto-generated on startup) -->
+    {#if $currentUser?.is_admin}
+      <div class="settings-section">
+        <div class="settings-section-title">Push Notifications</div>
+        <div style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem">
+          <span style="width:10px;height:10px;flex-shrink:0;border-radius:50%;background:{vapidConfigured ? 'var(--success)' : 'var(--warning, #f59e0b)'}"></span>
+          {#if vapidConfigured}
+            Ready — VAPID keys configured ({vapidSource === "env" ? "from environment" : "auto-generated"})
+          {:else}
+            VAPID keys not yet generated — restart the server to auto-generate them
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Push Notifications Section -->
+    <div class="settings-section">
+      <div class="settings-section-title">Notifications</div>
+      {#if notifStatus === "unsupported"}
+        <p style="font-size:0.875rem;color:var(--text-secondary)">
+          Push notifications are not supported in this browser.
+        </p>
+      {:else if notifStatus === "denied"}
+        <p style="font-size:0.875rem;color:var(--danger)">
+          Notifications are blocked by your browser. Reset the permission in your browser settings to enable them.
+        </p>
+      {:else}
+        <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
+          Get push notifications for upcoming flights, check-in reminders, and trip start alerts.
+        </p>
+
+        <button
+          class="btn {notifStatus === 'subscribed' ? 'btn-secondary' : 'btn-primary'} btn-full"
+          disabled={togglingNotif}
+          onclick={togglePushSubscription}
+          style={notifStatus === "subscribed" ? "border-color:var(--danger);color:var(--danger)" : ""}
+        >
+          {togglingNotif
+            ? "..."
+            : notifStatus === "subscribed"
+              ? "Disable push notifications"
+              : "Enable push notifications"}
+        </button>
+
+        {#if notifStatus === "subscribed"}
+          <form onsubmit={saveNotifPrefs} style="margin-top:var(--space-md)">
+            <div class="settings-section-title" style="font-size:0.875rem;margin-bottom:var(--space-sm)">What to notify</div>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.flight_reminder} style="width:auto;margin:0" />
+              Flight reminder (2 hours before departure)
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.checkin_reminder} style="width:auto;margin:0" />
+              Check-in reminder (24 hours before departure)
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.trip_reminder} style="width:auto;margin:0" />
+              Trip reminder (1 day before trip starts)
+            </label>
+            <div style="display:flex;gap:var(--space-sm)">
+              <button class="btn btn-primary btn-full" type="submit" disabled={savingNotifPrefs}>
+                {savingNotifPrefs ? "Saving…" : "Save preferences"}
+              </button>
+              <button class="btn btn-secondary" type="button" disabled={testingPush} onclick={sendTestPush}>
+                {testingPush ? "…" : "Test"}
+              </button>
+            </div>
+          </form>
+        {/if}
+
+        {#if notifMsg}
+          <p style="font-size:0.875rem;margin-top:var(--space-sm);color:{notifMsgType === 'success' ? 'var(--success)' : 'var(--danger)'}">
+            {notifMsg}
+          </p>
+        {/if}
+      {/if}
+    </div>
 
     <!-- Immich Integration Section -->
     <div class="settings-section">

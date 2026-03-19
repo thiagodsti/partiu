@@ -22,6 +22,7 @@ from .limiter import limiter
 from .middleware import FirstRunMiddleware
 from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
+from .routes import notifications as notifications_routes
 from .routes import users as users_routes
 from .scheduler import start_scheduler, stop_scheduler
 from .smtp_server import start_smtp_server, stop_smtp_server
@@ -46,6 +47,9 @@ async def lifespan(app: FastAPI):
     validate_secret_key()  # Fail loudly if SECRET_KEY is not configured
     init_database()
     load_airports_if_empty()
+    from .push import ensure_vapid_keys
+
+    ensure_vapid_keys()
     start_scheduler()
     start_smtp_server()
     logger.info("Startup complete")
@@ -83,6 +87,7 @@ app.include_router(flights.router)
 app.include_router(sync.router)
 app.include_router(settings.router)
 app.include_router(airports.router)
+app.include_router(notifications_routes.router)
 
 
 # Serve frontend static files if directory exists

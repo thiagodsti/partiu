@@ -23,6 +23,10 @@ class Settings:
     AUDIT_LOG_MAX_MB: int = int(os.getenv("AUDIT_LOG_MAX_MB", "10"))
     # Email cache
     EMAIL_CACHE_MAX_ENTRIES: int = int(os.getenv("EMAIL_CACHE_MAX_ENTRIES", "500"))
+    # Web Push: override VAPID keys via env vars (optional — auto-generated on first run otherwise)
+    VAPID_PRIVATE_KEY: str = os.getenv("VAPID_PRIVATE_KEY", "")
+    VAPID_PUBLIC_KEY: str = os.getenv("VAPID_PUBLIC_KEY", "")
+    VAPID_SUBJECT: str = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
 
 
 settings = Settings()
