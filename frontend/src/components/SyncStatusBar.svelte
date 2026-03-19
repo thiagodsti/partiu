@@ -42,7 +42,7 @@
   <span
     class="sync-dot {syncRunning ? 'running' : syncHasError ? 'error' : 'idle'}"
   ></span>
-  <span>
+  <span style="flex:1;min-width:0">
     {#if syncRunning}
       {$t('sync.running')}
     {:else if syncHasError}

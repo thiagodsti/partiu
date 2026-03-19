@@ -824,6 +824,7 @@ img {
 .sync-status-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   background: var(--bg-secondary);
