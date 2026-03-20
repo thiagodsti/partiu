@@ -125,6 +125,8 @@ Once configured, a **Create Immich Album** button will appear on any completed t
 
 To recreate an album, delete it in Immich first — the button will revert to "Create".
 
+> **Known issue:** when tapping "Open Immich Album" on iOS/Android, the deep link navigates correctly to the album only if the Immich app is already open. If the app is fully closed, it will launch but land on the home page instead of the album. This is a bug in the Immich mobile app's cold-start deep link handling — tracked at [immich-app/immich#27069](https://github.com/immich-app/immich/issues/27069).
+
 ### Inbound SMTP (email forwarding)
 
 Instead of — or in addition to — Gmail IMAP sync, you can forward emails directly to Partiu:
