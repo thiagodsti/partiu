@@ -16,6 +16,7 @@ from ..auth import (
     get_current_user,
     has_any_users,
     hash_password,
+    revoke_all_user_sessions,
     revoke_session_cookie,
     verify_password,
 )
@@ -26,6 +27,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _TOTP_LOCKOUT_THRESHOLD = 5
 _TOTP_LOCKOUT_WINDOW_MINUTES = 15
+
+# Dummy hash used in login to prevent username enumeration via bcrypt timing
+_DUMMY_HASH = "$2b$12$invalidhashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 
 class SetupRequest(BaseModel):
@@ -130,14 +134,17 @@ def setup(request: Request, body: SetupRequest, response: Response):
 
 
 @router.post("/login")
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest, response: Response):
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE username = ?",
             (body.username,),
         ).fetchone()
-    if row is None or not verify_password(body.password, row["password_hash"]):
+    # Always run bcrypt to prevent username enumeration via timing differences
+    password_hash = row["password_hash"] if row else _DUMMY_HASH
+    password_ok = verify_password(body.password, password_hash)
+    if row is None or not password_ok:
         audit(
             "login_failed",
             username=body.username,
@@ -296,6 +303,7 @@ def disable_2fa(body: TwoFADisableRequest, user: dict = Depends(get_current_user
             "UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?", (user["id"],)
         )
 
+    revoke_all_user_sessions(user["id"])
     audit("2fa_disabled", user_id=user["id"])
     return {"ok": True}
 
@@ -367,5 +375,7 @@ def change_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (hash_password(body.new_password), user["id"]),
         )
+    # Invalidate all existing sessions so stolen cookies can't be reused
+    revoke_all_user_sessions(user["id"])
     audit("password_changed", user_id=user["id"])
     return {"ok": True}

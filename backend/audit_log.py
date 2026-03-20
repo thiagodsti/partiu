@@ -27,7 +27,7 @@ def _get_logger() -> logging.Logger:
         handler = RotatingFileHandler(
             log_path,
             maxBytes=max_bytes,
-            backupCount=0,  # overwrite (single rotating file)
+            backupCount=5,
             encoding="utf-8",
         )
         handler.setFormatter(logging.Formatter("%(message)s"))

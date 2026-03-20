@@ -142,13 +142,27 @@ async def get_current_user(request: Request) -> dict:
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=401, detail="User not found")
-    return dict(row)
+    user = dict(row)
+    from .crypto import decrypt
+
+    for field in ("gmail_app_password", "immich_api_key"):
+        if user.get(field):
+            user[field] = decrypt(user[field])
+    return user
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+def revoke_all_user_sessions(user_id: int) -> None:
+    """Revoke all active sessions for a user (call on password change, 2FA change, etc.)."""
+    from .database import db_write
+
+    with db_write() as conn:
+        conn.execute("UPDATE sessions SET revoked = 1 WHERE user_id = ?", (user_id,))
 
 
 def get_user_imap_settings(user: dict) -> dict:

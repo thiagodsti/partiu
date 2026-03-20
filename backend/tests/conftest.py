@@ -66,6 +66,10 @@ def test_db(tmp_path, monkeypatch):
 
     audit_mod._audit_logger = None
 
+    import backend.crypto as crypto_mod
+
+    crypto_mod._fernet = None
+
     from backend.database import init_database
 
     init_database()

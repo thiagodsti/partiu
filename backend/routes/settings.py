@@ -8,11 +8,13 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
+from ..crypto import encrypt
 from ..database import db_conn, db_write, get_global_setting, set_global_setting
+from ..limiter import limiter
 
 
 def _validate_imap_host(host: str):
@@ -117,7 +119,8 @@ class SettingsUpdate(BaseModel):
 
 
 @router.post("")
-def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)):
+@limiter.limit("20/minute")
+def update_settings(request: Request, body: SettingsUpdate, user: dict = Depends(get_current_user)):
     """
     Update settings.
     Per-user settings are stored in the users table.
@@ -128,7 +131,7 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
     if body.gmail_address is not None:
         user_updates["gmail_address"] = body.gmail_address
     if body.gmail_app_password is not None:
-        user_updates["gmail_app_password"] = body.gmail_app_password
+        user_updates["gmail_app_password"] = encrypt(body.gmail_app_password)
     if body.imap_host is not None:
         _validate_imap_host(body.imap_host)
         user_updates["imap_host"] = body.imap_host.strip()
@@ -158,7 +161,7 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
     if body.immich_url is not None:
         user_updates["immich_url"] = _validate_external_url(body.immich_url, "Immich URL")
     if body.immich_api_key is not None:
-        user_updates["immich_api_key"] = body.immich_api_key
+        user_updates["immich_api_key"] = encrypt(body.immich_api_key)
 
     if user_updates:
         set_clause = ", ".join(f"{k} = ?" for k in user_updates)
@@ -181,10 +184,16 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
         if not user.get("is_admin"):
             raise HTTPException(status_code=403, detail="Admin access required for global settings")
         if body.sync_interval_minutes is not None:
+            if not 1 <= body.sync_interval_minutes <= 1440:
+                raise HTTPException(400, "sync_interval_minutes must be between 1 and 1440")
             set_global_setting("sync_interval_minutes", str(body.sync_interval_minutes))
         if body.max_emails_per_sync is not None:
+            if not 1 <= body.max_emails_per_sync <= 10000:
+                raise HTTPException(400, "max_emails_per_sync must be between 1 and 10000")
             set_global_setting("max_emails_per_sync", str(body.max_emails_per_sync))
         if body.first_sync_days is not None:
+            if not 1 <= body.first_sync_days <= 3650:
+                raise HTTPException(400, "first_sync_days must be between 1 and 3650")
             set_global_setting("first_sync_days", str(body.first_sync_days))
         if body.smtp_server_enabled is not None:
             set_global_setting(
@@ -206,7 +215,8 @@ class TestImapRequest(BaseModel):
 
 
 @router.post("/test-imap")
-def test_imap(body: TestImapRequest, user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+def test_imap(request: Request, body: TestImapRequest, user: dict = Depends(get_current_user)):
     """Try connecting and authenticating to the IMAP server with the given (or stored) credentials."""
     host = (body.imap_host or user.get("imap_host") or "imap.gmail.com").strip()
     port = body.imap_port or user.get("imap_port") or 993
@@ -237,7 +247,8 @@ def test_imap(body: TestImapRequest, user: dict = Depends(get_current_user)):
 
 
 @router.post("/test-immich")
-async def test_immich(user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def test_immich(request: Request, user: dict = Depends(get_current_user)):
     """Test the configured Immich connection."""
     immich_url = (user.get("immich_url") or "").strip()
     immich_api_key = (user.get("immich_api_key") or "").strip()

@@ -2,15 +2,17 @@
 Airport lookup routes.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ..database import db_conn
+from ..limiter import limiter
 
 router = APIRouter(prefix="/api/airports", tags=["airports"])
 
 
 @router.get("/search")
-def search_airports(q: str = "", limit: int = 10):
+@limiter.limit("60/minute")
+def search_airports(request: Request, q: str = "", limit: int = 10):
     """Search airports by IATA code prefix, name, or city (max 10 results)."""
     q = q.strip()
     if not q:

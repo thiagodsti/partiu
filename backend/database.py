@@ -440,10 +440,43 @@ def _run_migrations():
         conn.close()
 
 
+def _encrypt_existing_credentials() -> None:
+    """One-time migration: encrypt any plaintext credentials in the users table."""
+    if get_global_setting("credentials_encrypted") == "true":
+        return
+
+    from .crypto import encrypt, is_encrypted
+
+    with db_conn() as conn:
+        users = conn.execute(
+            "SELECT id, gmail_app_password, immich_api_key FROM users"
+        ).fetchall()
+
+    for user in users:
+        updates: dict = {}
+        pwd = user["gmail_app_password"]
+        if pwd and not is_encrypted(pwd):
+            updates["gmail_app_password"] = encrypt(pwd)
+        key = user["immich_api_key"]
+        if key and not is_encrypted(key):
+            updates["immich_api_key"] = encrypt(key)
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            with db_write() as conn:
+                conn.execute(
+                    f"UPDATE users SET {set_clause} WHERE id = ?",  # noqa: S608
+                    list(updates.values()) + [user["id"]],
+                )
+
+    set_global_setting("credentials_encrypted", "true")
+    logger.info("Credential encryption migration complete")
+
+
 def init_database():
     """Run pending migrations then seed static data."""
     logger.info("Initializing database at %s", get_db_path())
     _run_migrations()
+    _encrypt_existing_credentials()
     _normalize_aircraft_types()
     load_aircraft_types_if_empty()
     logger.info("Database ready (schema v%d)", CURRENT_SCHEMA_VERSION)

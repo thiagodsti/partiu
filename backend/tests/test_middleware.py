@@ -91,6 +91,7 @@ class TestSecurityHeaders:
         assert "strict-origin-when-cross-origin" in r.headers.get("Referrer-Policy", "")
         assert "Permissions-Policy" in r.headers
         assert "Content-Security-Policy" in r.headers
+        assert "max-age=31536000" in r.headers.get("Strict-Transport-Security", "")
 
     def test_csp_header_value(self, test_db):
         app = _make_app(test_db)

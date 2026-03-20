@@ -15,6 +15,8 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    # Tell browsers to only connect via HTTPS for the next year (ignored on HTTP)
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     # CSP: same-origin scripts/styles; inline styles allowed (Svelte); data: for QR SVGs
     # frame-src allows the OpenStreetMap embed; img-src allows Wikipedia thumbnails served locally
     # CartoDB tile servers and unpkg needed for the trip route map (Leaflet)
