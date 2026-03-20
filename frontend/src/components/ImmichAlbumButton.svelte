@@ -16,7 +16,7 @@
   let error = $state<string | null>(null);
 
   function openAlbum(albumId: string) {
-    const deepLink = `immich:///albums/${albumId}`;
+    const deepLink = `immich://album?id=${albumId}`;
     const webUrl = `${immichBaseUrl}/albums/${albumId}`;
 
     let appOpened = false;

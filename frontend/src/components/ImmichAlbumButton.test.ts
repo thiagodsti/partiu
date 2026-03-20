@@ -57,7 +57,7 @@ describe('ImmichAlbumButton', () => {
 
     await fireEvent.click(getByText('immich.open_album'));
 
-    expect(window.location.href).toBe('immich:///albums/album-xyz');
+    expect(window.location.href).toBe('immich://album?id=album-xyz');
     expect(mockCreateImmichAlbum).not.toHaveBeenCalled();
   });
 
@@ -144,7 +144,7 @@ describe('ImmichAlbumButton', () => {
 
     await fireEvent.click(getByText('immich.create_album'));
     await waitFor(() =>
-      expect(window.location.href).toBe('immich:///albums/new-id'),
+      expect(window.location.href).toBe('immich://album?id=new-id'),
     );
   });
 
