@@ -6,9 +6,9 @@ Writes JSON lines to a rotating file (overwrite on full).
 import json
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from .utils import now_iso
-from pathlib import Path
 
 _audit_logger: logging.Logger | None = None
 

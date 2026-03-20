@@ -1,14 +1,14 @@
 """Tests for backend.utils shared utilities."""
 
-from datetime import UTC, datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
 from backend.utils import (
-    now_iso,
-    dt_to_iso,
     calc_duration_minutes,
     calc_flight_status,
+    dt_to_iso,
+    now_iso,
 )
 
 

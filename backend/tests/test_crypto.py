@@ -43,7 +43,7 @@ class TestEncrypt:
         assert a != b  # different ciphertexts
 
     def test_encrypt_preserves_special_characters(self):
-        from backend.crypto import encrypt, decrypt
+        from backend.crypto import decrypt, encrypt
 
         original = "p@$$w0rd!#%^&*()"
         assert decrypt(encrypt(original)) == original
@@ -51,7 +51,7 @@ class TestEncrypt:
 
 class TestDecrypt:
     def test_decrypt_encrypted_value(self):
-        from backend.crypto import encrypt, decrypt
+        from backend.crypto import decrypt, encrypt
 
         original = "gmail-app-password-123"
         assert decrypt(encrypt(original)) == original
@@ -68,13 +68,13 @@ class TestDecrypt:
         assert decrypt("plaintext-value") == "plaintext-value"
 
     def test_decrypt_long_string(self):
-        from backend.crypto import encrypt, decrypt
+        from backend.crypto import decrypt, encrypt
 
         original = "a" * 500
         assert decrypt(encrypt(original)) == original
 
     def test_decrypt_unicode(self):
-        from backend.crypto import encrypt, decrypt
+        from backend.crypto import decrypt, encrypt
 
         original = "pässwörd-日本語"
         assert decrypt(encrypt(original)) == original
@@ -104,7 +104,7 @@ class TestIsEncrypted:
 
 class TestRoundtrip:
     def test_multiple_fields_roundtrip(self):
-        from backend.crypto import encrypt, decrypt
+        from backend.crypto import decrypt, encrypt
 
         fields = {
             "gmail_app_password": "abcd efgh ijkl mnop",

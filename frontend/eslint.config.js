@@ -38,6 +38,22 @@ export default [
     },
   },
 
+  // Svelte rune globals for .svelte.ts files (e.g. classes using $state/$derived)
+  {
+    files: ["**/*.svelte.ts"],
+    languageOptions: {
+      globals: {
+        $state: "readonly",
+        $derived: "readonly",
+        $effect: "readonly",
+        $props: "readonly",
+        $bindable: "readonly",
+        $inspect: "readonly",
+        $host: "readonly",
+      },
+    },
+  },
+
   // Svelte files
   {
     files: ["**/*.svelte"],

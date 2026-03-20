@@ -12,9 +12,9 @@ Notifications API routes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from ..limiter import limiter
 
 from ..auth import get_current_user, require_admin
+from ..limiter import limiter
 from ..push import get_effective_vapid_keys
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
