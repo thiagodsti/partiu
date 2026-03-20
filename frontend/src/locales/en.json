@@ -94,6 +94,7 @@
   "trips.flight_count_plural": "{n} flights",
   "trips.ref": "Ref: {refs}",
   "trip.edit": "Edit Trip",
+  "trip.export_ical": "Export to Calendar",
   "trip.loading": "Loading trip…",
   "trip.load_error": "Failed to load trip",
   "trip.back": "Back to Trips",

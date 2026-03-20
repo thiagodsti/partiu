@@ -150,6 +150,16 @@
         <a href="#/trips/{params.id}/add-flight" class="btn btn-secondary" style="font-size:0.85rem">
           + {$t('trip.add_flight')}
         </a>
+        {#if flightList.length > 0}
+          <a
+            href="/api/trips/{params.id}/ical"
+            download="{trip.name || 'trip'}.ics"
+            class="btn btn-secondary"
+            style="font-size:0.85rem"
+          >
+            📅 {$t('trip.export_ical')}
+          </a>
+        {/if}
         {#if isCompleted && immichConfigured}
           <ImmichAlbumButton
             tripId={trip.id}

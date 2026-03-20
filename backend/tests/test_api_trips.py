@@ -296,3 +296,86 @@ class TestTripImage:
         with patch("backend.routes.trips.fetch_trip_image", side_effect=_mock_fetch):
             r2 = auth_client.get(f"/api/trips/{trip_id}/image")
         assert r2.status_code == 200
+
+
+class TestTripIcal:
+    def test_ical_not_found(self, auth_client):
+        r = auth_client.get("/api/trips/nonexistent/ical")
+        assert r.status_code == 404
+
+    def test_ical_empty_trip(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Empty Trip"})
+        trip_id = r.json()["id"]
+        r = auth_client.get(f"/api/trips/{trip_id}/ical")
+        assert r.status_code == 200
+        assert "text/calendar" in r.headers["content-type"]
+        body = r.text
+        assert "BEGIN:VCALENDAR" in body
+        assert "END:VCALENDAR" in body
+        assert "BEGIN:VEVENT" not in body
+
+    def test_ical_with_flights(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "GRU to LHR"})
+        trip_id = r.json()["id"]
+        _make_flight(auth_client, trip_id=trip_id)
+        r = auth_client.get(f"/api/trips/{trip_id}/ical")
+        assert r.status_code == 200
+        body = r.text
+        assert "BEGIN:VEVENT" in body
+        assert "END:VEVENT" in body
+        assert "LA8094" in body
+        assert "GRU" in body
+        assert "LHR" in body
+        assert "BEGIN:VALARM" in body
+        assert "TRIGGER:-PT1H" in body
+
+    def test_ical_includes_booking_ref_and_seat(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip"})
+        trip_id = r.json()["id"]
+        with patch("backend.aircraft_sync.fetch_aircraft_for_new_flights"):
+            auth_client.post(
+                "/api/flights",
+                json={
+                    "flight_number": "AD4444",
+                    "departure_airport": "CGH",
+                    "departure_datetime": "2025-08-01T06:00:00",
+                    "arrival_airport": "GIG",
+                    "arrival_datetime": "2025-08-01T07:10:00",
+                    "booking_reference": "XYZ123",
+                    "seat": "12A",
+                    "trip_id": trip_id,
+                },
+            )
+        r = auth_client.get(f"/api/trips/{trip_id}/ical")
+        body = r.text
+        assert "XYZ123" in body
+        assert "12A" in body
+
+    def test_ical_content_disposition_header(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "My Trip"})
+        trip_id = r.json()["id"]
+        r = auth_client.get(f"/api/trips/{trip_id}/ical")
+        assert "attachment" in r.headers["content-disposition"]
+        assert ".ics" in r.headers["content-disposition"]
+
+    def test_ical_other_user_cannot_access(self, auth_client, test_db):
+        import bcrypt
+
+        from backend.database import db_write
+
+        with db_write() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 0)",
+                ("other", bcrypt.hashpw(b"pass", bcrypt.gensalt()).decode(), ),
+            )
+        from fastapi.testclient import TestClient
+
+        from backend.main import app
+
+        other = TestClient(app)
+        other.post("/api/auth/login", json={"username": "other", "password": "pass"})
+
+        r = auth_client.post("/api/trips", json={"name": "Private Trip"})
+        trip_id = r.json()["id"]
+        r2 = other.get(f"/api/trips/{trip_id}/ical")
+        assert r2.status_code in (401, 404)

@@ -168,5 +168,6 @@
     margin-bottom: var(--space-md);
     background: var(--surface, #f0f0f0);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    isolation: isolate;
   }
 </style>

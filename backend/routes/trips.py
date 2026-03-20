@@ -5,9 +5,10 @@ Trip CRUD routes.
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from ..auth import get_current_user
@@ -68,6 +69,111 @@ def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
         trip["flights"] = [dict(f) for f in flights]
 
     return trip
+
+
+@router.get("/{trip_id}/ical")
+def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
+    """Export a trip as an iCalendar (.ics) file."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        trip = _row_to_trip(row)
+
+        flights = conn.execute(
+            "SELECT * FROM flights WHERE trip_id = ? AND user_id = ? ORDER BY departure_datetime",
+            (trip_id, user["id"]),
+        ).fetchall()
+
+    now_utc = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    trip_name = trip["name"] or "Trip"
+    safe_name = "".join(c if c.isalnum() or c in "-_ " else "" for c in trip_name).strip()
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Partiu//Trip Export//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{trip_name}",
+    ]
+
+    for flight in flights:
+        dep_str = flight["departure_datetime"]
+        arr_str = flight["arrival_datetime"]
+
+        def _to_ical_dt(dt_str: str) -> str:
+            """Convert ISO datetime string to iCal UTC format."""
+            try:
+                dt = datetime.fromisoformat(dt_str)
+                if dt.tzinfo is None:
+                    # Treat naive datetimes as UTC
+                    dt = dt.replace(tzinfo=UTC)
+                return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+            except (ValueError, TypeError):
+                return now_utc
+
+        dep_ical = _to_ical_dt(dep_str) if dep_str else now_utc
+        arr_ical = _to_ical_dt(arr_str) if arr_str else now_utc
+
+        flight_number = flight["flight_number"] or ""
+        dep_airport = flight["departure_airport"] or ""
+        arr_airport = flight["arrival_airport"] or ""
+        booking_ref = flight["booking_reference"] or ""
+        seat = flight["seat"] or ""
+        cabin = flight["cabin_class"] or ""
+        aircraft = flight["aircraft_type"] or ""
+        passenger = flight["passenger_name"] or ""
+
+        summary = f"{flight_number}: {dep_airport} → {arr_airport}"
+
+        desc_parts = []
+        if booking_ref:
+            desc_parts.append(f"Booking Ref: {booking_ref}")
+        if passenger:
+            desc_parts.append(f"Passenger: {passenger}")
+        if seat:
+            desc_parts.append(f"Seat: {seat}")
+        if cabin:
+            desc_parts.append(f"Class: {cabin}")
+        if aircraft:
+            desc_parts.append(f"Aircraft: {aircraft}")
+        description = "\\n".join(desc_parts)
+
+        uid = f"{flight['id']}@partiu"
+
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTAMP:{now_utc}",
+            f"DTSTART:{dep_ical}",
+            f"DTEND:{arr_ical}",
+            f"SUMMARY:{summary}",
+            f"LOCATION:{dep_airport} → {arr_airport}",
+        ]
+        if description:
+            lines.append(f"DESCRIPTION:{description}")
+        lines += [
+            "BEGIN:VALARM",
+            "TRIGGER:-PT1H",
+            "ACTION:DISPLAY",
+            f"DESCRIPTION:{flight_number} departs in 1 hour",
+            "END:VALARM",
+        ]
+        lines.append("END:VEVENT")
+
+    lines.append("END:VCALENDAR")
+
+    content = "\r\n".join(lines) + "\r\n"
+    filename = f"{safe_name or trip_id}.ics"
+
+    return PlainTextResponse(
+        content=content,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 class TripCreate(BaseModel):
