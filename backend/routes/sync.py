@@ -4,10 +4,11 @@ Sync control routes.
 
 import threading
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from ..auth import get_current_user
 from ..database import db_conn, get_global_setting
+from ..limiter import limiter
 
 router = APIRouter(prefix='/api/sync', tags=['sync'])
 
@@ -30,7 +31,8 @@ def get_sync_status(user: dict = Depends(get_current_user)):
 
 
 @router.post('/now')
-def sync_now(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+def sync_now(request: Request, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Trigger an immediate email sync (runs in background)."""
     if not _sync_lock.acquire(blocking=False):
         return {'status': 'already_running', 'message': 'Sync is already in progress'}

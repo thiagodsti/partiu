@@ -12,6 +12,7 @@ Notifications API routes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from ..limiter import limiter
 
 from ..auth import get_current_user, require_admin
 from ..push import get_effective_vapid_keys
@@ -140,7 +141,8 @@ async def update_preferences(
 
 
 @router.post("/test")
-async def test_push(user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def test_push(request: Request, user: dict = Depends(get_current_user)):
     keys = get_effective_vapid_keys()
     if not keys["public_key"] or not keys["private_key"]:
         raise HTTPException(

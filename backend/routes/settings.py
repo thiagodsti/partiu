@@ -6,6 +6,7 @@ Per-user settings stored in users table. Global settings stored in global_settin
 import imaplib
 import ipaddress
 import socket
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -34,6 +35,33 @@ def _validate_imap_host(host: str):
     except Exception:
         # DNS resolution failed — still allow it (offline/dev environments)
         pass
+
+
+def _validate_external_url(url: str, field_name: str = "URL") -> str:
+    """Validate a user-supplied HTTP/HTTPS URL and reject private/loopback targets (SSRF prevention)."""
+    url = url.strip()
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(400, f"{field_name} must use http or https")
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(400, f"{field_name} is missing a hostname")
+    if hostname in ("localhost", "localhost.localdomain"):
+        raise HTTPException(400, f"{field_name} cannot point to a local address")
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast:
+                raise HTTPException(400, f"{field_name} cannot point to a private or local address")
+    except HTTPException:
+        raise
+    except Exception:
+        # DNS resolution failed at validation time — allow it; connection attempt will fail naturally
+        pass
+    return url
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -128,7 +156,7 @@ def update_settings(body: SettingsUpdate, user: dict = Depends(get_current_user)
     if body.smtp_allowed_senders is not None:
         user_updates["smtp_allowed_senders"] = body.smtp_allowed_senders
     if body.immich_url is not None:
-        user_updates["immich_url"] = body.immich_url.strip()
+        user_updates["immich_url"] = _validate_external_url(body.immich_url, "Immich URL")
     if body.immich_api_key is not None:
         user_updates["immich_api_key"] = body.immich_api_key
 
