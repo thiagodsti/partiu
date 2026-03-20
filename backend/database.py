@@ -374,6 +374,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'",
         ],
     ),
+    (
+        21,
+        "Add aircraft_confirmed flag for re-fetch within 24h of departure",
+        [
+            "ALTER TABLE flights ADD COLUMN aircraft_confirmed INTEGER NOT NULL DEFAULT 0",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)

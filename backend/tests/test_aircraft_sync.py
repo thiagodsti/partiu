@@ -122,6 +122,9 @@ class TestFetchAircraftForNewFlights:
             mock_fetch.assert_not_called()
 
 
+_ROW_SELECT = "SELECT id, flight_number, arrival_datetime, departure_datetime FROM flights WHERE id = ?"
+
+
 class TestFetchRows:
     def test_gives_up_on_old_arrivals(self, test_db):
         from backend.aircraft_sync import _fetch_rows
@@ -139,10 +142,7 @@ class TestFetchRows:
                 old_arr,
             )
         with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT id, flight_number, arrival_datetime FROM flights WHERE id = ?",
-                (flight_id,),
-            ).fetchall()
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
         with patch("backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value={})):
             result = asyncio.run(_fetch_rows(rows))
         assert result["given_up"] == 1
@@ -164,10 +164,7 @@ class TestFetchRows:
                 arr,
             )
         with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT id, flight_number, arrival_datetime FROM flights WHERE id = ?",
-                (flight_id,),
-            ).fetchall()
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
         info = {
             "icao24": "ICAO01",
             "iata_code": "B738",
@@ -196,10 +193,7 @@ class TestFetchRows:
                 arr,
             )
         with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT id, flight_number, arrival_datetime FROM flights WHERE id = ?",
-                (flight_id,),
-            ).fetchall()
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
         with patch("backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value={})):
             result = asyncio.run(_fetch_rows(rows))
         assert result["attempted"] == 1
@@ -229,10 +223,7 @@ class TestFetchRows:
                 "not-a-valid-datetime",
             )
         with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT id, flight_number, arrival_datetime FROM flights WHERE id = ?",
-                (flight_id,),
-            ).fetchall()
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
         info = {
             "icao24": "TEST01",
             "iata_code": "B738",
@@ -242,6 +233,112 @@ class TestFetchRows:
         with patch("backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value=info)):
             result = asyncio.run(_fetch_rows(rows))
         assert result["attempted"] == 1
+
+    def test_confirmed_flag_set_when_within_24h_of_departure(self, test_db):
+        """Fetching data within 24h of departure sets aircraft_confirmed = 1."""
+        from backend.aircraft_sync import _fetch_rows
+        from backend.database import db_conn, db_write
+
+        flight_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        # Departure is 12h from now — within the live window
+        dep = (now + timedelta(hours=12)).isoformat()
+        arr = (now + timedelta(hours=15)).isoformat()
+        with db_write() as conn:
+            _insert_flight(conn, flight_id, "LA800", dep, arr)
+        with db_conn() as conn:
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
+        info = {"icao24": "ABC01", "type_name": "Airbus A320", "registration": "PP-X"}
+        with patch("backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value=info)):
+            asyncio.run(_fetch_rows(rows))
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT aircraft_confirmed FROM flights WHERE id = ?", (flight_id,)
+            ).fetchone()
+        assert row["aircraft_confirmed"] == 1
+
+    def test_confirmed_flag_not_set_when_more_than_24h_before_departure(self, test_db):
+        """Fetching data more than 24h before departure leaves aircraft_confirmed = 0."""
+        from backend.aircraft_sync import _fetch_rows
+        from backend.database import db_conn, db_write
+
+        flight_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        # Departure is 48h from now — outside the live window
+        dep = (now + timedelta(hours=48)).isoformat()
+        arr = (now + timedelta(hours=51)).isoformat()
+        with db_write() as conn:
+            _insert_flight(conn, flight_id, "LA900", dep, arr)
+        with db_conn() as conn:
+            rows = conn.execute(_ROW_SELECT, (flight_id,)).fetchall()
+        info = {"icao24": "XYZ01", "type_name": "Boeing 737", "registration": "PP-Y"}
+        with patch("backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value=info)):
+            asyncio.run(_fetch_rows(rows))
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT aircraft_confirmed FROM flights WHERE id = ?", (flight_id,)
+            ).fetchone()
+        assert row["aircraft_confirmed"] == 0
+
+
+class TestUnconfirmedRefresh:
+    def test_unconfirmed_flight_within_24h_is_refetched(self, test_db):
+        """Daily sync picks up unconfirmed flights within 24h of departure."""
+        from backend.aircraft_sync import run_aircraft_sync
+        from backend.database import db_conn, db_write
+
+        flight_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        dep = (now + timedelta(hours=10)).isoformat()
+        arr = (now + timedelta(hours=13)).isoformat()
+        # Flight was fetched early (confirmed=0) with stale aircraft data
+        with db_write() as conn:
+            _insert_flight(
+                conn, flight_id, "LA901", dep, arr, aircraft_fetched_at=now.isoformat()
+            )
+            conn.execute(
+                "UPDATE flights SET aircraft_confirmed = 0, aircraft_type = 'Wrong Type' WHERE id = ?",
+                (flight_id,),
+            )
+
+        info = {"icao24": "NEW01", "type_name": "Airbus A321", "registration": "PP-Z"}
+        with patch(
+            "backend.aircraft_api.fetch_aircraft_info", new=AsyncMock(return_value=info)
+        ):
+            result = run_aircraft_sync()
+
+        assert result["updated"] >= 1
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT aircraft_type, aircraft_confirmed FROM flights WHERE id = ?",
+                (flight_id,),
+            ).fetchone()
+        assert row["aircraft_type"] == "Airbus A321"
+        assert row["aircraft_confirmed"] == 1
+
+    def test_confirmed_flight_is_not_refetched(self, test_db):
+        """Daily sync does not re-fetch already confirmed flights."""
+        from backend.aircraft_sync import run_aircraft_sync
+        from backend.database import db_write
+
+        flight_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        dep = (now + timedelta(hours=10)).isoformat()
+        arr = (now + timedelta(hours=13)).isoformat()
+        with db_write() as conn:
+            _insert_flight(
+                conn, flight_id, "LA902", dep, arr, aircraft_fetched_at=now.isoformat()
+            )
+            conn.execute(
+                "UPDATE flights SET aircraft_confirmed = 1, aircraft_type = 'Boeing 777' WHERE id = ?",
+                (flight_id,),
+            )
+
+        mock_fetch = AsyncMock(return_value={"icao24": "X", "type_name": "Other"})
+        with patch("backend.aircraft_api.fetch_aircraft_info", new=mock_fetch):
+            run_aircraft_sync()
+
+        mock_fetch.assert_not_called()
 
 
 class TestRecoverMissingAircraftNames:

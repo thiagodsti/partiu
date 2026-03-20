@@ -78,11 +78,13 @@ async def _run_aircraft_sync() -> dict:
 
     now = datetime.now(UTC)
     window_start = (now - timedelta(hours=24)).isoformat()
+    in_24h = (now + timedelta(hours=24)).isoformat()
 
     with db_conn() as conn:
+        # Flights with no aircraft data yet
         rows = conn.execute(
             """
-            SELECT id, flight_number, arrival_datetime
+            SELECT id, flight_number, arrival_datetime, departure_datetime
             FROM flights
             WHERE aircraft_fetched_at IS NULL
               AND status != 'cancelled'
@@ -94,12 +96,32 @@ async def _run_aircraft_sync() -> dict:
             (window_start, now.isoformat(), now.isoformat()),
         ).fetchall()
 
-    if not rows:
+        # Flights fetched early (unconfirmed) that are now within 24h of departure —
+        # re-fetch because the API is more accurate close to the live window.
+        refresh_rows = conn.execute(
+            """
+            SELECT id, flight_number, arrival_datetime, departure_datetime
+            FROM flights
+            WHERE aircraft_fetched_at IS NOT NULL
+              AND aircraft_confirmed = 0
+              AND status != 'cancelled'
+              AND departure_datetime >= ?
+              AND departure_datetime <= ?
+            ORDER BY departure_datetime
+            """,
+            (window_start, in_24h),
+        ).fetchall()
+
+    # Combine, deduplicating by id (null-fetched rows take precedence)
+    seen = {r["id"] for r in rows}
+    all_rows = list(rows) + [r for r in refresh_rows if r["id"] not in seen]
+
+    if not all_rows:
         logger.debug("Aircraft sync: no eligible flights in window")
         return {"attempted": 0, "updated": 0, "given_up": 0}
 
-    logger.info("Aircraft sync: %d flight(s) to check", len(rows))
-    return await _fetch_rows(rows)
+    logger.info("Aircraft sync: %d flight(s) to check", len(all_rows))
+    return await _fetch_rows(all_rows)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +142,7 @@ async def _fetch_for_flight_ids(flight_ids: list[str]) -> None:
     with db_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT id, flight_number, arrival_datetime
+            SELECT id, flight_number, arrival_datetime, departure_datetime
             FROM flights
             WHERE id IN ({placeholders})
               AND aircraft_fetched_at IS NULL
@@ -172,11 +194,25 @@ async def _fetch_rows(rows) -> dict:
         info = await fetch_aircraft_info(row["flight_number"])
 
         if info.get("icao24") or info.get("type_name"):
+            # Mark confirmed only when fetching within the live window (≤24h before departure)
+            confirmed = 0
+            dep_str = row["departure_datetime"]
+            if dep_str:
+                try:
+                    dep = datetime.fromisoformat(dep_str)
+                    if dep.tzinfo is None:
+                        dep = dep.replace(tzinfo=UTC)
+                    if now >= dep - timedelta(hours=24):
+                        confirmed = 1
+                except ValueError:
+                    pass
+
             with db_write() as conn:
                 conn.execute(
                     """UPDATE flights
                        SET aircraft_type = ?, aircraft_icao = ?, aircraft_registration = ?,
                            aircraft_fetched_at = ?,
+                           aircraft_confirmed = ?,
                            aircraft_fetch_attempts = 0, aircraft_next_retry_at = NULL,
                            live_status = ?, live_departure_delay = ?, live_arrival_delay = ?,
                            live_departure_actual = ?, live_arrival_estimated = ?,
@@ -188,6 +224,7 @@ async def _fetch_rows(rows) -> dict:
                         info.get("icao24") or "",
                         info.get("registration") or "",
                         ts,
+                        confirmed,
                         info.get("flight_status") or None,
                         info.get("departure_delay"),
                         info.get("arrival_delay"),
