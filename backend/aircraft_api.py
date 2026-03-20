@@ -13,9 +13,10 @@ Aircraft type name resolution order:
 """
 
 import logging
-from datetime import UTC, datetime
 
 import httpx
+
+from .utils import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,6 @@ _AVIATIONSTACK_BASE = "http://api.aviationstack.com/v1"
 _OPENSKY_BASE = "https://opensky-network.org/api"
 _HEXDB_BASE = "https://hexdb.io/api/v1"
 _TIMEOUT = 10.0
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _lookup_type_name(iata_code: str) -> str | None:
@@ -269,7 +266,7 @@ async def get_or_fetch_aircraft(flight_id: str, flight_number: str) -> dict:
         }
 
     info = await fetch_aircraft_info(flight_number)
-    now = _now_iso()
+    now = now_iso()
 
     with db_write() as conn:
         conn.execute(

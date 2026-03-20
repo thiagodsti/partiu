@@ -22,29 +22,29 @@ def _make_email_msg(message_id="<test@example.com>", subject="Test", body="", ht
 
 class TestDtToIso:
     def test_none_returns_none(self):
-        from backend.sync_job import _dt_to_iso
+        from backend.utils import dt_to_iso
 
-        assert _dt_to_iso(None) is None
+        assert dt_to_iso(None) is None
 
     def test_aware_datetime(self):
-        from backend.sync_job import _dt_to_iso
+        from backend.utils import dt_to_iso
 
         dt = datetime(2025, 6, 1, 10, 0, 0, tzinfo=UTC)
-        result = _dt_to_iso(dt)
+        result = dt_to_iso(dt)
         assert "2025-06-01" in result
         assert "+" in result or "Z" in result or "UTC" in result
 
     def test_naive_datetime_gets_utc(self):
-        from backend.sync_job import _dt_to_iso
+        from backend.utils import dt_to_iso
 
         dt = datetime(2025, 6, 1, 10, 0, 0)
-        result = _dt_to_iso(dt)
+        result = dt_to_iso(dt)
         assert "2025-06-01" in result
 
     def test_non_datetime_falls_back_to_str(self):
-        from backend.sync_job import _dt_to_iso
+        from backend.utils import dt_to_iso
 
-        result = _dt_to_iso("2025-06-01")
+        result = dt_to_iso("2025-06-01")
         assert result == "2025-06-01"
 
 

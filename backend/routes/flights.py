@@ -3,19 +3,16 @@ Flight CRUD routes.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
+from ..utils import calc_duration_minutes, calc_flight_status, now_iso
 
 router = APIRouter(prefix="/api/flights", tags=["flights"])
-
-
-def _now_iso():
-    return datetime.now(UTC).isoformat()
 
 
 @router.get("")
@@ -126,13 +123,7 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
                 with db_write() as conn:
                     conn.execute(
                         "UPDATE flights SET aircraft_type = ?, aircraft_registration = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-                        (
-                            type_name,
-                            registration,
-                            datetime.now(UTC).isoformat(),
-                            flight_id,
-                            user["id"],
-                        ),
+                        (type_name, registration, now_iso(), flight_id, user["id"]),
                     )
 
         return {
@@ -146,9 +137,7 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
     if row["arrival_datetime"]:
         try:
             arr = datetime.fromisoformat(row["arrival_datetime"])
-            if arr.tzinfo is None:
-                arr = arr.replace(tzinfo=UTC)
-            if arr < datetime.now(UTC):
+            if calc_flight_status(arr) == "completed":
                 return {}
         except ValueError:
             pass
@@ -207,21 +196,16 @@ def create_flight(
     """Manually create a flight."""
     from ..timezone_utils import apply_airport_timezones
 
-    now = _now_iso()
+    now = now_iso()
     flight_id = str(uuid.uuid4())
 
-    # Calculate duration
-    duration_minutes = None
     dep_obj = arr_obj = None
     try:
         dep_obj = datetime.fromisoformat(body.departure_datetime)
         arr_obj = datetime.fromisoformat(body.arrival_datetime)
-        delta = arr_obj - dep_obj
-        minutes = int(delta.total_seconds() / 60)
-        if minutes > 0:
-            duration_minutes = minutes
     except (ValueError, TypeError):
         pass
+    duration_minutes = calc_duration_minutes(dep_obj, arr_obj)
 
     # Apply timezone lookup (same as auto-synced flights)
     tz_info = apply_airport_timezones(
@@ -324,7 +308,7 @@ def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_c
     if not updates:
         return {"id": flight_id}
 
-    updates["updated_at"] = _now_iso()
+    updates["updated_at"] = now_iso()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [flight_id, user["id"]]
 

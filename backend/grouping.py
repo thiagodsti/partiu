@@ -12,15 +12,12 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 from .database import db_conn, db_write
+from .utils import now_iso
 
 logger = logging.getLogger(__name__)
 
 _MAX_GAP = timedelta(hours=48)
 _CONNECTION_THRESHOLD = timedelta(hours=24)
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _dt_from_iso(s: str) -> datetime | None:
@@ -35,6 +32,21 @@ def _dt_from_iso(s: str) -> datetime | None:
         return None
 
 
+def _fetch_ungrouped_flights(user_id: int | None) -> list[dict]:
+    """Return all flights not yet assigned to a trip, ordered by departure time."""
+    with db_conn() as conn:
+        if user_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM flights WHERE trip_id IS NULL AND user_id = ? ORDER BY departure_datetime",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime"
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def auto_group_flights(user_id: int | None = None) -> dict:
     """
     Auto-group ungrouped flights into trips.
@@ -46,19 +58,7 @@ def auto_group_flights(user_id: int | None = None) -> dict:
 
     Returns a summary dict.
     """
-    if user_id is not None:
-        with db_conn() as conn:
-            rows = conn.execute(
-                'SELECT * FROM flights WHERE trip_id IS NULL AND user_id = ? ORDER BY departure_datetime',
-                (user_id,)
-            ).fetchall()
-    else:
-        with db_conn() as conn:
-            rows = conn.execute(
-                'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
-            ).fetchall()
-
-    ungrouped = [dict(r) for r in rows]
+    ungrouped = _fetch_ungrouped_flights(user_id)
 
     groups_created = 0
     flights_grouped = 0
@@ -90,18 +90,7 @@ def auto_group_flights(user_id: int | None = None) -> dict:
             flights_grouped += len(flights)
 
     # Phase 2: Group remaining ungrouped flights by time proximity
-    if user_id is not None:
-        with db_conn() as conn:
-            rows = conn.execute(
-                'SELECT * FROM flights WHERE trip_id IS NULL AND user_id = ? ORDER BY departure_datetime',
-                (user_id,)
-            ).fetchall()
-    else:
-        with db_conn() as conn:
-            rows = conn.execute(
-                'SELECT * FROM flights WHERE trip_id IS NULL ORDER BY departure_datetime'
-            ).fetchall()
-    remaining = [dict(r) for r in rows]
+    remaining = _fetch_ungrouped_flights(user_id)
 
     if remaining:
         proximity_groups = _group_by_proximity(remaining, max_gap=_MAX_GAP)
@@ -214,7 +203,7 @@ def _create_trip_for_flights(flights: list[dict], booking_ref: str = '',
     end_date = (last.get('arrival_datetime', '') or last.get('departure_datetime', '') or '')[:10]
     origin = first.get('departure_airport', '')
     destination = _find_trip_destination(sorted_flights, origin)
-    now = _now_iso()
+    now = now_iso()
     trip_id = str(uuid.uuid4())
 
     # Use user_id from the flights if not explicitly passed
@@ -326,7 +315,7 @@ def _merge_overlapping_groups(max_gap: timedelta, user_id: int | None = None) ->
                 )
                 if overlap:
                     # Merge g2 into g1
-                    now = _now_iso()
+                    now = now_iso()
                     all_flights = sorted(g1_flights + g2_flights, key=lambda f: f.get('departure_datetime', ''))
                     refs = list({f.get('booking_reference', '') for f in all_flights if f.get('booking_reference', '')})
                     new_name = _build_trip_name(all_flights)
@@ -366,7 +355,7 @@ def regroup_all_flights(user_id: int | None = None) -> dict:
     Unassign all auto-generated trips and re-run grouping from scratch.
     Manually added flights and manually created trips are preserved.
     """
-    now = _now_iso()
+    now = now_iso()
     with db_write() as conn:
         if user_id is not None:
             # Unlink flights from auto-generated trips for this user

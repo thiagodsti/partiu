@@ -5,8 +5,9 @@ Writes JSON lines to a rotating file (overwrite on full).
 
 import json
 import logging
-from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
+
+from .utils import now_iso
 from pathlib import Path
 
 _audit_logger: logging.Logger | None = None
@@ -38,7 +39,7 @@ def _get_logger() -> logging.Logger:
 def audit(event: str, user_id: int | None = None, **kwargs) -> None:
     """Emit a structured audit log entry."""
     record = {
-        "ts": datetime.now(UTC).isoformat(),
+        "ts": now_iso(),
         "event": event,
         "user_id": user_id,
         **kwargs,

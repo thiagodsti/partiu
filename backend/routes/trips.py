@@ -5,7 +5,7 @@ Trip CRUD routes.
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -14,14 +14,11 @@ from pydantic import BaseModel
 from ..auth import get_current_user
 from ..database import db_conn, db_write
 from ..trip_images import fetch_trip_image, trip_image_path
+from ..utils import now_iso
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
-
-
-def _now_iso():
-    return datetime.now(UTC).isoformat()
 
 
 def _row_to_trip(row) -> dict:
@@ -95,7 +92,7 @@ class TripUpdate(BaseModel):
 @router.post("", status_code=201)
 def create_trip(body: TripCreate, user: dict = Depends(get_current_user)):
     """Create a new trip manually."""
-    now = _now_iso()
+    now = now_iso()
     trip_id = str(uuid.uuid4())
 
     with db_write() as conn:
@@ -147,7 +144,7 @@ def update_trip(trip_id: str, body: TripUpdate, user: dict = Depends(get_current
     if not updates:
         return {"id": trip_id}
 
-    updates["updated_at"] = _now_iso()
+    updates["updated_at"] = now_iso()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [trip_id, user["id"]]
 
@@ -160,7 +157,7 @@ def update_trip(trip_id: str, body: TripUpdate, user: dict = Depends(get_current
 @router.delete("/{trip_id}", status_code=204)
 def delete_trip(trip_id: str, user: dict = Depends(get_current_user)):
     """Delete a trip (flights are unlinked, not deleted)."""
-    now = _now_iso()
+    now = now_iso()
     with db_write() as conn:
         conn.execute(
             "UPDATE flights SET trip_id = NULL, updated_at = ? WHERE trip_id = ? AND user_id = ?",
@@ -172,7 +169,7 @@ def delete_trip(trip_id: str, user: dict = Depends(get_current_user)):
 @router.post("/{trip_id}/flights/{flight_id}")
 def add_flight_to_trip(trip_id: str, flight_id: str, user: dict = Depends(get_current_user)):
     """Assign a flight to a trip."""
-    now = _now_iso()
+    now = now_iso()
     with db_write() as conn:
         # Verify trip and flight exist and belong to this user
         if not conn.execute(
@@ -194,7 +191,7 @@ def add_flight_to_trip(trip_id: str, flight_id: str, user: dict = Depends(get_cu
 @router.delete("/{trip_id}/flights/{flight_id}")
 def remove_flight_from_trip(trip_id: str, flight_id: str, user: dict = Depends(get_current_user)):
     """Unlink a flight from a trip."""
-    now = _now_iso()
+    now = now_iso()
     with db_write() as conn:
         conn.execute(
             "UPDATE flights SET trip_id = NULL, updated_at = ? WHERE id = ? AND trip_id = ? AND user_id = ?",
@@ -265,7 +262,7 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
     with db_write() as conn:
         conn.execute(
             "UPDATE trips SET image_fetched_at = ? WHERE id = ? AND user_id = ?",
-            (datetime.now(UTC).isoformat(), trip_id, user["id"]),
+            (now_iso(), trip_id, user["id"]),
         )
 
     if success and cached.exists():
@@ -349,7 +346,7 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
         with db_write() as conn:
             conn.execute(
                 "UPDATE trips SET immich_album_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?",
-                (_now_iso(), trip_id, user["id"]),
+                (now_iso(), trip_id, user["id"]),
             )
 
     if not immich_url or not immich_api_key:
@@ -377,7 +374,7 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
     with db_write() as conn:
         conn.execute(
             "UPDATE trips SET immich_album_id = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-            (result["album_id"], _now_iso(), trip_id, user["id"]),
+            (result["album_id"], now_iso(), trip_id, user["id"]),
         )
 
     return {
@@ -407,7 +404,7 @@ async def refresh_trip_image(trip_id: str, user: dict = Depends(get_current_user
     with db_write() as conn:
         conn.execute(
             "UPDATE trips SET image_fetched_at = ? WHERE id = ? AND user_id = ?",
-            (datetime.now(UTC).isoformat(), trip_id, user["id"]),
+            (now_iso(), trip_id, user["id"]),
         )
 
     if success and trip_image_path(trip_id).exists():

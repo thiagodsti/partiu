@@ -9,6 +9,7 @@
   import TripCard from "../components/TripCard.svelte";
   import ImmichAlbumButton from "../components/ImmichAlbumButton.svelte";
   import { t } from "../lib/i18n";
+  import { ImageRefreshManager } from "../lib/imageRefresh.svelte";
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -41,39 +42,7 @@
   );
 
   // ---- Image refresh ----
-  let refreshingImageId = $state<string | null>(null);
-  let imgFailed = $state<Record<string, boolean>>({});
-  const retriedTrips = new Set<string>();
-
-  async function handleImageError(_e: Event, tripId: string) {
-    if (retriedTrips.has(tripId)) {
-      imgFailed = { ...imgFailed, [tripId]: true };
-      return;
-    }
-    retriedTrips.add(tripId);
-    try {
-      await tripsApi.refreshImage(tripId);
-      tripImageBust.bust(tripId);
-    } catch {
-      imgFailed = { ...imgFailed, [tripId]: true };
-    }
-  }
-
-  async function refreshImage(e: MouseEvent, tripId: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    refreshingImageId = tripId;
-    try {
-      await tripsApi.refreshImage(tripId);
-      imgFailed = { ...imgFailed, [tripId]: false };
-      retriedTrips.delete(tripId);
-      tripImageBust.bust(tripId);
-    } catch {
-      // no image found, leave as-is
-    } finally {
-      refreshingImageId = null;
-    }
-  }
+  const imgRefresh = new ImageRefreshManager();
 </script>
 
 <TopNav title={$t('history.title')} />
@@ -96,10 +65,10 @@
         {trip}
         href="#/history/{trip.id}"
         imageUrl={tripImageBust.urlFor(trip.id, $tripImageBust)}
-        imgFailed={imgFailed[trip.id] ?? false}
-        refreshing={refreshingImageId === trip.id}
-        onImageError={(e) => handleImageError(e, trip.id)}
-        onRefreshImage={(e) => refreshImage(e, trip.id)}
+        imgFailed={imgRefresh.imgFailed[trip.id] ?? false}
+        refreshing={imgRefresh.refreshingId === trip.id}
+        onImageError={(e) => imgRefresh.handleError(e, trip.id)}
+        onRefreshImage={(e) => imgRefresh.refresh(e, trip.id)}
       >
         {#snippet badge()}
           <span class="badge badge-completed">{$t('trips.completed')}</span>

@@ -20,22 +20,9 @@ from .parsers.engine import (
     try_generic_pdf_extraction,
 )
 from .timezone_utils import apply_airport_timezones
+from .utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 
 logger = logging.getLogger(__name__)
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _dt_to_iso(dt) -> str | None:
-    if dt is None:
-        return None
-    if isinstance(dt, datetime):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt.isoformat()
-    return str(dt)
 
 
 def _get_sync_state(user_id: int) -> dict:
@@ -48,41 +35,46 @@ def _get_sync_state(user_id: int) -> dict:
         return {}
 
 
-def _set_sync_status(user_id: int, status: str, error: str = ""):
+_SYNC_STATE_COLUMNS = frozenset({"status", "last_error", "last_synced_at", "last_rules_version"})
+
+
+def _upsert_sync_state(user_id: int, **fields):
+    """Insert or update the email_sync_state row for a user."""
+    unknown = set(fields) - _SYNC_STATE_COLUMNS
+    if unknown:
+        raise ValueError(f"Unknown email_sync_state columns: {unknown}")
+
     with db_write() as conn:
         existing = conn.execute(
             "SELECT id FROM email_sync_state WHERE user_id = ?", (user_id,)
         ).fetchone()
         if existing:
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
             conn.execute(
-                "UPDATE email_sync_state SET status = ?, last_error = ? WHERE user_id = ?",
-                (status, error, user_id),
+                f"UPDATE email_sync_state SET {set_clause} WHERE user_id = ?",
+                list(fields.values()) + [user_id],
             )
         else:
+            cols = "user_id, " + ", ".join(fields.keys())
+            placeholders = ", ".join("?" for _ in range(len(fields) + 1))
             conn.execute(
-                "INSERT INTO email_sync_state (user_id, status, last_error) VALUES (?, ?, ?)",
-                (user_id, status, error),
+                f"INSERT INTO email_sync_state ({cols}) VALUES ({placeholders})",
+                [user_id] + list(fields.values()),
             )
+
+
+def _set_sync_status(user_id: int, status: str, error: str = ""):
+    _upsert_sync_state(user_id, status=status, last_error=error)
 
 
 def _set_sync_complete(user_id: int, last_synced_at: str):
-    with db_write() as conn:
-        existing = conn.execute(
-            "SELECT id FROM email_sync_state WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if existing:
-            conn.execute(
-                """UPDATE email_sync_state
-                   SET last_synced_at = ?, last_rules_version = ?, status = 'idle', last_error = ''
-                   WHERE user_id = ?""",
-                (last_synced_at, RULES_VERSION, user_id),
-            )
-        else:
-            conn.execute(
-                """INSERT INTO email_sync_state (user_id, last_synced_at, last_rules_version, status, last_error)
-                   VALUES (?, ?, ?, 'idle', '')""",
-                (user_id, last_synced_at, RULES_VERSION),
-            )
+    _upsert_sync_state(
+        user_id,
+        last_synced_at=last_synced_at,
+        last_rules_version=RULES_VERSION,
+        status="idle",
+        last_error="",
+    )
 
 
 def _find_existing_flight(flight_number: str, departure_date: str, user_id: int) -> dict | None:
@@ -105,26 +97,15 @@ def _insert_flight(flight_data: dict, email_msg, user_id: int) -> str | None:
     Insert a new flight row using INSERT OR IGNORE (dedup by email_message_id).
     Returns the new flight id if inserted, or None if it was a duplicate.
     """
-    now = _now_iso()
+    now = now_iso()
     flight_id = str(uuid.uuid4())
 
     dep_dt = flight_data.get("departure_datetime")
     arr_dt = flight_data.get("arrival_datetime")
-    dep_iso = _dt_to_iso(dep_dt)
-    arr_iso = _dt_to_iso(arr_dt)
-
-    duration_minutes = None
-    if dep_dt and arr_dt:
-        delta = arr_dt - dep_dt
-        minutes = int(delta.total_seconds() / 60)
-        if minutes > 0:
-            duration_minutes = minutes
-
-    now_dt = datetime.now(UTC)
-    arr_dt_aware = arr_dt
-    if arr_dt_aware and arr_dt_aware.tzinfo is None:
-        arr_dt_aware = arr_dt_aware.replace(tzinfo=UTC)
-    status = "completed" if (arr_dt_aware and arr_dt_aware < now_dt) else "upcoming"
+    dep_iso = dt_to_iso(dep_dt)
+    arr_iso = dt_to_iso(arr_dt)
+    duration_minutes = calc_duration_minutes(dep_dt, arr_dt)
+    status = calc_flight_status(arr_dt)
 
     msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
 
@@ -170,7 +151,7 @@ def _insert_flight(flight_data: dict, email_msg, user_id: int) -> str | None:
                 flight_data.get("arrival_timezone"),
                 msg_id_for_dedup,
                 (email_msg.subject or "")[:512],
-                _dt_to_iso(email_msg.date),
+                dt_to_iso(email_msg.date),
                 email_msg.html_body,
                 user_id,
                 now,
@@ -182,25 +163,13 @@ def _insert_flight(flight_data: dict, email_msg, user_id: int) -> str | None:
 
 def _update_flight(existing_id: str, flight_data: dict, email_msg):
     """Update an existing flight with newer email data."""
-    now = _now_iso()
+    now = now_iso()
     dep_dt = flight_data.get("departure_datetime")
     arr_dt = flight_data.get("arrival_datetime")
-    dep_iso = _dt_to_iso(dep_dt)
-    arr_iso = _dt_to_iso(arr_dt)
-
-    duration_minutes = None
-    if dep_dt and arr_dt:
-        delta = arr_dt - dep_dt
-        minutes = int(delta.total_seconds() / 60)
-        if minutes > 0:
-            duration_minutes = minutes
-
-    now_dt = datetime.now(UTC)
-    arr_dt_aware = arr_dt
-    if arr_dt_aware and arr_dt_aware.tzinfo is None:
-        arr_dt_aware = arr_dt_aware.replace(tzinfo=UTC)
-    status = "completed" if (arr_dt_aware and arr_dt_aware < now_dt) else "upcoming"
-
+    dep_iso = dt_to_iso(dep_dt)
+    arr_iso = dt_to_iso(arr_dt)
+    duration_minutes = calc_duration_minutes(dep_dt, arr_dt)
+    status = calc_flight_status(arr_dt)
     msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
 
     with db_write() as conn:
@@ -233,7 +202,7 @@ def _update_flight(existing_id: str, flight_data: dict, email_msg):
                 flight_data.get("arrival_timezone"),
                 msg_id_for_dedup,
                 (email_msg.subject or "")[:512],
-                _dt_to_iso(email_msg.date),
+                dt_to_iso(email_msg.date),
                 email_msg.html_body,
                 now,
                 existing_id,
@@ -254,7 +223,7 @@ def _update_flight_from_bcbp(existing_id: str, bcbp_leg: dict):
         updates["booking_reference"] = bcbp_leg["booking_reference"]
     if not updates:
         return
-    updates["updated_at"] = _now_iso()
+    updates["updated_at"] = now_iso()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [existing_id]
     with db_write() as conn:
@@ -306,10 +275,15 @@ def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
 
 
 def _process_emails(emails: list, user_id: int) -> dict:
-    """Shared logic: parse a list of EmailMessage objects and store flights."""
+    """Parse a list of EmailMessage objects and persist flights to the DB.
+
+    Returns a summary dict including ``new_flight_ids`` so callers can
+    trigger aircraft lookups for freshly inserted flights.
+    """
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
+    new_flight_ids: list[str] = []
     errors = []
 
     rules = get_builtin_rules()
@@ -317,18 +291,19 @@ def _process_emails(emails: list, user_id: int) -> dict:
 
     for email_msg in emails:
         try:
-            # --- BCBP boarding pass scan (primary source) ---
+            # --- BCBP boarding pass scan (always attempted first) ---
             bcbp_legs, bcbp_updated = _process_bcbp_email(email_msg, user_id)
             if bcbp_legs:
                 flights_updated += bcbp_updated
                 emails_processed += 1
 
-            # --- HTML / rule-based parsing ---
+            # --- HTML / rule-based or PDF parsing ---
             rule = match_rule_to_email(email_msg, sorted_rules)
-            if rule:
-                flights_data = extract_flights_from_email(email_msg, rule)
-            else:
-                flights_data = try_generic_pdf_extraction(email_msg)
+            flights_data = (
+                extract_flights_from_email(email_msg, rule)
+                if rule
+                else try_generic_pdf_extraction(email_msg)
+            )
 
             if not flights_data:
                 continue
@@ -343,35 +318,38 @@ def _process_emails(emails: list, user_id: int) -> dict:
                     continue
 
                 dep_dt = flight_data.get("departure_datetime")
-                dep_date = _dt_to_iso(dep_dt)[:10] if dep_dt else None
+                dep_date = dt_to_iso(dep_dt)[:10] if dep_dt else None
 
                 if dep_date:
                     existing = _find_existing_flight(fn, dep_date, user_id)
                     if existing:
-                        new_email_date = _dt_to_iso(email_msg.date) if email_msg.date else None
+                        new_email_date = dt_to_iso(email_msg.date) if email_msg.date else None
                         existing_email_date = existing.get("email_date")
-                        if (
-                            new_email_date
-                            and existing_email_date
-                            and new_email_date > existing_email_date
-                        ):
+                        if new_email_date and existing_email_date and new_email_date > existing_email_date:
                             _update_flight(existing["id"], flight_data, email_msg)
                             flights_updated += 1
+                            logger.info("User %d: Updated flight %s with newer email", user_id, fn)
+                        else:
+                            logger.debug("User %d: Skipping older email for flight %s", user_id, fn)
                         continue
 
-                # INSERT OR IGNORE handles dedup atomically
+                # INSERT OR IGNORE deduplicates by email_message_id atomically
                 new_id = _insert_flight(flight_data, email_msg, user_id)
                 if new_id:
                     flights_created += 1
+                    new_flight_ids.append(new_id)
                     logger.info(
-                        "Created flight: %s %s→%s",
+                        "User %d: Created flight: %s %s→%s",
+                        user_id,
                         fn,
                         flight_data.get("departure_airport"),
                         flight_data.get("arrival_airport"),
                     )
+                else:
+                    logger.debug("User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn)
 
         except Exception as e:
-            err = f"Error processing email {email_msg.message_id}: {e}"
+            err = f"User {user_id}: Error processing email {email_msg.message_id}: {e}"
             logger.error(err, exc_info=True)
             errors.append(err)
 
@@ -379,12 +357,13 @@ def _process_emails(emails: list, user_id: int) -> dict:
     try:
         grouping_result = auto_group_flights(user_id=user_id)
     except Exception as e:
-        logger.error("Grouping error: %s", e, exc_info=True)
+        logger.error("User %d: Grouping error: %s", user_id, e, exc_info=True)
 
     return {
         "emails_processed": emails_processed,
         "flights_created": flights_created,
         "flights_updated": flights_updated,
+        "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,
     }
@@ -461,110 +440,26 @@ def run_email_sync_for_user(user: dict) -> dict:
         if emails:
             save_emails(emails)
 
-        emails_processed = 0
-        flights_created = 0
-        flights_updated = 0
-        new_flight_ids: list[str] = []
-        errors = []
+        result = _process_emails(emails, user_id)
 
-        sorted_rules = sorted(rules, key=lambda r: (-r.priority, r.airline_name))
-
-        # All email parsing happens outside the write lock
-        for email_msg in emails:
-            try:
-                bcbp_legs, bcbp_updated = _process_bcbp_email(email_msg, user_id)
-                if bcbp_legs:
-                    flights_updated += bcbp_updated
-                    emails_processed += 1
-
-                rule = match_rule_to_email(email_msg, sorted_rules)
-                if rule:
-                    flights_data = extract_flights_from_email(email_msg, rule)
-                else:
-                    flights_data = try_generic_pdf_extraction(email_msg)
-
-                if not flights_data:
-                    continue
-
-                flights_data = [apply_airport_timezones(f) for f in flights_data]
-
-                if not bcbp_legs:
-                    emails_processed += 1
-
-                for flight_data in flights_data:
-                    fn = flight_data.get("flight_number", "")
-                    if not fn:
-                        continue
-
-                    dep_dt = flight_data.get("departure_datetime")
-                    dep_date = _dt_to_iso(dep_dt)[:10] if dep_dt else None
-
-                    if dep_date:
-                        existing = _find_existing_flight(fn, dep_date, user_id)
-                        if existing:
-                            existing_email_date = existing.get("email_date")
-                            new_email_date = _dt_to_iso(email_msg.date) if email_msg.date else None
-
-                            if (
-                                new_email_date
-                                and existing_email_date
-                                and new_email_date > existing_email_date
-                            ):
-                                _update_flight(existing["id"], flight_data, email_msg)
-                                flights_updated += 1
-                                logger.info(
-                                    "User %d: Updated flight %s with newer email", user_id, fn
-                                )
-                            else:
-                                logger.debug("Skipping older email for existing flight %s", fn)
-                            continue
-
-                    # INSERT OR IGNORE handles dedup atomically (UNIQUE on email_message_id)
-                    new_id = _insert_flight(flight_data, email_msg, user_id)
-                    if new_id is None:
-                        logger.debug(
-                            "User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn
-                        )
-                        continue
-                    flights_created += 1
-                    new_flight_ids.append(new_id)
-                    logger.info(
-                        "User %d: Created flight: %s %s→%s",
-                        user_id,
-                        fn,
-                        flight_data.get("departure_airport"),
-                        flight_data.get("arrival_airport"),
-                    )
-
-            except Exception as e:
-                err = f"Error processing email {email_msg.message_id}: {e}"
-                logger.error(err, exc_info=True)
-                errors.append(err)
-
-        grouping_result = {}
-        try:
-            grouping_result = auto_group_flights(user_id=user_id)
-        except Exception as e:
-            logger.error("User %d: Error during grouping: %s", user_id, e, exc_info=True)
-
-        if new_flight_ids:
+        if result["new_flight_ids"]:
             try:
                 from .aircraft_sync import fetch_aircraft_for_new_flights
 
-                fetch_aircraft_for_new_flights(new_flight_ids)
+                fetch_aircraft_for_new_flights(result["new_flight_ids"])
             except Exception as e:
                 logger.warning("User %d: Aircraft sync for new flights failed: %s", user_id, e)
 
-        _set_sync_complete(user_id, _now_iso())
+        _set_sync_complete(user_id, now_iso())
 
         summary = {
             "status": "success",
             "emails_fetched": len(emails),
-            "emails_processed": emails_processed,
-            "flights_created": flights_created,
-            "flights_updated": flights_updated,
-            "grouping": grouping_result,
-            "errors": errors,
+            "emails_processed": result["emails_processed"],
+            "flights_created": result["flights_created"],
+            "flights_updated": result["flights_updated"],
+            "grouping": result["grouping"],
+            "errors": result["errors"],
         }
         logger.info("User %d: Sync complete: %s", user_id, summary)
         return summary
@@ -689,7 +584,7 @@ def run_cached_sync(user_id: int | None = None) -> dict:
         try:
             emails = load_emails()
             result = _process_emails(emails, uid)
-            _set_sync_complete(uid, _now_iso())
+            _set_sync_complete(uid, now_iso())
             summary = {
                 "status": "success",
                 "source": "cache",

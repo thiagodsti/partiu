@@ -13,6 +13,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from .database import db_conn, db_write
+from .utils import now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ async def _recover_missing_aircraft_names() -> int:
 
     logger.info("Aircraft recovery: %d flight(s) with ICAO24 but missing name/reg", len(rows))
     recovered = 0
-    now_iso = datetime.now(UTC).isoformat()
+    ts = now_iso()
 
     for row in rows:
         type_name, _, registration = await _fetch_type_name_from_hexdb(row["aircraft_icao"])
@@ -58,7 +59,7 @@ async def _recover_missing_aircraft_names() -> int:
             with db_write() as conn:
                 conn.execute(
                     "UPDATE flights SET aircraft_type = ?, aircraft_registration = ?, updated_at = ? WHERE id = ?",
-                    (type_name, registration, now_iso, row["id"]),
+                    (type_name, registration, ts, row["id"]),
                 )
             recovered += 1
             logger.info(
@@ -115,7 +116,7 @@ def fetch_aircraft_for_new_flights(flight_ids: list[str]) -> None:
 
 async def _fetch_for_flight_ids(flight_ids: list[str]) -> None:
     placeholders = ",".join("?" * len(flight_ids))
-    now_iso = datetime.now(UTC).isoformat()
+    ts = now_iso()
     with db_conn() as conn:
         rows = conn.execute(
             f"""
@@ -126,7 +127,7 @@ async def _fetch_for_flight_ids(flight_ids: list[str]) -> None:
               AND status != 'cancelled'
               AND (aircraft_next_retry_at IS NULL OR aircraft_next_retry_at <= ?)
             """,
-            [*flight_ids, now_iso],
+            [*flight_ids, ts],
         ).fetchall()
 
     if rows:
@@ -142,7 +143,7 @@ async def _fetch_rows(rows) -> dict:
     from .aircraft_api import fetch_aircraft_info
 
     now = datetime.now(UTC)
-    now_iso = now.isoformat()
+    ts = now.isoformat()
     attempted = updated = given_up = 0
 
     for row in rows:
@@ -157,7 +158,7 @@ async def _fetch_rows(rows) -> dict:
                     with db_write() as conn:
                         conn.execute(
                             "UPDATE flights SET aircraft_fetched_at = ?, updated_at = ? WHERE id = ?",
-                            (now_iso, now_iso, row["id"]),
+                            (ts, ts, row["id"]),
                         )
                     given_up += 1
                     logger.debug(
@@ -186,14 +187,14 @@ async def _fetch_rows(rows) -> dict:
                         info.get("type_name") or "",
                         info.get("icao24") or "",
                         info.get("registration") or "",
-                        now_iso,
+                        ts,
                         info.get("flight_status") or None,
                         info.get("departure_delay"),
                         info.get("arrival_delay"),
                         info.get("departure_actual") or None,
                         info.get("arrival_estimated") or None,
-                        now_iso,
-                        now_iso,
+                        ts,
+                        ts,
                         row["id"],
                     ),
                 )
@@ -220,7 +221,7 @@ async def _fetch_rows(rows) -> dict:
                            aircraft_next_retry_at = ?,
                            updated_at = ?
                        WHERE id = ?""",
-                    (next_retry, now_iso, row["id"]),
+                    (next_retry, ts, row["id"]),
                 )
             logger.debug(
                 "Aircraft sync: no data for %s — retry after %s (attempt %d)",
