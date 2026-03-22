@@ -41,6 +41,7 @@ def sync_now(request: Request, background_tasks: BackgroundTasks, user: dict = D
 
     def _run():
         try:
+            from ..crypto import decrypt
             from ..database import db_conn
             from ..sync_job import run_email_sync_for_user
             with db_conn() as conn:
@@ -49,7 +50,10 @@ def sync_now(request: Request, background_tasks: BackgroundTasks, user: dict = D
                     (user_id,)
                 ).fetchone()
             if u:
-                run_email_sync_for_user(dict(u))
+                user_dict = dict(u)
+                if user_dict.get("gmail_app_password"):
+                    user_dict["gmail_app_password"] = decrypt(user_dict["gmail_app_password"])
+                run_email_sync_for_user(user_dict)
         finally:
             _sync_lock.release()
 
@@ -87,13 +91,17 @@ def reset_and_sync(background_tasks: BackgroundTasks, user: dict = Depends(get_c
 
     def _run():
         try:
+            from ..crypto import decrypt
             with db_conn() as conn:
                 u = conn.execute(
                     'SELECT id, gmail_address, gmail_app_password, imap_host, imap_port FROM users WHERE id = ?',
                     (user_id,)
                 ).fetchone()
             if u:
-                run_email_sync_for_user(dict(u))
+                user_dict = dict(u)
+                if user_dict.get("gmail_app_password"):
+                    user_dict["gmail_app_password"] = decrypt(user_dict["gmail_app_password"])
+                run_email_sync_for_user(user_dict)
         finally:
             _sync_lock.release()
 

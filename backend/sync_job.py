@@ -518,9 +518,13 @@ def run_email_sync() -> dict:
         logger.warning("No users found — skipping sync")
         return {"status": "skipped", "reason": "No users configured"}
 
+    from .crypto import decrypt
+
     results = {}
     for user_row in users:
         user = dict(user_row)
+        if user.get("gmail_app_password"):
+            user["gmail_app_password"] = decrypt(user["gmail_app_password"])
         try:
             result = run_email_sync_for_user(user)
             results[user["id"]] = result
