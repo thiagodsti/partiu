@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
 
@@ -13,8 +13,21 @@ if config.config_file_name is not None:
 target_metadata = None
 
 
-def run_migrations_offline() -> None:
+def _get_url() -> str:
+    """Return the DB URL, falling back to the app's config when the CLI doesn't set it."""
     url = config.get_main_option("sqlalchemy.url")
+    if url:
+        return url
+    # Running from the CLI without alembic.ini having a URL — load from app settings.
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from backend.config import settings
+    return f"sqlite:///{settings.DB_PATH}"
+
+
+def run_migrations_offline() -> None:
+    url = _get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -26,11 +39,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(_get_url(), poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():

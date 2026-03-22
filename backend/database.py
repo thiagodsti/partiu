@@ -471,12 +471,15 @@ def _run_alembic_migrations():
 
     if old_version > 0:
         logger.info(
-            "Legacy DB detected (PRAGMA user_version=%d) — stamping Alembic at head",
+            "Legacy DB detected (PRAGMA user_version=%d) — stamping Alembic baseline then upgrading",
             old_version,
         )
-        command.stamp(cfg, "head")
+        # Stamp at 0001 (baseline) so Alembic knows the old schema is already in place,
+        # then upgrade to head to apply any new migrations (0002, etc.).
+        command.stamp(cfg, "0001")
         with db_write() as c:
             c.execute("PRAGMA user_version = 0")
+        command.upgrade(cfg, "head")
     else:
         command.upgrade(cfg, "head")
 
