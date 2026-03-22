@@ -121,6 +121,16 @@ export interface BoardingPass {
   created_at: string;
 }
 
+export interface TripDocument {
+  id: string;
+  trip_id: string;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  page_count: number;
+  created_at: string;
+}
+
 export interface ImmichAlbumResponse {
   album_id: string;
   album_url: string | null;

@@ -17,6 +17,7 @@ import type {
   ImmichAlbumResponse,
   NotifPreferences,
   BoardingPass,
+  TripDocument,
   FailedEmail,
   AdminFailedEmailGroup,
   User,
@@ -165,6 +166,28 @@ export const boardingPassesApi = {
   },
   imageUrl: (bpId: string) => `/api/boarding-passes/${bpId}/image`,
   delete: (bpId: string) => del<null>(`/api/boarding-passes/${bpId}`),
+};
+
+// ---- Trip Documents ----
+
+export const tripDocumentsApi = {
+  list: (tripId: string) => get<TripDocument[]>(`/api/trips/${tripId}/documents`),
+  upload: async (tripId: string, file: File): Promise<{ id: string; page_count: number }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/trips/${tripId}/documents`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { detail?: string };
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+  viewUrl: (docId: string, page = 0) => `/api/documents/${docId}/view?page=${page}`,
+  delete: (docId: string) => del<null>(`/api/documents/${docId}`),
 };
 
 // ---- Sync ----

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { location } from 'svelte-spa-router';
-  import { tripsApi, settingsApi } from '../api/client';
+  import { tripsApi, settingsApi, tripDocumentsApi } from '../api/client';
   import { tripImageBust } from '../lib/tripImageStore';
-  import type { Trip, Flight } from '../api/types';
+  import type { Trip, Flight, TripDocument } from '../api/types';
   import {
     formatDateRange,
     inferTripStatus,
@@ -49,6 +49,7 @@
           trip = { ...trip, immich_album_id: null };
         }
       }
+      loadDocuments();
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -96,6 +97,46 @@
   }
 
   const isCompleted = $derived(trip ? inferTripStatus(trip) === 'completed' : false);
+
+  // ---- Documents ----
+  let documents = $state<TripDocument[]>([]);
+  let docUploading = $state(false);
+  let docUploadError = $state<string | null>(null);
+  let viewingDoc = $state<TripDocument | null>(null);
+  let viewingPage = $state(0);
+
+  async function loadDocuments() {
+    if (!trip) return;
+    documents = await tripDocumentsApi.list(trip.id).catch(() => []);
+  }
+
+  async function handleDocUpload(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file || !trip) return;
+    (e.currentTarget as HTMLInputElement).value = '';
+    docUploading = true;
+    docUploadError = null;
+    try {
+      await tripDocumentsApi.upload(trip.id, file);
+      await loadDocuments();
+    } catch (err) {
+      docUploadError = (err as Error).message || $t('trip.doc_upload_error');
+    } finally {
+      docUploading = false;
+    }
+  }
+
+  async function deleteDoc(docId: string) {
+    if (!confirm($t('trip.doc_delete_confirm'))) return;
+    await tripDocumentsApi.delete(docId);
+    documents = documents.filter((d) => d.id !== docId);
+    if (viewingDoc?.id === docId) viewingDoc = null;
+  }
+
+  function openDoc(doc: TripDocument) {
+    viewingDoc = doc;
+    viewingPage = 0;
+  }
 
 </script>
 
@@ -217,5 +258,76 @@
         {/each}
       {/if}
     {/if}
+
+    <!-- Documents -->
+    <div class="trip-section">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('trip.documents')}</h3>
+        <label class="btn btn-secondary btn-sm" class:disabled={docUploading}>
+          {docUploading ? $t('trip.doc_uploading') : $t('trip.doc_add')}
+          <input
+            type="file"
+            accept=".pdf,image/png,image/jpeg,image/webp"
+            style="display:none"
+            disabled={docUploading}
+            onchange={handleDocUpload}
+          />
+        </label>
+      </div>
+      {#if docUploadError}
+        <p class="doc-upload-error">{docUploadError}</p>
+      {/if}
+      {#if documents.length === 0}
+        <p class="doc-empty">{$t('trip.doc_empty')}</p>
+      {:else}
+        <div class="doc-grid">
+          {#each documents as doc (doc.id)}
+            <button class="doc-thumb" onclick={() => openDoc(doc)}>
+              <img src={tripDocumentsApi.viewUrl(doc.id)} alt={doc.filename} loading="lazy" />
+              <span class="doc-thumb-name">{doc.filename}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
   {/if}
 </div>
+
+<!-- Document viewer modal -->
+{#if viewingDoc}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="doc-modal-overlay" role="presentation" onclick={() => (viewingDoc = null)}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="doc-modal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <div class="doc-modal-header">
+        <span class="doc-modal-name">{viewingDoc.filename}</span>
+        <div class="doc-modal-actions">
+          {#if viewingDoc.page_count > 1}
+            <button
+              class="btn btn-secondary btn-sm"
+              disabled={viewingPage === 0}
+              onclick={() => viewingPage--}
+            >‹</button>
+            <span class="doc-page-label">
+              {$t('trip.doc_page', { values: { current: viewingPage + 1, total: viewingDoc.page_count } })}
+            </span>
+            <button
+              class="btn btn-secondary btn-sm"
+              disabled={viewingPage >= viewingDoc.page_count - 1}
+              onclick={() => viewingPage++}
+            >›</button>
+          {/if}
+          <button class="btn btn-danger btn-sm" onclick={() => deleteDoc(viewingDoc!.id)}>🗑</button>
+          <button class="btn btn-secondary btn-sm" onclick={() => (viewingDoc = null)}>✕</button>
+        </div>
+      </div>
+      <div class="doc-modal-body">
+        <img
+          src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
+          alt={viewingDoc.filename}
+          class="doc-modal-img"
+        />
+      </div>
+    </div>
+  </div>
+{/if}

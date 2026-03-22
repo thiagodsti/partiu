@@ -441,12 +441,13 @@ _LEGACY_MIGRATIONS: list[tuple[int, str, list[str]]] = [
 ]
 
 def _get_alembic_config():
-    from pathlib import Path
-
     from alembic.config import Config
 
-    ini_path = Path(__file__).parent.parent / "alembic.ini"
-    cfg = Config(str(ini_path))
+    project_root = Path(__file__).parent.parent
+    # Don't rely on alembic.ini for programmatic use — set everything explicitly.
+    # alembic.ini is only needed for CLI commands (alembic revision, alembic history, etc.)
+    cfg = Config()
+    cfg.set_main_option("script_location", str(project_root / "alembic"))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{get_db_path()}")
     return cfg
 
