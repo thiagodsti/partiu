@@ -426,6 +426,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_failed_emails_user_id ON failed_emails(user_id)",
         ],
     ),
+    (
+        25,
+        "Backfill notif_delay_alert column missed by v19 renumbering",
+        [
+            "ALTER TABLE users ADD COLUMN notif_delay_alert INTEGER NOT NULL DEFAULT 1",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
