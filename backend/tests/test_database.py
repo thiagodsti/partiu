@@ -87,12 +87,23 @@ class TestInitDatabase:
             count = conn.execute("SELECT COUNT(*) FROM aircraft_types").fetchone()[0]
         assert count > 50  # we have many aircraft types seeded
 
-    def test_schema_version_set(self, test_db):
-        from backend.database import CURRENT_SCHEMA_VERSION, db_conn
+    def test_alembic_revision_at_head(self, test_db):
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import create_engine
 
-        with db_conn() as conn:
-            version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert version == CURRENT_SCHEMA_VERSION
+        from backend.database import _get_alembic_config
+
+        cfg = _get_alembic_config()
+        script = ScriptDirectory.from_config(cfg)
+        head = script.get_current_head()
+
+        engine = create_engine(f"sqlite:///{test_db}")
+        with engine.connect() as conn:
+            mc = MigrationContext.configure(conn)
+            current = mc.get_current_revision()
+
+        assert current == head
 
 
 class TestLoadAircraftTypes:

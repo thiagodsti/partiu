@@ -89,7 +89,12 @@ def set_global_setting(key: str, value: str):
 #   - DDL changes (ALTER TABLE, CREATE INDEX, etc.) go here.
 #   - Bulk data fixes can also go here when needed.
 # ---------------------------------------------------------------------------
-MIGRATIONS: list[tuple[int, str, list[str]]] = [
+# ---------------------------------------------------------------------------
+# Legacy migration history — kept for reference only.
+# The active migration system is Alembic (see /alembic/).
+# Do NOT add new migrations here. Run: alembic revision --autogenerate -m "..."
+# ---------------------------------------------------------------------------
+_LEGACY_MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (
         1,
         "Initial schema",
@@ -435,68 +440,44 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
     ),
 ]
 
-CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)
+def _get_alembic_config():
+    from pathlib import Path
+
+    from alembic.config import Config
+
+    ini_path = Path(__file__).parent.parent / "alembic.ini"
+    cfg = Config(str(ini_path))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{get_db_path()}")
+    return cfg
 
 
-def _get_schema_version(conn: sqlite3.Connection) -> int:
-    return conn.execute("PRAGMA user_version").fetchone()[0]
+def _run_alembic_migrations():
+    """Apply pending Alembic migrations.
 
-
-def _run_migrations():
+    For databases that still carry a PRAGMA user_version from the old custom
+    migration system, we stamp them at the Alembic baseline revision instead of
+    re-running all the SQL — the schema is already there.
     """
-    Apply any pending migrations in order.
+    from alembic import command
 
-    Uses SQLite's PRAGMA user_version to track the current schema version.
-    Each migration is committed individually so a partial failure leaves the
-    DB at the last successfully applied version.
+    cfg = _get_alembic_config()
 
-    Existing databases that pre-date this migration system (user_version = 0
-    but tables already present) are detected and fast-forwarded to the current
-    version — their schema was already set up by the old init_database() code.
-    """
     conn = get_connection()
     try:
-        current = _get_schema_version(conn)
-
-        if current == 0:
-            # Check whether this is an existing DB or a brand-new one.
-            existing = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='flights'"
-            ).fetchone()
-            if existing:
-                # Pre-versioning DB — already had migrations 1 & 2 applied manually.
-                # Stamp at v2 so new migrations (3+) still run.
-                conn.execute("PRAGMA user_version = 2")
-                conn.commit()
-                current = 2
-                logger.info(
-                    "Existing pre-versioning DB detected — stamped at v2, will apply new migrations",
-                )
-
-        pending = [(v, desc, stmts) for v, desc, stmts in MIGRATIONS if v > current]
-        if not pending:
-            logger.debug("Schema is up to date (version %d)", current)
-            return
-
-        for version, description, statements in pending:
-            logger.info("Applying migration v%d: %s", version, description)
-            for sql in statements:
-                try:
-                    conn.execute(sql)
-                except sqlite3.OperationalError as e:
-                    # Some DDL statements are intentionally idempotent
-                    # (e.g. ADD COLUMN on an already-migrated DB).
-                    # Log a warning but don't abort the migration.
-                    logger.warning("  Statement skipped (%s): %.120s", e, sql.strip())
-            conn.execute(f"PRAGMA user_version = {version}")
-            conn.commit()
-            logger.info("Migration v%d applied", version)
-
-    except Exception:
-        conn.rollback()
-        raise
+        old_version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()
+
+    if old_version > 0:
+        logger.info(
+            "Legacy DB detected (PRAGMA user_version=%d) — stamping Alembic at head",
+            old_version,
+        )
+        command.stamp(cfg, "head")
+        with db_write() as c:
+            c.execute("PRAGMA user_version = 0")
+    else:
+        command.upgrade(cfg, "head")
 
 
 def _encrypt_existing_credentials() -> None:
@@ -532,13 +513,13 @@ def _encrypt_existing_credentials() -> None:
 
 
 def init_database():
-    """Run pending migrations then seed static data."""
+    """Run pending Alembic migrations then seed static data."""
     logger.info("Initializing database at %s", get_db_path())
-    _run_migrations()
+    _run_alembic_migrations()
     _encrypt_existing_credentials()
     _normalize_aircraft_types()
     load_aircraft_types_if_empty()
-    logger.info("Database ready (schema v%d)", CURRENT_SCHEMA_VERSION)
+    logger.info("Database ready")
 
 
 def _normalize_aircraft_types():
