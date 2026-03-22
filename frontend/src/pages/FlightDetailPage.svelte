@@ -1,7 +1,7 @@
 <script lang="ts">
   import { location } from 'svelte-spa-router';
-  import { flightsApi, airportsApi } from "../api/client";
-  import type { Flight, Airport, AircraftInfo, EmailData } from "../api/types";
+  import { flightsApi, airportsApi, boardingPassesApi } from "../api/client";
+  import type { Flight, Airport, AircraftInfo, EmailData, BoardingPass } from "../api/types";
   import {
     formatTime,
     formatDateLong,
@@ -42,15 +42,21 @@
   let emailLoading = $state(false);
   let emailError = $state<string | null>(null);
 
+  // Boarding passes
+  let boardingPasses = $state<BoardingPass[]>([]);
+  let boardingPassOverlayId = $state<string | null>(null);
+  let uploadingBP = $state(false);
+
   // ---- Load flight ----
   async function load() {
     loading = true;
     error = null;
     try {
       flight = await flightsApi.get(params.flightId);
-      // After flight loads, fetch aircraft and airport maps in parallel
+      // After flight loads, fetch aircraft, airport maps, and boarding passes in parallel
       fetchAircraftInfo();
       fetchAirportMaps();
+      fetchBoardingPasses();
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -105,6 +111,38 @@
     const d = 0.009;
     const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
     return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
+  }
+
+  // ---- Boarding passes ----
+  async function fetchBoardingPasses() {
+    if (!flight) return;
+    try {
+      boardingPasses = await boardingPassesApi.list(params.flightId);
+    } catch {
+      // non-critical, silently ignore
+    }
+  }
+
+  async function handleBPUpload(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || !flight) return;
+    uploadingBP = true;
+    try {
+      await boardingPassesApi.upload(params.flightId, file);
+      await fetchBoardingPasses();
+    } catch (err) {
+      alert(`Upload failed: ${(err as Error).message}`);
+    } finally {
+      uploadingBP = false;
+      input.value = '';
+    }
+  }
+
+  async function deleteBoardingPass(bpId: string) {
+    if (!confirm($t('flight.bp_delete_confirm'))) return;
+    await boardingPassesApi.delete(bpId);
+    boardingPasses = boardingPasses.filter((bp) => bp.id !== bpId);
   }
 
   // ---- Email modal ----
@@ -453,6 +491,50 @@
       </div>
     {/if}
 
+    <!-- Boarding Passes -->
+    <div style="margin-top:var(--space-md)">
+      <div class="detail-label" style="margin-bottom:var(--space-sm)">{$t('flight.boarding_passes')}</div>
+      {#if boardingPasses.length > 0}
+        <div style="display:flex;flex-direction:column;gap:var(--space-sm)">
+          {#each boardingPasses as bp (bp.id)}
+            <div style="display:flex;align-items:center;gap:var(--space-sm)">
+              <button
+                class="btn btn-primary"
+                style="flex:1;text-align:left"
+                onclick={() => (boardingPassOverlayId = bp.id)}
+              >
+                🎫 {bp.passenger_name ?? $t('flight.bp_passenger_unknown')}
+                {#if bp.seat} · {$t('flight.bp_seat', { values: { seat: bp.seat } })}{/if}
+              </button>
+              <button
+                class="btn btn-secondary"
+                style="padding:var(--space-xs) var(--space-sm);font-size:0.85rem"
+                onclick={() => deleteBoardingPass(bp.id)}
+                title={$t('flight.bp_delete')}
+              >✕</button>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:var(--space-sm)">
+          {$t('flight.bp_none')}
+        </div>
+      {/if}
+      <label
+        style="display:inline-flex;align-items:center;gap:var(--space-xs);cursor:pointer;margin-top:var(--space-sm)"
+        class="btn btn-secondary"
+      >
+        {uploadingBP ? $t('flight.bp_uploading') : $t('flight.bp_upload')}
+        <input
+          type="file"
+          accept="image/png,image/jpeg"
+          style="display:none"
+          disabled={uploadingBP}
+          onchange={handleBPUpload}
+        />
+      </label>
+    </div>
+
     <!-- Action Buttons -->
     <div
       style="margin-top:var(--space-lg);padding-bottom:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-sm)"
@@ -479,6 +561,34 @@
     </div>
   {/if}
 </div>
+
+<!-- Boarding Pass Full-Screen Overlay -->
+{#if boardingPassOverlayId}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-label={$t('flight.boarding_pass_overlay')}
+    tabindex="-1"
+    style="position:fixed;inset:0;background:#000;z-index:1000;display:flex;flex-direction:column;"
+    onclick={(e) => { if (e.target === e.currentTarget) boardingPassOverlayId = null; }}
+  >
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;flex-shrink:0;">
+      <span style="color:#fff;font-size:0.9rem;opacity:0.7">{$t('flight.boarding_pass_overlay')}</span>
+      <button
+        style="background:none;border:none;color:#fff;font-size:1.6rem;cursor:pointer;line-height:1;padding:0"
+        onclick={() => (boardingPassOverlayId = null)}
+      >✕</button>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:var(--space-md);overflow:hidden;">
+      <img
+        src={boardingPassesApi.imageUrl(boardingPassOverlayId)}
+        alt={$t('flight.boarding_pass_overlay')}
+        style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;"
+      />
+    </div>
+  </div>
+{/if}
 
 <!-- Email Modal -->
 {#if emailModalOpen && emailData}

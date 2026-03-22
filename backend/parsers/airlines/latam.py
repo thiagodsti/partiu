@@ -501,6 +501,15 @@ def _make_segment(
     return _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger)
 
 
+def extract(email_msg, rule) -> list[dict]:
+    """Unified entry point: try HTML+PDF (BS4), then plain-text regex."""
+    if email_msg.html_body:
+        result = extract_bs4(email_msg.html_body, rule, email_msg)
+        if result:
+            return result
+    return extract_regex(email_msg, rule)
+
+
 def _text_connecting_flights(
     rule, dep_date_str, dep_time_str, dep_airport,
     arr_date_str, arr_time_str, arr_airport,

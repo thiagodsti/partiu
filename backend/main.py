@@ -22,6 +22,8 @@ from .limiter import limiter
 from .middleware import FirstRunMiddleware
 from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
+from .routes import boarding_passes as boarding_passes_routes
+from .routes import failed_emails as failed_emails_routes
 from .routes import notifications as notifications_routes
 from .routes import stats as stats_routes
 from .routes import users as users_routes
@@ -91,6 +93,8 @@ app.include_router(settings.router)
 app.include_router(airports.router)
 app.include_router(stats_routes.router)
 app.include_router(notifications_routes.router)
+app.include_router(boarding_passes_routes.router)
+app.include_router(failed_emails_routes.router)
 
 
 # Serve frontend static files if directory exists

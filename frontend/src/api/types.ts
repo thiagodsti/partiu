@@ -109,6 +109,16 @@ export interface NotifPreferences {
   checkin_reminder: boolean;
   trip_reminder: boolean;
   delay_alert: boolean;
+  boarding_pass: boolean;
+}
+
+export interface BoardingPass {
+  id: string;
+  flight_id: string;
+  passenger_name: string | null;
+  seat: string | null;
+  source_page: number;
+  created_at: string;
 }
 
 export interface ImmichAlbumResponse {
@@ -141,4 +151,22 @@ export interface TripsListResponse {
 
 export interface AirportCountResponse {
   count: number;
+}
+
+export interface FailedEmail {
+  id: string;
+  sender: string;
+  subject: string;
+  received_at: string | null;
+  reason: string;
+  airline_hint: string;
+  last_retried_at: string | null;
+  parser_version: string;
+  created_at: string;
+}
+
+export interface AdminFailedEmailGroup {
+  sender_domain: string;
+  count: number;
+  latest: string;
 }

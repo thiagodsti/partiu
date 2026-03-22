@@ -205,6 +205,15 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def extract(email_msg, rule) -> list[dict]:
+    """Unified entry point: try HTML (BS4), then plain-text regex."""
+    if email_msg.html_body:
+        result = extract_bs4(email_msg.html_body, rule, email_msg)
+        if result:
+            return result
+    return extract_regex(email_msg, rule)
+
+
 def extract_regex(email_msg, rule) -> list[dict]:
     """
     Plain-text regex fallback for SAS (and Norwegian) emails.

@@ -5,14 +5,16 @@ Runs every 10 minutes via APScheduler.
 """
 
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 
+from .boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
 from .database import db_conn, db_write, get_global_setting
-from .email_cache import cache_exists, load_emails, save_emails
+from .email_cache import save_emails
+from .failed_email_queue import email_has_flight_keywords, retry_failed_emails, save_failed_email
+from .flight_store import find_existing_flight, insert_flight, update_flight
 from .grouping import auto_group_flights
 from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
-from .parsers.builtin_rules import RULES_VERSION, get_builtin_rules
+from .parsers.builtin_rules import PARSER_VERSION, get_builtin_rules
 from .parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from .parsers.engine import (
     extract_flights_from_email,
@@ -23,6 +25,11 @@ from .timezone_utils import apply_airport_timezones
 from .utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Sync state helpers
+# ---------------------------------------------------------------------------
 
 
 def _get_sync_state(user_id: int) -> dict:
@@ -71,163 +78,21 @@ def _set_sync_complete(user_id: int, last_synced_at: str):
     _upsert_sync_state(
         user_id,
         last_synced_at=last_synced_at,
-        last_rules_version=RULES_VERSION,
+        last_rules_version=PARSER_VERSION,
         status="idle",
         last_error="",
     )
 
 
-def _find_existing_flight(flight_number: str, departure_date: str, user_id: int) -> dict | None:
-    """Find an existing non-manual flight by flight_number and departure date."""
-    with db_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM flights
-               WHERE flight_number = ?
-               AND substr(departure_datetime, 1, 10) = ?
-               AND is_manually_added = 0
-               AND user_id = ?
-               LIMIT 1""",
-            (flight_number, departure_date, user_id),
-        ).fetchone()
-        return dict(row) if row else None
-
-
-def _insert_flight(flight_data: dict, email_msg, user_id: int) -> str | None:
-    """
-    Insert a new flight row using INSERT OR IGNORE (dedup by email_message_id).
-    Returns the new flight id if inserted, or None if it was a duplicate.
-    """
-    now = now_iso()
-    flight_id = str(uuid.uuid4())
-
-    dep_dt = flight_data.get("departure_datetime")
-    arr_dt = flight_data.get("arrival_datetime")
-    dep_iso = dt_to_iso(dep_dt)
-    arr_iso = dt_to_iso(arr_dt)
-    duration_minutes = calc_duration_minutes(dep_dt, arr_dt)
-    status = calc_flight_status(arr_dt)
-
-    msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
-
-    with db_write() as conn:
-        cursor = conn.execute(
-            """INSERT OR IGNORE INTO flights (
-                id, trip_id, airline_name, airline_code, flight_number,
-                booking_reference, departure_airport, departure_datetime,
-                departure_terminal, departure_gate, arrival_airport, arrival_datetime,
-                arrival_terminal, arrival_gate, passenger_name, seat, cabin_class,
-                duration_minutes, status, departure_timezone, arrival_timezone,
-                email_message_id, email_subject, email_date, email_body,
-                is_manually_added, notes, user_id, created_at, updated_at
-            ) VALUES (
-                ?, NULL, ?, ?, ?,
-                ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                0, NULL, ?, ?, ?
-            )""",
-            (
-                flight_id,
-                flight_data.get("airline_name", ""),
-                flight_data.get("airline_code", ""),
-                flight_data["flight_number"],
-                flight_data.get("booking_reference", ""),
-                flight_data["departure_airport"],
-                dep_iso,
-                flight_data.get("departure_terminal", ""),
-                flight_data.get("departure_gate", ""),
-                flight_data["arrival_airport"],
-                arr_iso,
-                flight_data.get("arrival_terminal", ""),
-                flight_data.get("arrival_gate", ""),
-                flight_data.get("passenger_name", ""),
-                flight_data.get("seat", ""),
-                flight_data.get("cabin_class", ""),
-                duration_minutes,
-                status,
-                flight_data.get("departure_timezone"),
-                flight_data.get("arrival_timezone"),
-                msg_id_for_dedup,
-                (email_msg.subject or "")[:512],
-                dt_to_iso(email_msg.date),
-                email_msg.html_body,
-                user_id,
-                now,
-                now,
-            ),
-        )
-    return flight_id if cursor.rowcount else None
-
-
-def _update_flight(existing_id: str, flight_data: dict, email_msg):
-    """Update an existing flight with newer email data."""
-    now = now_iso()
-    dep_dt = flight_data.get("departure_datetime")
-    arr_dt = flight_data.get("arrival_datetime")
-    dep_iso = dt_to_iso(dep_dt)
-    arr_iso = dt_to_iso(arr_dt)
-    duration_minutes = calc_duration_minutes(dep_dt, arr_dt)
-    status = calc_flight_status(arr_dt)
-    msg_id_for_dedup = f"{email_msg.message_id}:{flight_data['flight_number']}"
-
-    with db_write() as conn:
-        conn.execute(
-            """UPDATE flights SET
-                departure_datetime = ?, arrival_datetime = ?,
-                departure_terminal = ?, arrival_terminal = ?,
-                departure_gate = ?, arrival_gate = ?,
-                seat = ?, cabin_class = ?,
-                booking_reference = ?, passenger_name = ?,
-                duration_minutes = ?, status = ?,
-                departure_timezone = ?, arrival_timezone = ?,
-                email_message_id = ?, email_subject = ?, email_date = ?, email_body = ?,
-                updated_at = ?
-               WHERE id = ?""",
-            (
-                dep_iso,
-                arr_iso,
-                flight_data.get("departure_terminal", ""),
-                flight_data.get("arrival_terminal", ""),
-                flight_data.get("departure_gate", ""),
-                flight_data.get("arrival_gate", ""),
-                flight_data.get("seat", ""),
-                flight_data.get("cabin_class", ""),
-                flight_data.get("booking_reference", ""),
-                flight_data.get("passenger_name", ""),
-                duration_minutes,
-                status,
-                flight_data.get("departure_timezone"),
-                flight_data.get("arrival_timezone"),
-                msg_id_for_dedup,
-                (email_msg.subject or "")[:512],
-                dt_to_iso(email_msg.date),
-                email_msg.html_body,
-                now,
-                existing_id,
-            ),
-        )
+# ---------------------------------------------------------------------------
+# Boarding pass helpers
+# ---------------------------------------------------------------------------
 
 
 def _update_flight_from_bcbp(existing_id: str, bcbp_leg: dict):
     """Patch an existing flight with data from a boarding pass (seat, cabin, pax name, pnr)."""
-    updates = {}
-    if bcbp_leg.get("seat"):
-        updates["seat"] = bcbp_leg["seat"]
-    if bcbp_leg.get("cabin_class"):
-        updates["cabin_class"] = bcbp_leg["cabin_class"]
-    if bcbp_leg.get("passenger_name"):
-        updates["passenger_name"] = bcbp_leg["passenger_name"]
-    if bcbp_leg.get("booking_reference"):
-        updates["booking_reference"] = bcbp_leg["booking_reference"]
-    if not updates:
-        return
-    updates["updated_at"] = now_iso()
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [existing_id]
-    with db_write() as conn:
-        conn.execute(f"UPDATE flights SET {set_clause} WHERE id = ?", values)
+    from .flight_store import update_flight_from_bcbp
+    update_flight_from_bcbp(existing_id, bcbp_leg)
 
 
 def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
@@ -237,7 +102,7 @@ def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
       - If a matching flight exists (by flight_number + date): update seat/cabin/pax/pnr.
       - Otherwise: skip (we don't have enough info to create a complete flight from BCBP alone).
 
-    Returns (bcbp_legs_found, flights_updated).
+    Returns (legs_found, flights_updated).
     """
     text = email_msg.body or ""
     if not text:
@@ -248,8 +113,7 @@ def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
         return 0, 0
 
     legs_found = 0
-    updated = 0
-
+    flights_updated = 0
     for candidate in candidates:
         legs = parse_bcbp(candidate)
         for leg in legs:
@@ -257,21 +121,158 @@ def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
             dep_date = leg.get("departure_date")
             if not dep_date:
                 continue
-            dep_date_str = dep_date.isoformat()
-            existing = _find_existing_flight(leg["flight_number"], dep_date_str, user_id)
+            existing = find_existing_flight(leg["flight_number"], dep_date.isoformat(), user_id)
             if existing:
                 _update_flight_from_bcbp(existing["id"], leg)
-                updated += 1
-                logger.info(
-                    "BCBP update: %s on %s — seat=%s cabin=%s pax=%s",
-                    leg["flight_number"],
-                    dep_date_str,
-                    leg.get("seat"),
-                    leg.get("cabin_class"),
-                    leg.get("passenger_name"),
+                flights_updated += 1
+                logger.debug(
+                    "User %d: Updated flight %s from BCBP",
+                    user_id, leg["flight_number"],
                 )
 
-    return legs_found, updated
+    return legs_found, flights_updated
+
+
+def _process_boarding_pass_email(email_msg, user_id: int) -> int:
+    """
+    If this looks like a check-in / boarding pass email, extract QR/barcode images
+    and save them against the matching flight.
+
+    Returns number of boarding pass images saved.
+    """
+    if not is_checkin_email(email_msg):
+        return 0
+
+    images = extract_boarding_pass_images(email_msg)
+    if not images:
+        return 0
+
+    text = (email_msg.body or "") + " " + (email_msg.html_body or "")
+    bcbp_matches: list[dict] = []
+    if text:
+        candidates = find_bcbp_in_text(text)
+        for candidate in candidates:
+            legs = parse_bcbp(candidate)
+            for leg in legs:
+                dep_date = leg.get("departure_date")
+                if not dep_date:
+                    continue
+                existing = find_existing_flight(leg["flight_number"], dep_date.isoformat(), user_id)
+                if existing:
+                    bcbp_matches.append({
+                        "flight_id": existing["id"],
+                        "passenger_name": leg.get("passenger_name"),
+                        "seat": leg.get("seat"),
+                    })
+
+    saved = 0
+    from .routes.boarding_passes import _save_boarding_pass
+
+    if bcbp_matches:
+        # Pair images with BCBP legs (best-effort: page N → leg N)
+        for i, img_info in enumerate(images):
+            match = bcbp_matches[i] if i < len(bcbp_matches) else bcbp_matches[-1]
+            try:
+                _save_boarding_pass(
+                    flight_id=match["flight_id"],
+                    image_bytes=img_info["image_bytes"],
+                    passenger_name=match.get("passenger_name"),
+                    seat=match.get("seat"),
+                    source_email_id=email_msg.message_id,
+                    source_page=img_info["source_page"],
+                )
+                saved += 1
+                _send_boarding_pass_notification(match["flight_id"], user_id)
+            except Exception as e:
+                logger.warning("Failed to save boarding pass image: %s", e)
+    else:
+        # No BCBP — try to find flight by scanning email subject/body for flight numbers
+        flight_id = _find_flight_from_email_text(email_msg, user_id)
+        if flight_id:
+            for img_info in images:
+                try:
+                    _save_boarding_pass(
+                        flight_id=flight_id,
+                        image_bytes=img_info["image_bytes"],
+                        passenger_name=None,
+                        seat=None,
+                        source_email_id=email_msg.message_id,
+                        source_page=img_info["source_page"],
+                    )
+                    saved += 1
+                    _send_boarding_pass_notification(flight_id, user_id)
+                except Exception as e:
+                    logger.warning("Failed to save boarding pass image: %s", e)
+
+    if saved:
+        logger.info(
+            "User %d: Saved %d boarding pass image(s) from email %s",
+            user_id, saved, email_msg.message_id,
+        )
+    return saved
+
+
+def _find_flight_from_email_text(email_msg, user_id: int) -> str | None:
+    """Try to find a matching flight by scanning the email text for flight number patterns."""
+    import re
+
+    text = (email_msg.subject or "") + " " + (email_msg.body or "")
+    # Common flight number patterns: 2-letter IATA code + 1-4 digits
+    matches = re.findall(r'\b([A-Z]{2})\s*(\d{1,4})\b', text)
+    for airline, num in matches:
+        flight_number = f"{airline}{int(num)}"
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT id FROM flights
+                   WHERE flight_number = ? AND user_id = ?
+                   ORDER BY departure_datetime DESC LIMIT 1""",
+                (flight_number, user_id),
+            ).fetchone()
+        if row:
+            return row["id"]
+    return None
+
+
+def _send_boarding_pass_notification(flight_id: str, user_id: int) -> None:
+    """Send a push notification about a new boarding pass, if the user has this preference enabled."""
+    try:
+        with db_conn() as conn:
+            user = conn.execute(
+                "SELECT notif_boarding_pass FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if not user or not user["notif_boarding_pass"]:
+                return
+
+            flight = conn.execute(
+                "SELECT flight_number, departure_airport, arrival_airport FROM flights WHERE id = ?",
+                (flight_id,),
+            ).fetchone()
+            if not flight:
+                return
+
+        from .push import already_sent, log_sent, send_push
+
+        if already_sent(user_id, flight_id, "boarding_pass"):
+            return
+
+        route = f"{flight['departure_airport']} → {flight['arrival_airport']}"
+        sent = send_push(
+            user_id,
+            {
+                "title": "Boarding pass ready ✈",
+                "body": f"{flight['flight_number']} · {route}",
+                "url": f"/#/flights/{flight_id}",
+            },
+        )
+        if sent:
+            log_sent(user_id, flight_id, "boarding_pass")
+    except Exception as e:
+        logger.warning("Failed to send boarding pass notification: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Email processing pipeline
+# ---------------------------------------------------------------------------
 
 
 def _process_emails(emails: list, user_id: int) -> dict:
@@ -306,6 +307,16 @@ def _process_emails(emails: list, user_id: int) -> dict:
             )
 
             if not flights_data:
+                # If the email had flight-like keywords but we couldn't parse it,
+                # save it to the failed queue for later reprocessing
+                if email_has_flight_keywords(email_msg) and not bcbp_legs:
+                    if rule:
+                        reason = "rule matched but extraction empty"
+                    elif email_msg.pdf_attachments or email_msg.html_body:
+                        reason = "generic extractor failed"
+                    else:
+                        reason = "no rule matched"
+                    save_failed_email(user_id, email_msg, reason)
                 continue
 
             flights_data = [apply_airport_timezones(f) for f in flights_data]
@@ -321,12 +332,12 @@ def _process_emails(emails: list, user_id: int) -> dict:
                 dep_date = dt_to_iso(dep_dt)[:10] if dep_dt else None
 
                 if dep_date:
-                    existing = _find_existing_flight(fn, dep_date, user_id)
+                    existing = find_existing_flight(fn, dep_date, user_id)
                     if existing:
                         new_email_date = dt_to_iso(email_msg.date) if email_msg.date else None
                         existing_email_date = existing.get("email_date")
                         if new_email_date and existing_email_date and new_email_date > existing_email_date:
-                            _update_flight(existing["id"], flight_data, email_msg)
+                            update_flight(existing["id"], flight_data, email_msg)
                             flights_updated += 1
                             logger.info("User %d: Updated flight %s with newer email", user_id, fn)
                         else:
@@ -334,7 +345,7 @@ def _process_emails(emails: list, user_id: int) -> dict:
                         continue
 
                 # INSERT OR IGNORE deduplicates by email_message_id atomically
-                new_id = _insert_flight(flight_data, email_msg, user_id)
+                new_id = insert_flight(flight_data, email_msg, user_id)
                 if new_id:
                     flights_created += 1
                     new_flight_ids.append(new_id)
@@ -347,6 +358,12 @@ def _process_emails(emails: list, user_id: int) -> dict:
                     )
                 else:
                     logger.debug("User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn)
+
+            # --- Boarding pass extraction (check-in emails) ---
+            try:
+                _process_boarding_pass_email(email_msg, user_id)
+            except Exception as e:
+                logger.warning("User %d: Boarding pass extraction error: %s", user_id, e)
 
         except Exception as e:
             err = f"User {user_id}: Error processing email {email_msg.message_id}: {e}"
@@ -369,6 +386,11 @@ def _process_emails(emails: list, user_id: int) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Public sync entry points
+# ---------------------------------------------------------------------------
+
+
 def run_email_sync_for_user(user: dict) -> dict:
     """
     Sync email for a single user. Called by run_email_sync() for each user,
@@ -389,7 +411,7 @@ def run_email_sync_for_user(user: dict) -> dict:
     try:
         last_synced_at = sync_state.get("last_synced_at")
         last_rules_version = sync_state.get("last_rules_version", "")
-        force_full = last_rules_version != RULES_VERSION
+        force_full = last_rules_version != PARSER_VERSION
 
         since_date = None
         if last_synced_at and not force_full:
@@ -405,10 +427,15 @@ def run_email_sync_for_user(user: dict) -> dict:
 
         if force_full:
             logger.info(
-                "User %d: Rules version changed — performing full rescan since %s",
+                "User %d: PARSER_VERSION changed — performing full rescan since %s",
                 user_id,
                 since_date,
             )
+            try:
+                retry_result = retry_failed_emails(user_id)
+                logger.info("User %d: Retry result: %s", user_id, retry_result)
+            except Exception as e:
+                logger.warning("User %d: Failed email retry error: %s", user_id, e)
 
         rules = get_builtin_rules()
         sender_patterns = [r.sender_pattern for r in rules if r.sender_pattern]
@@ -417,7 +444,6 @@ def run_email_sync_for_user(user: dict) -> dict:
             "User %d: Fetching emails since %s from %s", user_id, since_date, imap["gmail_address"]
         )
 
-        # Fetch emails outside the write lock — only DB writes acquire it
         imap_result: ImapFetchResult = fetch_emails_imap(
             host=imap["imap_host"],
             port=imap["imap_port"],
@@ -470,7 +496,6 @@ def run_email_sync_for_user(user: dict) -> dict:
         _set_sync_status(user_id, "error", err_msg)
         return {"status": "error", "error": err_msg}
     finally:
-        # Guarantee: if status is still 'running' after try/except, reset it
         try:
             state = _get_sync_state(user_id)
             if state.get("status") == "running":
@@ -558,47 +583,3 @@ def process_inbound_email(email_msg, user_id: int | None = None) -> dict:
 
     logger.info("SMTP inbound result: %s", result)
     return result
-
-
-def run_cached_sync(user_id: int | None = None) -> dict:
-    """
-    Re-process emails from the local cache — no Gmail connection needed.
-    Useful during development to test parsing changes quickly.
-    """
-    if not cache_exists():
-        return {"status": "error", "error": "No email cache found. Run a full sync first."}
-
-    # Determine which user(s) to sync
-    if user_id is None:
-        with db_conn() as conn:
-            users = conn.execute("SELECT id FROM users").fetchall()
-        user_ids = [u["id"] for u in users]
-        if not user_ids:
-            return {"status": "error", "error": "No users configured"}
-    else:
-        user_ids = [user_id]
-
-    results = {}
-    for uid in user_ids:
-        _set_sync_status(uid, "running")
-        try:
-            emails = load_emails()
-            result = _process_emails(emails, uid)
-            _set_sync_complete(uid, now_iso())
-            summary = {
-                "status": "success",
-                "source": "cache",
-                "emails_fetched": len(emails),
-                **result,
-            }
-            logger.info("User %d: Cached sync complete: %s", uid, summary)
-            results[uid] = summary
-        except Exception as e:
-            err_msg = str(e)
-            logger.error("User %d: Cached sync failed: %s", uid, err_msg, exc_info=True)
-            _set_sync_status(uid, "error", err_msg)
-            results[uid] = {"status": "error", "error": err_msg}
-
-    if len(user_ids) == 1:
-        return results[user_ids[0]]
-    return {"status": "success", "users": results}

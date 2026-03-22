@@ -381,6 +381,51 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE flights ADD COLUMN aircraft_confirmed INTEGER NOT NULL DEFAULT 0",
         ],
     ),
+    (
+        22,
+        "Add boarding_passes table",
+        [
+            """CREATE TABLE IF NOT EXISTS boarding_passes (
+            id TEXT PRIMARY KEY,
+            flight_id TEXT NOT NULL REFERENCES flights(id) ON DELETE CASCADE,
+            passenger_name TEXT,
+            seat TEXT,
+            image_path TEXT,
+            source_email_id TEXT,
+            source_page INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(source_email_id, source_page)
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_boarding_passes_flight_id ON boarding_passes(flight_id)",
+        ],
+    ),
+    (
+        23,
+        "Add boarding_pass notification preference to users",
+        [
+            "ALTER TABLE users ADD COLUMN notif_boarding_pass INTEGER NOT NULL DEFAULT 1",
+        ],
+    ),
+    (
+        24,
+        "Add failed_emails table for parse failures",
+        [
+            """CREATE TABLE IF NOT EXISTS failed_emails (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                sender TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                received_at TEXT,
+                reason TEXT NOT NULL,
+                airline_hint TEXT NOT NULL DEFAULT '',
+                eml_path TEXT,
+                last_retried_at TEXT,
+                parser_version TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_failed_emails_user_id ON failed_emails(user_id)",
+        ],
+    ),
 ]
 
 CURRENT_SCHEMA_VERSION = max(v for v, _, _ in MIGRATIONS)

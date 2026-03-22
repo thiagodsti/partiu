@@ -42,6 +42,11 @@ _FLIGHT_NUM_RE = re.compile(
 _CARRIER_RE = re.compile(r'(?:Transportadora|Carrier)[:\s]+([^\n]+)', re.IGNORECASE)
 
 
+def extract(email_msg, rule) -> list[dict]:
+    """Unified entry point: delegates to extract_bs4 (which reads from PDF)."""
+    return extract_bs4(email_msg.html_body or "", rule, email_msg)
+
+
 def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     """Entry point — ignores HTML and works from the PDF attachment."""
     pdf_text = email_msg.get_pdf_text() if hasattr(email_msg, 'get_pdf_text') else ''

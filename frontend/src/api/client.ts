@@ -16,6 +16,9 @@ import type {
   AirportCountResponse,
   ImmichAlbumResponse,
   NotifPreferences,
+  BoardingPass,
+  FailedEmail,
+  AdminFailedEmailGroup,
   User,
   UserListItem,
   LoginResponse,
@@ -141,6 +144,29 @@ export const flightsApi = {
   delete: (id: number | string) => del<null>(`/api/flights/${id}`),
 };
 
+// ---- Boarding Passes ----
+
+export const boardingPassesApi = {
+  list: (flightId: string | number) =>
+    get<BoardingPass[]>(`/api/flights/${flightId}/boarding-passes`),
+  upload: async (flightId: string | number, file: File): Promise<{ id: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/flights/${flightId}/boarding-passes`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { detail?: string };
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+  imageUrl: (bpId: string) => `/api/boarding-passes/${bpId}/image`,
+  delete: (bpId: string) => del<null>(`/api/boarding-passes/${bpId}`),
+};
+
 // ---- Sync ----
 
 export const syncApi = {
@@ -202,6 +228,16 @@ export const notificationsApi = {
   updatePreferences: (prefs: Partial<NotifPreferences>) =>
     post<NotifPreferences & { ok: boolean }>('/api/notifications/preferences', prefs),
   testPush: () => post<{ ok: boolean; sent: number }>('/api/notifications/test'),
+};
+
+export const failedEmailsApi = {
+  list: () => get<FailedEmail[]>('/api/failed-emails'),
+  retry: (id: string) => post<{ status: string; record?: FailedEmail }>(`/api/failed-emails/${id}/retry`),
+  delete: (id: string) => del<null>(`/api/failed-emails/${id}`),
+  adminList: () => get<AdminFailedEmailGroup[]>('/api/admin/failed-emails'),
+  adminDeleteSender: (sender: string) =>
+    _request<null>('DELETE', '/api/admin/failed-emails/sender', { sender }),
+  adminRetryAll: () => post<{ results: Record<number, { retried: number; recovered: number }> }>('/api/admin/failed-emails/retry-all'),
 };
 
 export const settingsApi = {

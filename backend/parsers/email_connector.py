@@ -195,6 +195,7 @@ class EmailMessage:
         date: datetime | None,
         html_body: str | None = None,
         pdf_attachments: list[bytes] | None = None,
+        raw_eml: bytes | None = None,
     ):
         self.message_id = message_id
         self.sender = sender
@@ -203,6 +204,7 @@ class EmailMessage:
         self.date = date
         self.html_body = html_body
         self.pdf_attachments: list[bytes] = pdf_attachments or []
+        self.raw_eml: bytes | None = raw_eml
 
     def get_pdf_text(self) -> str:
         """Extract text from any stored PDF attachments (requires pdfplumber)."""
@@ -243,6 +245,35 @@ def connect_imap(
     return conn
 
 
+# Subject keywords that suggest a flight-related email from any airline.
+# Used to catch emails from unknown senders that might contain itinerary data.
+_FLIGHT_SUBJECT_KEYWORDS = re.compile(
+    r'\b(?:itinerar|e-?ticket|boarding|reserv|booking\s*confirm|'
+    r'confirmation|check-?in|flight\s*confirm|viagem|voo|'
+    r'[A-Z]{2}\d{3,4})\b',
+    re.IGNORECASE,
+)
+
+
+def _matches_flight_filter(
+    sender: str,
+    subject: str,
+    sender_patterns: list[str] | None,
+) -> bool:
+    """
+    Return True if the email should be fetched for flight parsing.
+
+    Accepts if:
+      - sender matches any known airline sender_pattern, OR
+      - subject contains a flight-like keyword (catches unknown airlines)
+    """
+    if sender_patterns:
+        for pattern in sender_patterns:
+            if re.search(pattern, sender, re.IGNORECASE):
+                return True
+    return bool(_FLIGHT_SUBJECT_KEYWORDS.search(subject))
+
+
 def fetch_emails_imap(
     host: str,
     port: int,
@@ -255,12 +286,15 @@ def fetch_emails_imap(
     max_results: int = 200,
 ) -> ImapFetchResult:
     """
-    Fetch emails from an IMAP server, optionally filtering by sender patterns and date.
+    Fetch emails from an IMAP server, filtering by sender patterns OR flight keywords.
 
     Returns an ImapFetchResult — never raises; check .success and .error on the result.
 
     Args:
         sender_patterns: List of regex patterns to match against From header.
+            Emails matching these are always fetched (known airlines).
+            Emails NOT matching are also fetched if their subject contains
+            flight-like keywords (catches unknown/new airlines).
         since_date: Only fetch emails after this date.
         max_results: Maximum number of emails to return.
     """
@@ -269,14 +303,14 @@ def fetch_emails_imap(
         conn = connect_imap(host, port, username, password, use_ssl)
         conn.select(folder, readonly=True)
 
-        # Build IMAP search criteria
+        # Build IMAP search criteria (date filter only — Python handles the rest)
         search_criteria = []
         if since_date:
             date_str = since_date.strftime("%d-%b-%Y")
             search_criteria.append(f"SINCE {date_str}")
 
         criteria_str = " ".join(search_criteria) if search_criteria else "ALL"
-        status, data = conn.search(None, criteria_str)
+        status, data = conn.search(None, criteria_str)  # noqa: S608
         if status != "OK":
             err = f"IMAP search failed with status: {status}"
             logger.error(err)
@@ -299,15 +333,9 @@ def fetch_emails_imap(
                 subject = decode_header_value(msg.get("Subject", ""))
                 message_id = msg.get("Message-ID", f"imap-{msg_id.decode()}")
 
-                # Filter by sender patterns if provided
-                if sender_patterns:
-                    matched = False
-                    for pattern in sender_patterns:
-                        if re.search(pattern, sender, re.IGNORECASE):
-                            matched = True
-                            break
-                    if not matched:
-                        continue
+                # Filter: known sender pattern OR flight-like subject keyword
+                if not _matches_flight_filter(sender, subject, sender_patterns):
+                    continue
 
                 body, raw_html, pdf_bytes_list = get_email_body_and_html(msg)
 
@@ -329,6 +357,7 @@ def fetch_emails_imap(
                         date=msg_date,
                         html_body=raw_html,
                         pdf_attachments=pdf_bytes_list,
+                        raw_eml=raw_email,
                     )
                 )
             except Exception as e:

@@ -82,3 +82,10 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
             flights.append(flight)
 
     return flights
+
+
+def extract(email_msg, rule) -> list[dict]:
+    """Unified entry point: try HTML (BS4) only."""
+    if email_msg.html_body:
+        return extract_bs4(email_msg.html_body, rule, email_msg)
+    return []

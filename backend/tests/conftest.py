@@ -84,7 +84,10 @@ def api_app(test_db):
 
     from backend.routes import airports as airports_routes
     from backend.routes import auth as auth_routes
+    from backend.routes import boarding_passes as bp_routes
+    from backend.routes import failed_emails as failed_emails_routes
     from backend.routes import flights as flights_routes
+    from backend.routes import notifications as notifications_routes
     from backend.routes import settings as settings_routes
     from backend.routes import sync as sync_routes
     from backend.routes import trips as trips_routes
@@ -98,6 +101,9 @@ def api_app(test_db):
     app.include_router(sync_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(airports_routes.router)
+    app.include_router(notifications_routes.router)
+    app.include_router(bp_routes.router)
+    app.include_router(failed_emails_routes.router)
     return app
 
 

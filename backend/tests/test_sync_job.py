@@ -125,7 +125,7 @@ class TestFindExistingFlight:
         return cur.lastrowid
 
     def test_no_flight_returns_none(self, test_db):
-        from backend.sync_job import _find_existing_flight
+        from backend.flight_store import find_existing_flight as _find_existing_flight
 
         result = _find_existing_flight("LA1234", "2025-06-01", 1)
         assert result is None
@@ -134,7 +134,7 @@ class TestFindExistingFlight:
         import uuid
 
         from backend.database import db_write
-        from backend.sync_job import _find_existing_flight
+        from backend.flight_store import find_existing_flight as _find_existing_flight
 
         now = datetime.now(UTC).isoformat()
         with db_write() as conn:
@@ -155,7 +155,7 @@ class TestFindExistingFlight:
         import uuid
 
         from backend.database import db_write
-        from backend.sync_job import _find_existing_flight
+        from backend.flight_store import find_existing_flight as _find_existing_flight
 
         now = datetime.now(UTC).isoformat()
         with db_write() as conn:
@@ -176,7 +176,7 @@ class TestInsertFlight:
         import uuid
 
         from backend.database import db_conn, db_write
-        from backend.sync_job import _insert_flight
+        from backend.flight_store import insert_flight as _insert_flight
 
         with db_write() as conn:
             cur = conn.execute(
@@ -203,7 +203,7 @@ class TestInsertFlight:
 
     def test_duplicate_message_id_returns_none(self, test_db):
         from backend.database import db_write
-        from backend.sync_job import _insert_flight
+        from backend.flight_store import insert_flight as _insert_flight
 
         with db_write() as conn:
             cur = conn.execute(
@@ -227,7 +227,7 @@ class TestInsertFlight:
 
     def test_status_completed_for_past_flight(self, test_db):
         from backend.database import db_conn, db_write
-        from backend.sync_job import _insert_flight
+        from backend.flight_store import insert_flight as _insert_flight
 
         with db_write() as conn:
             cur = conn.execute(
@@ -255,7 +255,7 @@ class TestUpdateFlightFromBcbp:
         import uuid
 
         from backend.database import db_conn, db_write
-        from backend.sync_job import _update_flight_from_bcbp
+        from backend.flight_store import update_flight_from_bcbp as _update_flight_from_bcbp
 
         now = datetime.now(UTC).isoformat()
         fid = str(uuid.uuid4())
@@ -282,7 +282,7 @@ class TestUpdateFlightFromBcbp:
 
     def test_empty_bcbp_data_no_update(self, test_db):
         """If bcbp data has no relevant fields, no update is executed."""
-        from backend.sync_job import _update_flight_from_bcbp
+        from backend.flight_store import update_flight_from_bcbp as _update_flight_from_bcbp
 
         # Should not raise even with no updates
         _update_flight_from_bcbp("nonexistent-id", {})

@@ -145,34 +145,84 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     """
     Extract flight data from an email that has been matched to an airline rule.
 
-    Tries three strategies in order:
-      1. BS4 (HTML) extraction — most accurate when an HTML body is present.
-      2. Custom regex extractor — per-airline plain-text fallback (LATAM, SAS/Norwegian).
-      3. Generic body_pattern regex — defined directly on the rule object.
+    Strategy:
+      1. Call ``rule.extractor(email_msg, rule)`` — the per-airline unified callable
+         set by ``get_builtin_rules()``.  It tries HTML first, then regex/PDF internally.
+      2. Also try the generic PDF extractor and merge any extra fields it finds.
+      3. Fall back to the generic body_pattern regex when no extractor is attached.
     """
-    # 1. BS4 extraction
+    extractor = getattr(rule, "extractor", None)
+    if extractor is not None:
+        try:
+            results = extractor(email_msg, rule)
+        except Exception:
+            logger.debug(
+                "Extractor for '%s' raised an exception, trying generic fallback",
+                rule.airline_name, exc_info=True,
+            )
+            results = []
+
+        # Always also attempt generic PDF extraction and merge any richer data
+        if email_msg.pdf_attachments:
+            pdf_results = _try_generic_pdf(email_msg)
+            results = _merge_flights(results, pdf_results)
+
+        if results:
+            return results
+
+    # Legacy / generic fallback — used when no extractor is attached (custom rules)
     if email_msg.html_body:
         from .airlines import extract_with_bs4
         bs4_result = extract_with_bs4(email_msg.html_body, rule, email_msg)
         if bs4_result:
             return bs4_result
 
-    # 2. Custom per-airline regex fallback
-    extractor = getattr(rule, "custom_extractor", "")
-    if extractor == "latam":
-        from .airlines.latam import extract_regex
-        return extract_regex(email_msg, rule)
-    if extractor in ("sas", "norwegian"):
-        from .airlines.sas import extract_regex
-        return extract_regex(email_msg, rule)
-    if extractor == "kiwi":
-        from .airlines.kiwi import extract_bs4 as kiwi_extract
-        return kiwi_extract(email_msg.html_body or "", rule, email_msg)
-
-    # 3. Generic body_pattern regex (used by airlines without a custom extractor)
     if not getattr(rule, "body_pattern", ""):
         return []
     return _extract_generic(email_msg, rule)
+
+
+def _try_generic_pdf(email_msg: EmailMessage) -> list[dict]:
+    """Extract flights from PDF attachments using the generic pattern."""
+    from .email_connector import _extract_text_from_pdf
+    pdf_text = '\n'.join(
+        t for b in email_msg.pdf_attachments
+        if (t := _extract_text_from_pdf(b))
+    )
+    return _extract_generic_pdf(pdf_text, email_msg) if pdf_text else []
+
+
+def _merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
+    """
+    Merge ``secondary`` results into ``primary`` by filling empty fields.
+
+    Matches flights by (flight_number, departure_airport, arrival_airport).
+    Flights in ``secondary`` that have no match in ``primary`` are appended.
+    """
+    if not primary:
+        return secondary
+    if not secondary:
+        return primary
+
+    def _key(f: dict):
+        return (
+            f.get("flight_number", "").replace(" ", ""),
+            f.get("departure_airport", ""),
+            f.get("arrival_airport", ""),
+        )
+
+    primary_map = {_key(f): f for f in primary}
+    for sec in secondary:
+        k = _key(sec)
+        if k in primary_map:
+            pri = primary_map[k]
+            for field_name, val in sec.items():
+                if val and not pri.get(field_name):
+                    pri[field_name] = val
+        else:
+            primary.append(sec)
+
+    return primary
 
 
 def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:

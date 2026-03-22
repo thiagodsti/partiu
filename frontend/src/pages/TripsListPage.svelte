@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { tripsApi, syncApi } from "../api/client";
+  import { tripsApi, syncApi, failedEmailsApi } from "../api/client";
   import { tripImageBust } from "../lib/tripImageStore";
   import type { Trip, SyncStatus } from "../api/types";
   import { inferTripStatus } from "../lib/utils";
@@ -19,6 +19,7 @@
   let tripsList = $state<Trip[]>([]);
   let syncStatus = $state<SyncStatus | null>(null);
   let syncingNow = $state(false);
+  let failedEmailCount = $state(0);
 
   let syncPollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -27,12 +28,14 @@
     loading = true;
     error = null;
     try {
-      const [data, status] = await Promise.all([
+      const [data, status, failed] = await Promise.all([
         tripsApi.list(),
         syncApi.status().catch(() => null),
+        failedEmailsApi.list().catch(() => []),
       ]);
       tripsList = data?.trips ?? [];
       syncStatus = status;
+      failedEmailCount = failed.length;
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -127,6 +130,13 @@
       </button>
     </SyncStatusBar>
 
+    <!-- Failed emails warning -->
+    {#if failedEmailCount > 0}
+      <a href="#/settings" class="failed-emails-banner">
+        ⚠️ {$t('trips.failed_emails_warning', { values: { count: failedEmailCount } })}
+      </a>
+    {/if}
+
     <!-- Trips List -->
     {#if !loading && activeTrips.length === 0}
       <EmptyState
@@ -170,3 +180,19 @@
   {/if}
 </div>
 
+<style>
+  .failed-emails-banner {
+    display: block;
+    margin: 6px 16px 0;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent);
+    border-radius: 8px;
+    color: var(--color-text);
+    font-size: 0.85rem;
+    text-decoration: none;
+  }
+  .failed-emails-banner:hover {
+    background: color-mix(in srgb, var(--color-warning, #f59e0b) 25%, transparent);
+  }
+</style>

@@ -116,6 +116,7 @@ async def get_preferences(user: dict = Depends(get_current_user)):
         "checkin_reminder": bool(user.get("notif_checkin_reminder", 1)),
         "trip_reminder": bool(user.get("notif_trip_reminder", 1)),
         "delay_alert": bool(user.get("notif_delay_alert", 1)),
+        "boarding_pass": bool(user.get("notif_boarding_pass", 1)),
     }
 
 
@@ -125,7 +126,7 @@ async def update_preferences(
     user: dict = Depends(get_current_user),
 ):
     body = await request.json()
-    allowed = {"flight_reminder", "checkin_reminder", "trip_reminder", "delay_alert"}
+    allowed = {"flight_reminder", "checkin_reminder", "trip_reminder", "delay_alert", "boarding_pass"}
     updates = {k: int(bool(v)) for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=422, detail="No valid preference fields")
@@ -137,7 +138,7 @@ async def update_preferences(
     with db_write() as conn:
         conn.execute(f"UPDATE users SET {set_clauses} WHERE id = ?", values)  # noqa: S608
 
-    return {"ok": True, **{k: bool(v) for k, v in updates.items()}}
+    return {"ok": True, **{k: bool(v) for k, v in updates.items()}}  # noqa: S608
 
 
 @router.post("/test")

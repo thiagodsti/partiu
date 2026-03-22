@@ -5,12 +5,13 @@ Adapted from AdventureLog — Django dependencies removed.
 Added Norwegian Air Shuttle (DY).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-# Increment this version whenever rules are added or modified.
+# Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-RULES_VERSION = '16'  # added Kiwi.com rule + generic PDF fallback
+# Also triggers auto-retry of all failed_emails for the user.
+PARSER_VERSION = '17'  # engine refactor: callable extractors, keyword-based IMAP fetch
 
 # ---------------------------------------------------------------------------
 # Flexible date sub-pattern (reusable)
@@ -197,6 +198,10 @@ BUILTIN_AIRLINE_RULES = [
 class BuiltinAirlineRule:
     """
     Lightweight, in-memory representation of an airline parsing rule.
+
+    ``extractor`` is set by ``get_builtin_rules()`` to the unified
+    ``extract(email_msg, rule) -> list[dict]`` callable for this airline.
+    The engine calls it directly instead of using a string dispatch table.
     """
     airline_name: str
     airline_code: str
@@ -209,12 +214,36 @@ class BuiltinAirlineRule:
     priority: int
     subject_pattern: str = ''
     custom_extractor: str = ''
+    extractor: object = field(default=None, repr=False)
+
+
+def _resolve_extractor(name: str):
+    """Return the unified extract() callable for a given custom_extractor name."""
+    if name == 'latam':
+        from .airlines.latam import extract
+        return extract
+    if name in ('sas', 'norwegian'):
+        from .airlines.sas import extract
+        return extract
+    if name == 'lufthansa':
+        from .airlines.lufthansa import extract
+        return extract
+    if name == 'azul':
+        from .airlines.azul import extract
+        return extract
+    if name == 'kiwi':
+        from .airlines.kiwi import extract
+        return extract
+    return None
 
 
 def get_builtin_rules() -> list[BuiltinAirlineRule]:
     """Return all active built-in airline rules as in-memory objects (no DB query)."""
-    return [
-        BuiltinAirlineRule(**rule)
-        for rule in BUILTIN_AIRLINE_RULES
-        if rule.get('is_active', True)
-    ]
+    rules = []
+    for rule_dict in BUILTIN_AIRLINE_RULES:
+        if not rule_dict.get('is_active', True):
+            continue
+        rule = BuiltinAirlineRule(**rule_dict)
+        rule.extractor = _resolve_extractor(rule.custom_extractor)
+        rules.append(rule)
+    return rules
