@@ -2,19 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import TripsListPage from './TripsListPage.svelte';
 
-const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow } = vi.hoisted(
+const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow, mockFailedEmailsList } = vi.hoisted(
   () => ({
     mockList: vi.fn(),
     mockSyncStatus: vi.fn(),
     mockSyncNow: vi.fn(),
     mockRefreshImage: vi.fn(),
     mockToastsShow: vi.fn(),
+    mockFailedEmailsList: vi.fn(),
   }),
 );
 
 vi.mock('../api/client', () => ({
   tripsApi: { list: mockList, refreshImage: mockRefreshImage },
   syncApi: { status: mockSyncStatus, now: mockSyncNow },
+  failedEmailsApi: { list: mockFailedEmailsList },
 }));
 
 vi.mock('../lib/toastStore', () => ({
@@ -65,6 +67,7 @@ describe('TripsListPage', () => {
     mockList.mockResolvedValue({ trips: [TRIP] });
     mockSyncStatus.mockResolvedValue(SYNC_IDLE);
     mockSyncNow.mockResolvedValue({});
+    mockFailedEmailsList.mockResolvedValue([]);
   });
 
   it('shows loading screen initially', () => {
