@@ -28,6 +28,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # App code
 COPY backend/ ./backend/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 COPY load_airports.py ./
 
 # Frontend built assets
