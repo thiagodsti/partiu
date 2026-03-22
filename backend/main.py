@@ -24,9 +24,9 @@ from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
 from .routes import boarding_passes as boarding_passes_routes
 from .routes import failed_emails as failed_emails_routes
-from .routes import trip_documents as trip_documents_routes
 from .routes import notifications as notifications_routes
 from .routes import stats as stats_routes
+from .routes import trip_documents as trip_documents_routes
 from .routes import users as users_routes
 from .scheduler import start_scheduler, stop_scheduler
 from .smtp_server import start_smtp_server, stop_smtp_server

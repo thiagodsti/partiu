@@ -3,11 +3,12 @@ import { render, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import TripDetailPage from './TripDetailPage.svelte';
 
-const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum } = vi.hoisted(() => ({
+const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSettingsGet: vi.fn(),
   mockRefreshImage: vi.fn(),
   mockCheckImmichAlbum: vi.fn(),
+  mockDocList: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
@@ -18,6 +19,12 @@ vi.mock('../api/client', () => ({
     createImmichAlbum: vi.fn(),
   },
   settingsApi: { get: mockSettingsGet },
+  tripDocumentsApi: {
+    list: mockDocList,
+    upload: vi.fn(),
+    viewUrl: (id: string, page = 0) => `/api/documents/${id}/view?page=${page}`,
+    delete: vi.fn(),
+  },
 }));
 
 vi.mock('../lib/tripImageStore', () => ({
@@ -87,6 +94,7 @@ describe('TripDetailPage', () => {
     vi.clearAllMocks();
     mockSettingsGet.mockResolvedValue({ immich_url: null, immich_api_key_set: false });
     mockCheckImmichAlbum.mockResolvedValue({ exists: true });
+    mockDocList.mockResolvedValue([]);
   });
 
   it('shows loading screen initially', () => {
