@@ -114,3 +114,25 @@ jobs:
       - name: Run e2e tests
         run: pytest frontend/tests/ -v --tb=short
         continue-on-error: true  # e2e tests may require seed data; don't block PRs
+
+  docker:
+    name: Docker build & smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t partiu:ci .
+
+      - name: Smoke test (startup check)
+        run: |
+          docker run --rm -d \
+            -e SECRET_KEY="ci-test-secret-key-placeholder-32x" \
+            -e DISABLE_SCHEDULER="true" \
+            --name partiu_ci \
+            partiu:ci
+          sleep 5
+          docker logs partiu_ci
+          docker inspect partiu_ci --format='{{.State.Running}}' | grep true
+          docker stop partiu_ci
