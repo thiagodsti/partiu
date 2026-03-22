@@ -93,7 +93,11 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
 
     from .flight_store import find_existing_flight, insert_flight
     from .parsers.email_connector import EmailMessage, decode_header_value, get_email_body_and_html
-    from .parsers.engine import extract_flights_from_email, match_rule_to_email, try_generic_pdf_extraction
+    from .parsers.engine import (
+        extract_flights_from_email,
+        match_rule_to_email,
+        try_generic_pdf_extraction,
+    )
     from .timezone_utils import apply_airport_timezones
 
     eml_path = row.get("eml_path")

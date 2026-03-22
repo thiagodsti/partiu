@@ -22,7 +22,7 @@ from .parsers.engine import (
     try_generic_pdf_extraction,
 )
 from .timezone_utils import apply_airport_timezones
-from .utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
+from .utils import dt_to_iso, now_iso
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,6 @@ from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
 from ..database import db_conn, db_write
-from ..utils import now_iso
 
 router = APIRouter(tags=["failed-emails"])
 
