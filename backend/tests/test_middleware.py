@@ -12,7 +12,7 @@ def _make_app(test_db):
     from backend.routes import airports, auth, flights, settings, sync, trips, users
 
     app = FastAPI()
-    app.add_middleware(FirstRunMiddleware)
+    app.add_middleware(FirstRunMiddleware)  # type: ignore[arg-type]
     app.include_router(auth.router)
     app.include_router(flights.router)
     app.include_router(trips.router)

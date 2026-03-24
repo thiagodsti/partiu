@@ -73,16 +73,16 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[arg-type]
     allow_origins=[],  # No cross-origin access — app is served same-origin
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
-app.add_middleware(FirstRunMiddleware)
+app.add_middleware(FirstRunMiddleware)  # type: ignore[arg-type]
 
 # Include API routers
 app.include_router(auth_routes.router)

@@ -329,7 +329,8 @@ def _process_emails(emails: list, user_id: int) -> dict:
                     continue
 
                 dep_dt = flight_data.get("departure_datetime")
-                dep_date = dt_to_iso(dep_dt)[:10] if dep_dt else None
+                dep_iso = dt_to_iso(dep_dt) if dep_dt else None
+                dep_date = dep_iso[:10] if dep_iso else None
 
                 if dep_date:
                     existing = find_existing_flight(fn, dep_date, user_id)

@@ -26,7 +26,7 @@ _HEXDB_BASE = "https://hexdb.io/api/v1"
 _TIMEOUT = 10.0
 
 
-def _lookup_type_name(iata_code: str) -> str | None:
+def _lookup_type_name(iata_code: str | None) -> str | None:
     """Look up a human-readable aircraft name from the local aircraft_types table."""
     if not iata_code:
         return None
@@ -46,12 +46,12 @@ async def _fetch_type_name_from_hexdb(icao24: str) -> tuple[str, str, str]:
     Returns (type_name, iata_code, registration). Caches the result in aircraft_types table.
     """
     if not icao24:
-        return "", ""
+        return "", "", ""
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(f"{_HEXDB_BASE}/aircraft/{icao24.lower()}")
             if resp.status_code != 200:
-                return "", ""
+                return "", "", ""
             data = resp.json()
 
         # hexdb.io field names: ICAOTypeCode, Manufacturer, Type (variant), Registration

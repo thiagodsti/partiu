@@ -364,6 +364,8 @@ def _merge_overlapping_groups(max_gap: timedelta, user_id: int | None = None) ->
 
                 if not all([g1_start, g1_end, g2_start, g2_end]):
                     continue
+                assert g1_start is not None and g1_end is not None
+                assert g2_start is not None and g2_end is not None
 
                 overlap = (
                     g1_start <= g2_end + max_gap and g2_start <= g1_end + max_gap

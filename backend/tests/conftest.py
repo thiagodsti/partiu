@@ -143,11 +143,15 @@ def load_eml_as_email_message(eml_filename: str):
     for part in msg.walk():
         ct = part.get_content_type()
         if ct == "text/plain" and not body:
-            body = part.get_payload(decode=True).decode("utf-8", errors="replace")
+            raw = part.get_payload(decode=True)
+            body = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else ""
         elif ct == "text/html" and not html_body:
-            html_body = part.get_payload(decode=True).decode("utf-8", errors="replace")
+            raw = part.get_payload(decode=True)
+            html_body = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else ""
         elif ct == "application/pdf":
-            pdf_attachments.append(part.get_payload(decode=True))
+            raw = part.get_payload(decode=True)
+            if isinstance(raw, bytes):
+                pdf_attachments.append(raw)
 
     return EmailMessage(
         message_id=f"test-{eml_filename}",

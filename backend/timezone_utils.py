@@ -7,6 +7,7 @@ IANA timezone for an airport, then converts naive local datetimes to UTC.
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
+from typing import overload
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,11 @@ def _get_airport_timezone(iata_code: str) -> str | None:
         return None
 
 
-def localize_to_utc(naive_dt: datetime, airport_iata: str) -> datetime:
+@overload
+def localize_to_utc(naive_dt: None, airport_iata: str) -> None: ...
+@overload
+def localize_to_utc(naive_dt: datetime, airport_iata: str) -> datetime: ...
+def localize_to_utc(naive_dt: datetime | None, airport_iata: str) -> datetime | None:
     """
     Given a naive datetime representing local time at an airport,
     return the equivalent UTC datetime.
@@ -41,7 +46,7 @@ def localize_to_utc(naive_dt: datetime, airport_iata: str) -> datetime:
     Falls back to treating as UTC if timezone lookup fails.
     """
     if naive_dt is None:
-        return naive_dt
+        return None
 
     # Already timezone-aware — convert to UTC
     if naive_dt.tzinfo is not None:

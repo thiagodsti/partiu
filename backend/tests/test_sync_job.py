@@ -41,13 +41,6 @@ class TestDtToIso:
         result = dt_to_iso(dt)
         assert "2025-06-01" in result
 
-    def test_non_datetime_falls_back_to_str(self):
-        from backend.utils import dt_to_iso
-
-        result = dt_to_iso("2025-06-01")
-        assert result == "2025-06-01"
-
-
 class TestSyncState:
     def test_get_sync_state_empty(self, test_db):
         from backend.sync_job import _get_sync_state

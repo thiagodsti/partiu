@@ -179,6 +179,7 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
         fn_m = flight_num_re.search(block)
         if not all([route_m, time_m, fn_m]):
             continue
+        assert route_m is not None and time_m is not None and fn_m is not None
 
         dep_airport = route_m.group(1)
         arr_airport = route_m.group(2)
@@ -313,10 +314,10 @@ def _extract_pdf_tabular(body, email_msg, rule, booking_ref, passenger) -> list[
             arr_date = flight_date + timedelta(days=1)
         arr_dt = _make_aware(datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val))
 
-        flight = {
-            **_make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger),
-            "departure_terminal": terminal,
-        }
+        base = _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger)
+        if base is None:
+            continue
+        flight = {**base, "departure_terminal": terminal}
         flights.append(flight)
 
     return flights

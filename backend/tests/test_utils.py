@@ -47,12 +47,6 @@ class TestDtToIso:
         assert "2025-06-01" in result
         assert "10:30" in result
 
-    def test_non_datetime_falls_back_to_str(self):
-        assert dt_to_iso("2025-06-01") == "2025-06-01"
-
-    def test_non_datetime_integer(self):
-        assert dt_to_iso(42) == "42"
-
     def test_non_utc_timezone_preserved(self):
         tz = timezone(timedelta(hours=5))
         dt = datetime(2025, 6, 1, 15, 0, 0, tzinfo=tz)

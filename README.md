@@ -152,16 +152,14 @@ Forward port `25` (or `2525`) on your router/firewall to the server running Part
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 20+
+- [uv](https://docs.astral.sh/uv/) — Python package manager (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- Node.js 24+
 
 ### Backend
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+uv sync
+uv run uvicorn backend.main:app --reload
 ```
 
 ### Frontend
@@ -172,26 +170,17 @@ npm install
 npm run dev   # Vite dev server at localhost:5173
 ```
 
-### Run the backend
-
-```bash
-uvicorn backend.main:app --reload
-```
-
 > **Note:** Session cookies require HTTPS (`Secure` flag). For local development, access the app via a reverse proxy with a self-signed certificate or a tool like [mkcert](https://github.com/FiloSottile/mkcert).
 
 ### Tests
 
 ```bash
 # Backend unit tests
-pytest tests/backend/
+uv run pytest backend/tests/ -v --cov=backend --cov-fail-under=70
 
 # E2E tests (requires a running server at localhost:8000)
-playwright install chromium
-pytest tests/e2e/
-
-# All tests
-pytest
+uv run playwright install chromium
+uv run pytest frontend/tests/ -v
 ```
 
 ---

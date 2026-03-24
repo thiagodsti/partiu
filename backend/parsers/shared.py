@@ -26,7 +26,7 @@ def _make_aware(dt: datetime) -> datetime:
     return dt.replace(tzinfo=UTC)
 
 
-def _build_datetime(date_obj: date_type, time_str: str) -> datetime | None:
+def _build_datetime(date_obj: date_type | None, time_str: str) -> datetime | None:
     """Combine a date and 'HH:MM' string into a timezone-aware UTC datetime."""
     if not date_obj or not time_str:
         return None

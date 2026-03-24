@@ -92,7 +92,7 @@ def extract_from_html(html: str) -> list[bytes]:
     candidates: list[tuple[bytes, bool, int]] = []  # (bytes, has_keyword, size)
 
     for img in soup.find_all("img"):
-        src = img.get("src", "")
+        src = str(img.get("src", ""))
         m = re.match(r"data:image/(\w+);base64,(.+)", src, re.DOTALL)
         if not m:
             continue

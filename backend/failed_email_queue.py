@@ -151,7 +151,8 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
             if not fn:
                 continue
             dep_dt = flight_data.get("departure_datetime")
-            dep_date = dt_to_iso(dep_dt)[:10] if dep_dt else None
+            dep_iso = dt_to_iso(dep_dt) if dep_dt else None
+            dep_date = dep_iso[:10] if dep_iso else None
             if dep_date and find_existing_flight(fn, dep_date, user_id):
                 continue
             insert_flight(flight_data, email_msg, user_id)

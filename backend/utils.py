@@ -3,6 +3,7 @@ Shared utility functions used across the backend.
 """
 
 from datetime import UTC, datetime
+from typing import overload
 
 
 def now_iso() -> str:
@@ -10,15 +11,17 @@ def now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def dt_to_iso(dt) -> str | None:
+@overload
+def dt_to_iso(dt: None) -> None: ...
+@overload
+def dt_to_iso(dt: datetime) -> str: ...
+def dt_to_iso(dt: datetime | None) -> str | None:
     """Convert a datetime (or None) to an ISO 8601 string."""
     if dt is None:
         return None
-    if isinstance(dt, datetime):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt.isoformat()
-    return str(dt)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
 
 
 def calc_duration_minutes(dep_dt, arr_dt) -> int | None:

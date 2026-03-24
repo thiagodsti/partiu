@@ -491,6 +491,7 @@ def _make_segment(
     arr_date = parse_flight_date(arr_date_str) or dep_date
     if not dep_date:
         return None
+    assert arr_date is not None  # arr_date falls back to dep_date which is non-None here
     try:
         dep_h, dep_m = map(int, dep_time_str.split(":"))
         arr_h, arr_m = map(int, arr_time_str.split(":"))

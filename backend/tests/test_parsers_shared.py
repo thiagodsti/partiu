@@ -136,6 +136,7 @@ class TestMakeFlightDict:
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         result = _make_flight_dict(self._rule(), "TA123", "GRU", "EZE", dep, arr)
+        assert result is not None
         assert result["seat"] == ""
         assert result["cabin_class"] == ""
 

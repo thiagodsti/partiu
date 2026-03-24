@@ -13,27 +13,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Backend
 
-> **IMPORTANT:** `source venv/bin/activate` does not work in the Bash tool because the shell's `python` alias overrides the venv. Always use the full venv Python path for any Python command:
-> ```
-> /Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest ...
-> /Users/thiagods/projects/partiu/venv/bin/python3.14 -m uvicorn ...
-> ```
+> **IMPORTANT:** This project uses [uv](https://docs.astral.sh/uv/) for dependency management. Use `uv run` for all Python commands — no venv activation needed.
 
 ```bash
 # Setup
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
+uv sync
 
 # Run
-/Users/thiagods/projects/partiu/venv/bin/python3.14 -m uvicorn backend.main:app --reload
+uv run uvicorn backend.main:app --reload
 
 # Lint
-/Users/thiagods/projects/partiu/venv/bin/python3.14 -m ruff check backend/
+uv run ruff check backend/
+
+# Type check
+uv run ty check backend/
 
 # Tests
-/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest backend/tests/ -v
-/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest backend/tests/test_api_auth.py::TestAuth::test_login -v  # single test
-/Users/thiagods/projects/partiu/venv/bin/python3.14 -m pytest --cov=backend --cov-fail-under=70                        # with coverage (70% minimum enforced)
+uv run pytest backend/tests/ -v
+uv run pytest backend/tests/test_api_auth.py::TestAuth::test_login -v  # single test
+uv run pytest --cov=backend --cov-fail-under=70                        # with coverage (70% minimum enforced)
 ```
 
 ### Frontend

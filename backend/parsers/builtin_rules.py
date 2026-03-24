@@ -243,7 +243,7 @@ def get_builtin_rules() -> list[BuiltinAirlineRule]:
     for rule_dict in BUILTIN_AIRLINE_RULES:
         if not rule_dict.get('is_active', True):
             continue
-        rule = BuiltinAirlineRule(**rule_dict)
+        rule = BuiltinAirlineRule(**rule_dict)  # type: ignore[arg-type]
         rule.extractor = _resolve_extractor(rule.custom_extractor)
         rules.append(rule)
     return rules

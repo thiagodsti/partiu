@@ -326,7 +326,10 @@ def fetch_emails_imap(
                 status, msg_data = conn.fetch(msg_id, "(RFC822)")
                 if status != "OK":
                     continue
-                raw_email = msg_data[0][1]
+                item = msg_data[0]
+                if not isinstance(item, (tuple, list)):
+                    continue
+                raw_email: bytes = item[1]
                 msg = email.message_from_bytes(raw_email)
 
                 sender = decode_header_value(msg.get("From", ""))

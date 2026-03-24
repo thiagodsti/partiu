@@ -11,6 +11,7 @@ Strategy:
 
 import asyncio
 import logging
+import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -161,7 +162,7 @@ async def _run_flight_status_sync() -> dict:
 _DELAY_ALERT_THRESHOLD = 15  # minutes — below this is noise
 
 
-def _maybe_send_alert(row: object, status_info: dict) -> None:
+def _maybe_send_alert(row: sqlite3.Row, status_info: dict) -> None:
     """Send a push notification if something significant changed for this flight."""
     from .push import already_sent, log_sent, send_push
 
