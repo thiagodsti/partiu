@@ -2,9 +2,12 @@
 Authentication helpers: password hashing, session cookies, FastAPI dependencies.
 """
 
+import os
 import secrets
 
 import bcrypt
+
+_BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 from fastapi import Depends, HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
@@ -33,7 +36,7 @@ def validate_secret_key() -> None:
 
 
 def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:

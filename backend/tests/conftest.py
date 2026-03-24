@@ -12,6 +12,7 @@ import pytest
 
 # MUST be set before any backend imports so Settings picks it up.
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-minimum-32chars!")
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
 
 # Add the project root so that `backend` is importable as a package.
 ROOT = Path(__file__).parent.parent.parent
