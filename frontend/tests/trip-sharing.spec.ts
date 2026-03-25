@@ -11,14 +11,6 @@ async function serverAvailable(page: Page): Promise<boolean> {
   }
 }
 
-async function login(page: Page, username: string, password: string) {
-  await page.goto(`${BASE_URL}/#/login`);
-  await page.waitForLoadState('networkidle');
-  await page.fill('input[type="text"]', username);
-  await page.fill('input[type="password"]', password);
-  await page.click('button[type="submit"]');
-  await page.waitForLoadState('networkidle');
-}
 
 test.beforeEach(async ({ page }) => {
   test.skip(!(await serverAvailable(page)), 'Server not available at http://localhost:8000');
