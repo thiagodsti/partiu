@@ -98,7 +98,8 @@ jobs:
         working-directory: frontend
 
       - name: Install Playwright browsers
-        run: uv run playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
 
       - name: Start server
         run: |
@@ -109,7 +110,8 @@ jobs:
           DISABLE_SCHEDULER: "true"
 
       - name: Run e2e tests
-        run: uv run pytest frontend/tests/ -v --tb=short
+        run: npm run test:e2e
+        working-directory: frontend
         continue-on-error: true  # e2e tests may require seed data; don't block PRs
 
   docker:

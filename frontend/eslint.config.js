@@ -82,6 +82,6 @@ export default [
 
   // Ignore build artifacts
   {
-    ignores: ["dist/**", "node_modules/**", "*.config.js", "sw.js"],
+    ignores: ["dist/**", "node_modules/**", "*.config.js", "*.config.ts", "sw.js", "tests/**"],
   },
 ];

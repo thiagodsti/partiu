@@ -44,3 +44,6 @@ node_modules
 # Test / coverage
 .coverage
 htmlcov/
+.pytest_cache/
+playwright-report/
+test-results/

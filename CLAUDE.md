@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Always write tests** for every new feature or bug fix without being asked:
   - **Backend**: place tests in `backend/tests/` following existing patterns (class per module, `asyncio.run()` for async, `test_db` fixture, mock with `unittest.mock`). Keep coverage above 70%.
   - **Frontend**: add unit tests as `*.test.ts` files alongside the source (e.g. `utils.test.ts`, `ComponentName.test.ts`) using Vitest + `@testing-library/svelte`. Run with `npm test` inside `frontend/`. Both are already configured.
-  - **E2E**: for every new feature, add a Playwright test in `frontend/tests/` following the pattern in `test_trip_detail.py`. E2E tests require the server running at `http://localhost:8000`. For bug fixes, E2E is optional but preferred if the fix touches a user-facing flow.
+  - **E2E**: for every new feature, add a Playwright test in `frontend/tests/` as a `*.spec.ts` file. E2E tests require the server running at `http://localhost:8000`. For bug fixes, E2E is optional but preferred if the fix touches a user-facing flow.
 
 ## Commands
 
@@ -51,8 +51,9 @@ npm run check     # svelte-check (type errors fail build)
 
 ### E2E Tests
 ```bash
-playwright install chromium
-pytest frontend/tests/ -v
+cd frontend
+npx playwright install chromium
+npm run test:e2e
 ```
 
 ### Docker
