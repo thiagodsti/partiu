@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
+from ..shares import can_access_flight, can_access_trip
 from ..utils import calc_duration_minutes, calc_flight_status, now_iso
 
 router = APIRouter(prefix="/api/flights", tags=["flights"])
@@ -24,30 +25,42 @@ def list_flights(
     user: dict = Depends(get_current_user),
 ):
     """Return flights, optionally filtered by trip or status."""
-    query = "SELECT * FROM flights WHERE user_id = ?"
-    params: list = [user["id"]]
-
-    if trip_id:
-        query += " AND trip_id = ?"
-        params.append(trip_id)
-    if status:
-        query += " AND status = ?"
-        params.append(status)
-
-    query += " ORDER BY departure_datetime DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
-
-    # Build count query params (same as main query without limit/offset)
-    count_params: list = [user["id"]]
-    count_query = "SELECT COUNT(*) FROM flights WHERE user_id = ?"
-    if trip_id:
-        count_query += " AND trip_id = ?"
-        count_params.append(trip_id)
-    if status:
-        count_query += " AND status = ?"
-        count_params.append(status)
-
     with db_conn() as conn:
+        if trip_id:
+            if not can_access_trip(trip_id, user["id"], conn):
+                raise HTTPException(status_code=404, detail="Trip not found")
+            query = "SELECT * FROM flights WHERE trip_id = ?"
+            params: list = [trip_id]
+            count_query = "SELECT COUNT(*) FROM flights WHERE trip_id = ?"
+            count_params: list = [trip_id]
+            if status:
+                query += " AND status = ?"
+                params.append(status)
+                count_query += " AND status = ?"
+                count_params.append(status)
+        else:
+            # User's own flights + flights from shared trips
+            base_union = (
+                "SELECT f.* FROM flights f WHERE f.user_id = ? "
+                "UNION "
+                "SELECT f.* FROM flights f "
+                "JOIN trip_shares ts ON ts.trip_id = f.trip_id "
+                "WHERE ts.user_id = ? AND ts.status = 'accepted'"
+            )
+            params = [user["id"], user["id"]]
+            count_params = [user["id"], user["id"]]
+            if status:
+                query = f"SELECT * FROM ({base_union}) WHERE status = ?"
+                params.append(status)
+                count_query = f"SELECT COUNT(*) FROM ({base_union}) WHERE status = ?"
+                count_params.append(status)
+            else:
+                query = base_union
+                count_query = f"SELECT COUNT(*) FROM ({base_union})"
+
+        query += " ORDER BY departure_datetime DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
         rows = conn.execute(query, params).fetchall()
         total = conn.execute(count_query, count_params).fetchone()[0]
 
@@ -63,9 +76,9 @@ def list_flights(
 def get_flight(flight_id: str, user: dict = Depends(get_current_user)):
     """Return a single flight."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
-        ).fetchone()
+        if not can_access_flight(flight_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Flight not found")
+        row = conn.execute("SELECT * FROM flights WHERE id = ?", (flight_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Flight not found")
     return dict(row)
@@ -75,9 +88,11 @@ def get_flight(flight_id: str, user: dict = Depends(get_current_user)):
 def get_flight_email(flight_id: str, user: dict = Depends(get_current_user)):
     """Return the raw email body (HTML + text) stored for this flight."""
     with db_conn() as conn:
+        if not can_access_flight(flight_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Flight not found")
         row = conn.execute(
-            "SELECT email_body, email_subject, email_date FROM flights WHERE id = ? AND user_id = ?",
-            (flight_id, user["id"]),
+            "SELECT email_body, email_subject, email_date FROM flights WHERE id = ?",
+            (flight_id,),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Flight not found")
@@ -96,10 +111,12 @@ async def get_flight_aircraft(flight_id: str, user: dict = Depends(get_current_u
     sync job handles lookups while flights are airborne.
     """
     with db_conn() as conn:
+        if not can_access_flight(flight_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Flight not found")
         row = conn.execute(
             "SELECT flight_number, arrival_datetime, aircraft_type, aircraft_icao, "
-            "aircraft_registration, aircraft_fetched_at FROM flights WHERE id = ? AND user_id = ?",
-            (flight_id, user["id"]),
+            "aircraft_registration, aircraft_fetched_at FROM flights WHERE id = ?",
+            (flight_id,),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Flight not found")
@@ -320,6 +337,12 @@ def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_c
 
 @router.delete("/{flight_id}", status_code=204)
 def delete_flight(flight_id: str, user: dict = Depends(get_current_user)):
-    """Delete a flight."""
+    """Delete a flight (owner only)."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Flight not found")
     with db_write() as conn:
         conn.execute("DELETE FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"]))

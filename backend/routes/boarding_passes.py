@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
+from ..shares import can_access_flight
 from ..utils import now_iso
 
 router = APIRouter(tags=["boarding-passes"])
@@ -32,6 +33,13 @@ def _get_storage_dir() -> Path:
 
 
 def _flight_belongs_to_user(flight_id: str, user_id: int) -> bool:
+    """Read access: owner or accepted collaborator."""
+    with db_conn() as conn:
+        return can_access_flight(flight_id, user_id, conn)
+
+
+def _flight_owned_by_user(flight_id: str, user_id: int) -> bool:
+    """Write access: owner only."""
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id FROM flights WHERE id = ? AND user_id = ?", (flight_id, user_id)
@@ -40,7 +48,22 @@ def _flight_belongs_to_user(flight_id: str, user_id: int) -> bool:
 
 
 def _bp_belongs_to_user(bp_id: str, user_id: int) -> dict | None:
-    """Return the boarding pass row if it belongs to this user, else None."""
+    """Return the boarding pass row if user has read access (owner or collaborator)."""
+    with db_conn() as conn:
+        # First get the bp row
+        bp_row = conn.execute(
+            "SELECT bp.* FROM boarding_passes bp WHERE bp.id = ?",
+            (bp_id,),
+        ).fetchone()
+        if not bp_row:
+            return None
+        if not can_access_flight(bp_row["flight_id"], user_id, conn):
+            return None
+    return dict(bp_row)
+
+
+def _bp_owned_by_user(bp_id: str, user_id: int) -> dict | None:
+    """Return the boarding pass row only if user owns it."""
     with db_conn() as conn:
         row = conn.execute(
             """SELECT bp.* FROM boarding_passes bp
@@ -91,7 +114,7 @@ async def upload_boarding_pass(
     file: UploadFile,
     user: dict = Depends(get_current_user),
 ):
-    if not _flight_belongs_to_user(flight_id, user["id"]):
+    if not _flight_owned_by_user(flight_id, user["id"]):
         raise HTTPException(status_code=404, detail="Flight not found")
 
     if file.content_type not in _ALLOWED_CONTENT_TYPES:
@@ -144,7 +167,7 @@ def get_boarding_pass_image(bp_id: str, user: dict = Depends(get_current_user)):
 
 @router.delete("/api/boarding-passes/{bp_id}", status_code=204)
 def delete_boarding_pass(bp_id: str, user: dict = Depends(get_current_user)):
-    bp = _bp_belongs_to_user(bp_id, user["id"])
+    bp = _bp_owned_by_user(bp_id, user["id"])
     if not bp:
         raise HTTPException(status_code=404, detail="Boarding pass not found")
 

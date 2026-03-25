@@ -125,7 +125,7 @@ body {
   line-height: 1.5;
   min-height: 100vh;
   padding-bottom: var(--tab-height);
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 a {
@@ -237,6 +237,7 @@ img {
   display: flex;
   align-items: flex-start;
   padding-bottom: env(safe-area-inset-bottom);
+  transform: translateZ(0);
 }
 
 .tab-item {
@@ -1332,7 +1333,8 @@ img {
 }
 
 .btn-danger:hover {
-  opacity: 0.85;
+  background: #c53030;
+  opacity: 1;
 }
 
 .disabled {

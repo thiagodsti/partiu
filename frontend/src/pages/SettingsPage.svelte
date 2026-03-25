@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, failedEmailsApi } from "../api/client";
-  import type { Settings, SyncStatus, NotifPreferences, FailedEmail, AdminFailedEmailGroup } from "../api/types";
+  import { settingsApi, syncApi, authApi, notificationsApi, failedEmailsApi, sharesApi } from "../api/client";
+  import type { Settings, SyncStatus, NotifPreferences, FailedEmail, AdminFailedEmailGroup, TrustedUser } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -616,6 +616,44 @@
     } catch { /* ignore */ } finally {
       adminRetryingAll = false;
     }
+  }
+
+  // ---- Trusted users ----
+  let trustedUsers = $state<TrustedUser[]>([]);
+  let trustedUsersLoading = $state(false);
+  let trustedUserInput = $state('');
+  let trustedUserError = $state('');
+  let addingTrustedUser = $state(false);
+
+  async function loadTrustedUsers() {
+    trustedUsersLoading = true;
+    try {
+      trustedUsers = await sharesApi.listTrustedUsers();
+    } catch { /* ignore */ } finally {
+      trustedUsersLoading = false;
+    }
+  }
+
+  loadTrustedUsers();
+
+  async function addTrustedUser() {
+    if (!trustedUserInput.trim()) return;
+    addingTrustedUser = true;
+    trustedUserError = '';
+    try {
+      await sharesApi.addTrustedUser(trustedUserInput.trim());
+      trustedUserInput = '';
+      await loadTrustedUsers();
+    } catch (err) {
+      trustedUserError = (err as Error).message;
+    } finally {
+      addingTrustedUser = false;
+    }
+  }
+
+  async function removeTrustedUser(userId: number) {
+    await sharesApi.removeTrustedUser(userId);
+    trustedUsers = trustedUsers.filter((u) => u.user_id !== userId);
   }
 </script>
 
@@ -1552,6 +1590,43 @@
             : $t("settings.change_pw_btn")}
         </button>
       </form>
+    </div>
+
+    <!-- Trusted Users -->
+    <div class="settings-card">
+      <div class="settings-section-title">{$t('settings.trusted_users')}</div>
+      <p class="settings-hint">{$t('settings.trusted_users_desc')}</p>
+      <div style="display:flex;gap:var(--space-xs);margin-bottom:var(--space-sm)">
+        <input
+          type="text"
+          class="input"
+          placeholder="Username"
+          bind:value={trustedUserInput}
+          style="flex:1"
+        />
+        <button class="btn btn-primary btn-sm" disabled={addingTrustedUser} onclick={addTrustedUser}>
+          {$t('settings.add_trusted_user')}
+        </button>
+      </div>
+      {#if trustedUserError}
+        <p style="color:var(--error,red);font-size:0.85rem;margin:0 0 var(--space-xs)">{trustedUserError}</p>
+      {/if}
+      {#if trustedUsersLoading}
+        <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.failed_emails_loading')}</p>
+      {:else if trustedUsers.length === 0}
+        <p style="color:var(--text-muted);font-size:0.85rem">No trusted users yet.</p>
+      {:else}
+        <ul style="list-style:none;padding:0;margin:0">
+          {#each trustedUsers as tu (tu.user_id)}
+            <li style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-xs) 0">
+              <span>{tu.username}</span>
+              <button class="btn btn-danger btn-sm" onclick={() => removeTrustedUser(tu.user_id)}>
+                {$t('settings.remove_trusted_user')}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
   {/if}
 </div>

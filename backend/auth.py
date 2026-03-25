@@ -6,11 +6,10 @@ import os
 import secrets
 
 import bcrypt
-
-_BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 from fastapi import Depends, HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+_BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 _serializer = None
 
 

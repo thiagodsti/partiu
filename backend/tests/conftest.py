@@ -90,6 +90,7 @@ def api_app(test_db):
     from backend.routes import flights as flights_routes
     from backend.routes import notifications as notifications_routes
     from backend.routes import settings as settings_routes
+    from backend.routes import shares as shares_routes
     from backend.routes import sync as sync_routes
     from backend.routes import trip_documents as trip_documents_routes
     from backend.routes import trips as trips_routes
@@ -98,6 +99,9 @@ def api_app(test_db):
     app = FastAPI()
     app.include_router(auth_routes.router)
     app.include_router(users_routes.router)
+    # shares router MUST be registered BEFORE trips router to avoid
+    # /api/trips/invitations being matched by trips' /{trip_id} route
+    app.include_router(shares_routes.router)
     app.include_router(trips_routes.router)
     app.include_router(flights_routes.router)
     app.include_router(sync_routes.router)

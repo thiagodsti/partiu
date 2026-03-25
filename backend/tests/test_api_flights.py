@@ -203,9 +203,9 @@ class TestDeleteFlight:
         r2 = auth_client.get(f"/api/flights/{fid}")
         assert r2.status_code == 404
 
-    def test_delete_nonexistent_is_ok(self, auth_client):
+    def test_delete_nonexistent_returns_404(self, auth_client):
         r = auth_client.delete("/api/flights/nonexistent")
-        assert r.status_code == 204
+        assert r.status_code == 404
 
 
 class TestFlightEmail:

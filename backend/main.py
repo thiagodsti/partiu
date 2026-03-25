@@ -25,6 +25,7 @@ from .routes import auth as auth_routes
 from .routes import boarding_passes as boarding_passes_routes
 from .routes import failed_emails as failed_emails_routes
 from .routes import notifications as notifications_routes
+from .routes import shares as shares_routes
 from .routes import stats as stats_routes
 from .routes import trip_documents as trip_documents_routes
 from .routes import users as users_routes
@@ -85,8 +86,11 @@ app.add_middleware(
 app.add_middleware(FirstRunMiddleware)  # type: ignore[arg-type]
 
 # Include API routers
+# NOTE: shares_routes MUST be registered BEFORE trips router to avoid
+# /api/trips/invitations being matched by trips' /{trip_id} catch-all route.
 app.include_router(auth_routes.router)
 app.include_router(users_routes.router)
+app.include_router(shares_routes.router)
 app.include_router(trips.router)
 app.include_router(flights.router)
 app.include_router(sync.router)

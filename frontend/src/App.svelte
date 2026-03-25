@@ -14,8 +14,10 @@
   import AddTripPage from './pages/AddTripPage.svelte';
   import EditTripPage from './pages/EditTripPage.svelte';
   import StatsPage from './pages/StatsPage.svelte';
+  import InvitationsPage from './pages/InvitationsPage.svelte';
   import { authApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
+  import { refreshInvitationCount } from './lib/invitationStore';
   import { applyUserLocale } from './lib/i18n';
   import ToastContainer from './components/ToastContainer.svelte';
 
@@ -33,6 +35,7 @@
     '/history/:tripId/flights/:flightId': FlightDetailPage,
     '/settings': SettingsPage,
     '/admin/users': UsersPage,
+    '/invitations': InvitationsPage,
     '/login': LoginPage,
     '/setup': SetupPage,
   };
@@ -48,11 +51,15 @@
   }
 
   onMount(() => {
-    // Track hash changes to hide TabBar on auth pages
+    // Track hash changes to hide TabBar on auth pages, and refresh invitation count on navigation
     const onHashChange = () => {
       currentHash = window.location.hash.replace('#', '') || '/';
+      refreshInvitationCount();
     };
     window.addEventListener('hashchange', onHashChange);
+
+    // Poll for new invitations every 30 seconds while the tab is open
+    const pollInterval = setInterval(refreshInvitationCount, 30_000);
 
     // Auth check runs async but cleanup is returned synchronously
     (async () => {
@@ -61,6 +68,7 @@
         currentUser.set(user);
         applyUserLocale(user.locale);
         authLoading.set(false);
+        refreshInvitationCount();
 
         // Redirect away from auth pages if already logged in
         const hash = window.location.hash.replace('#', '');
@@ -85,6 +93,7 @@
 
     return () => {
       window.removeEventListener('hashchange', onHashChange);
+      clearInterval(pollInterval);
     };
   });
 </script>

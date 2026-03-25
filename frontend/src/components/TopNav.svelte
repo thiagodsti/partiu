@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authApi } from "../api/client";
   import { currentUser } from "../lib/authStore";
+  import { pendingInvitationCount } from "../lib/invitationStore";
   import { t } from "svelte-i18n";
 
   interface Props {
@@ -19,6 +20,7 @@
       // ignore
     }
     currentUser.set(null);
+    pendingInvitationCount.set(0);
     window.location.hash = "/login";
     loggingOut = false;
   }

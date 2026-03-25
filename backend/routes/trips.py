@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
+from ..shares import can_access_trip, is_trip_owner
 from ..trip_images import fetch_trip_image, trip_image_path
 from ..utils import now_iso
 
@@ -21,32 +22,64 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
 
-def _row_to_trip(row) -> dict:
+def _row_to_trip(row, owner_user_id: int | None = None) -> dict:
     d = dict(row)
     # Parse booking_refs JSON
     try:
         d["booking_refs"] = json.loads(d.get("booking_refs") or "[]")
     except (json.JSONDecodeError, TypeError):
         d["booking_refs"] = []
+    if owner_user_id is not None:
+        d["is_owner"] = d.get("user_id") == owner_user_id
     return d
 
 
 @router.get("")
 def list_trips(user: dict = Depends(get_current_user)):
-    """Return all trips ordered by start_date descending."""
+    """Return all trips ordered by start_date (owned + accepted shared)."""
     with db_conn() as conn:
-        rows = conn.execute(
+        # Own trips
+        owned_rows = conn.execute(
             "SELECT * FROM trips WHERE user_id = ? ORDER BY start_date ASC", (user["id"],)
         ).fetchall()
-        trips = [_row_to_trip(r) for r in rows]
+
+        # Shared trips (accepted)
+        shared_rows = conn.execute(
+            """SELECT t.* FROM trips t
+               JOIN trip_shares ts ON ts.trip_id = t.id
+               WHERE ts.user_id = ? AND ts.status = 'accepted'
+               ORDER BY t.start_date ASC""",
+            (user["id"],),
+        ).fetchall()
+
+        seen_ids: set[str] = set()
+        trips = []
+        for r in list(owned_rows) + list(shared_rows):
+            trip = _row_to_trip(r, user["id"])
+            if trip["id"] in seen_ids:
+                continue
+            seen_ids.add(trip["id"])
+            trips.append(trip)
+
+        trips.sort(key=lambda t: t.get("start_date") or "")
 
         # Attach flight counts
         for trip in trips:
             count = conn.execute(
-                "SELECT COUNT(*) FROM flights WHERE trip_id = ? AND user_id = ?",
-                (trip["id"], user["id"]),
+                "SELECT COUNT(*) FROM flights WHERE trip_id = ?",
+                (trip["id"],),
             ).fetchone()[0]
             trip["flight_count"] = count
+
+        # Attach owner username for shared trips
+        for trip in trips:
+            if not trip.get("is_owner"):
+                owner_row = conn.execute(
+                    "SELECT username FROM users WHERE id = ?", (trip.get("user_id"),)
+                ).fetchone()
+                trip["owner_username"] = owner_row["username"] if owner_row else None
+            else:
+                trip["owner_username"] = None
 
     return {"trips": trips}
 
@@ -55,18 +88,26 @@ def list_trips(user: dict = Depends(get_current_user)):
 def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
     """Return a single trip with its flights."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
-        ).fetchone()
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+        row = conn.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Trip not found")
-        trip = _row_to_trip(row)
+        trip = _row_to_trip(row, user["id"])
 
         flights = conn.execute(
-            "SELECT * FROM flights WHERE trip_id = ? AND user_id = ? ORDER BY departure_datetime",
-            (trip_id, user["id"]),
+            "SELECT * FROM flights WHERE trip_id = ? ORDER BY departure_datetime",
+            (trip_id,),
         ).fetchall()
         trip["flights"] = [dict(f) for f in flights]
+
+        if not trip.get("is_owner"):
+            owner_row = conn.execute(
+                "SELECT username FROM users WHERE id = ?", (trip.get("user_id"),)
+            ).fetchone()
+            trip["owner_username"] = owner_row["username"] if owner_row else None
+        else:
+            trip["owner_username"] = None
 
     return trip
 
@@ -75,16 +116,16 @@ def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
 def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
     """Export a trip as an iCalendar (.ics) file."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
-        ).fetchone()
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+        row = conn.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Trip not found")
         trip = _row_to_trip(row)
 
         flights = conn.execute(
-            "SELECT * FROM flights WHERE trip_id = ? AND user_id = ? ORDER BY departure_datetime",
-            (trip_id, user["id"]),
+            "SELECT * FROM flights WHERE trip_id = ? ORDER BY departure_datetime",
+            (trip_id,),
         ).fetchall()
 
     now_utc = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -261,14 +302,20 @@ def update_trip(trip_id: str, body: TripUpdate, user: dict = Depends(get_current
 
 @router.delete("/{trip_id}", status_code=204)
 def delete_trip(trip_id: str, user: dict = Depends(get_current_user)):
-    """Delete a trip (flights are unlinked, not deleted)."""
-    now = now_iso()
+    """Delete a trip along with its flights (and cascaded boarding_passes/trip_documents)."""
+    with db_conn() as conn:
+        if not is_trip_owner(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+
     with db_write() as conn:
         conn.execute(
-            "UPDATE flights SET trip_id = NULL, updated_at = ? WHERE trip_id = ? AND user_id = ?",
-            (now, trip_id, user["id"]),
+            "DELETE FROM flights WHERE trip_id = ? AND user_id = ?",
+            (trip_id, user["id"]),
         )
         conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"]))
+
+    # Delete the cached destination image from disk
+    trip_image_path(trip_id).unlink(missing_ok=True)
 
 
 @router.post("/{trip_id}/flights/{flight_id}")
@@ -309,15 +356,15 @@ def _get_trip_city(trip_id: str, user_id: int) -> str | None:
     """Look up the destination city for a trip via its destination_airport."""
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT destination_airport FROM trips WHERE id = ? AND user_id = ?",
-            (trip_id, user_id),
+            "SELECT destination_airport FROM trips WHERE id = ?",
+            (trip_id,),
         ).fetchone()
         if not row or not row["destination_airport"]:
             # Fall back to the arrival airport of the last flight in the trip
             row2 = conn.execute(
-                "SELECT arrival_airport FROM flights WHERE trip_id = ? AND user_id = ? "
+                "SELECT arrival_airport FROM flights WHERE trip_id = ? "
                 "ORDER BY departure_datetime DESC LIMIT 1",
-                (trip_id, user_id),
+                (trip_id,),
             ).fetchone()
             iata = row2["arrival_airport"] if row2 else None
         else:
@@ -341,9 +388,11 @@ def _get_trip_city(trip_id: str, user_id: int) -> str | None:
 async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
     """Return the cached destination photo for this trip, fetching it on first request."""
     with db_conn() as conn:
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
         row = conn.execute(
-            "SELECT image_fetched_at FROM trips WHERE id = ? AND user_id = ?",
-            (trip_id, user["id"]),
+            "SELECT image_fetched_at FROM trips WHERE id = ?",
+            (trip_id,),
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -366,8 +415,8 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
 
     with db_write() as conn:
         conn.execute(
-            "UPDATE trips SET image_fetched_at = ? WHERE id = ? AND user_id = ?",
-            (now_iso(), trip_id, user["id"]),
+            "UPDATE trips SET image_fetched_at = ? WHERE id = ?",
+            (now_iso(), trip_id),
         )
 
     if success and cached.exists():
@@ -494,11 +543,8 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
 async def refresh_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
     """Delete the current image and fetch a different random one."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT id FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
 
     city_name = _get_trip_city(trip_id, user["id"])
     if not city_name:
@@ -508,8 +554,8 @@ async def refresh_trip_image(trip_id: str, user: dict = Depends(get_current_user
 
     with db_write() as conn:
         conn.execute(
-            "UPDATE trips SET image_fetched_at = ? WHERE id = ? AND user_id = ?",
-            (now_iso(), trip_id, user["id"]),
+            "UPDATE trips SET image_fetched_at = ? WHERE id = ?",
+            (now_iso(), trip_id),
         )
 
     if success and trip_image_path(trip_id).exists():

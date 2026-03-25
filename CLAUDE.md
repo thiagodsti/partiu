@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development rules
 
+- **After every implementation**, always run all three checks before considering the work done:
+  1. `uv run ruff check backend/` — fix any lint errors (use `--fix` for auto-fixable ones)
+  2. `uv run ty check backend/` — fix all type errors
+  3. `cd frontend && npm run lint` — fix any ESLint errors
+
 - **Always write tests** for every new feature or bug fix without being asked:
   - **Backend**: place tests in `backend/tests/` following existing patterns (class per module, `asyncio.run()` for async, `test_db` fixture, mock with `unittest.mock`). Keep coverage above 70%.
   - **Frontend**: add unit tests as `*.test.ts` files alongside the source (e.g. `utils.test.ts`, `ComponentName.test.ts`) using Vitest + `@testing-library/svelte`. Run with `npm test` inside `frontend/`. Both are already configured.

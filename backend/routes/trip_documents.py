@@ -15,6 +15,7 @@ from fastapi.responses import Response
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
+from ..shares import can_access_trip, is_trip_owner
 from ..utils import now_iso
 
 router = APIRouter(tags=["trip-documents"])
@@ -45,11 +46,15 @@ def _get_storage_dir() -> Path:
 
 
 def _trip_belongs_to_user(trip_id: str, user_id: int) -> bool:
+    """Read access: owner or accepted collaborator."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT id FROM trips WHERE id = ? AND user_id = ?", (trip_id, user_id)
-        ).fetchone()
-    return row is not None
+        return can_access_trip(trip_id, user_id, conn)
+
+
+def _trip_owned_by_user(trip_id: str, user_id: int) -> bool:
+    """Write access: owner only."""
+    with db_conn() as conn:
+        return is_trip_owner(trip_id, user_id, conn)
 
 
 def _doc_belongs_to_user(doc_id: str, user_id: int) -> dict | None:
@@ -128,7 +133,7 @@ async def upload_document(
     file: UploadFile,
     user: dict = Depends(get_current_user),
 ):
-    if not _trip_belongs_to_user(trip_id, user["id"]):
+    if not _trip_owned_by_user(trip_id, user["id"]):
         raise HTTPException(status_code=404, detail="Trip not found")
 
     content_type = (file.content_type or "").split(";")[0].strip()
@@ -157,7 +162,16 @@ async def upload_document(
             """INSERT INTO trip_documents
                (id, trip_id, filename, file_path, mime_type, file_size, page_count, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (doc_id, trip_id, original_name, file_path, content_type, len(data), page_count, now_iso()),
+            (
+                doc_id,
+                trip_id,
+                original_name,
+                file_path,
+                content_type,
+                len(data),
+                page_count,
+                now_iso(),
+            ),
         )
 
     return {"id": doc_id, "page_count": page_count}

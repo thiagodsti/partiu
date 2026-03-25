@@ -177,15 +177,14 @@ class TestTripDelete:
         r3 = auth_client.get(f"/api/trips/{trip_id}")
         assert r3.status_code == 404
 
-    def test_delete_trip_unlinks_flights(self, auth_client):
+    def test_delete_trip_cascades_flights(self, auth_client):
         r = auth_client.post("/api/trips", json={"name": "My Trip"})
         trip_id = r.json()["id"]
         fid = _make_flight(auth_client, trip_id=trip_id)
         auth_client.delete(f"/api/trips/{trip_id}")
-        # Flight should still exist but with no trip
+        # Flight should be deleted along with the trip
         r2 = auth_client.get(f"/api/flights/{fid}")
-        assert r2.status_code == 200
-        assert r2.json()["trip_id"] is None
+        assert r2.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +365,10 @@ class TestTripIcal:
         with db_write() as conn:
             conn.execute(
                 "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 0)",
-                ("other", bcrypt.hashpw(b"pass", bcrypt.gensalt()).decode(), ),
+                (
+                    "other",
+                    bcrypt.hashpw(b"pass", bcrypt.gensalt()).decode(),
+                ),
             )
         from fastapi.testclient import TestClient
 

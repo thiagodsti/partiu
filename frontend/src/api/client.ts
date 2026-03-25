@@ -23,6 +23,9 @@ import type {
   User,
   UserListItem,
   LoginResponse,
+  TripShare,
+  TripInvitation,
+  TrustedUser,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -143,6 +146,27 @@ export const flightsApi = {
   update: (id: number | string, data: Partial<Flight>) =>
     patch<Flight>(`/api/flights/${id}`, data),
   delete: (id: number | string) => del<null>(`/api/flights/${id}`),
+};
+
+// ---- Trip Sharing ----
+
+export const sharesApi = {
+  shareTrip: (tripId: string, username: string) =>
+    post<{ ok: boolean; status: string }>(`/api/trips/${tripId}/share`, { username }),
+  listTripShares: (tripId: string) => get<TripShare[]>(`/api/trips/${tripId}/shares`),
+  revokeTripShare: (tripId: string, userId: number) =>
+    del<null>(`/api/trips/${tripId}/shares/${userId}`),
+  leaveTrip: (tripId: string) => del<null>(`/api/trips/${tripId}/leave`),
+  listInvitations: () => get<TripInvitation[]>('/api/trips/invitations'),
+  acceptInvitation: (shareId: number) =>
+    post<{ ok: boolean }>(`/api/trips/invitations/${shareId}/accept`),
+  rejectInvitation: (shareId: number) =>
+    post<{ ok: boolean }>(`/api/trips/invitations/${shareId}/reject`),
+  listTrustedUsers: () => get<TrustedUser[]>('/api/settings/trusted-users'),
+  addTrustedUser: (username: string) =>
+    post<{ ok: boolean }>('/api/settings/trusted-users', { username }),
+  removeTrustedUser: (userId: number) =>
+    del<null>(`/api/settings/trusted-users/${userId}`),
 };
 
 // ---- Boarding Passes ----

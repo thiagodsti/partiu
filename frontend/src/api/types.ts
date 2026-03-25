@@ -34,10 +34,35 @@ export interface Trip {
   flight_count?: number;
   flights?: Flight[];
   immich_album_id?: string | null;
+  is_owner?: boolean;
+  owner_username?: string | null;
+}
+
+export interface TripShare {
+  id: number;
+  user_id: number;
+  username: string;
+  status: string;
+  created_at: string;
+}
+
+export interface TripInvitation {
+  id: number;
+  trip_id: string;
+  trip_name: string;
+  invited_by_username: string;
+  created_at: string;
+}
+
+export interface TrustedUser {
+  user_id: number;
+  username: string;
+  created_at: string;
 }
 
 export interface Flight {
   id: string;
+  user_id?: number | null;
   trip_id: string | null;
   flight_number: string;
   airline_code: string | null;

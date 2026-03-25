@@ -1,6 +1,8 @@
 <script lang="ts">
   import { location } from 'svelte-spa-router';
   import { flightsApi, airportsApi, boardingPassesApi } from "../api/client";
+  import { currentUser } from "../lib/authStore";
+  import ConfirmModal from "../components/ConfirmModal.svelte";
   import type { Flight, Airport, AircraftInfo, EmailData, BoardingPass } from "../api/types";
   import {
     formatTime,
@@ -163,6 +165,24 @@
   function closeEmailModal() {
     emailModalOpen = false;
     emailData = null;
+  }
+
+  // ---- Delete flight ----
+  let showDeleteFlightConfirm = $state(false);
+  let deletingFlight = $state(false);
+
+  async function confirmDeleteFlight() {
+    if (!flight) return;
+    deletingFlight = true;
+    try {
+      await flightsApi.delete(flight.id);
+      window.location.hash = params.tripId ? `#/${basePath}/${params.tripId}` : `#/${basePath}`;
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      deletingFlight = false;
+      showDeleteFlightConfirm = false;
+    }
   }
 
   // ---- Derived ----
@@ -558,9 +578,30 @@
       >
         {emailLoading ? $t("flight.btn_loading") : $t("flight.view_email")}
       </button>
+      {#if String(flight.user_id) === String($currentUser?.id)}
+        <button
+          class="btn btn-danger"
+          style="width:100%"
+          disabled={deletingFlight}
+          onclick={() => (showDeleteFlightConfirm = true)}
+        >
+          {$t("flight.delete")}
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
+
+{#if showDeleteFlightConfirm}
+  <ConfirmModal
+    message={$t("flight.delete_confirm")}
+    confirmLabel={$t("flight.delete")}
+    cancelLabel="Cancel"
+    danger={true}
+    onConfirm={confirmDeleteFlight}
+    onCancel={() => (showDeleteFlightConfirm = false)}
+  />
+{/if}
 
 <!-- Boarding Pass Full-Screen Overlay -->
 {#if boardingPassOverlayId}

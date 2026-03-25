@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authApi } from '../api/client';
   import { currentUser } from '../lib/authStore';
+  import { refreshInvitationCount } from '../lib/invitationStore';
   import { t, applyUserLocale } from '../lib/i18n';
   import type { User } from '../api/types';
 
@@ -51,6 +52,7 @@
         const user = result as User;
         currentUser.set(user);
         applyUserLocale(user.locale);
+        refreshInvitationCount();
         window.location.hash = '/trips';
       }
     } catch (err) {
@@ -81,6 +83,7 @@
       stopCountdown();
       currentUser.set(user);
       applyUserLocale(user.locale);
+      refreshInvitationCount();
       window.location.hash = '/trips';
     } catch (err) {
       totpError = (err as Error).message || 'Invalid code';
