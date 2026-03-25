@@ -7,6 +7,7 @@ import {
   cabinLabel,
   flightStatus,
   inferTripStatus,
+  timeUntilTrip,
   seatMapUrl,
   splitLegs,
   connectionInfo,
@@ -347,5 +348,46 @@ describe('dateDividerInfo', () => {
     const prev = makeFlight({ arrival_datetime: '2024-06-01T23:00:00Z' });
     const next = makeFlight({ departure_datetime: undefined });
     expect(dateDividerInfo(prev, next)).toBeNull();
+  });
+});
+
+// ---- timeUntilTrip ----
+
+describe('timeUntilTrip', () => {
+  const base = new Date('2024-06-01T12:00:00Z').getTime();
+
+  it('returns empty string when start is in the past', () => {
+    const start = new Date('2024-06-01T11:00:00Z').toISOString();
+    expect(timeUntilTrip(start, base)).toBe('');
+  });
+
+  it('shows minutes when less than 1 hour away', () => {
+    const start = new Date(base + 30 * 60_000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 30m');
+  });
+
+  it('shows hours and minutes when less than 1 day away', () => {
+    const start = new Date(base + (3 * 3600 + 20 * 60) * 1000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 3h 20m');
+  });
+
+  it('shows days and hours', () => {
+    const start = new Date(base + (2 * 86400 + 5 * 3600) * 1000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 2d 5h');
+  });
+
+  it('shows only days when hours is 0', () => {
+    const start = new Date(base + 3 * 86400_000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 3d');
+  });
+
+  it('shows months and days for trips 30+ days away', () => {
+    const start = new Date(base + 35 * 86400_000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 1mo 5d');
+  });
+
+  it('shows only months for trips 60+ days away', () => {
+    const start = new Date(base + 65 * 86400_000).toISOString();
+    expect(timeUntilTrip(start, base)).toBe('in 2 months');
   });
 });

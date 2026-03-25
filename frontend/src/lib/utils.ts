@@ -118,6 +118,31 @@ export function flightStatus(f: Flight): 'completed' | 'active' | 'upcoming' {
   return 'upcoming';
 }
 
+export function timeUntilTrip(startDate: string, now: number = Date.now()): string {
+  const diff = new Date(startDate).getTime() - now;
+  if (diff <= 0) return '';
+
+  const totalMinutes = Math.floor(diff / 60_000);
+  const totalHours = Math.floor(diff / 3_600_000);
+  const days = Math.floor(diff / 86_400_000);
+  const hours = totalHours % 24;
+  const minutes = totalMinutes % 60;
+
+  if (days >= 60) {
+    const months = Math.floor(days / 30);
+    return `in ${months} months`;
+  }
+  if (days >= 30) {
+    const months = Math.floor(days / 30);
+    const remDays = days % 30;
+    return remDays > 0 ? `in ${months}mo ${remDays}d` : `in ${months}mo`;
+  }
+  if (days >= 1) return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`;
+  if (totalHours >= 1) return minutes > 0 ? `in ${hours}h ${minutes}m` : `in ${hours}h`;
+  if (totalMinutes > 0) return `in ${totalMinutes}m`;
+  return 'now';
+}
+
 export function inferTripStatus(trip: { start_date?: string | null; end_date?: string | null }): 'completed' | 'ongoing' | 'upcoming' {
   const now = new Date();
   if (trip.end_date && new Date(trip.end_date) < now) return 'completed';

@@ -3,7 +3,7 @@
   import { tripsApi, syncApi, failedEmailsApi } from "../api/client";
   import { tripImageBust } from "../lib/tripImageStore";
   import type { Trip, SyncStatus } from "../api/types";
-  import { inferTripStatus } from "../lib/utils";
+  import { inferTripStatus, timeUntilTrip } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -89,6 +89,11 @@
 
   onDestroy(stopSyncPoll);
 
+  // ---- Countdown ticker ----
+  let now = $state(Date.now());
+  const tickInterval = setInterval(() => { now = Date.now(); }, 60_000);
+  onDestroy(() => clearInterval(tickInterval));
+
   // ---- Image refresh ----
   const imgRefresh = new ImageRefreshManager();
 
@@ -156,6 +161,7 @@
     {:else}
       {#each activeTrips as trip (trip.id)}
         {@const status = inferTripStatus(trip)}
+        {@const countdown = status === 'upcoming' && trip.start_date ? timeUntilTrip(trip.start_date, now) : null}
         <TripCard
           {trip}
           href="#/trips/{trip.id}"
@@ -174,6 +180,11 @@
                   : $t("trips.upcoming")}
             </span>
           {/snippet}
+          {#snippet footer()}
+            {#if countdown}
+              <span class="countdown">⏳ {countdown}</span>
+            {/if}
+          {/snippet}
         </TripCard>
       {/each}
     {/if}
@@ -181,6 +192,13 @@
 </div>
 
 <style>
+  .countdown {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-accent, #6366f1);
+    letter-spacing: 0.01em;
+  }
+
   .failed-emails-banner {
     display: block;
     margin: 6px 16px 0;
