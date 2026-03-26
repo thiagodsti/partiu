@@ -3,12 +3,13 @@ import { render, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import TripDetailPage from './TripDetailPage.svelte';
 
-const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList } = vi.hoisted(() => ({
+const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList, mockBpListForTrip } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSettingsGet: vi.fn(),
   mockRefreshImage: vi.fn(),
   mockCheckImmichAlbum: vi.fn(),
   mockDocList: vi.fn(),
+  mockBpListForTrip: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
@@ -24,6 +25,17 @@ vi.mock('../api/client', () => ({
     upload: vi.fn(),
     viewUrl: (id: string, page = 0) => `/api/documents/${id}/view?page=${page}`,
     delete: vi.fn(),
+  },
+  boardingPassesApi: {
+    listForTrip: mockBpListForTrip,
+    imageUrl: (id: string) => `/api/boarding-passes/${id}/image`,
+    delete: vi.fn(),
+  },
+  sharesApi: {
+    listTripShares: vi.fn().mockResolvedValue([]),
+    shareTrip: vi.fn(),
+    revokeTripShare: vi.fn(),
+    leaveTrip: vi.fn(),
   },
 }));
 
@@ -95,6 +107,7 @@ describe('TripDetailPage', () => {
     mockSettingsGet.mockResolvedValue({ immich_url: null, immich_api_key_set: false });
     mockCheckImmichAlbum.mockResolvedValue({ exists: true });
     mockDocList.mockResolvedValue([]);
+    mockBpListForTrip.mockResolvedValue([]);
   });
 
   it('shows loading screen initially', () => {
