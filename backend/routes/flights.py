@@ -236,6 +236,14 @@ def create_flight(
     departure_timezone = tz_info.get("departure_timezone")
     arrival_timezone = tz_info.get("arrival_timezone")
 
+    if body.trip_id:
+        with db_conn() as conn:
+            if not conn.execute(
+                "SELECT id FROM trips WHERE id = ? AND user_id = ?",
+                (body.trip_id, user["id"]),
+            ).fetchone():
+                raise HTTPException(403, "Trip not found or access denied")
+
     with db_write() as conn:
         conn.execute(
             """INSERT INTO flights (

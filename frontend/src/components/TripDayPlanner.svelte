@@ -9,8 +9,10 @@
     trip: Trip;
     onLoaded?: (contentByDate: Record<string, DayContent>) => void;
     forceExpanded?: boolean;
+    onlyDate?: string;
+    collapseAll?: boolean;
   }
-  const { trip, onLoaded, forceExpanded = false }: Props = $props();
+  const { trip, onLoaded, forceExpanded = false, onlyDate, collapseAll = false }: Props = $props();
 
   function getDayRange(start: string, end: string): string[] {
     const days: string[] = [];
@@ -74,9 +76,10 @@
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
-  const days = $derived(
+  const allDays = $derived(
     trip.start_date && trip.end_date ? getDayRange(trip.start_date, trip.end_date) : []
   );
+  const days = $derived(onlyDate ? allDays.filter((d) => d === onlyDate) : allDays);
   const flightMap = $derived(groupFlightsByDate(trip.flights ?? []));
   const today = todayStr();
 
@@ -112,7 +115,7 @@
         {date}
         flights={flightMap.get(date) ?? []}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
-        initiallyExpanded={date === today}
+        initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}
       />
     {/each}

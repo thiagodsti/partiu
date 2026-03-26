@@ -11,7 +11,6 @@
     dateDividerInfo,
     timeUntilTrip,
   } from '../lib/utils';
-  import type { DayContent } from '../components/TripDayCard.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
@@ -23,7 +22,7 @@
   import TripMap from '../components/TripMap.svelte';
   import TripDayPlanner from '../components/TripDayPlanner.svelte';
   import ConfirmModal from '../components/ConfirmModal.svelte';
-  import { t, locale } from '../lib/i18n';
+  import { t } from '../lib/i18n';
 
   interface Props {
     params: { id: string };
@@ -226,8 +225,7 @@
     plannerCollapsed = prevPlanner;
   }
 
-  // Planner content cached from TripDayPlanner after it loads
-  let plannerContent = $state<Record<string, DayContent>>({});
+  // plannerContent removed — section header no longer shows a summary
 
   function todayStr(): string {
     const now = new Date();
@@ -245,19 +243,6 @@
     return trip.start_date;
   })());
 
-  const plannerFocusLabel = $derived((() => {
-    if (!plannerFocusDate) return null;
-    const [fy, fm, fd] = plannerFocusDate.split('-').map(Number);
-    const dt = new Date(fy, fm - 1, fd);
-    const loc = $locale ?? undefined;
-    const weekday = dt.toLocaleDateString(loc, { weekday: 'short' });
-    const month = dt.toLocaleDateString(loc, { month: 'long' });
-    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/\.$/, '');
-    return `${cap(weekday)}, ${fd} ${cap(month)}`;
-  })());
-
-  // Note preview for the focus day
-  const plannerFocusContent = $derived(plannerFocusDate ? (plannerContent[plannerFocusDate] ?? null) : null);
 
   // Flights collapsed summary
   const flightsSummary = $derived((() => {
@@ -548,31 +533,20 @@
       <div class="trip-section">
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="trip-section-header section-toggle" class:no-bottom-margin={plannerCollapsed} onclick={() => (plannerCollapsed = !plannerCollapsed)}>
+        <div class="trip-section-header section-toggle" onclick={() => (plannerCollapsed = !plannerCollapsed)}>
           <div class="section-header-inner">
             <div class="section-title-row">
               <h3 class="trip-section-title">{$t('planner.title')}</h3>
               <span class="section-chevron">{plannerCollapsed ? '▼' : '▲'}</span>
             </div>
-            {#if plannerCollapsed && plannerFocusLabel}
-              <div class="section-summary">
-                <span>{plannerFocusLabel}</span>
-                {#if plannerFocusContent?.note.trim()}
-                  <span class="summary-note">{plannerFocusContent.note.split('\n').find((l) => l.trim()) ?? ''}</span>
-                {/if}
-                {#if plannerFocusContent?.items[0]}
-                  <span class="summary-checklist-item">
-                    <span class="summary-check-box" class:checked={plannerFocusContent.items[0].checked}>{plannerFocusContent.items[0].checked ? '✓' : ''}</span>
-                    <span class:done={plannerFocusContent.items[0].checked}>{plannerFocusContent.items[0].text || '…'}</span>
-                  </span>
-                {/if}
-              </div>
-            {/if}
           </div>
         </div>
-        <div class:section-hidden={plannerCollapsed}>
-          <TripDayPlanner {trip} forceExpanded={printing} onLoaded={(c) => { plannerContent = c; }} />
-        </div>
+        <TripDayPlanner
+          {trip}
+          forceExpanded={printing}
+          onlyDate={plannerCollapsed ? (plannerFocusDate ?? undefined) : undefined}
+          collapseAll={plannerCollapsed}
+        />
       </div>
     {/if}
 

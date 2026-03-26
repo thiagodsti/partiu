@@ -2,6 +2,9 @@
 Authentication routes: setup, login, logout, me, change-password, 2FA.
 """
 
+import collections
+import time
+
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -27,6 +30,23 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _TOTP_LOCKOUT_THRESHOLD = 5
 _TOTP_LOCKOUT_WINDOW_MINUTES = 15
+
+_LOGIN_LOCKOUT_THRESHOLD = 5
+_LOGIN_LOCKOUT_WINDOW = 10 * 60  # seconds
+_login_failures: dict[str, list[float]] = collections.defaultdict(list)
+
+
+def _check_login_lockout(ip: str) -> None:
+    now = time.time()
+    cutoff = now - _LOGIN_LOCKOUT_WINDOW
+    _login_failures[ip] = [t for t in _login_failures[ip] if t > cutoff]
+    if len(_login_failures[ip]) >= _LOGIN_LOCKOUT_THRESHOLD:
+        raise HTTPException(429, "Too many failed login attempts. Please try again later.")
+
+
+def _record_login_failure(ip: str) -> None:
+    _login_failures[ip].append(time.time())
+
 
 # Dummy hash used in login to prevent username enumeration via bcrypt timing
 _DUMMY_HASH = "$2b$12$invalidhashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
@@ -138,6 +158,9 @@ def setup(request: Request, body: SetupRequest, response: Response):
 @router.post("/login")
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest, response: Response):
+    ip = request.client.host if request.client else "unknown"
+    _check_login_lockout(ip)
+
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE username = ?",
@@ -147,10 +170,11 @@ def login(request: Request, body: LoginRequest, response: Response):
     password_hash = row["password_hash"] if row else _DUMMY_HASH
     password_ok = verify_password(body.password, password_hash)
     if row is None or not password_ok:
+        _record_login_failure(ip)
         audit(
             "login_failed",
             username=body.username,
-            ip=request.client.host if request.client else None,
+            ip=ip,
         )
         raise HTTPException(401, "Invalid username or password")
 
@@ -274,6 +298,8 @@ def enable_2fa(body: TwoFAEnableRequest, user: dict = Depends(get_current_user))
     with db_write() as conn:
         conn.execute("UPDATE users SET totp_enabled = 1 WHERE id = ?", (user["id"],))
 
+    # Revoke existing sessions so they must re-authenticate through 2FA
+    revoke_all_user_sessions(user["id"])
     audit("2fa_enabled", user_id=user["id"])
     return {"ok": True}
 

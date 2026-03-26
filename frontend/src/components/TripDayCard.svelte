@@ -35,10 +35,6 @@
 
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // ---- Derived preview for collapsed header ----
-  const notePreviewText = $derived(note.split('\n').find((l) => l.trim()) ?? '');
-  const firstItem = $derived(items[0] ?? null);
-
   // ---- Helpers ----
 
   function formatDayHeader(): string {
@@ -120,29 +116,6 @@
   <div class="day-card-header" onclick={() => (expanded = !expanded)}>
     <div class="day-card-header-left">
       <span class="day-label">{formatDayHeader()}</span>
-      {#if !expanded && !forceExpanded}
-        {#if flights.length > 0}
-          <div class="day-flights-chips">
-            {#each flights as f (f.id)}
-              <span class="flight-chip">
-                ✈ {f.departure_airport}→{f.arrival_airport} {formatFlightTime(f.departure_datetime, f.departure_timezone)}
-              </span>
-            {/each}
-          </div>
-        {/if}
-        {#if notePreviewText}
-          <span class="note-preview">{notePreviewText}</span>
-        {/if}
-        {#if firstItem}
-          <span class="checklist-preview">
-            <span class="check-preview-box" class:checked={firstItem.checked}>{firstItem.checked ? '✓' : ''}</span>
-            <span class:done={firstItem.checked}>{firstItem.text || '…'}</span>
-          </span>
-        {/if}
-        {#if !notePreviewText && !firstItem}
-          <span class="note-hint">{$t('planner.add_notes_hint')}</span>
-        {/if}
-      {/if}
     </div>
     <div class="day-header-right">
       {#if saving}
@@ -150,29 +123,29 @@
       {:else if saved}
         <span class="save-status saved">✓</span>
       {/if}
-      <span class="day-chevron">{expanded ? '▲' : '▼'}</span>
+      <span class="day-chevron">{expanded || forceExpanded ? '▲' : '▼'}</span>
     </div>
   </div>
 
-  {#if expanded || forceExpanded}
-    <div class="day-card-body">
-      <!-- Flights (read-only) -->
-      {#if flights.length > 0}
-        <div class="day-flights">
-          {#each flights as f (f.id)}
-            <div class="day-flight-row">
-              <span class="day-flight-badge">✈</span>
-              <span class="day-flight-info">
-                <strong>{f.flight_number}</strong>
-                {f.departure_airport} {formatFlightTime(f.departure_datetime, f.departure_timezone)}
-                → {f.arrival_airport} {formatFlightTime(f.arrival_datetime, f.arrival_timezone)}
-              </span>
-            </div>
-          {/each}
-        </div>
-      {/if}
+  <div class="day-card-body">
+    <!-- Flights (always read-only) -->
+    {#if flights.length > 0}
+      <div class="day-flights">
+        {#each flights as f (f.id)}
+          <div class="day-flight-row">
+            <span class="day-flight-badge">✈︎</span>
+            <span class="day-flight-info">
+              <strong>{f.flight_number}</strong>
+              {f.departure_airport} {formatFlightTime(f.departure_datetime, f.departure_timezone)}
+              → {f.arrival_airport} {formatFlightTime(f.arrival_datetime, f.arrival_timezone)}
+            </span>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
-      <!-- Note -->
+    {#if expanded || forceExpanded}
+      <!-- Edit mode -->
       <textarea
         class="note-textarea"
         placeholder={$t('planner.note_placeholder')}
@@ -180,8 +153,6 @@
         oninput={(e) => onNoteInput((e.currentTarget as HTMLTextAreaElement).value)}
         rows={3}
       ></textarea>
-
-      <!-- Checklist -->
       <div class="checklist">
         {#each items as item, idx (idx)}
           <div class="checklist-item">
@@ -210,8 +181,31 @@
           + {$t('planner.add_item')}
         </button>
       </div>
-    </div>
-  {/if}
+    {:else}
+      <!-- Read mode: show all content without edit controls -->
+      {#if note.trim()}
+        <p class="note-read">{note}</p>
+      {/if}
+      {#if items.length > 0}
+        <div class="checklist">
+          {#each items as item, idx (idx)}
+            <div class="checklist-item">
+              <button
+                class="check-btn"
+                class:checked={item.checked}
+                onclick={(e) => { e.stopPropagation(); toggleItem(idx); }}
+                aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+              >{item.checked ? '✓' : ''}</button>
+              <span class="check-text" class:done={item.checked}>{item.text || '…'}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if !note.trim() && items.length === 0 && flights.length === 0}
+        <span class="note-hint">{$t('planner.add_notes_hint')}</span>
+      {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -251,28 +245,23 @@
     color: var(--text);
   }
 
-  .day-flights-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 2px;
+  .note-read {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text);
+    margin: 0;
+    white-space: pre-wrap;
   }
 
-  .flight-chip {
-    font-size: 0.75rem;
-    background: var(--primary-soft, rgba(59,130,246,0.1));
-    color: var(--primary, #3b82f6);
-    padding: 2px 7px;
-    border-radius: 20px;
-    white-space: nowrap;
+  .check-text {
+    flex: 1;
+    font-size: 0.9rem;
+    color: var(--text);
   }
 
-  .note-preview {
-    font-size: 0.8rem;
-    color: var(--text-secondary, var(--text-muted));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .check-text.done {
+    text-decoration: line-through;
+    color: var(--text-muted);
   }
 
   .note-hint {
@@ -423,39 +412,6 @@
     color: var(--primary, #3b82f6);
     padding: 2px 0;
     touch-action: manipulation;
-  }
-
-  /* Collapsed preview rows */
-  .checklist-preview {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 0.8rem;
-    color: var(--text-secondary, var(--text-muted));
-  }
-
-  .checklist-preview .done {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .check-preview-box {
-    width: 14px;
-    height: 14px;
-    min-width: 14px;
-    border: 1.5px solid var(--border);
-    border-radius: 3px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.6rem;
-    color: var(--success, #16a34a);
-    flex-shrink: 0;
-  }
-
-  .check-preview-box.checked {
-    background: var(--success-bg, #dcfce7);
-    border-color: var(--success, #16a34a);
   }
 
   @media print {

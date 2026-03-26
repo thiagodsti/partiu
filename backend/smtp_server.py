@@ -218,7 +218,7 @@ def start_smtp_server():
         return
     port = int(get_global_setting("smtp_server_port", "2525"))
     handler = _FlightEmailHandler()
-    _controller = Controller(handler, hostname="0.0.0.0", port=port)
+    _controller = Controller(handler, hostname="127.0.0.1", port=port)
     _controller.start()
     logger.info("SMTP server listening on port %d", port)
 
