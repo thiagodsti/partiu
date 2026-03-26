@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Flight } from '../api/types';
   import { legStats, formatDuration } from '../lib/utils';
+  import { t } from '../lib/i18n';
 
   interface Props {
     label: string;
@@ -13,7 +14,7 @@
   const totalStr = $derived(formatDuration(stats.totalMinutes));
   const info = $derived(
     stats.flyingMinutes > 0
-      ? ` · ${flyingStr} flying${stats.totalMinutes > stats.flyingMinutes ? ` · ${totalStr} total` : ''}`
+      ? ` · ${flyingStr} ${$t('trip.flying')}${stats.totalMinutes > stats.flyingMinutes ? ` · ${totalStr} ${$t('trip.total')}` : ''}`
       : ''
   );
 </script>

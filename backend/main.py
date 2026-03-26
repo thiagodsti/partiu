@@ -23,6 +23,7 @@ from .middleware import FirstRunMiddleware
 from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
 from .routes import boarding_passes as boarding_passes_routes
+from .routes import day_notes as day_notes_routes
 from .routes import failed_emails as failed_emails_routes
 from .routes import notifications as notifications_routes
 from .routes import shares as shares_routes
@@ -100,6 +101,7 @@ app.include_router(stats_routes.router)
 app.include_router(notifications_routes.router)
 app.include_router(boarding_passes_routes.router)
 app.include_router(failed_emails_routes.router)
+app.include_router(day_notes_routes.router)
 app.include_router(trip_documents_routes.router)
 
 

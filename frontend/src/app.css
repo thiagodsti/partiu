@@ -1218,6 +1218,86 @@ img {
   margin: 0;
 }
 
+.section-toggle {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.section-toggle:hover .trip-section-title {
+  color: var(--text);
+}
+
+.section-toggle.no-bottom-margin {
+  margin-bottom: 0;
+}
+
+.section-header-inner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.section-chevron {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.section-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.summary-note {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.summary-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.summary-checklist-item .done {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.summary-check-box {
+  width: 13px;
+  height: 13px;
+  min-width: 13px;
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  color: var(--success, #16a34a);
+  flex-shrink: 0;
+}
+
+.summary-check-box.checked {
+  background: var(--success-bg, #dcfce7);
+  border-color: var(--success, #16a34a);
+}
+
 .doc-empty {
   font-size: 0.85rem;
   color: var(--text-muted);

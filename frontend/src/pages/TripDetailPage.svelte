@@ -8,7 +8,9 @@
     inferTripStatus,
     splitLegs,
     dateDividerInfo,
+    timeUntilTrip,
   } from '../lib/utils';
+  import type { DayContent } from '../components/TripDayCard.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
@@ -18,8 +20,9 @@
   import DateDivider from '../components/DateDivider.svelte';
   import ImmichAlbumButton from '../components/ImmichAlbumButton.svelte';
   import TripMap from '../components/TripMap.svelte';
+  import TripDayPlanner from '../components/TripDayPlanner.svelte';
   import ConfirmModal from '../components/ConfirmModal.svelte';
-  import { t } from '../lib/i18n';
+  import { t, locale } from '../lib/i18n';
 
   interface Props {
     params: { id: string };
@@ -193,6 +196,88 @@
     await sharesApi.revokeTripShare(trip.id, userId);
     collaborators = collaborators.filter((c) => c.user_id !== userId);
   }
+
+  // ---- Collapsible sections ----
+  let flightsCollapsed = $state(false);
+  let plannerCollapsed = $state(false);
+
+  // Planner content cached from TripDayPlanner after it loads
+  let plannerContent = $state<Record<string, DayContent>>({});
+
+  function todayStr(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  // The day the planner should highlight when collapsed
+  const plannerFocusDate = $derived((() => {
+    if (!trip || !trip.start_date || !trip.end_date) return null;
+    const status = inferTripStatus(trip);
+    if (status === 'upcoming') return trip.start_date;
+    if (status === 'completed') return trip.end_date;
+    const today = todayStr();
+    if (today >= trip.start_date && today <= trip.end_date) return today;
+    return trip.start_date;
+  })());
+
+  // Label for the focus day, e.g. "Day 3 · Wed Jan 12"
+  const plannerFocusLabel = $derived((() => {
+    if (!plannerFocusDate || !trip?.start_date) return null;
+    const [sy, sm, sd] = trip.start_date.split('-').map(Number);
+    const [fy, fm, fd] = plannerFocusDate.split('-').map(Number);
+    const startMs = new Date(sy, sm - 1, sd).getTime();
+    const focusMs = new Date(fy, fm - 1, fd).getTime();
+    const dayIndex = Math.round((focusMs - startMs) / 86_400_000);
+    const dt = new Date(fy, fm - 1, fd);
+    const loc = $locale ?? undefined;
+    const weekday = dt.toLocaleDateString(loc, { weekday: 'short' });
+    const month = dt.toLocaleDateString(loc, { month: 'long' });
+    return `${$t('planner.day_prefix')} ${dayIndex + 1} · ${weekday} ${month} ${fd}`;
+  })());
+
+  // Note preview for the focus day
+  const plannerFocusContent = $derived(plannerFocusDate ? (plannerContent[plannerFocusDate] ?? null) : null);
+
+  // Flights collapsed summary
+  const flightsSummary = $derived((() => {
+    if (!trip || flightList.length === 0) return null;
+    const status = inferTripStatus(trip);
+    const now = Date.now();
+
+    if (status === 'completed') {
+      // Route: GRU → CDG → LHR · N flights
+      const airports: string[] = [];
+      for (const f of flightList) {
+        if (airports[airports.length - 1] !== f.departure_airport) airports.push(f.departure_airport);
+        if (airports[airports.length - 1] !== f.arrival_airport) airports.push(f.arrival_airport);
+      }
+      const route = airports.join(' → ');
+      const n = flightList.length;
+      return `${route} · ${n} ${n === 1 ? $t('trips.flight_count', { values: { n } }) : $t('trips.flight_count_plural', { values: { n } })}`;
+    }
+
+    // Upcoming or active — find next relevant flight
+    const sorted = [...flightList].sort((a, b) =>
+      new Date(a.departure_datetime ?? 0).getTime() - new Date(b.departure_datetime ?? 0).getTime()
+    );
+
+    // Currently in the air?
+    const inAir = sorted.find(
+      (f) => f.departure_datetime && f.arrival_datetime &&
+        new Date(f.departure_datetime).getTime() <= now &&
+        new Date(f.arrival_datetime).getTime() > now
+    );
+    if (inAir) return `✈ ${inAir.flight_number}  ${inAir.departure_airport} → ${inAir.arrival_airport}`;
+
+    // Next to depart
+    const next = sorted.find((f) => f.departure_datetime && new Date(f.departure_datetime).getTime() > now);
+    if (next) {
+      const countdown = next.departure_datetime ? timeUntilTrip(next.departure_datetime, now, $t) : '';
+      return `${$t('trip.next_flight')}: ${next.flight_number}  ${next.departure_airport} → ${next.arrival_airport}${countdown ? '  ' + countdown : ''}`;
+    }
+
+    return null;
+  })());
 
   // ---- Leave shared trip (non-owner) ----
   let leaving = $state(false);
@@ -382,39 +467,89 @@
         <a href="#/trips/{params.id}/add-flight" class="btn btn-primary">{$t('trip.add_flight')}</a>
       </EmptyState>
     {:else}
-      <!-- Outbound leg -->
-      <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
-      {#each legs.outbound as flight, i (flight.id)}
-        <FlightRow {flight} basePath={flightBasePath} />
-        {#if i < legs.outbound.length - 1}
-          {@const prev = legs.outbound[i]}
-          {@const next = legs.outbound[i + 1]}
-          {@const divInfo = dateDividerInfo(prev, next)}
-          {#if divInfo}
-            <DateDivider {prev} {next} />
-          {:else}
-            <ConnectionBadge {prev} {next} />
+      <div class="trip-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="trip-section-header section-toggle" class:no-bottom-margin={flightsCollapsed} onclick={() => (flightsCollapsed = !flightsCollapsed)}>
+          <div class="section-header-inner">
+            <div class="section-title-row">
+              <h3 class="trip-section-title">{$t('trip.flights')}</h3>
+              <span class="section-chevron">{flightsCollapsed ? '▼' : '▲'}</span>
+            </div>
+            {#if flightsCollapsed && flightsSummary}
+              <p class="section-summary">{flightsSummary}</p>
+            {/if}
+          </div>
+        </div>
+        {#if !flightsCollapsed}
+          <!-- Outbound leg -->
+          <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
+          {#each legs.outbound as flight, i (flight.id)}
+            <FlightRow {flight} basePath={flightBasePath} />
+            {#if i < legs.outbound.length - 1}
+              {@const prev = legs.outbound[i]}
+              {@const next = legs.outbound[i + 1]}
+              {@const divInfo = dateDividerInfo(prev, next)}
+              {#if divInfo}
+                <DateDivider {prev} {next} />
+              {:else}
+                <ConnectionBadge {prev} {next} />
+              {/if}
+            {/if}
+          {/each}
+
+          <!-- Return leg -->
+          {#if legs.returning}
+            <LegDivider label={$t('trip.return')} flights={legs.returning} />
+            {#each legs.returning as flight, i (flight.id)}
+              <FlightRow {flight} basePath={flightBasePath} />
+              {#if i < (legs.returning?.length ?? 0) - 1}
+                {@const prev = legs.returning[i]}
+                {@const next = legs.returning[i + 1]}
+                {@const divInfo = dateDividerInfo(prev, next)}
+                {#if divInfo}
+                  <DateDivider {prev} {next} />
+                {:else}
+                  <ConnectionBadge {prev} {next} />
+                {/if}
+              {/if}
+            {/each}
           {/if}
         {/if}
-      {/each}
+      </div>
+    {/if}
 
-      <!-- Return leg -->
-      {#if legs.returning}
-        <LegDivider label={$t('trip.return')} flights={legs.returning} />
-        {#each legs.returning as flight, i (flight.id)}
-          <FlightRow {flight} basePath={flightBasePath} />
-          {#if i < (legs.returning?.length ?? 0) - 1}
-            {@const prev = legs.returning[i]}
-            {@const next = legs.returning[i + 1]}
-            {@const divInfo = dateDividerInfo(prev, next)}
-            {#if divInfo}
-              <DateDivider {prev} {next} />
-            {:else}
-              <ConnectionBadge {prev} {next} />
+    <!-- Day Planner -->
+    {#if trip.start_date && trip.end_date}
+      <div class="trip-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="trip-section-header section-toggle" class:no-bottom-margin={plannerCollapsed} onclick={() => (plannerCollapsed = !plannerCollapsed)}>
+          <div class="section-header-inner">
+            <div class="section-title-row">
+              <h3 class="trip-section-title">{$t('planner.title')}</h3>
+              <span class="section-chevron">{plannerCollapsed ? '▼' : '▲'}</span>
+            </div>
+            {#if plannerCollapsed && plannerFocusLabel}
+              <div class="section-summary">
+                <span>{plannerFocusLabel}</span>
+                {#if plannerFocusContent?.note.trim()}
+                  <span class="summary-note">{plannerFocusContent.note.split('\n').find((l) => l.trim()) ?? ''}</span>
+                {/if}
+                {#if plannerFocusContent?.items[0]}
+                  <span class="summary-checklist-item">
+                    <span class="summary-check-box" class:checked={plannerFocusContent.items[0].checked}>{plannerFocusContent.items[0].checked ? '✓' : ''}</span>
+                    <span class:done={plannerFocusContent.items[0].checked}>{plannerFocusContent.items[0].text || '…'}</span>
+                  </span>
+                {/if}
+              </div>
             {/if}
-          {/if}
-        {/each}
-      {/if}
+          </div>
+        </div>
+        {#if !plannerCollapsed}
+          <TripDayPlanner {trip} onLoaded={(c) => { plannerContent = c; }} />
+        {/if}
+      </div>
     {/if}
 
     <!-- Documents -->

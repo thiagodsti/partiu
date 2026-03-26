@@ -127,7 +127,9 @@ export function flightStatus(f: Flight): 'completed' | 'active' | 'upcoming' {
   return 'upcoming';
 }
 
-export function timeUntilTrip(startDate: string, now: number = Date.now()): string {
+type Translator = (key: string, opts?: { values?: Record<string, unknown> }) => string;
+
+export function timeUntilTrip(startDate: string, now: number = Date.now(), t?: Translator): string {
   const diff = new Date(startDate).getTime() - now;
   if (diff <= 0) return '';
 
@@ -137,19 +139,28 @@ export function timeUntilTrip(startDate: string, now: number = Date.now()): stri
   const hours = totalHours % 24;
   const minutes = totalMinutes % 60;
 
-  if (days >= 60) {
-    const months = Math.floor(days / 30);
-    return `in ${months} months`;
+  if (!t) {
+    // Fallback to hardcoded English (used in tests / non-i18n contexts)
+    if (days >= 60) return `in ${Math.floor(days / 30)} months`;
+    if (days >= 30) {
+      const mo = Math.floor(days / 30); const rd = days % 30;
+      return rd > 0 ? `in ${mo}mo ${rd}d` : `in ${mo}mo`;
+    }
+    if (days >= 1) return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`;
+    if (totalHours >= 1) return minutes > 0 ? `in ${hours}h ${minutes}m` : `in ${hours}h`;
+    if (totalMinutes > 0) return `in ${totalMinutes}m`;
+    return 'now';
   }
+
+  if (days >= 60) return t('time.in_months', { values: { n: Math.floor(days / 30) } });
   if (days >= 30) {
-    const months = Math.floor(days / 30);
-    const remDays = days % 30;
-    return remDays > 0 ? `in ${months}mo ${remDays}d` : `in ${months}mo`;
+    const mo = Math.floor(days / 30); const rd = days % 30;
+    return rd > 0 ? t('time.in_mo_d', { values: { mo, d: rd } }) : t('time.in_mo', { values: { mo } });
   }
-  if (days >= 1) return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`;
-  if (totalHours >= 1) return minutes > 0 ? `in ${hours}h ${minutes}m` : `in ${hours}h`;
-  if (totalMinutes > 0) return `in ${totalMinutes}m`;
-  return 'now';
+  if (days >= 1) return hours > 0 ? t('time.in_d_h', { values: { d: days, h: hours } }) : t('time.in_d', { values: { d: days } });
+  if (totalHours >= 1) return minutes > 0 ? t('time.in_h_m', { values: { h: hours, m: minutes } }) : t('time.in_h', { values: { h: hours } });
+  if (totalMinutes > 0) return t('time.in_m', { values: { m: totalMinutes } });
+  return t('time.now');
 }
 
 export function inferTripStatus(trip: { start_date?: string | null; end_date?: string | null }): 'completed' | 'ongoing' | 'upcoming' {

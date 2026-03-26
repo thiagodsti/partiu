@@ -205,3 +205,10 @@ export interface AdminFailedEmailGroup {
   count: number;
   latest: string;
 }
+
+export interface TripDayNote {
+  date: string;
+  content: string;
+  updated_at: string;
+  updated_by_username: string | null;
+}

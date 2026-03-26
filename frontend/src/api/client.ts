@@ -26,6 +26,7 @@ import type {
   TripShare,
   TripInvitation,
   TrustedUser,
+  TripDayNote,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -285,6 +286,12 @@ export const failedEmailsApi = {
   adminDeleteSender: (sender: string) =>
     _request<null>('DELETE', '/api/admin/failed-emails/sender', { sender }),
   adminRetryAll: () => post<{ results: Record<number, { retried: number; recovered: number }> }>('/api/admin/failed-emails/retry-all'),
+};
+
+export const dayNotesApi = {
+  list: (tripId: string) => get<TripDayNote[]>(`/api/trips/${tripId}/day-notes`),
+  upsert: (tripId: string, date: string, content: string) =>
+    _request<{ ok: boolean }>('PATCH', `/api/trips/${tripId}/day-notes/${date}`, { content }),
 };
 
 export const settingsApi = {

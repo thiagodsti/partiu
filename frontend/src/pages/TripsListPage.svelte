@@ -161,7 +161,7 @@
     {:else}
       {#each activeTrips as trip (trip.id)}
         {@const status = inferTripStatus(trip)}
-        {@const countdown = status === 'upcoming' && trip.start_date ? timeUntilTrip(trip.start_date, now) : null}
+        {@const countdown = status === 'upcoming' && trip.start_date ? timeUntilTrip(trip.start_date, now, $t) : null}
         <TripCard
           {trip}
           href="#/trips/{trip.id}"
