@@ -28,6 +28,7 @@ import type {
   TripInvitation,
   TrustedUser,
   TripDayNote,
+  InAppNotification,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -279,6 +280,11 @@ export const notificationsApi = {
     post<NotifPreferences & { ok: boolean }>('/api/notifications/preferences', prefs),
   testPush: () => post<{ ok: boolean; sent: number }>('/api/notifications/test'),
   clearBadge: () => post<{ ok: boolean }>('/api/notifications/badge/clear'),
+  inbox: () => get<InAppNotification[]>('/api/notifications/inbox'),
+  inboxCount: () => get<{ unread: number }>('/api/notifications/inbox/count'),
+  markAllRead: () => post<{ ok: boolean; marked: number }>('/api/notifications/inbox/read-all'),
+  markRead: (id: number) => post<{ ok: boolean }>(`/api/notifications/inbox/${id}/read`),
+  deleteNotification: (id: number) => del<null>(`/api/notifications/inbox/${id}`),
 };
 
 export const failedEmailsApi = {

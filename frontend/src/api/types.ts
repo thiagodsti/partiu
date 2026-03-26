@@ -139,6 +139,16 @@ export interface NotifPreferences {
   failed_parse: boolean;
 }
 
+export interface InAppNotification {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  url: string;
+  read: boolean;
+  created_at: string;
+}
+
 export interface BoardingPass {
   id: string;
   flight_id: string;

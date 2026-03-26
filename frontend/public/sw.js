@@ -20,8 +20,7 @@ self.addEventListener('push', (event) => {
   const badgeCount = typeof data.badge === 'number' ? data.badge : undefined;
   const options = {
     body: data.body || '',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-96.png',
+    icon: '/icon-192.png',
     data: { url: data.url || '/' },
   };
   event.waitUntil(

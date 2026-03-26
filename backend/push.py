@@ -197,7 +197,10 @@ def send_push(user_id: int, payload: dict) -> int:
         return 0
 
     # Include badge count (+1 for this notification) so the service worker can set the app badge
-    badge = get_unread_count(user_id) + 1
+    try:
+        badge = get_unread_count(user_id) + 1
+    except Exception:
+        badge = 1
     data = json.dumps({**payload, "badge": badge})
     sent = 0
     dead = []
@@ -231,7 +234,10 @@ def send_push(user_id: int, payload: dict) -> int:
         delete_subscription(user_id, endpoint)
 
     if sent > 0:
-        increment_unread(user_id)
+        try:
+            increment_unread(user_id)
+        except Exception:
+            pass
 
     return sent
 

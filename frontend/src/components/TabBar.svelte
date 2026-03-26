@@ -2,7 +2,7 @@
   // svelte-spa-router provides the current location as a store
   import { location } from 'svelte-spa-router';
   import { t } from '../lib/i18n';
-  import { pendingInvitationCount } from '../lib/invitationStore';
+  import { totalInboxBadge } from '../lib/invitationStore';
 </script>
 
 <nav class="tab-bar">
@@ -32,17 +32,17 @@
   </a>
   <a
     class="tab-item"
-    class:active={$location.startsWith('/invitations')}
-    href="#/invitations"
+    class:active={$location.startsWith('/notifications')}
+    href="#/notifications"
     style="position:relative"
   >
     <span class="tab-icon">
       ✉︎
-      {#if $pendingInvitationCount > 0}
-        <span class="tab-badge">{$pendingInvitationCount}</span>
+      {#if $totalInboxBadge > 0}
+        <span class="tab-badge">{$totalInboxBadge}</span>
       {/if}
     </span>
-    <span>{$t('nav.invitations')}</span>
+    <span>{$t('nav.notifications')}</span>
   </a>
   <a
     class="tab-item"

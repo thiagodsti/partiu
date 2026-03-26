@@ -14,7 +14,7 @@
   import AddTripPage from './pages/AddTripPage.svelte';
   import EditTripPage from './pages/EditTripPage.svelte';
   import StatsPage from './pages/StatsPage.svelte';
-  import InvitationsPage from './pages/InvitationsPage.svelte';
+  import NotificationsPage from './pages/NotificationsPage.svelte';
   import { authApi, notificationsApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
   import { refreshInvitationCount } from './lib/invitationStore';
@@ -35,7 +35,8 @@
     '/history/:tripId/flights/:flightId': FlightDetailPage,
     '/settings': SettingsPage,
     '/admin/users': UsersPage,
-    '/invitations': InvitationsPage,
+    '/notifications': NotificationsPage,
+    '/invitations': NotificationsPage,
     '/login': LoginPage,
     '/setup': SetupPage,
   };
@@ -58,7 +59,7 @@
     };
     window.addEventListener('hashchange', onHashChange);
 
-    // Poll for new invitations every 30 seconds while the tab is open
+    // Poll for invitations + unread notifications every 30 seconds while the tab is open
     const pollInterval = setInterval(refreshInvitationCount, 30_000);
 
     // Clear app badge when the user opens/returns to the app

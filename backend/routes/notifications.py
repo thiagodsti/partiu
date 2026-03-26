@@ -170,6 +170,55 @@ async def clear_badge(user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# In-app notification inbox
+# ---------------------------------------------------------------------------
+
+
+@router.get("/inbox")
+async def inbox(user: dict = Depends(get_current_user)):
+    """List the user's in-app notifications, newest first."""
+    from ..notifications_store import list_notifications
+
+    return list_notifications(user["id"])
+
+
+@router.get("/inbox/count")
+async def inbox_count(user: dict = Depends(get_current_user)):
+    """Return the count of unread in-app notifications."""
+    from ..notifications_store import get_unread_count
+
+    return {"unread": get_unread_count(user["id"])}
+
+
+@router.post("/inbox/read-all")
+async def read_all(user: dict = Depends(get_current_user)):
+    """Mark all in-app notifications as read."""
+    from ..notifications_store import mark_all_read
+
+    count = mark_all_read(user["id"])
+    return {"ok": True, "marked": count}
+
+
+@router.post("/inbox/{notification_id}/read")
+async def read_one(notification_id: int, user: dict = Depends(get_current_user)):
+    """Mark a single in-app notification as read."""
+    from ..notifications_store import mark_read
+
+    if not mark_read(notification_id, user["id"]):
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"ok": True}
+
+
+@router.delete("/inbox/{notification_id}", status_code=204)
+async def delete_one(notification_id: int, user: dict = Depends(get_current_user)):
+    """Delete a single in-app notification."""
+    from ..notifications_store import delete_notification
+
+    if not delete_notification(notification_id, user["id"]):
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+
 @router.post("/test")
 @limiter.limit("5/minute")
 async def test_push(request: Request, user: dict = Depends(get_current_user)):

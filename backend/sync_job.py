@@ -408,7 +408,7 @@ def _process_emails(emails: list, user_id: int) -> dict:
 
 
 def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_added: int) -> None:
-    """Send push notifications after a sync if new flights were found or emails failed to parse."""
+    """Create in-app notifications and optionally send push after a sync."""
     try:
         with db_conn() as conn:
             user = conn.execute(
@@ -417,27 +417,24 @@ def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_a
         if not user:
             return
 
+        from .notifications_store import create_notification
         from .push import send_push
 
         if flights_created > 0 and user["notif_new_flight"]:
-            send_push(
-                user_id,
-                {
-                    "title": "New flights added ✈",
-                    "body": f"{flights_created} new flight{'s' if flights_created > 1 else ''} added from your emails.",
-                    "url": "/#/trips",
-                },
-            )
+            n = flights_created
+            title = "New flights added ✈"
+            body = f"{n} new flight{'s' if n > 1 else ''} added from your emails."
+            create_notification(user_id, "new_flight", title, body, "/#/trips")
+            send_push(user_id, {"title": title, "body": body, "url": "/#/trips"})
 
         if failed_emails_added > 0 and user["notif_failed_parse"]:
-            send_push(
-                user_id,
-                {
-                    "title": "Emails need review",
-                    "body": f"{failed_emails_added} email{'s' if failed_emails_added > 1 else ''} couldn't be parsed and may contain flight info.",
-                    "url": "/#/settings",
-                },
+            n = failed_emails_added
+            title = "Emails need review"
+            body = (
+                f"{n} email{'s' if n > 1 else ''} couldn't be parsed and may contain flight info."
             )
+            create_notification(user_id, "failed_parse", title, body, "/#/notifications")
+            send_push(user_id, {"title": title, "body": body, "url": "/#/notifications"})
     except Exception as e:
         logger.warning("User %d: Failed to send sync notifications: %s", user_id, e)
 

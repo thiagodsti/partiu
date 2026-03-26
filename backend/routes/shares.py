@@ -87,6 +87,24 @@ def share_trip(
             (trip_id, invitee["id"], user["id"], initial_status, now_iso(), now_iso()),
         )
 
+        trip_name = conn.execute("SELECT name FROM trips WHERE id = ?", (trip_id,)).fetchone()
+        trip_label = trip_name["name"] if trip_name else trip_id
+
+    # Create an in-app notification for the invitee
+    if initial_status == "pending":
+        try:
+            from ..notifications_store import create_notification
+
+            create_notification(
+                invitee["id"],
+                "invitation",
+                f"{user['username']} invited you to a trip",
+                trip_label,
+                "/#/notifications",
+            )
+        except Exception:
+            logger.exception("Failed to create invitation notification")
+
     return {"ok": True, "status": initial_status}
 
 
