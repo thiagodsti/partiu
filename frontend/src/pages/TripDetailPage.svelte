@@ -245,19 +245,15 @@
     return trip.start_date;
   })());
 
-  // Label for the focus day, e.g. "Day 3 · Wed Jan 12"
   const plannerFocusLabel = $derived((() => {
-    if (!plannerFocusDate || !trip?.start_date) return null;
-    const [sy, sm, sd] = trip.start_date.split('-').map(Number);
+    if (!plannerFocusDate) return null;
     const [fy, fm, fd] = plannerFocusDate.split('-').map(Number);
-    const startMs = new Date(sy, sm - 1, sd).getTime();
-    const focusMs = new Date(fy, fm - 1, fd).getTime();
-    const dayIndex = Math.round((focusMs - startMs) / 86_400_000);
     const dt = new Date(fy, fm - 1, fd);
     const loc = $locale ?? undefined;
     const weekday = dt.toLocaleDateString(loc, { weekday: 'short' });
     const month = dt.toLocaleDateString(loc, { month: 'long' });
-    return `${$t('planner.day_prefix')} ${dayIndex + 1} · ${weekday} ${month} ${fd}`;
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/\.$/, '');
+    return `${cap(weekday)}, ${fd} ${cap(month)}`;
   })());
 
   // Note preview for the focus day

@@ -17,14 +17,13 @@
   interface Props {
     tripId: string;
     date: string;
-    index: number;
     flights: Flight[];
     initialContent: DayContent;
     initiallyExpanded: boolean;
     forceExpanded?: boolean;
   }
 
-  const { tripId, date, index, flights, initialContent, initiallyExpanded, forceExpanded = false }: Props = $props();
+  const { tripId, date, flights, initialContent, initiallyExpanded, forceExpanded = false }: Props = $props();
 
   // ---- Local state (isolated per card) ----
   // untrack: intentionally snapshot props at mount, changes after mount are ignored
@@ -48,7 +47,8 @@
     const loc = $locale ?? undefined;
     const weekday = dt.toLocaleDateString(loc, { weekday: 'short' });
     const month = dt.toLocaleDateString(loc, { month: 'long' });
-    return `${$t('planner.day_prefix')} ${index + 1} · ${weekday} ${month} ${d}`;
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/\.$/, '');
+    return `${cap(weekday)}, ${d} ${cap(month)}`;
   }
 
   function formatFlightTime(iso: string | null, tz: string | null): string {

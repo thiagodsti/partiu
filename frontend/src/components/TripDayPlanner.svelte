@@ -106,11 +106,10 @@
   {:else if !loaded}
     <p class="planner-empty">{$t('planner.loading')}</p>
   {:else}
-    {#each days as date, i (date)}
+    {#each days as date (date)}
       <TripDayCard
         tripId={trip.id}
         {date}
-        index={i}
         flights={flightMap.get(date) ?? []}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         initiallyExpanded={date === today}
@@ -125,7 +124,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
-    padding: 0 var(--space-md) var(--space-md);
   }
 
   .planner-empty {

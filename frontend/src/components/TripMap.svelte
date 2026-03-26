@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import type { Map as LeafletMap } from 'leaflet';
   import type { Flight } from '../api/types';
   import { airportsApi } from '../api/client';
@@ -151,7 +151,16 @@
     };
   });
 
+  function onBeforePrint() {
+    map?.invalidateSize();
+  }
+
+  onMount(() => {
+    window.addEventListener('beforeprint', onBeforePrint);
+  });
+
   onDestroy(() => {
+    window.removeEventListener('beforeprint', onBeforePrint);
     map?.remove();
     map = null;
   });
@@ -169,5 +178,15 @@
     background: var(--surface, #f0f0f0);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     isolation: isolate;
+  }
+
+  @media print {
+    .trip-map {
+      height: 260px;
+      border-radius: 0;
+      box-shadow: none;
+      border: 1px solid #e2e8f0;
+      break-inside: avoid;
+    }
   }
 </style>

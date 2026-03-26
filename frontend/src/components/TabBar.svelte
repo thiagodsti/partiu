@@ -11,7 +11,7 @@
     class:active={$location === '/' || $location.startsWith('/trips')}
     href="#/trips"
   >
-    <span class="tab-icon">✈</span>
+    <span class="tab-icon">✈︎</span>
     <span>{$t('nav.trips')}</span>
   </a>
   <a
@@ -27,7 +27,7 @@
     class:active={$location.startsWith('/stats')}
     href="#/stats"
   >
-    <span class="tab-icon">★</span>
+    <span class="tab-icon">★︎</span>
     <span>{$t('nav.stats')}</span>
   </a>
   <a
@@ -37,7 +37,7 @@
     style="position:relative"
   >
     <span class="tab-icon">
-      ✉
+      ✉︎
       {#if $pendingInvitationCount > 0}
         <span class="tab-badge">{$pendingInvitationCount}</span>
       {/if}
