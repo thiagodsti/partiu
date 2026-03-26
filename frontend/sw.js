@@ -7,7 +7,7 @@
  * cannot pre-cache a fixed list. Instead we cache assets on first fetch.
  */
 
-const CACHE_VERSION = 'v13';
+const CACHE_VERSION = 'v14';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
