@@ -8,8 +8,9 @@
   interface Props {
     trip: Trip;
     onLoaded?: (contentByDate: Record<string, DayContent>) => void;
+    forceExpanded?: boolean;
   }
-  const { trip, onLoaded }: Props = $props();
+  const { trip, onLoaded, forceExpanded = false }: Props = $props();
 
   function getDayRange(start: string, end: string): string[] {
     const days: string[] = [];
@@ -113,6 +114,7 @@
         flights={flightMap.get(date) ?? []}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         initiallyExpanded={date === today}
+        {forceExpanded}
       />
     {/each}
   {/if}

@@ -96,6 +96,7 @@
   "trips.ref": "Ref: {refs}",
   "trip.edit": "Editar Viagem",
   "trip.export_ical": "Exportar para Calendário",
+  "trip.export_pdf": "Exportar PDF",
   "trip.loading": "Carregando viagem…",
   "trip.load_error": "Falha ao carregar viagem",
   "trip.back": "Voltar para Viagens",

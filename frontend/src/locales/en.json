@@ -96,6 +96,7 @@
   "trips.ref": "Ref: {refs}",
   "trip.edit": "Edit Trip",
   "trip.export_ical": "Export to Calendar",
+  "trip.export_pdf": "Export PDF",
   "trip.loading": "Loading trip…",
   "trip.load_error": "Failed to load trip",
   "trip.back": "Back to Trips",

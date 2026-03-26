@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 
 from ..auth import get_current_user
 from ..database import db_conn, db_write
-from ..shares import can_access_flight
+from ..shares import can_access_flight, can_access_trip
 from ..utils import now_iso
 
 router = APIRouter(tags=["boarding-passes"])
@@ -72,6 +72,44 @@ def _bp_owned_by_user(bp_id: str, user_id: int) -> dict | None:
             (bp_id, user_id),
         ).fetchone()
     return dict(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# List all boarding passes for a trip (across all flights)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/trips/{trip_id}/boarding-passes")
+def list_trip_boarding_passes(trip_id: str, user: dict = Depends(get_current_user)):
+    with db_conn() as conn:
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+
+        rows = conn.execute(
+            """SELECT bp.id, bp.flight_id, bp.passenger_name, bp.seat,
+                      bp.source_page, bp.created_at,
+                      f.flight_number, f.departure_airport, f.arrival_airport
+               FROM boarding_passes bp
+               JOIN flights f ON f.id = bp.flight_id
+               WHERE f.trip_id = ?
+               ORDER BY f.departure_datetime ASC, bp.source_page ASC""",
+            (trip_id,),
+        ).fetchall()
+
+    return [
+        {
+            "id": r["id"],
+            "flight_id": r["flight_id"],
+            "passenger_name": r["passenger_name"],
+            "seat": r["seat"],
+            "source_page": r["source_page"],
+            "created_at": r["created_at"],
+            "flight_number": r["flight_number"],
+            "departure_airport": r["departure_airport"],
+            "arrival_airport": r["arrival_airport"],
+        }
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

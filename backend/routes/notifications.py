@@ -126,19 +126,33 @@ async def update_preferences(
     user: dict = Depends(get_current_user),
 ):
     body = await request.json()
-    allowed = {"flight_reminder", "checkin_reminder", "trip_reminder", "delay_alert", "boarding_pass"}
+    allowed = {
+        "flight_reminder",
+        "checkin_reminder",
+        "trip_reminder",
+        "delay_alert",
+        "boarding_pass",
+    }
     updates = {k: int(bool(v)) for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(status_code=422, detail="No valid preference fields")
 
     from ..database import db_write
 
-    set_clauses = ", ".join(f"notif_{k} = ?" for k in updates)
-    values = list(updates.values()) + [user["id"]]
+    # Fixed column map — avoids dynamic SQL construction entirely
+    col_map = {
+        "flight_reminder": "notif_flight_reminder",
+        "checkin_reminder": "notif_checkin_reminder",
+        "trip_reminder": "notif_trip_reminder",
+        "delay_alert": "notif_delay_alert",
+        "boarding_pass": "notif_boarding_pass",
+    }
     with db_write() as conn:
-        conn.execute(f"UPDATE users SET {set_clauses} WHERE id = ?", values)  # noqa: S608
+        for key, val in updates.items():
+            col = col_map[key]
+            conn.execute(f"UPDATE users SET {col} = ? WHERE id = ?", (val, user["id"]))
 
-    return {"ok": True, **{k: bool(v) for k, v in updates.items()}}  # noqa: S608
+    return {"ok": True, **{k: bool(v) for k, v in updates.items()}}
 
 
 @router.post("/test")

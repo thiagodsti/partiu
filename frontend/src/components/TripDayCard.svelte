@@ -21,9 +21,10 @@
     flights: Flight[];
     initialContent: DayContent;
     initiallyExpanded: boolean;
+    forceExpanded?: boolean;
   }
 
-  const { tripId, date, index, flights, initialContent, initiallyExpanded }: Props = $props();
+  const { tripId, date, index, flights, initialContent, initiallyExpanded, forceExpanded = false }: Props = $props();
 
   // ---- Local state (isolated per card) ----
   // untrack: intentionally snapshot props at mount, changes after mount are ignored
@@ -113,13 +114,13 @@
   }
 </script>
 
-<div class="day-card" class:expanded>
+<div class="day-card" class:expanded={expanded || forceExpanded}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="day-card-header" onclick={() => (expanded = !expanded)}>
     <div class="day-card-header-left">
       <span class="day-label">{formatDayHeader()}</span>
-      {#if !expanded}
+      {#if !expanded && !forceExpanded}
         {#if flights.length > 0}
           <div class="day-flights-chips">
             {#each flights as f (f.id)}
@@ -153,7 +154,7 @@
     </div>
   </div>
 
-  {#if expanded}
+  {#if expanded || forceExpanded}
     <div class="day-card-body">
       <!-- Flights (read-only) -->
       {#if flights.length > 0}
@@ -455,5 +456,15 @@
   .check-preview-box.checked {
     background: var(--success-bg, #dcfce7);
     border-color: var(--success, #16a34a);
+  }
+
+  @media print {
+    .save-status,
+    .add-item-btn,
+    .check-item-delete,
+    .day-chevron { display: none !important; }
+
+    .day-card { break-inside: avoid; border: 1px solid #ccc; }
+    .check-btn { pointer-events: none; }
   }
 </style>

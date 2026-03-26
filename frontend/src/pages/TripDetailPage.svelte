@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { location } from 'svelte-spa-router';
-  import { tripsApi, settingsApi, tripDocumentsApi, sharesApi } from '../api/client';
+  import { tripsApi, settingsApi, tripDocumentsApi, sharesApi, boardingPassesApi } from '../api/client';
   import { tripImageBust } from '../lib/tripImageStore';
-  import type { Trip, Flight, TripDocument, TripShare } from '../api/types';
+  import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass } from '../api/types';
   import {
     formatDateRange,
     inferTripStatus,
@@ -104,14 +105,19 @@
 
   // ---- Documents ----
   let documents = $state<TripDocument[]>([]);
+  let tripBoardingPasses = $state<TripBoardingPass[]>([]);
   let docUploading = $state(false);
   let docUploadError = $state<string | null>(null);
   let viewingDoc = $state<TripDocument | null>(null);
+  let viewingBp = $state<TripBoardingPass | null>(null);
   let viewingPage = $state(0);
 
   async function loadDocuments() {
     if (!trip) return;
-    documents = await tripDocumentsApi.list(trip.id).catch(() => []);
+    [documents, tripBoardingPasses] = await Promise.all([
+      tripDocumentsApi.list(trip.id).catch(() => []),
+      boardingPassesApi.listForTrip(trip.id).catch(() => []),
+    ]);
   }
 
   async function handleDocUpload(e: Event) {
@@ -137,10 +143,13 @@
     if (viewingDoc?.id === docId) viewingDoc = null;
   }
 
-  function openDoc(doc: TripDocument) {
-    viewingDoc = doc;
-    viewingPage = 0;
+  async function deleteTripBp(bpId: string) {
+    if (!confirm($t('trip.doc_delete_confirm'))) return;
+    await boardingPassesApi.delete(bpId);
+    tripBoardingPasses = tripBoardingPasses.filter((b) => b.id !== bpId);
+    if (viewingBp?.id === bpId) viewingBp = null;
   }
+
 
   // ---- Delete trip ----
   let showDeleteConfirm = $state(false);
@@ -200,6 +209,22 @@
   // ---- Collapsible sections ----
   let flightsCollapsed = $state(false);
   let plannerCollapsed = $state(false);
+  let printing = $state(false);
+
+  async function exportPdf() {
+    const prevFlights = flightsCollapsed;
+    const prevPlanner = plannerCollapsed;
+    flightsCollapsed = false;
+    plannerCollapsed = false;
+    printing = true;
+    await tick();
+    // Two animation frames ensure the browser has fully painted before the print dialog opens
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    window.print();
+    printing = false;
+    flightsCollapsed = prevFlights;
+    plannerCollapsed = prevPlanner;
+  }
 
   // Planner content cached from TripDayPlanner after it loads
   let plannerContent = $state<Record<string, DayContent>>({});
@@ -352,7 +377,7 @@
           {$t('trip.shared_by')} {trip.owner_username}
         </div>
       {/if}
-      <div style="margin-top:var(--space-md);display:flex;gap:var(--space-sm);flex-wrap:wrap;align-items:center">
+      <div class="trip-actions" style="margin-top:var(--space-md);display:flex;gap:var(--space-sm);flex-wrap:wrap;align-items:center">
         {#if trip.is_owner !== false}
           <a href="#/trips/{params.id}/edit" class="btn btn-secondary" style="font-size:0.85rem">
             ✎ {$t('trip.edit')}
@@ -365,11 +390,14 @@
           <a
             href="/api/trips/{params.id}/ical"
             download="{trip.name || 'trip'}.ics"
-            class="btn btn-secondary"
+            class="btn btn-secondary no-print"
             style="font-size:0.85rem"
           >
             📅 {$t('trip.export_ical')}
           </a>
+          <button class="btn btn-secondary no-print" style="font-size:0.85rem" onclick={exportPdf}>
+            🖨 {$t('trip.export_pdf')}
+          </button>
         {/if}
         {#if isCompleted && immichConfigured}
           <ImmichAlbumButton
@@ -409,7 +437,7 @@
       </div>
 
       {#if showSharePanel && trip.is_owner !== false}
-        <div class="share-panel" style="margin-top:var(--space-md)">
+        <div class="share-panel no-print" style="margin-top:var(--space-md)">
           <h4 style="margin:0 0 var(--space-sm)">{$t('trip.collaborators')}</h4>
           <div style="display:flex;gap:var(--space-xs);margin-bottom:var(--space-sm)">
             <input
@@ -481,7 +509,7 @@
             {/if}
           </div>
         </div>
-        {#if !flightsCollapsed}
+        <div class:section-hidden={flightsCollapsed}>
           <!-- Outbound leg -->
           <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
           {#each legs.outbound as flight, i (flight.id)}
@@ -515,7 +543,7 @@
               {/if}
             {/each}
           {/if}
-        {/if}
+        </div>
       </div>
     {/if}
 
@@ -546,14 +574,14 @@
             {/if}
           </div>
         </div>
-        {#if !plannerCollapsed}
-          <TripDayPlanner {trip} onLoaded={(c) => { plannerContent = c; }} />
-        {/if}
+        <div class:section-hidden={plannerCollapsed}>
+          <TripDayPlanner {trip} forceExpanded={printing} onLoaded={(c) => { plannerContent = c; }} />
+        </div>
       </div>
     {/if}
 
     <!-- Documents -->
-    <div class="trip-section">
+    <div class="trip-section no-print">
       <div class="trip-section-header">
         <h3 class="trip-section-title">{$t('trip.documents')}</h3>
         <label class="btn btn-secondary btn-sm" class:disabled={docUploading}>
@@ -570,12 +598,18 @@
       {#if docUploadError}
         <p class="doc-upload-error">{docUploadError}</p>
       {/if}
-      {#if documents.length === 0}
+      {#if documents.length === 0 && tripBoardingPasses.length === 0}
         <p class="doc-empty">{$t('trip.doc_empty')}</p>
       {:else}
         <div class="doc-grid">
+          {#each tripBoardingPasses as bp (bp.id)}
+            <button class="doc-thumb" onclick={() => { viewingBp = bp; viewingDoc = null; }}>
+              <img src={boardingPassesApi.imageUrl(bp.id)} alt={bp.flight_number ?? 'Boarding pass'} loading="lazy" />
+              <span class="doc-thumb-name">🎫 {bp.flight_number} {bp.departure_airport}→{bp.arrival_airport}</span>
+            </button>
+          {/each}
           {#each documents as doc (doc.id)}
-            <button class="doc-thumb" onclick={() => openDoc(doc)}>
+            <button class="doc-thumb" onclick={() => { viewingDoc = doc; viewingBp = null; viewingPage = 0; }}>
               <img src={tripDocumentsApi.viewUrl(doc.id)} alt={doc.filename} loading="lazy" />
               <span class="doc-thumb-name">{doc.filename}</span>
             </button>
@@ -631,6 +665,32 @@
           alt={viewingDoc.filename}
           class="doc-modal-img"
         />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Boarding pass viewer modal -->
+{#if viewingBp}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="doc-modal-overlay" role="presentation" onclick={() => (viewingBp = null)}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="doc-modal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <div class="doc-modal-header">
+        <span class="doc-modal-name">
+          🎫 {viewingBp.flight_number} {viewingBp.departure_airport}→{viewingBp.arrival_airport}
+          {#if viewingBp.passenger_name}<span style="font-weight:normal;font-size:0.85rem"> · {viewingBp.passenger_name}</span>{/if}
+          {#if viewingBp.seat}<span style="font-weight:normal;font-size:0.85rem"> · {$t('flight.seat')} {viewingBp.seat}</span>{/if}
+        </span>
+        <div class="doc-modal-actions">
+          {#if trip?.is_owner !== false}
+            <button class="btn btn-danger btn-sm" onclick={() => deleteTripBp(viewingBp!.id)}>🗑</button>
+          {/if}
+          <button class="btn btn-secondary btn-sm" onclick={() => (viewingBp = null)}>✕</button>
+        </div>
+      </div>
+      <div class="doc-modal-body">
+        <img src={boardingPassesApi.imageUrl(viewingBp.id)} alt="Boarding pass" class="doc-modal-img" />
       </div>
     </div>
   </div>

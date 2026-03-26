@@ -57,7 +57,19 @@ def _trip_owned_by_user(trip_id: str, user_id: int) -> bool:
         return is_trip_owner(trip_id, user_id, conn)
 
 
-def _doc_belongs_to_user(doc_id: str, user_id: int) -> dict | None:
+def _doc_readable_by_user(doc_id: str, user_id: int) -> dict | None:
+    """Read access: owner or accepted collaborator."""
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM trip_documents WHERE id = ?", (doc_id,)).fetchone()
+        if not row:
+            return None
+        if not can_access_trip(row["trip_id"], user_id, conn):
+            return None
+    return dict(row)
+
+
+def _doc_owned_by_user(doc_id: str, user_id: int) -> dict | None:
+    """Write access: owner only."""
     with db_conn() as conn:
         row = conn.execute(
             """SELECT d.* FROM trip_documents d
@@ -188,7 +200,7 @@ def view_document(
     page: int = Query(default=0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    doc = _doc_belongs_to_user(doc_id, user["id"])
+    doc = _doc_readable_by_user(doc_id, user["id"])
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -215,7 +227,7 @@ def view_document(
 
 @router.delete("/api/documents/{doc_id}", status_code=204)
 def delete_document(doc_id: str, user: dict = Depends(get_current_user)):
-    doc = _doc_belongs_to_user(doc_id, user["id"])
+    doc = _doc_owned_by_user(doc_id, user["id"])
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 

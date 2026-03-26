@@ -1443,3 +1443,25 @@ img {
   opacity: 0.6;
   pointer-events: none;
 }
+
+/* ---- Print styles ---- */
+@media print {
+  .no-print { display: none !important; }
+  .section-hidden { display: block !important; }
+  .top-nav { display: none !important; }
+  .tab-bar { display: none !important; }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .main-content {
+    padding-bottom: 0 !important;
+  }
+
+  .trip-actions { display: none !important; }
+  .section-toggle { cursor: default; }
+}
+
+.section-hidden { display: none; }

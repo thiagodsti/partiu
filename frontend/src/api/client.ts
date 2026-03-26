@@ -17,6 +17,7 @@ import type {
   ImmichAlbumResponse,
   NotifPreferences,
   BoardingPass,
+  TripBoardingPass,
   TripDocument,
   FailedEmail,
   AdminFailedEmailGroup,
@@ -191,6 +192,7 @@ export const boardingPassesApi = {
   },
   imageUrl: (bpId: string) => `/api/boarding-passes/${bpId}/image`,
   delete: (bpId: string) => del<null>(`/api/boarding-passes/${bpId}`),
+  listForTrip: (tripId: string) => get<TripBoardingPass[]>(`/api/trips/${tripId}/boarding-passes`),
 };
 
 // ---- Trip Documents ----

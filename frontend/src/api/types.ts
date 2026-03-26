@@ -146,6 +146,12 @@ export interface BoardingPass {
   created_at: string;
 }
 
+export interface TripBoardingPass extends BoardingPass {
+  flight_number: string | null;
+  departure_airport: string | null;
+  arrival_airport: string | null;
+}
+
 export interface TripDocument {
   id: string;
   trip_id: string;
