@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Flight } from '../api/types';
   import { dayNotesApi } from '../api/client';
+  import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
 
   interface ChecklistItem {
@@ -25,9 +26,10 @@
   const { tripId, date, index, flights, initialContent, initiallyExpanded }: Props = $props();
 
   // ---- Local state (isolated per card) ----
-  let note = $state(initialContent.note);
-  let items = $state<ChecklistItem[]>(initialContent.items.map((i) => ({ ...i })));
-  let expanded = $state(initiallyExpanded);
+  // untrack: intentionally snapshot props at mount, changes after mount are ignored
+  let note = $state(untrack(() => initialContent.note));
+  let items = $state<ChecklistItem[]>(untrack(() => initialContent.items.map((i) => ({ ...i }))));
+  let expanded = $state(untrack(() => initiallyExpanded));
   let saving = $state(false);
   let saved = $state(false);
 

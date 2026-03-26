@@ -127,7 +127,7 @@ export function flightStatus(f: Flight): 'completed' | 'active' | 'upcoming' {
   return 'upcoming';
 }
 
-type Translator = (key: string, opts?: { values?: Record<string, unknown> }) => string;
+type Translator = (key: string, opts?: { values?: Record<string, string | number | boolean | Date | null | undefined> }) => string;
 
 export function timeUntilTrip(startDate: string, now: number = Date.now(), t?: Translator): string {
   const diff = new Date(startDate).getTime() - now;
