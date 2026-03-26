@@ -188,5 +188,9 @@
       border: 1px solid #e2e8f0;
       break-inside: avoid;
     }
+
+    .trip-map :global(.leaflet-control-attribution) {
+      display: none !important;
+    }
   }
 </style>
