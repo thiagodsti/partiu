@@ -81,13 +81,18 @@ self.addEventListener('push', (event) => {
   }
 
   console.log('[SW] showing notification:', payload.title);
+  const badgeCount = typeof payload.badge === 'number' ? payload.badge : undefined;
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
       icon: '/icon-192.png',
+      badge: '/icons/icon-96.png',
       data: { url: payload.url },
     }).then(() => {
       console.log('[SW] notification shown OK');
+      if (badgeCount !== undefined && 'setAppBadge' in self.registration) {
+        return self.registration.setAppBadge(badgeCount);
+      }
     }).catch((err) => {
       console.error('[SW] showNotification failed:', err);
     })

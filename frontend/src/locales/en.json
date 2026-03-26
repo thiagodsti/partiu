@@ -352,6 +352,8 @@
   "settings.notif_not_configured_admin": " — generate VAPID keys above.",
   "settings.notif_not_configured_user": ". Contact your admin.",
   "settings.notif_permission_error": "Could not enable notifications — check browser permissions",
+  "settings.notif_new_flight": "New flights found (when new flights are added from your emails)",
+  "settings.notif_failed_parse": "Emails need review (when a booking email couldn't be parsed automatically)",
   "settings.push_title": "Push Notifications",
   "settings.push_ready": "Ready — VAPID keys configured ({source})",
   "settings.push_source_env": "from environment",

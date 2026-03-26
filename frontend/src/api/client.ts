@@ -278,6 +278,7 @@ export const notificationsApi = {
   updatePreferences: (prefs: Partial<NotifPreferences>) =>
     post<NotifPreferences & { ok: boolean }>('/api/notifications/preferences', prefs),
   testPush: () => post<{ ok: boolean; sent: number }>('/api/notifications/test'),
+  clearBadge: () => post<{ ok: boolean }>('/api/notifications/badge/clear'),
 };
 
 export const failedEmailsApi = {

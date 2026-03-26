@@ -117,6 +117,8 @@ async def get_preferences(user: dict = Depends(get_current_user)):
         "trip_reminder": bool(user.get("notif_trip_reminder", 1)),
         "delay_alert": bool(user.get("notif_delay_alert", 1)),
         "boarding_pass": bool(user.get("notif_boarding_pass", 1)),
+        "new_flight": bool(user.get("notif_new_flight", 1)),
+        "failed_parse": bool(user.get("notif_failed_parse", 1)),
     }
 
 
@@ -132,6 +134,8 @@ async def update_preferences(
         "trip_reminder",
         "delay_alert",
         "boarding_pass",
+        "new_flight",
+        "failed_parse",
     }
     updates = {k: int(bool(v)) for k, v in body.items() if k in allowed}
     if not updates:
@@ -146,6 +150,8 @@ async def update_preferences(
         "trip_reminder": "notif_trip_reminder",
         "delay_alert": "notif_delay_alert",
         "boarding_pass": "notif_boarding_pass",
+        "new_flight": "notif_new_flight",
+        "failed_parse": "notif_failed_parse",
     }
     with db_write() as conn:
         for key, val in updates.items():
@@ -153,6 +159,15 @@ async def update_preferences(
             conn.execute(f"UPDATE users SET {col} = ? WHERE id = ?", (val, user["id"]))
 
     return {"ok": True, **{k: bool(v) for k, v in updates.items()}}
+
+
+@router.post("/badge/clear")
+async def clear_badge(user: dict = Depends(get_current_user)):
+    """Reset the unread notification badge counter for this user."""
+    from ..push import clear_unread
+
+    clear_unread(user["id"])
+    return {"ok": True}
 
 
 @router.post("/test")

@@ -352,6 +352,8 @@
   "settings.notif_not_configured_admin": " — gere as chaves VAPID acima.",
   "settings.notif_not_configured_user": ". Entre em contato com o administrador.",
   "settings.notif_permission_error": "Não foi possível ativar as notificações — verifique as permissões do navegador",
+  "settings.notif_new_flight": "Novos voos encontrados (quando novos voos são adicionados dos seus e-mails)",
+  "settings.notif_failed_parse": "E-mails precisam de revisão (quando um e-mail de reserva não pôde ser processado automaticamente)",
   "settings.push_title": "Notificações Push",
   "settings.push_ready": "Pronto — chaves VAPID configuradas ({source})",
   "settings.push_source_env": "do ambiente",

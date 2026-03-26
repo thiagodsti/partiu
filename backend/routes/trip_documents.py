@@ -145,7 +145,7 @@ async def upload_document(
     file: UploadFile,
     user: dict = Depends(get_current_user),
 ):
-    if not _trip_owned_by_user(trip_id, user["id"]):
+    if not _trip_belongs_to_user(trip_id, user["id"]):
         raise HTTPException(status_code=404, detail="Trip not found")
 
     content_type = (file.content_type or "").split(";")[0].strip()

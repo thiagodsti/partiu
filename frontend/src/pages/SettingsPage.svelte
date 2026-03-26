@@ -76,7 +76,7 @@
 
   // Notifications — per-user
   let notifStatus = $state<"unsupported" | "denied" | "default" | "subscribed" | "unsubscribed">("default");
-  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true, boarding_pass: true });
+  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true, boarding_pass: true, new_flight: true, failed_parse: true });
   let savingNotifPrefs = $state(false);
   let togglingNotif = $state(false);
   let testingPush = $state(false);
@@ -1101,24 +1101,32 @@
           <form onsubmit={saveNotifPrefs} style="margin-top:var(--space-md)">
             <div class="settings-section-title" style="font-size:0.875rem;margin-bottom:var(--space-sm)">{$t("settings.notif_what")}</div>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.flight_reminder} style="width:auto;margin:0" />
+              <input type="checkbox" bind:checked={notifPrefs.flight_reminder} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_flight_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.checkin_reminder} style="width:auto;margin:0" />
+              <input type="checkbox" bind:checked={notifPrefs.checkin_reminder} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_checkin_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.trip_reminder} style="width:auto;margin:0" />
+              <input type="checkbox" bind:checked={notifPrefs.trip_reminder} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_trip_reminder")}
             </label>
             <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.delay_alert} style="width:auto;margin:0" />
+              <input type="checkbox" bind:checked={notifPrefs.delay_alert} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_delay_alert")}
             </label>
-            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.boarding_pass} style="width:auto;margin:0" />
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.boarding_pass} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_boarding_pass")}
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-sm);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.new_flight} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
+              {$t("settings.notif_new_flight")}
+            </label>
+            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
+              <input type="checkbox" bind:checked={notifPrefs.failed_parse} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
+              {$t("settings.notif_failed_parse")}
             </label>
             <div style="display:flex;gap:var(--space-sm)">
               <button class="btn btn-primary btn-full" type="submit" disabled={savingNotifPrefs}>

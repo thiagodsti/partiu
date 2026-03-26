@@ -135,6 +135,8 @@ export interface NotifPreferences {
   trip_reminder: boolean;
   delay_alert: boolean;
   boarding_pass: boolean;
+  new_flight: boolean;
+  failed_parse: boolean;
 }
 
 export interface BoardingPass {

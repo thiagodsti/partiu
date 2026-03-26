@@ -15,7 +15,7 @@
   import EditTripPage from './pages/EditTripPage.svelte';
   import StatsPage from './pages/StatsPage.svelte';
   import InvitationsPage from './pages/InvitationsPage.svelte';
-  import { authApi } from './api/client';
+  import { authApi, notificationsApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
   import { refreshInvitationCount } from './lib/invitationStore';
   import { applyUserLocale } from './lib/i18n';
@@ -61,6 +61,15 @@
     // Poll for new invitations every 30 seconds while the tab is open
     const pollInterval = setInterval(refreshInvitationCount, 30_000);
 
+    // Clear app badge when the user opens/returns to the app
+    const clearBadge = () => {
+      if (document.visibilityState === 'visible') {
+        if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+        notificationsApi.clearBadge().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', clearBadge);
+
     // Auth check runs async but cleanup is returned synchronously
     (async () => {
       try {
@@ -91,8 +100,13 @@
       }
     })();
 
+    // Also clear immediately on load
+    if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+    notificationsApi.clearBadge().catch(() => {});
+
     return () => {
       window.removeEventListener('hashchange', onHashChange);
+      document.removeEventListener('visibilitychange', clearBadge);
       clearInterval(pollInterval);
     };
   });

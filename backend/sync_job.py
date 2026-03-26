@@ -92,6 +92,7 @@ def _set_sync_complete(user_id: int, last_synced_at: str):
 def _update_flight_from_bcbp(existing_id: str, bcbp_leg: dict):
     """Patch an existing flight with data from a boarding pass (seat, cabin, pax name, pnr)."""
     from .flight_store import update_flight_from_bcbp
+
     update_flight_from_bcbp(existing_id, bcbp_leg)
 
 
@@ -127,7 +128,8 @@ def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
                 flights_updated += 1
                 logger.debug(
                     "User %d: Updated flight %s from BCBP",
-                    user_id, leg["flight_number"],
+                    user_id,
+                    leg["flight_number"],
                 )
 
     return legs_found, flights_updated
@@ -159,11 +161,13 @@ def _process_boarding_pass_email(email_msg, user_id: int) -> int:
                     continue
                 existing = find_existing_flight(leg["flight_number"], dep_date.isoformat(), user_id)
                 if existing:
-                    bcbp_matches.append({
-                        "flight_id": existing["id"],
-                        "passenger_name": leg.get("passenger_name"),
-                        "seat": leg.get("seat"),
-                    })
+                    bcbp_matches.append(
+                        {
+                            "flight_id": existing["id"],
+                            "passenger_name": leg.get("passenger_name"),
+                            "seat": leg.get("seat"),
+                        }
+                    )
 
     saved = 0
     from .routes.boarding_passes import _save_boarding_pass
@@ -207,7 +211,9 @@ def _process_boarding_pass_email(email_msg, user_id: int) -> int:
     if saved:
         logger.info(
             "User %d: Saved %d boarding pass image(s) from email %s",
-            user_id, saved, email_msg.message_id,
+            user_id,
+            saved,
+            email_msg.message_id,
         )
     return saved
 
@@ -218,7 +224,7 @@ def _find_flight_from_email_text(email_msg, user_id: int) -> str | None:
 
     text = (email_msg.subject or "") + " " + (email_msg.body or "")
     # Common flight number patterns: 2-letter IATA code + 1-4 digits
-    matches = re.findall(r'\b([A-Z]{2})\s*(\d{1,4})\b', text)
+    matches = re.findall(r"\b([A-Z]{2})\s*(\d{1,4})\b", text)
     for airline, num in matches:
         flight_number = f"{airline}{int(num)}"
         with db_conn() as conn:
@@ -284,6 +290,7 @@ def _process_emails(emails: list, user_id: int) -> dict:
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
+    failed_emails_added = 0
     new_flight_ids: list[str] = []
     errors = []
 
@@ -317,6 +324,7 @@ def _process_emails(emails: list, user_id: int) -> dict:
                     else:
                         reason = "no rule matched"
                     save_failed_email(user_id, email_msg, reason)
+                    failed_emails_added += 1
                 continue
 
             flights_data = [apply_airport_timezones(f) for f in flights_data]
@@ -337,7 +345,11 @@ def _process_emails(emails: list, user_id: int) -> dict:
                     if existing:
                         new_email_date = dt_to_iso(email_msg.date) if email_msg.date else None
                         existing_email_date = existing.get("email_date")
-                        if new_email_date and existing_email_date and new_email_date > existing_email_date:
+                        if (
+                            new_email_date
+                            and existing_email_date
+                            and new_email_date > existing_email_date
+                        ):
                             update_flight(existing["id"], flight_data, email_msg)
                             flights_updated += 1
                             logger.info("User %d: Updated flight %s with newer email", user_id, fn)
@@ -358,7 +370,9 @@ def _process_emails(emails: list, user_id: int) -> dict:
                         flight_data.get("arrival_airport"),
                     )
                 else:
-                    logger.debug("User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn)
+                    logger.debug(
+                        "User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn
+                    )
 
             # --- Boarding pass extraction (check-in emails) ---
             try:
@@ -381,10 +395,51 @@ def _process_emails(emails: list, user_id: int) -> dict:
         "emails_processed": emails_processed,
         "flights_created": flights_created,
         "flights_updated": flights_updated,
+        "failed_emails_added": failed_emails_added,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sync result notifications
+# ---------------------------------------------------------------------------
+
+
+def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_added: int) -> None:
+    """Send push notifications after a sync if new flights were found or emails failed to parse."""
+    try:
+        with db_conn() as conn:
+            user = conn.execute(
+                "SELECT notif_new_flight, notif_failed_parse FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+        if not user:
+            return
+
+        from .push import send_push
+
+        if flights_created > 0 and user["notif_new_flight"]:
+            send_push(
+                user_id,
+                {
+                    "title": "New flights added ✈",
+                    "body": f"{flights_created} new flight{'s' if flights_created > 1 else ''} added from your emails.",
+                    "url": "/#/trips",
+                },
+            )
+
+        if failed_emails_added > 0 and user["notif_failed_parse"]:
+            send_push(
+                user_id,
+                {
+                    "title": "Emails need review",
+                    "body": f"{failed_emails_added} email{'s' if failed_emails_added > 1 else ''} couldn't be parsed and may contain flight info.",
+                    "url": "/#/settings",
+                },
+            )
+    except Exception as e:
+        logger.warning("User %d: Failed to send sync notifications: %s", user_id, e)
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +531,8 @@ def run_email_sync_for_user(user: dict) -> dict:
                 fetch_aircraft_for_new_flights(result["new_flight_ids"])
             except Exception as e:
                 logger.warning("User %d: Aircraft sync for new flights failed: %s", user_id, e)
+
+        _send_sync_notifications(user_id, result["flights_created"], result["failed_emails_added"])
 
         _set_sync_complete(user_id, now_iso())
 

@@ -146,6 +146,33 @@ def get_subscriptions(user_id: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def get_unread_count(user_id: int) -> int:
+    """Return the current unread notification count for a user."""
+    from .database import db_conn
+
+    with db_conn() as conn:
+        row = conn.execute("SELECT notif_unread FROM users WHERE id = ?", (user_id,)).fetchone()
+    return int(row["notif_unread"]) if row else 0
+
+
+def increment_unread(user_id: int) -> int:
+    """Increment and return the new unread count."""
+    from .database import db_write
+
+    with db_write() as conn:
+        conn.execute("UPDATE users SET notif_unread = notif_unread + 1 WHERE id = ?", (user_id,))
+        row = conn.execute("SELECT notif_unread FROM users WHERE id = ?", (user_id,)).fetchone()
+    return int(row["notif_unread"]) if row else 1
+
+
+def clear_unread(user_id: int) -> None:
+    """Reset the unread notification counter to zero."""
+    from .database import db_write
+
+    with db_write() as conn:
+        conn.execute("UPDATE users SET notif_unread = 0 WHERE id = ?", (user_id,))
+
+
 def send_push(user_id: int, payload: dict) -> int:
     """
     Send a push notification to all subscriptions of a user.
@@ -169,7 +196,9 @@ def send_push(user_id: int, payload: dict) -> int:
     if not subs:
         return 0
 
-    data = json.dumps(payload)
+    # Include badge count (+1 for this notification) so the service worker can set the app badge
+    badge = get_unread_count(user_id) + 1
+    data = json.dumps({**payload, "badge": badge})
     sent = 0
     dead = []
 
@@ -200,6 +229,9 @@ def send_push(user_id: int, payload: dict) -> int:
 
     for endpoint in dead:
         delete_subscription(user_id, endpoint)
+
+    if sent > 0:
+        increment_unread(user_id)
 
     return sent
 
