@@ -40,7 +40,7 @@ class TestCreateUser:
 
     def test_create_admin_user(self, auth_client):
         r = auth_client.post(
-            "/api/users", json={"username": "bob", "password": "password123", "is_admin": True}
+            "/api/users", json={"username": "bobby", "password": "password123", "is_admin": True}
         )
         assert r.status_code == 200
         assert r.json()["is_admin"] is True

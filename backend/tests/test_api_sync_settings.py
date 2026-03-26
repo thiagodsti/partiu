@@ -163,10 +163,10 @@ class TestUpdateSettings:
 
     def test_update_smtp_conflict(self, auth_client):
         # Create another user with that address
-        auth_client.post("/api/users", json={"username": "bob", "password": "password123"})
-        # Give bob an smtp address
+        auth_client.post("/api/users", json={"username": "bobby", "password": "password123"})
+        # Give bobby an smtp address
         r_users = auth_client.get("/api/users")
-        bob = next(u for u in r_users.json() if u["username"] == "bob")
+        bob = next(u for u in r_users.json() if u["username"] == "bobby")
         auth_client.patch(
             f"/api/users/{bob['id']}", json={"smtp_recipient_address": "shared@example.com"}
         )
