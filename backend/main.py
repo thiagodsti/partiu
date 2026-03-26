@@ -113,8 +113,8 @@ if _FRONTEND_DIR.exists():
         manifest = _FRONTEND_DIR / "manifest.json"
         if manifest.exists():
             return FileResponse(str(manifest))
-        # Fall back to frontend root (manifest is not copied by Vite build)
-        fallback = Path(__file__).parent.parent / "frontend" / "manifest.json"
+        # Dev mode: manifest lives in public/, not in frontend root
+        fallback = Path(__file__).parent.parent / "frontend" / "public" / "manifest.json"
         return FileResponse(str(fallback))
 
     @app.get("/sw.js")

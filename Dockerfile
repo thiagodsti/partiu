@@ -26,9 +26,8 @@ COPY alembic/ ./alembic/
 COPY alembic.ini ./
 COPY load_airports.py ./
 
-# Frontend built assets
+# Frontend built assets (manifest.json is already in dist/ via public/)
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-COPY frontend/manifest.json ./frontend/
 COPY frontend/sw.js ./frontend/
 
 # Persistent data volume mount point
