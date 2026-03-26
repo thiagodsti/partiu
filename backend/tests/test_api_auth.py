@@ -203,7 +203,11 @@ class TestChangePassword:
 
 class TestTwoFA:
     def _setup_2fa(self, auth_client):
-        """Set up and enable 2FA, return the secret."""
+        """Set up and enable 2FA, return the secret.
+
+        Enabling 2FA revokes all existing sessions, so we re-authenticate
+        through the 2FA flow to keep auth_client usable after this call.
+        """
         import pyotp
 
         r = auth_client.get("/api/auth/2fa/setup")
@@ -212,6 +216,16 @@ class TestTwoFA:
         code = pyotp.TOTP(secret).now()
         r2 = auth_client.post("/api/auth/2fa/enable", json={"code": code})
         assert r2.status_code == 200
+
+        # Session was revoked — re-authenticate through 2FA
+        r3 = auth_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "password123"}
+        )
+        assert r3.json().get("requires_2fa") is True
+        code2 = pyotp.TOTP(secret).now()
+        r4 = auth_client.post("/api/auth/2fa/verify", json={"code": code2})
+        assert r4.status_code == 200
+
         return secret
 
     def test_2fa_setup_returns_secret_and_uri(self, auth_client):
