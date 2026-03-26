@@ -80,6 +80,14 @@ export default [
     },
   },
 
+  // Playwright E2E test files — need Node.js globals (Buffer, etc.)
+  {
+    files: ["tests/**/*.ts"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+
   // Ignore build artifacts
   {
     ignores: ["dist/**", "node_modules/**", "*.config.js", "sw.js"],

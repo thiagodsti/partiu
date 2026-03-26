@@ -8,8 +8,8 @@
     "build": "svelte-check && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
