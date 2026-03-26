@@ -1,15 +1,18 @@
 /**
  * Browser-side Web Push helpers.
  *
- * subscribe()   — request permission, get subscription, POST to backend
- * unsubscribe() — remove subscription from browser + backend
- * isSupported() — true if Push API is available
- * getStatus()   — 'unsupported' | 'denied' | 'default' | 'subscribed' | 'unsubscribed'
+ * subscribe()       — request permission, get subscription, POST to backend
+ * unsubscribe()     — remove subscription from browser + backend
+ * isSupported()     — true if Push API is available
+ * getStatus()       — 'unsupported' | 'denied' | 'default' | 'subscribed' | 'unsubscribed'
+ * restoreIfNeeded() — re-subscribe silently if user previously opted in but subscription was lost
  */
 
 import { notificationsApi } from '../api/client';
 
 export type NotifStatus = 'unsupported' | 'denied' | 'default' | 'subscribed' | 'unsubscribed';
+
+const PUSH_ENABLED_KEY = 'partiu_push_enabled';
 
 export function isSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -35,12 +38,7 @@ export async function getStatus(): Promise<NotifStatus> {
   return 'default';
 }
 
-export async function subscribe(): Promise<boolean> {
-  if (!isSupported()) return false;
-
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return false;
-
+async function doSubscribe(): Promise<boolean> {
   let publicKey: string;
   try {
     const data = await notificationsApi.vapidPublicKey();
@@ -59,8 +57,21 @@ export async function subscribe(): Promise<boolean> {
   return true;
 }
 
+export async function subscribe(): Promise<boolean> {
+  if (!isSupported()) return false;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return false;
+
+  const ok = await doSubscribe();
+  if (ok) localStorage.setItem(PUSH_ENABLED_KEY, '1');
+  return ok;
+}
+
 export async function unsubscribe(): Promise<boolean> {
   if (!isSupported()) return false;
+
+  localStorage.removeItem(PUSH_ENABLED_KEY);
 
   const reg = await navigator.serviceWorker.ready;
   const subscription = await reg.pushManager.getSubscription();
@@ -69,4 +80,30 @@ export async function unsubscribe(): Promise<boolean> {
   await notificationsApi.unsubscribe(subscription.endpoint);
   await subscription.unsubscribe();
   return true;
+}
+
+/**
+ * Call on app startup. If the user previously enabled push but the browser
+ * subscription was lost (e.g. after a service-worker update), silently
+ * re-subscribe so the toggle doesn't appear disabled unexpectedly.
+ */
+export async function restoreIfNeeded(): Promise<void> {
+  if (!isSupported()) return;
+  if (localStorage.getItem(PUSH_ENABLED_KEY) !== '1') return;
+  if (Notification.permission !== 'granted') {
+    // Permission was revoked — clear the flag so we stop trying
+    localStorage.removeItem(PUSH_ENABLED_KEY);
+    return;
+  }
+
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) return; // Already subscribed — nothing to do
+
+  // Subscription was lost — restore it silently
+  try {
+    await doSubscribe();
+  } catch {
+    // Non-fatal: will retry next time the app opens
+  }
 }

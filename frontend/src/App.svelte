@@ -105,6 +105,9 @@
     if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
     notificationsApi.clearBadge().catch(() => {});
 
+    // Silently restore push subscription if user previously opted in but subscription was lost
+    import('./lib/notifications').then(({ restoreIfNeeded }) => restoreIfNeeded()).catch(() => {});;
+
     return () => {
       window.removeEventListener('hashchange', onHashChange);
       document.removeEventListener('visibilitychange', clearBadge);
