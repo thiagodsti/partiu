@@ -171,10 +171,11 @@ img {
   z-index: 100;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  height: var(--nav-height);
+  height: calc(var(--nav-height) + env(safe-area-inset-top));
   display: flex;
-  align-items: center;
-  padding: 0 var(--space-md);
+  align-items: flex-end;
+  padding: 0 var(--space-md) calc(var(--space-md) / 2);
+  padding-top: env(safe-area-inset-top);
   gap: var(--space-md);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -834,6 +835,27 @@ img {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-bottom: var(--space-md);
+}
+
+.sync-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+@media (max-width: 500px) {
+  .sync-text {
+    flex: 1 0 calc(100% - 20px); /* full width → buttons wrap to next line */
+  }
+  .sync-actions {
+    width: 100%;
+    padding-left: 20px; /* align with text, after the dot */
+  }
 }
 
 .sync-dot {

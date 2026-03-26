@@ -42,7 +42,7 @@
   <span
     class="sync-dot {syncRunning ? 'running' : syncHasError ? 'error' : 'idle'}"
   ></span>
-  <span style="flex:1;min-width:0">
+  <span class="sync-text">
     {#if syncRunning}
       {$t('sync.running')}
     {:else if syncHasError}
@@ -56,5 +56,5 @@
       {$t('sync.never')}
     {/if}
   </span>
-  {#if children}{@render children()}{/if}
+  {#if children}<div class="sync-actions">{@render children()}</div>{/if}
 </div>

@@ -5,6 +5,15 @@
 
 import type { Flight, Trip } from '../api/types';
 
+/** Read the app locale persisted in localStorage (set by i18n module). */
+function appLocale(): string | undefined {
+  try {
+    return localStorage.getItem('locale') ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ---- String helpers ----
 
 export function escapeHtml(str: unknown): string {
@@ -33,7 +42,7 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '';
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString(appLocale(), { month: 'short', day: 'numeric', year: 'numeric' });
   } catch {
     return iso.slice(0, 10);
   }
@@ -43,7 +52,7 @@ export function formatDateLong(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
+    return d.toLocaleDateString(appLocale(), {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -87,7 +96,7 @@ export function formatDateTimeLocale(iso: string | null | undefined): string {
   if (!iso) return 'Never';
   try {
     const d = new Date(iso);
-    return d.toLocaleString(undefined, {
+    return d.toLocaleString(appLocale(), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -265,7 +274,7 @@ export function dateDividerInfo(prevFlight: Flight, nextFlight: Flight): DateDiv
   const tz = nextFlight.departure_timezone;
   let label: string;
   try {
-    label = d.toLocaleDateString(undefined, {
+    label = d.toLocaleDateString(appLocale(), {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
