@@ -65,6 +65,7 @@ class TwoFADisableRequest(BaseModel):
 class UpdateMeRequest(BaseModel):
     locale: str | None = None
 
+
 _VALID_LOCALES = {"en", "pt-BR"}
 
 
@@ -94,15 +95,16 @@ def _record_totp_attempt(user_id: int, success: bool) -> None:
 def setup(request: Request, body: SetupRequest, response: Response):
     if has_any_users():
         raise HTTPException(409, "Setup already completed")
-    if len(body.username.strip()) < 2:
-        raise HTTPException(400, "Username too short")
+    username = body.username.strip().lower()
+    if len(username) < 4:
+        raise HTTPException(400, "Username must be at least 4 characters")
     if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     with db_write() as conn:
         try:
             cursor = conn.execute(
                 "INSERT INTO users (username, password_hash, is_admin, smtp_recipient_address) VALUES (?, ?, 1, ?)",
-                (body.username.strip(), hash_password(body.password), body.smtp_recipient_address),
+                (username, hash_password(body.password), body.smtp_recipient_address),
             )
             user_id = cursor.lastrowid
             # Assign any existing orphan data to this first admin
@@ -113,7 +115,7 @@ def setup(request: Request, body: SetupRequest, response: Response):
             )
         except Exception:
             raise HTTPException(400, "Could not create user")
-    audit("setup", user_id=user_id, username=body.username.strip())
+    audit("setup", user_id=user_id, username=username)
     token = create_session_cookie(user_id)
     response.set_cookie(
         "session",
@@ -125,7 +127,7 @@ def setup(request: Request, body: SetupRequest, response: Response):
     )
     return {
         "id": user_id,
-        "username": body.username.strip(),
+        "username": username,
         "is_admin": True,
         "smtp_recipient_address": body.smtp_recipient_address,
         "totp_enabled": False,
@@ -139,7 +141,7 @@ def login(request: Request, body: LoginRequest, response: Response):
     with db_conn() as conn:
         row = conn.execute(
             "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE username = ?",
-            (body.username,),
+            (body.username.strip().lower(),),
         ).fetchone()
     # Always run bcrypt to prevent username enumeration via timing differences
     password_hash = row["password_hash"] if row else _DUMMY_HASH

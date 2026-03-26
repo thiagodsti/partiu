@@ -1593,13 +1593,13 @@
     </div>
 
     <!-- Trusted Users -->
-    <div class="settings-card">
+    <div class="settings-section">
       <div class="settings-section-title">{$t('settings.trusted_users')}</div>
-      <p class="settings-hint">{$t('settings.trusted_users_desc')}</p>
+      <div class="form-hint" style="margin-bottom:var(--space-sm)">{$t('settings.trusted_users_desc')}</div>
       <div style="display:flex;gap:var(--space-xs);margin-bottom:var(--space-sm)">
         <input
           type="text"
-          class="input"
+          class="form-input"
           placeholder="Username"
           bind:value={trustedUserInput}
           style="flex:1"

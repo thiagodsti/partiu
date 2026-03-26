@@ -36,8 +36,9 @@ def list_users(admin: dict = Depends(require_admin)):
 
 @router.post("")
 def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
-    if len(body.username.strip()) < 2:
-        raise HTTPException(400, "Username too short")
+    username = body.username.strip().lower()
+    if len(username) < 4:
+        raise HTTPException(400, "Username must be at least 4 characters")
     if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     with db_write() as conn:
@@ -45,7 +46,7 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
             cursor = conn.execute(
                 "INSERT INTO users (username, password_hash, is_admin, smtp_recipient_address) VALUES (?, ?, ?, ?)",
                 (
-                    body.username.strip(),
+                    username,
                     hash_password(body.password),
                     1 if body.is_admin else 0,
                     body.smtp_recipient_address,
@@ -58,12 +59,12 @@ def create_user(body: CreateUserRequest, admin: dict = Depends(require_admin)):
         "user_created",
         user_id=admin["id"],
         target_user_id=user_id,
-        username=body.username.strip(),
+        username=username,
         is_admin=body.is_admin,
     )
     return {
         "id": user_id,
-        "username": body.username.strip(),
+        "username": username,
         "is_admin": body.is_admin,
         "smtp_recipient_address": body.smtp_recipient_address,
     }

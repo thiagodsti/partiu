@@ -155,6 +155,21 @@ Forward port `25` (or `2525`) on your router/firewall to the server running Part
 - [uv](https://docs.astral.sh/uv/) — Python package manager (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - Node.js 24+
 
+### Quick start (both services at once)
+
+```bash
+bash run.sh
+```
+
+`run.sh` starts the backend and frontend in parallel and stops both when you press `Ctrl+C`.
+
+| Service | URL |
+|---|---|
+| Backend API | http://localhost:8000 |
+| Frontend dev server | http://localhost:5173 |
+
+> **Note:** Session cookies require HTTPS (`Secure` flag). For local development, access the app via a reverse proxy with a self-signed certificate or a tool like [mkcert](https://github.com/FiloSottile/mkcert).
+
 ### Backend
 
 ```bash
@@ -169,8 +184,6 @@ cd frontend
 npm install
 npm run dev   # Vite dev server at localhost:5173
 ```
-
-> **Note:** Session cookies require HTTPS (`Secure` flag). For local development, access the app via a reverse proxy with a self-signed certificate or a tool like [mkcert](https://github.com/FiloSottile/mkcert).
 
 ### Tests
 

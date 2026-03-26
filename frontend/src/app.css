@@ -124,7 +124,7 @@ body {
   color: var(--text-primary);
   line-height: 1.5;
   min-height: 100vh;
-  padding-bottom: var(--tab-height);
+  padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom));
   overflow-x: clip;
 }
 
