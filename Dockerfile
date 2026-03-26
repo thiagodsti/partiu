@@ -1,16 +1,9 @@
-# ---- Icon generation (pure Python stdlib, no extra deps) ----
-FROM python:3.12-slim AS icon-builder
-WORKDIR /app
-COPY generate_icons.py ./
-RUN python generate_icons.py
-
 # ---- Frontend build ----
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci --silent
 COPY frontend/ ./
-COPY --from=icon-builder /app/frontend/public/ ./public/
 RUN npm run build
 
 # ---- Backend / final image ----
