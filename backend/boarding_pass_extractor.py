@@ -31,6 +31,26 @@ _CHECKIN_SUBJECTS = [
     "embarque online",
 ]
 
+# Subject keywords that indicate a purchase/booking confirmation — NOT a boarding pass email.
+# These take priority and prevent false positives when the body casually mentions "boarding pass"
+# as part of travel tips (e.g. "do check-in to get your boarding pass").
+_NOT_CHECKIN_SUBJECTS = [
+    "comprou sua viagem",
+    "você comprou",
+    "sua compra",
+    "purchase confirmation",
+    "booking confirmation",
+    "order confirmation",
+    "comprovante",
+    "your booking",
+    "your itinerary",
+    "itinerário",
+    "confirmação de compra",
+    "confirmacion de compra",
+    "your receipt",
+    "payment confirmation",
+]
+
 # Keywords used to identify barcode images inside HTML emails
 _BARCODE_IMG_KEYWORDS = {"barcode", "qr", "aztec", "boarding", "2d", "pdf417", "ticket", "qrcode"}
 
@@ -38,20 +58,68 @@ _BARCODE_IMG_KEYWORDS = {"barcode", "qr", "aztec", "boarding", "2d", "pdf417", "
 def is_checkin_email(email_msg) -> bool:
     """Return True if the email looks like a check-in confirmation with a boarding pass."""
     subject = (email_msg.subject or "").lower()
+
+    # Purchase/booking confirmation emails often mention "boarding pass" in their body as a tip
+    # ("do check-in to get your boarding pass"), so reject them early based on subject.
+    if any(kw in subject for kw in _NOT_CHECKIN_SUBJECTS):
+        return False
+
     if any(kw in subject for kw in _CHECKIN_SUBJECTS):
         return True
-    # Also flag emails whose body mentions a boarding pass (even if subject doesn't)
+
+    # Body-based detection: only trigger when the email body explicitly says the boarding pass
+    # is ready/attached (not just mentioned as a future action).  Using "passe de embarque" only
+    # (not "cartão de embarque") because the latter appears routinely in purchase confirmations
+    # as travel tips ("you'll get your cartão de embarque at check-in").
     body = (email_msg.body or "").lower()
-    if any(kw in body for kw in ("boarding pass", "boarding card", "passe de embarque", "cartão de embarque")):
+    if any(kw in body for kw in ("boarding pass", "boarding card", "passe de embarque")):
         if email_msg.pdf_attachments:
             return True
     return False
 
 
+def _pdf_page_has_barcode(page) -> bool:
+    """
+    Return True if the PDF page appears to contain a boarding pass (QR/barcode or BCBP text).
+
+    Checks:
+    1. Page contains an image object that looks like a barcode (narrow tall or narrow wide ratio).
+    2. Page text contains a BCBP string (starts with 'M' + digit, as per IATA BCBP standard).
+    3. Page text contains barcode-type keywords.
+    """
+    # Check for BCBP text (IATA Bar Coded Boarding Pass standard)
+    text = page.get_text()
+    if re.search(r"M[1-9][A-Z /]{10}", text):
+        return True
+
+    # Check for barcode-related keywords in page text
+    text_lower = text.lower()
+    if any(
+        kw in text_lower
+        for kw in ("boarding pass", "boarding card", "passe de embarque", "cartão de embarque")
+    ):
+        return True
+
+    # Check image dimensions — barcode/QR images are typically very square or have a high
+    # aspect ratio (wide barcode) or square (QR/Aztec).  Exclude tiny thumbnails.
+    for img_info in page.get_images(full=True):
+        w, h = img_info[2], img_info[3]
+        if w < 50 or h < 50:
+            continue
+        ratio = max(w, h) / max(min(w, h), 1)
+        # QR/Aztec: roughly square (ratio < 1.5); linear barcodes: very wide (ratio > 3)
+        if ratio < 1.5 or ratio > 3:
+            return True
+
+    return False
+
+
 def extract_from_pdf(pdf_bytes: bytes) -> list[bytes]:
     """
-    Render each page of a PDF as a PNG image at 2× resolution.
-    Returns a list of PNG image bytes, one per page.
+    Render boarding-pass pages of a PDF as PNG images at 2× resolution.
+
+    Only pages that appear to contain a barcode, QR code, or BCBP text are included.
+    Returns a list of PNG image bytes, one per qualifying page.
     """
     try:
         import fitz  # pymupdf
@@ -65,6 +133,9 @@ def extract_from_pdf(pdf_bytes: bytes) -> list[bytes]:
         mat = fitz.Matrix(2, 2)  # 2× scale for better scan quality at the gate
         for page_num in range(len(doc)):
             page = doc[page_num]
+            if not _pdf_page_has_barcode(page):
+                logger.debug("PDF page %d skipped — no barcode/BCBP content detected", page_num)
+                continue
             pix = page.get_pixmap(matrix=mat)
             images.append(pix.tobytes("png"))
         doc.close()
@@ -107,12 +178,14 @@ def extract_from_html(html: str) -> list[bytes]:
             continue
 
         # Check attributes for barcode-related keywords
-        attrs = " ".join([
-            str(img.get("alt", "")),
-            str(img.get("id", "")),
-            " ".join(img.get("class") or []),
-            str(img.get("title", "")),
-        ]).lower()
+        attrs = " ".join(
+            [
+                str(img.get("alt", "")),
+                str(img.get("id", "")),
+                " ".join(img.get("class") or []),
+                str(img.get("title", "")),
+            ]
+        ).lower()
 
         has_keyword = any(kw in attrs for kw in _BARCODE_IMG_KEYWORDS)
         candidates.append((img_bytes, has_keyword, len(img_bytes)))
@@ -141,7 +214,7 @@ def extract_boarding_pass_images(email_msg) -> list[dict]:
     """
     results = []
 
-    for pdf_bytes in (email_msg.pdf_attachments or []):
+    for pdf_bytes in email_msg.pdf_attachments or []:
         pages = extract_from_pdf(pdf_bytes)
         for page_num, img_bytes in enumerate(pages):
             results.append({"image_bytes": img_bytes, "source_page": page_num})

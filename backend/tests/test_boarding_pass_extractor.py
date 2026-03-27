@@ -3,6 +3,7 @@
 import base64
 
 import pytest
+from conftest import load_eml_as_email_message
 
 from backend.boarding_pass_extractor import (
     extract_from_html,
@@ -71,6 +72,56 @@ class TestIsCheckinEmail:
 
     def test_case_insensitive_subject(self):
         msg = _make_email(subject="MOBILE BOARDING PASS")
+        assert is_checkin_email(msg) is True
+
+    # ------------------------------------------------------------------
+    # Purchase / booking confirmation emails must NOT be flagged
+    # ------------------------------------------------------------------
+
+    def test_purchase_confirmation_with_cartao_de_embarque_in_body_not_checkin(self):
+        """LATAM purchase emails mention 'cartão de embarque' as a tip, not as the pass itself."""
+        msg = _make_email(
+            subject="Você já comprou sua viagem a São Paulo",
+            body="faça check-in e obtenha seu cartão de embarque digital.",
+            pdf_attachments=[b"%PDF-1.4 fake comprovante"],
+        )
+        assert is_checkin_email(msg) is False
+
+    def test_comprovante_subject_not_checkin(self):
+        msg = _make_email(subject="Comprovante de viagem LA1234")
+        assert is_checkin_email(msg) is False
+
+    def test_booking_confirmation_subject_not_checkin_even_with_boarding_pass_body(self):
+        msg = _make_email(
+            subject="Your booking confirmation",
+            body="You will receive your boarding pass soon.",
+            pdf_attachments=[b"%PDF-1.4 fake"],
+        )
+        assert is_checkin_email(msg) is False
+
+    def test_itinerary_subject_not_checkin(self):
+        msg = _make_email(
+            subject="Your itinerary for LA8094",
+            body="boarding pass will be issued at check-in.",
+            pdf_attachments=[b"%PDF-1.4 fake"],
+        )
+        assert is_checkin_email(msg) is False
+
+    def test_cartao_de_embarque_body_no_pdf_not_checkin(self):
+        """Body-only match (no PDF) should not trigger."""
+        msg = _make_email(
+            subject="Preparing for your trip",
+            body="Lembre-se de obter seu cartão de embarque.",
+        )
+        assert is_checkin_email(msg) is False
+
+    def test_passe_de_embarque_body_with_pdf_still_triggers(self):
+        """'passe de embarque' in body + PDF is a valid boarding pass indicator."""
+        msg = _make_email(
+            subject="Prepare-se para voar",
+            body="Seu passe de embarque está em anexo.",
+            pdf_attachments=[b"%PDF-1.4 fake"],
+        )
         assert is_checkin_email(msg) is True
 
 
@@ -158,3 +209,38 @@ class TestExtractFromHtml:
         html = f'<img src="data:image/png;base64,{b64}" id="qrcode-image"/>'
         result = extract_from_html(html)
         assert result == [img_bytes]
+
+
+# ---------------------------------------------------------------------------
+# Real-world fixture: LATAM purchase confirmation false-positive regression
+# ---------------------------------------------------------------------------
+
+
+class TestLatamPurchaseConfirmationNotCheckin:
+    """
+    Regression test for a LATAM "Você já comprou sua viagem" purchase confirmation
+    email that was incorrectly flagged as a boarding pass email.
+
+    The email body contains "cartão de embarque" as a travel tip
+    ("Faça Check-in e obtenha seu cartão de embarque digital") and has a PDF
+    attachment (purchase voucher) — both conditions that used to trigger
+    is_checkin_email().  It must NOT be treated as a boarding pass email.
+
+    Fixture: fixtures/latam_purchase_confirmation_anonymized.eml
+    """
+
+    @pytest.fixture(scope="class")
+    def latam_purchase_email(self):
+        return load_eml_as_email_message("latam_purchase_confirmation_anonymized.eml")
+
+    def test_not_flagged_as_checkin(self, latam_purchase_email):
+        assert is_checkin_email(latam_purchase_email) is False
+
+    def test_has_pdf_attachment(self, latam_purchase_email):
+        """Confirm the fixture does have a PDF (so it's a meaningful regression test)."""
+        assert latam_purchase_email.pdf_attachments
+
+    def test_body_contains_cartao_de_embarque(self, latam_purchase_email):
+        """Confirm the triggering keyword is present in the body (so the fix is exercised)."""
+        body = (latam_purchase_email.body or "") + (latam_purchase_email.html_body or "")
+        assert "cartão de embarque" in body.lower() or "cartao de embarque" in body.lower()

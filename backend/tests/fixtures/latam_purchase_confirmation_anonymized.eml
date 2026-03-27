@@ -1,0 +1,1399 @@
+Delivered-To: bob.test@example.com
+Received: by 2002:a05:6022:a19a:b0:ec:2c9e:2aab with SMTP id cy26csp1326149lab;
+        Sun, 8 Feb 2026 08:49:16 -0800 (PST)
+X-Received: by 2002:a05:620a:1a8d:b0:8c9:e98a:d9f7 with SMTP id af79cd13be357-8caef4ff5e7mr1128890685a.25.1770569355299;
+        Sun, 08 Feb 2026 08:49:15 -0800 (PST)
+ARC-Seal: i=1; a=rsa-sha256; t=1770569355; cv=none;
+        d=google.com; s=arc-20240605;
+        b=brQQJYTHscNZozxycV/X3cYwvfBWOS1OjiVPrYsT/fEmwd7aKgA2jNPkmqERMjdJbV
+         qqBqKR6psYrZWg8iXlafd68PGT94N0ta5w5O6iBRrtewhM5oyF+HdYvmY4X7ZVBXSUPb
+         T22FjSgZhdH857BukV7qYTHJUEKRWrfSozn0LokquKCuusXD2pAjS+CD80tP57wcn3wW
+         dKJ6gv8tMBK+IHXQYcI1Zg1dY4+eLvSp6PW4qAtnOItSVi7OqQnCTuJAIcqsu/zwt6dC
+         Jc2DDbjUOa/nD9sZ5zSx/yPIPYpFWjnjyHEd9InStEtHTgWR0Uh1LFrNOAuX4KT+J5Kg
+         iWmw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=feedback-id:message-id:reply-to:mime-version:list-help:date:subject
+         :to:from:dkim-signature:dkim-signature;
+        bh=1jR3D27vOVFL+bsx1rYVF67qeQsEHi8DGJBqvjLAYyk=;
+        fh=OtmFsXjUWJKnGNaegl6Vbomu65I3xxIjAAClGuwQW5o=;
+        b=gW68RAq5FngXeHroRrmRaeXJVxmuFYiS99sRLGyNVst/W22lDwQsNXv90UdgRQ7v/4
+         I2fLG5A48R8ZRZFjxYEeHGRj6MQ5hyHfyBOfPtps7A+sVJ9b6XkoLj6idwn2LYgYmIiF
+         TC0VAb0vXMoobXS+UmhqQQN3cBiHtK7exnFnyBtZLzfgtDrkNR+Ze8ANc3dotxH7fbLq
+         rkxVCZCUhceNXHzQ6htkHPvUf5+f9v0Z4gOBxNpJ4uSwEI+7QCXm39SePfPjrWEBCIyI
+         cW+k3FXLlTyKJs0o+ge7P5maGoF4HQR00CFKNMmeuDdTHEtGUj6itijZeutGXOam+qC7
+         9Z7g==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@info.latam.com header.s=mc48 header.b=E5EgzJDv;
+       dkim=pass header.i=@s7.y.mc.salesforce.com header.s=fbldkim7 header.b=19goTL1i;
+       spf=pass (google.com: domain of bounce-swkuv2nyh3tuddbowjbtpqxupm.70246@bounce.info.latam.com designates 13.111.188.155 as permitted sender) smtp.mailfrom=bounce-SWKUV2NYH3TUDDBOWJBTPQXUPM.70246@bounce.info.latam.com;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=info.latam.com
+Return-Path: <bounce-SWKUV2NYH3TUDDBOWJBTPQXUPM.70246@bounce.info.latam.com>
+Received: from mta.info.latam.com (mta.info.latam.com. [13.111.188.155])
+        by mx.google.com with ESMTPS id af79cd13be357-8cafa4b6d78si786651985a.354.2026.02.08.08.49.14
+        for <BOBDS.TI@gmail.com>
+        (version=TLS1_2 cipher=ECDHE-ECDSA-AES128-GCM-SHA256 bits=128/128);
+        Sun, 08 Feb 2026 08:49:15 -0800 (PST)
+Received-SPF: pass (google.com: domain of bounce-swkuv2nyh3tuddbowjbtpqxupm.70246@bounce.info.latam.com designates 13.111.188.155 as permitted sender) client-ip=13.111.188.155;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@info.latam.com header.s=mc48 header.b=E5EgzJDv;
+       dkim=pass header.i=@s7.y.mc.salesforce.com header.s=fbldkim7 header.b=19goTL1i;
+       spf=pass (google.com: domain of bounce-swkuv2nyh3tuddbowjbtpqxupm.70246@bounce.info.latam.com designates 13.111.188.155 as permitted sender) smtp.mailfrom=bounce-SWKUV2NYH3TUDDBOWJBTPQXUPM.70246@bounce.info.latam.com;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=info.latam.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=mc48; d=info.latam.com;
+ h=From:To:Subject:Date:List-Help:MIME-Version:Reply-To:Message-ID:Content-Type;
+ i=info@info.latam.com;
+ bh=1jR3D27vOVFL+bsx1rYVF67qeQsEHi8DGJBqvjLAYyk=;
+ b=E5EgzJDv4eWHwksnFwWBrNIpwoMjnoYoy4XlnkEA33EOq0vgnFCpo5v4noIV7VzAxbjfBeu8RFkP
+   742mvAHjhva8HY9Fs1Hq/CA6KkqBh6ADBhQQJr2NXlBbE1c35gj4e/lZgm3E7CIZpgeKpQxw4t24
+   HloG6nOj3bK/xw3VhjWivCY5kl4kGODer2RMZp3VJ5V6ayg1Al6eXo1HLor5w1+mIdf/82ydX0qa
+   I4/hSEBlOwWSExcgHJtC0h/54w41qvQ1KRuOMR9oc5/QiUyZ1vWG7Fk4KRgDvoKrr9FEYMU4QLWn
+   QTJ4huElWhcgC3lcx9D6EsswdIm361m8VYU4OA==
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=fbldkim7; d=s7.y.mc.salesforce.com;
+ h=From:To:Subject:Date:List-Help:MIME-Version:Reply-To:Message-ID:Content-Type;
+ bh=1jR3D27vOVFL+bsx1rYVF67qeQsEHi8DGJBqvjLAYyk=;
+ b=19goTL1iBWqbAMzj5y6eOZoXYkS3oMFvbajbsDP+nHmavVv+XP3B9emKrPq5GuWZj8ay22UKL5cm
+   c2SrANSJv3NMpu+2LYob9YDfwVOk7Uwtyg9qrTlGnYrE+MXHyNW1KD8s/+sXtUVF05SH05QEV3Rn
+   T6ddad7W4OhOW2muAQIa/uZl6NtNfioCsY2vOjHoxGPvpxt6NpA1iYJh/VVRvSTBb3tuOiLzTt5m
+   XEnHWHkr/Ubn4hpwY1JP0G0SUWdw5+gz63YfwXNmsSJJCePy9PaeH459fZqmDv3rFGhgw73XAvSY
+   tKhYcodnUQ7pprtga+YABVubM2JwsTn6GQq61w==
+Received: by mta.info.latam.com id hh2v8m2fmd4h for <BOB.TEST@EXAMPLE.COM>; Sun, 8 Feb 2026 16:49:14 +0000 (envelope-from <bounce-SWKUV2NYH3TUDDBOWJBTPQXUPM.70246@bounce.info.latam.com>)
+From: "LATAM Airlines" <info@info.latam.com>
+To: <BOB.TEST@EXAMPLE.COM>
+Subject: =?UTF-8?Q?Voc=C3=AA_j=C3=A1_comprou_sua_viagem_a_S=C3=A3o_Paulo?=
+Date: Sun, 08 Feb 2026 10:49:11 -0600
+List-Help: <https://click.info.latam.com/subscription_center.aspx?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtaWQiOiI1MTgwMDQwMTAiLCJzIjoiOTgxMDUzMTM3IiwibGlkIjoiNjg5ODQiLCJqIjoiNjI3ODIzMiIsImpiIjoiMjEyMDAiLCJkIjoiNzAyNDYifQ.5rHkiXes4tkQv3ECVh0H9UQXiDEuwy7sa0i2fn-YjCs>
+MIME-Version: 1.0
+Reply-To: "EBIZ" <reply-EUTP4VLJIODUTG74ODMZQPOOZE.70246@info.latam.com>
+X-SFMC-Stack: 7
+x-job: 518004010_6278232
+Message-ID: <aaaaaaaa-0000-0000-0000-000000000000@test.local>
+Feedback-ID: 518004010:6278232:13.111.188.155:sfmktgcld
+Content-Type: multipart/mixed;
+	boundary="XsjXJ9IkgBeb=_?:"
+
+This is a multi-part message in MIME format.
+
+--XsjXJ9IkgBeb=_?:
+Content-Type: multipart/alternative;
+	boundary="wGIBqlTVA8FX=_?:"
+
+--wGIBqlTVA8FX=_?:
+Content-Type: text/plain;
+	charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+
+ 
+
+
+
+Não está visualizando bem este email? 
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjNiMjhiOTljLWQzODEtNDY1Mi05YjNkLTNiZGZlYzZhYTliMiIsImRla1ZlcnNpb24iOjEsIml2IjoiejRJOWttc3VjUXFBVUk4OWpFSDMrUT09IiwiY2lwaGVyVGV4dCI6IkFVVHVZNVdJK0FuUFZuZ2FOdWtsUEorN3dIQlNOOTZzckhIM0RweHNudzVBY3p1ZFlyZGtyYVhGNGtKWG1rNDRCblp2Y1dyRTFDWjZsWHVkVXpOVndGMGRwQXVQRExJcHhQOHB3a2pjejRJOWttc3VjUXFBVUk4OWpFSDMrUT09IiwiYXV0aFRhZyI6IlZjQmRIYVFMand5eUtjVC9LY0pJM0E9PSJ9 
+Ver no seu navegador .
+
+
+
+ 
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+ Sua viagem a São Paulo está pronta!
+ 
+
+
+ Nº de compra: 
+ LATESTNUMBER0000
+ 
+
+ Código de reserva: 
+ XXXXXX
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjI2OTk5MWEyLTNkMWQtNGFhOC05ZjI3LWQwNTg2ODU1ZGQwYiIsImRla1ZlcnNpb24iOjEsIml2IjoiT2Z5LzluUEZ2TWhQRjBBbzFmSTZPZz09IiwiY2lwaGVyVGV4dCI6ImkzejR4dis4Q1RqR1lKUjN3T0lxSmNPdFNtVlJMSjM5OW1icHNmbFFsL2JzR2VxY0x5aDRUOExaMGNPYjVJeDYyUXYrZmdnQkhKcDUweFdWS0xkUTVkdlFRa2ZiSE5HTDFHSlBVTDZDT2Z5LzluUEZ2TWhQRjBBbzFmSTZPZz09IiwiYXV0aFRhZyI6IlVPWGIwRUpIMnh6Umk5UmlUMUMrZ2c9PSJ9 
+ Administrar minha viagem
+
+
+ Olá 
+ Bob,
+ 
+ 
+ 
+
+
+ A seguir, daremos todos os detalhes da sua compra. Nos próximos dias vamos entregar todas as informações necessárias sobre sua viagem.
+ 
+
+
+
+
+
+
+ Nos vemos a bordo!
+ 
+
+
+ Equipe LATAM Airlines
+ 
+
+
+ 
+
+
+
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImVjMTYxZTkxLTAwMGEtNGZhNS1iZjQxLTc3MWQ5OTk1NDUxMCIsImRla1ZlcnNpb24iOjEsIml2IjoiejdQTXVITko1RnExamZ0eEJrWDZGdz09IiwiY2lwaGVyVGV4dCI6IlR2bi9HWVdXS1JPZXh5bTlBSWsyVU5hdkxaWTJiVXBzeXJoOStlUlBlSFNaQWIvTVhaS3hvRWlIalJvSFlVTFdjRFIyUnpxRVFmYnBnajhiQVJmdUZhUE5iOWFYTHJTc08veHBTQXRXejdQTXVITko1RnExamZ0eEJrWDZGdz09IiwiYXV0aFRhZyI6IjdoV2p6Vy9XbHk2MHJEdjhhVWdMVmc9PSJ9 
+Prepare sua viagem ·
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImNmMTBhNTIyLWZjZWQtNGRlMy1hYTk1LTQ2ODg3YzdiODJlZCIsImRla1ZlcnNpb24iOjEsIml2IjoiM1pQNEJBQzhvLytiVVZIRVQrRVprdz09IiwiY2lwaGVyVGV4dCI6ImdHNThtRVJIdWVEWU9lT0JhVDJEdVlsZXUySXhvREZyYWw2cGkxV0lmVG9FK0xobGxtQjMyc1hvd0hkZXMyWCszMFBJeldJVm02OG9FemZCTUNjcXlHczNPNTB3QXkwSldTUzNBY0lMM1pQNEJBQzhvLytiVVZIRVQrRVprdz09IiwiYXV0aFRhZyI6IktzaHJOenVkTUFNdENWa2t0d0hDQ3c9PSJ9 
+Minhas viagens ·
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImM5MDgxMWYxLTVlMjgtNDk5My05NDA2LTkwMGQ4M2RhYTc0OSIsImRla1ZlcnNpb24iOjEsIml2IjoibXNvV0ZDUFk5R2lQU0dsaGdISG4yZz09IiwiY2lwaGVyVGV4dCI6ImRNdVFaeW1LN2JJMldyelhYSEJpcG1yNUJ4S1RSeWw2K1l5ek5PQWlSeHlhOHVicFVxMFp2eGNpS25hMGQ4Q1l5cHNvdE9FeHJUV2o3Q0hINWYvTStDTGFOTzZQWG13SE1qa2ZqR2dabXNvV0ZDUFk5R2lQU0dsaGdISG4yZz09IiwiYXV0aFRhZyI6InpQZ2kyalR1ajE1c0J6STVINHhvR1E9PSJ9 
+Que está incluído na tarifa 
+
+
+ Se precisar de ajuda, outras informações ou quiser administrar sua viagem, pode nos escrever:
+ 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImE3NDcyY2RkLTQ1YjktNDZlMS05MmVmLWZiZDBlZmUwNWQ2NyIsImRla1ZlcnNpb24iOjEsIml2IjoiRmx5S3lFWVdrY3hhZDB3bTBMaWQ2Zz09IiwiY2lwaGVyVGV4dCI6IjFlOENpcjA3aUpPTU0wWmhrRXp0TEFpeEU5Tkh1QVp1WmZnbENWUkNQU2tNeVZja2J1U096andlb3Q3Z1U0RkEvSVlheTNQU3RhMG4yR09ReEFzZ1JFQW81NnlicnF0OWsvTDhnWXpGRmx5S3lFWVdrY3hhZDB3bTBMaWQ2Zz09IiwiYXV0aFRhZyI6IklFUkFLT2VzbTY2cmZaUHkvSUdNeFE9PSJ9 
+Escrever pelo WhatsApp 
+
+
+ 
+ 
+
+
+ Esta informação foi útil?
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImQyNmJiMjE0LTlkMTUtNDg1MC1iMjgzLTFjMDBkMzZmODU2NSIsImRla1ZlcnNpb24iOjEsIml2IjoiOVFJcjhCN3M4eHNUYm5tTVFJV2pIdz09IiwiY2lwaGVyVGV4dCI6Im85T291bnVWUnhNeVYyYUJ1ekUrYWRscmJYODZzSVB3T2poWm9nNEJwL2pCSjlXZ1c4ZXo0Wnhrdm52K2l5U1ZEbVJqSGU5NTFXRFdUUjdVVUd6ZjY2ckdQK2VmdEFxSG5sMG1xUEN5OVFJcjhCN3M4eHNUYm5tTVFJV2pIdz09IiwiYXV0aFRhZyI6IjMrdXF4ai9ubjdRS2g1NWRKcWp3c2c9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjYyODE1MTM0LTFmODItNDBiNS1iNTU4LWMzM2M2MmQ5ZWQ2MSIsImRla1ZlcnNpb24iOjEsIml2IjoieFlaVEkvMnNiUGtQaVN4VFNSeFcrdz09IiwiY2lwaGVyVGV4dCI6IjNsUnRudXM0NXJERURjbjJ6VlRXUFZKcXAyc1BWakJWdHl5RnRtTHZYTmxsa2hJYUJJZm1yOUEyU25iUVdYRWxUcmE2OThvRUhIVGd0M005Y3hjajJMZGZUOFF5TWRpTllrQXAvVnBmeFlaVEkvMnNiUGtQaVN4VFNSeFcrdz09IiwiYXV0aFRhZyI6Ikk5aTNYMC9FTWpIWWpXSkFLZjFhWHc9PSJ9 
+
+Sim
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImFkMGQxNWIwLWZjYjktNDdiOS1hMjU1LWM3NWZmYzQ4NGYzNCIsImRla1ZlcnNpb24iOjEsIml2IjoiQlkvbmM1WUY3bHNKbHAzRlRNTVB3UT09IiwiY2lwaGVyVGV4dCI6InErbVhZVndNT2hoNUtldWExVk14anBJVWJzWTdjVjdxYUFWZHRGM1hsZVo2M2JOWkN6WTYrZU9uKzZ3YlQ3MWZhdzhBbnp2NHFFb3d0azdMQzYxRmQ3QjFIT2h6bG81WURnZG9zTUtwQlkvbmM1WUY3bHNKbHAzRlRNTVB3UT09IiwiYXV0aFRhZyI6IlJYZXdkUnpvYzVhT1dBNEhhTERDcVE9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImM4ZTBmNmYzLTVkNGUtNGMyMi04NjRkLTY0ZjU1MzYzZTU1ZSIsImRla1ZlcnNpb24iOjEsIml2IjoiRi9RRlFDTzlOR0IxbTNKNmYxY21KZz09IiwiY2lwaGVyVGV4dCI6ImhLNStIeEk0STA0eGN3SmdrMGdZYWJNRW04TmVUcndwOVJsNHlDSm9ETy9aMXcxNW9lalFhWGNFdE15TlUzM3A1djVPbDFDeTVLVWJtcXRJVENCQ1BMSElHSEt3ZUtJb0E5K3NkK2c5Ri9RRlFDTzlOR0IxbTNKNmYxY21KZz09IiwiYXV0aFRhZyI6IlFqeXh5Qmh5c0hpaUtBUGZySGZvUFE9PSJ9 
+
+Não
+
+
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImU1NTVlYTNjLWVkNGMtNGUyMS1iYjIwLThkNmZjNWJmZDU5MiIsImRla1ZlcnNpb24iOjEsIml2IjoiVkpreXFhbnM4alBPSDFaZXR1STVFZz09IiwiY2lwaGVyVGV4dCI6IkxiSWxwc2RQeCtiNmpwVEdaZ2hPSlB5eWpRcVB0emZhanY4QjdXYzBhaUxRZi96Z0g0dU5rS2syNWtqZDNacXI4c0ZScFpWY0t3SjNNdTZkS3ljYzdEMFVHMTJ6ZGxRY2IvTDRQeTErVkpreXFhbnM4alBPSDFaZXR1STVFZz09IiwiYXV0aFRhZyI6IkhPdzlGQnRkczNaVUhHL3krRDh0Zmc9PSJ9 
+Prepare sua viagem ·
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjIxZmI1NmYyLTE5OTEtNGJhZC05YjVhLTI5ZWJlYjNmOTU3YiIsImRla1ZlcnNpb24iOjEsIml2IjoiTEUxS0hNT2JybVhwenFkbHZLZ1d1QT09IiwiY2lwaGVyVGV4dCI6IkhjaDVGV3kzSmlhUXUyYUJFQXl0SldHN0VpM2ljaEtHcVZZeFVzM3c5OVhsOXgvY2xlZGVKQXU0N3liQVYvVUtOdHhXOEhudzFJbk14QitUQ0xSZlk5V0Zpalh3WXdUMERManZQWnc1TEUxS0hNT2JybVhwenFkbHZLZ1d1QT09IiwiYXV0aFRhZyI6IlgyUFZoWW8xOEdNRTlBeTQ3ejJjT1E9PSJ9 
+Minhas viagens ·
+https://click.info.latam.com/?qs=eyJkZWtJZCI6Ijc1MzVjNjE0LWM1NzMtNGE4ZC1iZjQ4LWIxMTk1MGQwNTE3YyIsImRla1ZlcnNpb24iOjEsIml2IjoiSjNjaTRiNXc0TitVRG9iTzdYeTFQUT09IiwiY2lwaGVyVGV4dCI6ImkzVXJIYXNOenZIazRZSk1UOXFNb2hEK3l1bERFZ2xxYWZkNWQ4Q0lGaUN2RXFSNWtVQTBGb09MOGNHTnIzK09zRHBKampxOVRDS1lPQnQyaE9MQlJBV1locUUzZHZOSjFYSWVzU0h5SjNjaTRiNXc0TitVRG9iTzdYeTFQUT09IiwiYXV0aFRhZyI6IndVUUZtSWFoTjNielNkVnlIckVoOGc9PSJ9 
+Que está incluído na tarifa 
+
+
+ Se precisar de ajuda, outras informações ou quiser administrar sua viagem, pode nos escrever:
+ 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjljYmZhODg0LTk4MDYtNGNjYy1iMGZiLWYzNzAwY2M5YjJhOSIsImRla1ZlcnNpb24iOjEsIml2IjoiMUhIMFU5ZFF5bXROam1taUhDN1c3dz09IiwiY2lwaGVyVGV4dCI6IkNtM1BVSDFRY1QybTh0K0tGNHhhSEVKSUhTMDZ6Um5wWGllMXNaM3RlNmw0bFhsVEhKNzZuTC8vbmlRS251NWZ0VWl3VUtjUWdaeVpyZmhMaHpmdktOdlBJMkh2cVpycmh0M3lSandmMUhIMFU5ZFF5bXROam1taUhDN1c3dz09IiwiYXV0aFRhZyI6Ijd5amJ6eU5oNzZtYTY0YmQ4a1k4SHc9PSJ9 
+Escrever pelo WhatsApp 
+
+
+ 
+ 
+
+
+ Esta informação foi útil?
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImYxYTFmYzkxLTNiYWUtNGY1ZC05NDFiLWJhYWFiNmZiNzViNCIsImRla1ZlcnNpb24iOjEsIml2IjoiWm5lMXhBRzd2Ri96aGFVMzg1M3U0Zz09IiwiY2lwaGVyVGV4dCI6InJYSjdZVFFFM2dsUUhOTkJqMkZXbFN1ekFwUURpMllVQ0wrbVZtQ0Z4T0VuKzNyK2lncDA0emlIRDN0VHRoZE5ZdjV5L1VUb0JhVlUvby8yd2ZDRmtKbWhQS09CcE5MV1I4Q2puMmo4Wm5lMXhBRzd2Ri96aGFVMzg1M3U0Zz09IiwiYXV0aFRhZyI6ImhaQ1pvVHlqZ2FUUzFrZkFvNTlvL0E9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjljNWNmY2FjLTUzYmEtNGE0MC05OTNiLTEzYmI2MTg4M2ZjMCIsImRla1ZlcnNpb24iOjEsIml2IjoiQzZZYVZESVVWdndxN255a1YxYXlQQT09IiwiY2lwaGVyVGV4dCI6IkNWUHFOK1BpT0d0V1pReXlidnBGcmQ5K2pJMlRMZGNZNGw4YWoyYnc5RDhQT0xId2wxNUlxaHJCeUxrc28wSkNJenc2OCs4WExwcTM2cTczSlNGRWR3RmdwVlJZeTB2WXExNjE5MWFiQzZZYVZESVVWdndxN255a1YxYXlQQT09IiwiYXV0aFRhZyI6IlJIY0JZS1ZVV010TDJLdGV0ZmRXbXc9PSJ9 
+
+Sim
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjdiMThlZWU2LTI0ODQtNDczMi04ZTdlLWVkMGRlNTdiNjFiNiIsImRla1ZlcnNpb24iOjEsIml2IjoiREZpRi9lclFveFZTRE1QeVFTV09Xdz09IiwiY2lwaGVyVGV4dCI6IlFoMnVpWUd5OWdENjA1L1Q0ck16aDdlaVZmRmlOZjlkdGFIUEM3eHRkWGFQcVVleXVzTG5FdUpLQW5kaktJT2o5SFpNdm05UW1NWm01dkgrZUdWbk1GdS9JMVdRTUFlVTFBNjB2dEovREZpRi9lclFveFZTRE1QeVFTV09Xdz09IiwiYXV0aFRhZyI6Ilp6QmJ2eU5Wa0RBSGxOUU90TDdTZnc9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjU5NGM3NjkxLWNlODMtNDg0OC1hYTRmLTg3M2MwOWU1Y2I0ZSIsImRla1ZlcnNpb24iOjEsIml2IjoiSDArUVBnL05QVktNZWdtUkdmNE00dz09IiwiY2lwaGVyVGV4dCI6IjBPbUhpdTI5VllUZ09lSjZna0t1bC9OZFpnYWFrSHloMDBqeXRvaytPMzErWUQ3RUE2aFhFNEVUU1V1cXdVQy9ka21qN3BCcWRvMDhSMkhZY1dsa2N3My92eGtQNUtJWU1jOUludzRZSDArUVBnL05QVktNZWdtUkdmNE00dz09IiwiYXV0aFRhZyI6IlpITU4vNzhaRCtTaUdESFBTSjhPR0E9PSJ9 
+
+Não
+
+
+
+ 
+
+
+
+
+
+
+Baixe o aplicativo e viaje tranquilo.
+ 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImE5MTI1MmU4LTY2NDMtNGFmOS1hNzJlLWE5YjYyYTIyYTk5MiIsImRla1ZlcnNpb24iOjEsIml2IjoiOWk0WS9NZVZMSWxTQzB0dUR0RFppQT09IiwiY2lwaGVyVGV4dCI6Im4wWVZIb3JkTUl3aHRwdGtFS3NtdmVUMWNjcE5FaEVhQmg2dVA0S3Z6UXkzT0JhSFFjZ2xKa3VGN0hpeHE4V25ZS2w5SDhpTzZ4NXRxdXBrMlI2SGN4S3o1NnFjRW9RZWNuQ3BnY21XOWk0WS9NZVZMSWxTQzB0dUR0RFppQT09IiwiYXV0aFRhZyI6ImgzTVNzK2VxbkJLRUhuSndxWUhKbGc9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6Ijk2YjQxYWE2LTdhZDItNDZlOS04OGU0LWExY2I5MmZhNDM3NyIsImRla1ZlcnNpb24iOjEsIml2IjoiVTNvbnJHR0xOTEdUcnozYm1LWmc2dz09IiwiY2lwaGVyVGV4dCI6IkplSkNJT1hNcUg4SzY1TmtsT2lkc1BxYmNocE0zSzRnKzhlaGd1bXBvQ2MvN08wRXdVQVMwbUFHWjk1QVRCa2MrSlBSR1A1K1U0NUtkWE9HUXNRRFpRNXZhQS9YRUNJYjJ3ODlITTE0VTNvbnJHR0xOTEdUcnozYm1LWmc2dz09IiwiYXV0aFRhZyI6IkEyVU9iMmdQMXhBaUc5c1BQUnpOZUE9PSJ9 
+
+
+
+
+
+ 
+ 
+
+ Esta mensagem é enviada pela LATAM Airlines devido à sua relação comercial com a LATAM.   Por favor, não responda a este email, já que ele é enviado automaticamente e não podemos ver as respostas.
+ 
+
+
+ 
+
+ 
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjA0ODk3MWRkLTFiYzQtNGNiYi1hMmVkLWJjOTZmOGU3ZDFlMiIsImRla1ZlcnNpb24iOjEsIml2IjoiaFBNOU1mY1FOc3U4cStSc0ZLd3hpdz09IiwiY2lwaGVyVGV4dCI6IlU2Zm9zakw1T0VUVUVhMi9JMjMzTUdlZmN4N0VvRkY2ZUNlUWdqSmF0NXk5Y2gvbytoNXBZYWxmSkt6Vkd5T0c1R2JjcDFWKzhiWTM4WDVjUUN5T3JnbHVWVEZWSkd5cHRpNjcvQWZHaFBNOU1mY1FOc3U4cStSc0ZLd3hpdz09IiwiYXV0aFRhZyI6ImpxNEpibFV4VlNSc3FiWXV1L3dIeGc9PSJ9 
+Termos de uso 
+ ·
+ 
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImU1OGNlMzNmLWEzYzctNDMwMy04MmYzLWQ3ZDlhZjdkZjkzYSIsImRla1ZlcnNpb24iOjEsIml2IjoialRnOEZza0RxeFlJMC91clMvUVRGQT09IiwiY2lwaGVyVGV4dCI6IndFRFR0MURrZ3ovMEIwQzRVL1pWSzlheVE4ekpudEhCUEtqK2hQRVpRbmMwNkpwTHluYVBGMFM4NWNNWnZjMndieWxSZWN0QnRaelAya1c4VUo4S2MyZnI4WS9leTE5R2VxUDZVK3ZRalRnOEZza0RxeFlJMC91clMvUVRGQT09IiwiYXV0aFRhZyI6IkNuTm42L0dQM3N0ZlJucWorbFByMEE9PSJ9 
+Políticas de privacidade 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6Ijk2MDBjODE4LTdiMzMtNDM5Yy1hMTM4LTQ3YmNkNTkwZDYyNyIsImRla1ZlcnNpb24iOjEsIml2IjoiUy9vUE5aWGtTRDlvNk9yeWREdnQvdz09IiwiY2lwaGVyVGV4dCI6IjBTRGNyc1VnZHFlK3k3WTVuQ3RTbGtyQnRkeGc4NHczUFVKRms2MWl2ZTB4OWRJUmJ0cjZGVTdaV3JDQnBLRHlWTTRraC9lM0lPSlZjRzgyUkwzVU55cTFHOTIyNmpmZG05eHRDWkhXUy9vUE5aWGtTRDlvNk9yeWREdnQvdz09IiwiYXV0aFRhZyI6IjFEY3F0UnZkdHVvMzNadmNiUW1SMWc9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6Ijc1NjY0YWFhLTVkNWMtNGQxNy04ZGUzLTQ2ZTMzNGU2ODA1MyIsImRla1ZlcnNpb24iOjEsIml2IjoiZTJBMmE1bVovdU91QU05cU5vOE1zQT09IiwiY2lwaGVyVGV4dCI6InR4VFFMMWNPZDZMQmw5Y1F3eVVQTnIwTFdDcWRSUWlpUVA0Sm1zeVRwa1VZTGpDWGhJbWR6L3VVeTFkYXFRUkJJQWx6c29zR0crN2RKMEd3ODJ3LytwL1dlRHlDRXcvTmZ0Tnk3dmx4ZTJBMmE1bVovdU91QU05cU5vOE1zQT09IiwiYXV0aFRhZyI6IlAvcWYxbmc4Z2hNUHpYN1RjdTc1Y1E9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6ImNhMDVjYzNmLWEwNzktNDAxNy05NTkyLTI3Y2JlZWYyY2M3MiIsImRla1ZlcnNpb24iOjEsIml2IjoiTHc3WUp2WkZqczRwY2Z6cll3bkNtZz09IiwiY2lwaGVyVGV4dCI6ImJPTVo2UkMrUFRDbnlSWnhWd2JCTDVRdW5RTitkNEV4QndqU3ExZk9WMHRnTi9nN1Zab09HQkNnRTRnZEJONkhoTE9vaG90cVU5TExRNmpFdmNldmVHdjYyZkY0dmZTSkk5cFpQcDh2THc3WUp2WkZqczRwY2Z6cll3bkNtZz09IiwiYXV0aFRhZyI6InIzaHIrdG54ZUwzMGlTUGFXVDZmTHc9PSJ9 
+
+https://click.info.latam.com/?qs=eyJkZWtJZCI6IjFlMTEwNTFjLTI5OWItNGI5YS05NzE5LWE2MTNjY2Y0MzY0NyIsImRla1ZlcnNpb24iOjEsIml2Ijoidld2dWNIa0x6QmoySVd3blJvSnhjQT09IiwiY2lwaGVyVGV4dCI6IkFjSTE3dDZ0QTUycGFNYUxjcjdwSkgyYzZQZW9mSDA4NWdEVG91UEhVaGhzT1BUa05pQk8vUjh0cnpuS2tBQmRYUWovVURzNjZ3blBPUlZwNFRkUWZ3Nk5hMXEwZm5NM3hMQURJd05hdld2dWNIa0x6QmoySVd3blJvSnhjQT09IiwiYXV0aFRhZyI6IlVIOE9qV3RhdEg1ek44U3dBeU1EV2c9PSJ9 
+
+
+ © 2026 LATAM Airlines Brasil Rua Ática nº 673, 6º andar sala 62, CEP 04634-042 São Paulo/SP
+ 
+
+
+
+ 
+
+
+--wGIBqlTVA8FX=_?:
+Content-Type: text/html;
+	charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<!DOCTYPE html>
+<html class="notranslate" translate="no" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"   xmlns:o="urn:schemas-microsoft-com:office:office"   style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;background-color:#F3F2F6;background-image:none;background-repeat:repeat;background-position:top left;background-attachment:scroll;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;padding-top:0;padding-bottom:0;padding-right:0;padding-left:0;height:100%;width:100%;">
+
+<head>
+  <meta charset="utf-8" content="notranslate" >
+  <!-- utf-8 works for most cases -->
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Forcing initial-scale shouldn't be necessary -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <!-- Use the latest (edge) version of IE rendering engine -->
+  <meta name="x-apple-disable-message-reformatting">
+  <!-- Disable auto-scale in iOS 10 Mail entirely -->
+  <link href="https://www.latam.com/static/latam/images/favicon/LATAM/favicon.ico" rel="icon" type="image/x-icon">
+
+  <!-- CSS Reset : BEGIN -->
+  <style>
+    p, ul, li, h1, h2, h3, h4, h5, h6 {
+      margin-block-start: 0 !important;
+      margin-block-end: 0 !important;
+      margin-inline-start: 0 !important;
+      margin-inline-end: 0 !important;
+      margin: 0 !important;
+    }
+    @media only screen and (max-width: 480px){
+     .fullWithMobile {
+      display:block !important;
+      width:100% !important;
+    }
+    #itinerary_fragment {
+      border-left: none !important;
+      border-right: none !important;
+      border-bottom: 1px solid #F3F2F6;
+    }
+     .promotional-img-banner  #secondTable {
+      padding-top: 16px!important;
+      padding-left: 0!important;
+    }
+    .mobile-padding-bottom-24 {
+      padding-bottom: 24px!important;
+    }
+    .tbl_btn_mobile {
+      width: 100%;
+    }
+      
+    .mobile_hide {
+          display: none !important;
+        }
+      .mobile_hide {
+        min-height: 0;
+        max-height: 0;
+        max-width: 0;
+        overflow: hidden;
+        font-size: 0px;
+      }
+      .desktop_hide,
+      .desktop_hide table {
+        display: table !important;
+        max-height: none !important;
+      }
+      
+      
+  }
+
+  </style>
+  <!-- CSS Reset : END -->
+  
+
+    <style type="text/css">
+      ReadMsgBody{ width: 100%;}
+      .ExternalClass {width: 100%;}
+      .ExternalClass, .ExternalClass p, .ExternalClass span, .ExternalClass font, .ExternalClass td, .ExternalClass div {line-height: 100%;}
+      body {-webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;margin:0 !important;}
+      h1, h2, h3, h4, h5, h6 { margin: 0 !important; }
+      table td { border-collapse: collapse;}
+      img {outline:0;}
+      a img {border:none;}
+      @-ms-viewport{ width: device-width;}
+    </style>
+    <style type="text/css">
+      @media only screen and (max-width: 480px) {
+        .container { width:100% !important; }
+        .mobile-hidden { display:none !important; }
+        .tableBlock {width:100% !important;}
+        .responsive-td {width:100% !important; display:block !important; padding:0 !important; }
+        .fluid, .fluid-centered {width: 100% !important; max-width: 100% !important; height: auto !important; margin-left: auto !important; margin-right: auto !important;}
+        .fluid-centered {margin-left: auto !important; margin-right: auto !important;}
+      }
+      @media only screen and (max-width: 640px) {
+        .container { width:100% !important; }
+        .mobile-hidden { display:none !important; }
+        .fluid, .fluid-centered {width: 100% !important; max-width: 100% !important; height: auto !important; margin-left: auto !important; margin-right: auto !important;}
+        .fluid-centered {margin-left: auto !important; margin-right: auto !important;}
+      }
+    </style>
+    <!--[if mso]>     <style type="text/css">       /* Begin Outlook Font Fix */               body, table, td {                  font-family : Arial;                  line-height : 150%;                  font-size : 16px;                  color : #939598;               }       /* End Outlook Font Fix */     </style>     <![endif]-->
+</head>
+<!-- HEADER -->
+
+
+
+
+
+
+
+
+
+
+<body width="100%"   style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;background-color:#f3f2f6;background-image:none;background-repeat:repeat;background-position:top left;background-attachment:scroll;margin-top:0 !important;margin-bottom:0 !important;margin-right:0 !important;margin-left:0 !important;font-weight:400;font-size:15px;line-height:1.8;color:#5c5c5c;mso-line-height-rule:exactly;height:100%;width:100%;padding-top:0;padding-bottom:0;padding-right:0;padding-left:0;"><style type="text/css">
+div.preheader 
+{ display: none !important; } 
+</style>
+<div class="preheader" style="font-size: 1px; display: none !important;">Confira os detalhes da sua compra</div>
+  <center     style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;width:100%;background-color:#f3f2f6;height:100%;">
+    <table cellpadding="0" cellspacing="0" width="100%" role="presentation"       style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;max-width:650px;padding-top:0;padding-bottom:0;padding-right:8px;padding-left:8px;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+      <tr>
+        <td>
+          <table role="presentation" cellspacing="0" cellpadding="0" width="100%"             style="font-family:Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-spacing:0;border-collapse:collapse;table-layout:fixed;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+            <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;height:24px;">
+            </tr>
+            
+
+
+
+<tr>
+    <td>
+      <p id="seeEmailInBrowserFragment" style="color:#1C143B;text-align: center;padding-bottom: 16px;font-size: 12px;font-style: normal;font-weight: 400;line-height: 13px;">Não está visualizando bem este email? <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjAzMjBlNWRiLTM0MmQtNDIxMy05YzBiLTBjOThkNTc4YzRhNiIsImRla1ZlcnNpb24iOjEsIml2IjoicGVHZEc2V1ZKUHBhWFlzNndVTzJ5Zz09IiwiY2lwaGVyVGV4dCI6IlBzNzhMb2Z5bHNHMXFwL2VPU2VMSVhnZGl0QzI0QUFWaHBxNmIyNEk2TVI3UXdRN0w3eDJOMThQelFhZDg0MWl1QkE4d2I1UkNsUmgrUWZpc2kzaUltSDM3U3pvMzE0R0Z5aWZxRTFncGVHZEc2V1ZKUHBhWFlzNndVTzJ5Zz09IiwiYXV0aFRhZyI6IjRpSmg5KzBzNk45ZUJoY29uNmhOWUE9PSJ9" style="color:#4658DF;text-decoration-line: underline;">Ver no seu navegador</a>.</p>
+
+    </td>
+</tr>
+
+
+
+
+
+            <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+              <td valign="top" class="bg_white"                 style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;background-color:#ffffff;background-image:none;background-repeat:repeat;background-position:top left;background-attachment:scroll;border-top-left-radius:8px;border-top-right-radius:8px;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+                
+
+
+
+
+
+
+
+
+<!-- primer header -->
+<table role="presentation" align="center" style="border-collapse:collapse;margin:0 auto;" cellpadding="0"
+  cellspacing="0" width="100%" class="banner">
+  <tr>
+    <td align="center" style="padding:0;">
+
+      <!-- gradiente -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="padding:0;">
+            <span bgcolor ="#1B0088" background="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/972b12b9-60c3-4079-990a-63fa340dc17c.png" aria-hidden="true" width="100%" height="8"
+              style="display:block;width:100%;max-width:640px;height:8px;line-height:0;border-top-left-radius:8px;border-top-right-radius:8px; background-color:#1B0088 !important;
+                background-image:url('https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/972b12b9-60c3-4079-990a-63fa340dc17c.png');
+                background-repeat:repeat;
+                background-size:auto;">
+              <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6Ijg1NThhZDA1LWNmM2YtNDI3ZC04ZTBkLTlkYzlkNDU2YTY4MyIsImRla1ZlcnNpb24iOjEsIml2IjoiaHU2QVAyb0RUd1I0VTRueVJaSk9hUT09IiwiY2lwaGVyVGV4dCI6InpwTG5Fc0pBNWlCWFZzaEwwVXJ1NUVzaGhHUVNyZEROc3p5eElKcVAvRDJPL1dJVkJUYnJpR2hJRWRiY1B0eUlNSXVlZ0NWd1R0dXlXdHh4cWRBY3NBWlFyNDJGNy9hcmNnSjRIMWM3aHU2QVAyb0RUd1I0VTRueVJaSk9hUT09IiwiYXV0aFRhZyI6IkhMQUdVSytOaGUvMnEzSUNlQjlYT3c9PSJ9" target="_blank"> </a></span>
+          </td>
+        </tr>
+      </table>
+
+      <!-- header 2 -->
+      <!--[if mso]>
+      <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:640pt;height:auto;">
+      <v:fill type="tile" color="#ffffff" src="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/ff148f6f-e398-4e3a-85bf-6351e9cd766b.png" />
+      <v:textbox inset="0,0,0,0">
+      <![endif]-->
+      <table align="center" border="0" cellpadding="0" cellspacing="0" class="content"
+        style="background-color: #ffffff;max-width:640px;border-collapse:collapse;margin:0 auto;" width="100%">
+        <tr>
+          <td
+            background="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/ff148f6f-e398-4e3a-85bf-6351e9cd766b.png"
+            style="padding:0px; background-color:#ffffff;
+                background-image:url('https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/ff148f6f-e398-4e3a-85bf-6351e9cd766b.png');
+                background-repeat:repeat;
+                background-size:auto;">
+            <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjQ5ZjE1NWEwLTc0YWUtNGIyMy05MjBiLTE5ZGEzMzA5MjM4MCIsImRla1ZlcnNpb24iOjEsIml2IjoiMFFsYWE3dG90ZDFoTTNwdUx4YWp4UT09IiwiY2lwaGVyVGV4dCI6InMzM0J4bUE5dkhwSzBXaC8wOEZOa2F3TWM5ZXMzc2VMQUU4dnRodnFDU1VVdDBJUDRSaGd1WG1oQnFLbEVRbExmTDR1L1pvNCtkU2t1bjR2QmRhMVNYZ043L2NmUnRjN2VDZG5hYVdqMFFsYWE3dG90ZDFoTTNwdUx4YWp4UT09IiwiYXV0aFRhZyI6InRVbDREZS8zSDBiWE8zZ25aMm1sb3c9PSJ9" target="_blank"><img alt="LATAM Pass" border="0"
+                class="banner Radius_Mobile"
+                src="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/4cad6042-3c5c-42b9-9e07-75cceaec524f.png"
+                style="display:block;border:0;width:100%;max-width:111px;height:auto; margin: 0 auto; padding:20px 0px;"
+                title="LATAM Airlines" width="111"></a>
+          </td>
+        </tr>
+      </table>
+      <!--[if mso]>
+      </v:textbox>
+      </v:rect>
+      <![endif]-->
+
+      <!-- header 2 -->
+      
+    </td>
+  </tr>
+</table>
+
+
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%"                   style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-spacing:0;border-collapse:collapse;table-layout:fixed;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+                  <!-- END HEADER -->
+
+
+                  <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%;">
+
+
+                   
+
+<tr aria-hidden="true">
+  <td>
+    <table id="destination_imageA_fragment" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:0 0 24px 0">
+      <tr>
+        <td style="width:100%; max-width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+          <img src="https://s.latamairlines.com/images/emails/banners/destinations/iata/gru.png"
+            alt="Imagem referencial do seu destino." width="100%"
+            style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;width:100%; max-width:100%;">
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+
+<tr>
+  <td>
+    <table id="greetings_order_purchase_fragment" width="100%" cellspacing="0" cellpadding="0"
+           border="0" style="padding:0 0 16px 0">
+      <tr>
+        <td style="padding:0 16px">
+          <p width="100%"
+             style="font-family:Trebuchet MS, sans-serif;text-align:center;font-style:italic;font-weight:700;font-size:24px;line-height:37px;color:#10004F;">
+            Sua viagem a São Paulo está pronta!
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td  style="padding:0 16px">
+          <p width="100%" id="flightInfoFragment-PNRFragment"
+             style="padding:24px 16px 8px 16px;font-family:Trebuchet MS, sans-serif;text-align:right;font-style:normal;font-weight:normal;font-size:14px;line-height:24px;color:#5C5C5C;">
+            Nº de compra: <b id="flightInfoFragment-OrderID">
+            LATESTNUMBER0000
+            </b> <br />
+            Código de reserva: <b id="flightInfoFragment-PNR">
+            XXXXXX</b> <br />
+             <a style="font-family:Trebuchet MS,sans-serif;font-size:14px;font-weight:700;color:#4658DF;" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjRmOTlhMTcxLWEzN2ItNGEyMi04NmQyLWU2OGEzZjA2ODhhOSIsImRla1ZlcnNpb24iOjEsIml2IjoiUEJhcXM3UklmRENTZWU3ZjFNWDk5QT09IiwiY2lwaGVyVGV4dCI6IkJkTUdqOW5iNUdBUmloaXNpazJ1aXlWdUZjN1J3MnlHTzF6bk9NbHdDSnRlK2tMc0Y2cFBoT1lOUVllMDduMjVBY2JVS1NYMVJYR3NQbHVJMzNhK2VTWHZ3dlIxekRTTVZMNlU2cjR3UEJhcXM3UklmRENTZWU3ZjFNWDk5QT09IiwiYXV0aFRhZyI6InZua2w3OEwwZGN3MGpGUytsT3ErTUE9PSJ9"> Administrar minha viagem <img height="16px" width="16px" src="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/6d3e82c6-ce84-4a33-ae96-9ead9f435ecf.png" /></a>
+          </p> <br/>
+          <p width="100%"
+             style="padding:0;font-family:Trebuchet MS, sans-serif;font-style:normal;font-weight:normal;font-size:18px;line-height:28px;color:#10004F;">
+            Olá <b id="flightInfoFragment-CustomerName">
+            Bob,
+            </b>
+            
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 16px 0">
+          <p width="100%"
+             style="font-family:Trebuchet MS, sans-serif;font-size: 16px; font-weight: 400; line-height: 24px; letter-spacing: 0.01em; text-align: left;color: #303030">
+            A seguir, daremos todos os detalhes da sua compra. Nos próximos dias vamos entregar todas as informações necessárias sobre sua viagem.
+          </p>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+  <!--
+
+-->
+
+
+  <tr>
+    <td>
+      <table id="itinerary_fragment" width="100%" cellspacing="0" cellpadding="0" border="0"
+             style="padding: 16px;">
+        <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+          <td width="100%"
+              style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+            <table width="100%" cellpadding="0" cellspacing="0"
+                   style="background-color: #FFFFFF;box-sizing:border-box;border-spacing: 0;border-radius: 8px;border: 1px solid #E1E1E1;"
+                   role="presentation">
+              <tr>
+                <td style="background-color:#F3F2F6;border-top-left-radius: 8px;border-top-right-radius: 8px;">
+                  <h3 style="font-family:Trebuchet MS;color: #10004F;font-size: 18px;font-style: normal;font-weight: 700;line-height: 25px;letter-spacing: -0.18px;padding: 12px 16px;text-align:left;margin: 0">
+                  Itinerário da viagem
+                  </h3>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <table border="0" cellpadding="0" cellspacing="0" id="itineraryColumns" style="width: 100%">
+                    <tr>
+                      <td align="center" valign="top">
+                        <!-- style se muestra si roundtrip is off-->
+                         
+                        <table align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width: 100%;padding: 16px;">
+                          
+                          <tr>
+                            <td style="margin: 0;padding: 0;">
+                              <table border="0" cellpadding="0" cellspacing="0">
+                                <tr>
+                                  <td  style="vertical-align: bottom;">
+                                    <table border="0" cellpadding="0" cellspacing="0">
+                                      <tr>
+                                        <td>
+                                          <img src="https://s.latamairlines.com/images/emails/icons/plane-departure.png" width="24" aria-hidden="true" style="max-width:24px;padding-bottom: 4px;"/>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td align="center">
+                                          <img src="https://s.latamairlines.com/images/emails/eim/order-purchase/line-down-short.png" aria-hidden="true" width="6px" style="vertical-align: bottom;"/>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                  <td style="padding: 16px 6px">
+                                    <p style="margin: 0;color: #5C5C5C;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: normal;">
+                                    16 de mar. de 2026
+                                    </p>
+                                    <p style="margin: 0;padding-top:4px;display: flex;align-items: center;color: #303030;font-family: Trebuchet MS;font-size: 20px;font-style: normal;font-weight: 700;line-height: normal;">
+                                    11:45
+                                      <span style="color: #303030;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: normal;padding-left: 8px;width:fit-content;padding-top:4px;    ">Florianópolis </span>
+  
+                                    </p>
+                                    <p style="margin: 0;color: #303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: normal;"> 
+                                    (FLN)
+                                    </p>
+                                      <span style="margin-top:8px;margin-bottom:4px;padding: 4px 8px;border-radius: 100px;border: 0.5px solid #E1E1E1;background: #F3F2F6;display: flex;align-items: center;color: #303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: normal;width:fit-content;">
+                                        <img height="16px" src="https://s.latamairlines.com/images/emails/icons/airline_jj.png" width="" style="padding-right: 4px">LA3357</span>
+                                    
+                                  </td>
+                                </tr>
+                                
+                                <!-- Fin zona de paradas -->
+                                <tr>
+                                  <td style="vertical-align: top;">
+                                    <table border="0" cellpadding="0" cellspacing="0">
+                                      <tr>
+                                        <td align="center" style="vertical-align: top;">
+                                          <img src="https://s.latamairlines.com/images/emails/eim/order-purchase/line-up-short.png" aria-hidden="true" width="6px"/>
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td>
+                                          <img src="https://s.latamairlines.com/images/emails/icons/plane-arriving.png" width="24" aria-hidden="true" style="max-width:24px;padding-top: 4px;"/>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                  <!-- FIX HORA  -->
+                                  <td style="padding: 16px 6px">
+                                    <p style="margin: 0;color: #5C5C5C;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: normal;">
+                                    16 de mar. de 2026
+                                    </p>
+                                    <p style="margin: 0;padding-top:4px;display: flex;align-items: center;color: #303030;font-family: Trebuchet MS;font-size: 20px;font-style: normal;font-weight: 700;line-height: normal;">
+                                    13:10
+                                      <span style="color: #303030;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: normal;padding-left: 8px;width:fit-content;padding-top:4px;">São Paulo</span>
+                                    </p>
+                                  <p style="margin: 0;color: #303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: normal;"> 
+                                    (GRU)
+                                  </p>  
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                        
+                        </table>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="background-color:#F3F2F6; padding: 12px 16px;border-bottom-left-radius: 8px;border-bottom-right-radius: 8px;">
+                  <p style="font-family:Trebuchet MS;color: #303030;text-align: center;font-size: 16px;font-style: normal;font-weight: 400;line-height: 22px;letter-spacing: 0.16px;">
+                  Recomendamos conferir os <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjNkN2E0YmVjLWI3MzgtNDMxOS04YWNhLTUzNDI2MmRiMDRhNiIsImRla1ZlcnNpb24iOjEsIml2IjoiUXN6SGRUanJwZUZPeXlPdzk1YlFDdz09IiwiY2lwaGVyVGV4dCI6IkNxeUV6R055TFdkc0xleExxY0tkYU14Q1V1Y05xdmd1VmhDenRSQktnM0JaNVpsWE9LSTU5a21TbUxxUHhYK011THJXbi96WDAvQkM0TmcrSjZJY0ZyaHVack9zelM2KzFjN05kKy9GUXN6SGRUanJwZUZPeXlPdzk1YlFDdz09IiwiYXV0aFRhZyI6IkhCYTRibWF6ck0wdXZ0WE96WGZ2eFE9PSJ9" style="color: #4658DF;font-family: Trebuchet MS;font-weight: 700;text-decoration-line: underline;">requisitos de viagem</a>. 
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+ 
+
+
+
+<tr>
+    <td>
+      <table class="notranslate" translate="no" id="passengers_information_fragment" width="100%" cellspacing="0" cellpadding="0" border="0"
+             style="padding: 16px; background-color: #FFFFFF">
+        <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+          <td width="100%"
+              style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+            <table width="100%" cellpadding="0" cellspacing="0"
+                   style="background-color: #FFFFFF;box-sizing:border-box;border-spacing: 0;border-radius: 8px;border: 1px solid #E1E1E1; padding: 16px"
+                   role="presentation">
+              <tr>
+                <td>
+                  <table border="0" cellpadding="0" cellspacing="0" style="width: 100%">
+                    <tr>
+                      <td align="center" valign="top" class="responsive-td"
+                        style="width: 50%; ">
+                        <table align="left" border="0" cellpadding="10" cellspacing="0" style="width: 100%;padding:0;" class="mobile-padding-bottom-24">
+                          <tr>
+                            <td valign="top" style="padding: 0">
+                              <h4 style="margin: 0;padding-bottom:24px;color:#10004F;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 140%;">
+                                Lista de passageiros
+                              </h4>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="margin: 0;padding: 0;">
+                              <ul style="margin:0;padding-left:14px;color:#303030;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 400;line-height: 140%;">
+                                
+                                <li>Bob Diniz Da Silveira</li>
+                              
+                              </ul>
+                            </td>
+                          </tr>
+                        </table>
+                        </td>
+                      <td align="center" valign="top" class="responsive-td"
+                        style="width: 50%; ">
+                        <table align="left" border="0" cellpadding="10" cellspacing="0" style="width: 100%;padding:0;">
+                          <tr>
+                            <td valign="top" style="padding: 0">
+                              <h4 style="margin: 0;padding-bottom:24px;color:#10004F;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 140%;">
+                                Administrador da viagem
+                              </h4>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="margin: 0;padding: 0;">
+                              <p class="notranslate" translate="no" style="margin: 0;color:#5C5C5C;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 700;line-height: 140%;">
+                              Bob Diniz Da Silveira
+                              </p>
+                              <p class="notranslate" translate="no" data-address="T****@G****.COM" style="margin: 0;color:#858585;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 400;line-height: 140%;">
+                              T****@G****.COM
+                              </p>
+                              <p style="margin: 0;color:#858585;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 400;line-height: 140%;">
+                              +46 73*****19
+                              </p>
+                              
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  
+  <!-- 
+
+-->
+
+
+<tr>
+  <td>
+    <table id="payment_information_fragment" width="100%" cellspacing="0" cellpadding="0" border="0"
+           style="padding: 16px; background-color: #FFFFFF">
+      <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+        <td width="100%"
+            style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background-color: #FFFFFF;box-sizing:border-box;border-spacing: 0;border-radius: 8px;border: 1px solid #E1E1E1; padding: 16px"
+                 role="presentation">
+            <tr>
+              <td>
+                <h3 style="color: #10004F;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 30px;letter-spacing: -0.18px;margin: 0">
+                  Informação de pagamento
+                </h3>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <table border="0" cellpadding="0" cellspacing="0" id="itineraryColumns" style="width: 100%">
+                  <tr>
+                    <td align="center" valign="top">
+                      <table align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width: 50%;padding:16px 0;">
+                        <tr>
+                          <td valign="top" style="padding: 0">
+                            <h4 style="color: #5C5C5C;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 400;line-height: 140%;letter-spacing: -0.16px;margin: 0; padding-bottom: 4px">
+                              Total:
+                            </h4>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td  style="margin: 0;padding: 0;">
+                            
+                            <p style="color: #303030;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 700;line-height: 140%;letter-spacing: -0.16px;margin: 0">BRL  632,86</p>
+                            
+                          </td>
+                        </tr>
+                      </table>
+                      
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:16px;border-top: 1px solid #E1E1E1">
+                
+                <p style="margin:0;;color:#303030;text-align: center;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 400;line-height: 24px;">
+                  <p>
+                    Você encontrará em anexo o comprovante de compra. 
+                  </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"></td></tr></table>
+
+<!-- 
+
+-->
+
+<tr>
+  <td>
+    <table id="travel_management_fragment" width="100%" cellspacing="0" cellpadding="0" border="0"
+           style="padding: 16px; background-color: #FFFFFF">
+      <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+        <td width="100%"
+            style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background-color:#F3F2F6;box-sizing:border-box;border-spacing: 0;border-radius: 8px;border: 1px solid #E1E1E1;"
+                 role="presentation">
+            <tr>
+              <td style="border-top-left-radius: 8px;border-top-right-radius: 8px;">
+                <h3 style="padding:16px 16px 8px;margin:0;color:#10004F;text-align: center;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 20px; /* 111.111% */letter-spacing: 0.2px;">
+                   Tudo o que você precisa está no Minhas viagens! 
+                </h3>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <table border="0" cellpadding="0" cellspacing="0" style="width: 100%;padding: 8px">
+                  <tr>
+                    <td align="center" valign="top">
+                      <table align="left" border="0" cellpadding="10" cellspacing="0"
+                             style="padding:16px;width: 100%;background-color: #FFFFFF;border-radius: 8px;border: 1px solid #E1E1E1">
+                        <tr>
+                          <td valign="top" style="padding: 0 0 16px 0">
+                            <p style="margin: 0;color:#1C143B;text-align: center;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: 140%;letter-spacing: 0.14px;">
+                              Acesse as informações sobre sua viagem e administre suas compras, remarcações, reembolsos e muito mais. 
+                            </p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="margin: 0;padding: 0;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="width: 100%">
+                              <tr>
+                                <td  align="center">
+                                  <table cellspacing="0" cellpadding="0">
+                                    <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+                                      <td width="100%"
+                                          style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;text-align:justify;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+                                        <table border="0px;" cellspacing="0" cellpadding="0"
+                                               width="100%"
+                                               style="width: 100%;height: auto;text-align: center">
+                                          <tr>
+                                            <td align="center" role="presentation" valign="middle" style="min-width: 246px">
+                                              <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImY5MWVkMWJmLTYxM2EtNDQzMS1iMzY1LTAwY2UxMWQwMzRkMSIsImRla1ZlcnNpb24iOjEsIml2IjoiS3k4cENaUlJOYkhOSHBnQ3JhVEdadz09IiwiY2lwaGVyVGV4dCI6IlNIL25JUC9uazgyNy94cTB0QTB5TGxpUGszMXZlOG5vYTk0bU4yVjVDZ0xpeXZPWEFqbVF0SUlVTGQ2d1Bzc1pXUVhob0ZxT0Nnb1lxTE1UbzF0OHUwUm9uZEJzNk5UVHFUZWNpbFNSS3k4cENaUlJOYkhOSHBnQ3JhVEdadz09IiwiYXV0aFRhZyI6ImZMdEVhSjNRYk9qVTA2azNuSXBVa1E9PSJ9" target="_blank"
+                                                 style="background-color: #E8114B; text-decoration:none;  font-family:Trebuchet MS, sans-serif; font-style:normal; font-weight: 700;font-size:16px;line-height: normal; text-align:center; color:#FFFFFF; padding:12px;display: block;letter-spacing: 0.1px;margin: 0; ;border-radius: 8px"
+                                              >
+                                               Ir para Minhas viagens 
+                                              </a>
+                                            </td>
+                                          </tr>
+                                        </table>
+                                      </td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+<!--
+
+-->
+  <tr>
+   <td>
+<table border="0" cellpadding="0" cellspacing="0" id="faq_fragment" style="padding: 16px; background-color: #FFFFFF" width="100%">
+<p style="font-family: Trebuchet MS,sans-serif !important;font-weight: 700;font-size: 18px;line-height: 140%;color: #10004F;padding-bottom: 16px">
+     Perguntas frequentes</p><tr>
+   <td>
+    <table border="0" cellpadding="0" cellspacing="0" style="width:100%;padding: 16px;border: 1px solid #E1E1E1;border-radius: 8px;" width="100%">
+     
+      <tr style="-ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%;">
+       <td style="font-size: 14px; vertical-align: middle; line-height: 20px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+         
+          <tr>
+           <td>
+            <p style="font-family: Trebuchet MS,sans-serif !important;font-style: normal;font-weight: 700;font-size: 14px;line-height: 21px;letter-spacing: 0.01em;color: #303030;">
+             Em quais casos eu tenho direito a pedir o reembolso da minha passagem por arrependimento?</p></td></tr><tr>
+           <td>
+            <p style="padding-top: 4px;font-family: Trebuchet MS;font-style: normal;font-weight: 400;font-size: 12px;line-height: 18px;letter-spacing: 0.02em;color: #303030;">
+             Como passageiro você tem direito de se arrepender da compra da sua passagem, sempre e quando cumprir as normas e condições de cada país. <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjkxODM5MjE1LWZkZmYtNGVkMy1iYmE1LTFkYmVlNzE1OTM3MiIsImRla1ZlcnNpb24iOjEsIml2IjoiMEdsUlFkeUtpNWUvZUhJTUFIMFFiZz09IiwiY2lwaGVyVGV4dCI6InI5empTcHpQTVI1aG1mVW0wYVhtanU3emRBNGJSU0lrNTkvbVNOYnZzSTRhYnJZaVBVSHJXY2ZJMkM4U2RIK3lqWVJxZVlwa2VxdGNlK3o2OWNHWityeFA3TlgyeVZkeDJpdWJ1Y05MMEdsUlFkeUtpNWUvZUhJTUFIMFFiZz09IiwiYXV0aFRhZyI6Im1mcThUK3pWOXNsWGNkb3JtN25EU3c9PSJ9" style="color: #4658DF;text-decoration: underline">Confira mais detalhes.</a></p></td></tr></table></td></tr></table></td></tr><tr>
+   <td>
+    <table border="0" cellpadding="0" cellspacing="0" style="width:100%;padding: 16px;border: 1px solid #E1E1E1;border-radius: 8px;margin-top: 12px" width="100%">
+     
+      <tr style="-ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%;">
+       <td style="font-size: 14px; vertical-align: middle; line-height: 20px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+         
+          <tr>
+           <td>
+            <p style="font-family: Trebuchet MS,sans-serif !important;font-style: normal;font-weight: 700;font-size: 14px;line-height: 21px;letter-spacing: 0.01em;color: #303030;">
+             Como eu posso remarcar minha passagem?</p></td></tr><tr>
+           <td>
+            <p style="padding-top: 4px;font-family: Trebuchet MS;font-style: normal;font-weight: 400;font-size: 12px;line-height: 18px;letter-spacing: 0.02em;color: #303030;">
+             Dependendo do caso, oferecemos diferentes alternativas se você precisar fazer uma remarcação ou atribuir a passagem a outra pessoa. <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjAyZDAwMzVmLTAxZDUtNDMwNi05YWY2LTc3MWVkZjMxODUwNCIsImRla1ZlcnNpb24iOjEsIml2IjoiUFVhaXF3REFDZ2JYOHU2aEdGTzlPdz09IiwiY2lwaGVyVGV4dCI6IkNRZjZVbGxRazFZQUR2Q0R6aXdyTnQ3S3RqRVJrb29nV1pmc1hWTmZnOUlnTlFZNGtBbFhmWGNoaWNRWW16eUFBWmVVOWk0blVSSUw2TnZ0OW41cDg3UmpSQ25YMGY1cDg3SGk5eEhrUFVhaXF3REFDZ2JYOHU2aEdGTzlPdz09IiwiYXV0aFRhZyI6ImFmTzBZMFFwMTlIK2FmT3g0dmNSNUE9PSJ9" style="color: #4658DF;text-decoration: underline">Confira mais detalhes.</a></p></td></tr></table></td></tr></table></td></tr><tr>
+   <td>
+
+     
+     
+     
+  </p>
+</td></tr>
+</td>
+</tr>
+  
+
+
+
+<style type="text/css">
+@media only screen and (max-width:480px){
+    .responsive-td{width: 100% !important; display:block !important; padding:0% !important;margin:auto !important;}
+    .mobile-margen{padding:5% 10% !important}
+    .mobile-hidden{display: none !important;}
+
+  }</style><!--Banners LTM-->
+
+
+
+
+<tr>
+  <td>
+    <table id="app_banner_fragment" class="promotional-img-banner" width="100%" cellspacing="0" cellpadding="0" border="0"
+           style="padding: 16px; background-color: #FFFFFF">
+      <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+        <td width="100%"
+            style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background-color: #FFFFFF;box-sizing:border-box;border-spacing: 0;border: 1px solid #E1E1E1; padding: 16px"
+                 role="presentation">
+            <tr>
+              <td>
+                <table border="0" cellpadding="0" cellspacing="0" style="width: 100%">
+                  <tr>
+                    <td align="center" valign="top">
+                      <table align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width:50%;height: 200px">
+                        <tr>
+                          <td valign="top" style="padding: 0;vertical-align: middle;">
+                            <table cellspacing="0" cellpadding="0">
+                              <tr>
+                                <td style="padding: 0">
+                                  <img style="max-width: 100%;height: auto;max-height: 200px;" width="285px" aria-hidden="true" height="232px" src= https://s.latamairlines.com/images/emails/app/app-view-pt.png>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                      <table id="secondTable" align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width:50%;padding-left: 16px;min-height: 200px">
+                        <tr>
+                          <td style="padding: 0;">
+                            <table cellpadding="0" cellspacing="0" width="100%">
+                              <tr>
+                                <td style="padding: 0 0 12px 0;">
+                                  <table cellspacing="0" cellpadding="0">
+                                    <tr>
+                                      <td>
+                                        <h4 style="margin:0;color: #10004F;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 120%; ">
+                                          Sua viagem em seu bolso
+                                        </h4>
+                                      </td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="margin: 0;padding: 0 0 12px 0;">
+                                  <p style="color: #303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 700;line-height: 140%;margin: 0">Baixe grátis o app e viaje tranquilo! </p>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="margin: 0;padding: 0;">
+                                  <ul style="padding-left:12px;color: #303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: 140%;">
+                                    <li>Receba informações do seu voo</li>
+                                    <li>Reserve seu assento e adicione bagagem.</li>
+                                    <li>Faça Check-in e obtenha seu cartão de embarque digital.</li>
+                                    <li>Administre sua viagem a qualquer momento.</li>
+                                  </ul>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td>
+                                  <table cellpadding="0" cellspacing="0" width="100%" style="padding-top: 12px">
+                                    <tr>
+                                      <td>
+                                        <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImM1MzY2NTg0LWQxZWUtNDc1MC1iYzQ0LWFjZmFjYTQ0OTMzZSIsImRla1ZlcnNpb24iOjEsIml2IjoiOVhOK0E5WU5BNzM2YUJPbU4xSWxWZz09IiwiY2lwaGVyVGV4dCI6IlZBVFpsVmZVb2h0SzZxc1JIb0laMC9JZzcxbVQvWWlseS8yUGNqTkpTM0EzeG82Ri8yOHdJaWZERXRiZjFuZVFDMkdMbVVaYVZIQWVFQVR2UklMQVhJNFVXSDRxQUwydlQrN0dQK1JROVhOK0E5WU5BNzM2YUJPbU4xSWxWZz09IiwiYXV0aFRhZyI6IndGeU9GRmgrS2dDOXIwL3V4ai9rVUE9PSJ9"><img width="120" height="40" style="height: 40px;width: 120px" src="https://s.latamairlines.com/images/emails/buttons/appstore.png"></a>
+                                      </td>
+                                      <td>
+                                        <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjhlY2Y3ZGM5LTBhYTItNDZiOS1iNzFhLTBlMTdhYjAyZTQ1ZCIsImRla1ZlcnNpb24iOjEsIml2IjoiMHN6dEpOMVl3UEh6TG9CU3phVzZzdz09IiwiY2lwaGVyVGV4dCI6IkQ5ekZuSUdNTmFCNm92NGZ2cTlndWJaQ0Y4Skx0Ly9sODhaWHRvcU9xL25yK2tDeWdoeCtFTURTSXVEdmF6L05aVU1OeGNiYkx5eFBuM2ZZN2M2NjBiejFkenNsQWx1QTFSNTM3MXRlMHN6dEpOMVl3UEh6TG9CU3phVzZzdz09IiwiYXV0aFRhZyI6InV0Rzg5WGM3SlFKYmdOVWVkKzliWGc9PSJ9"><img width="135" height="40" style="height: 40px;width: 135px" src="https://s.latamairlines.com/images/emails/buttons/googleplay.png"></a>
+                                      </td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+
+<tr>
+  <td colspan="0">
+    <table id="one_plus_one_fragment" class="promotional-img-banner" width="100%" cellspacing="0" cellpadding="0" border="0"
+           style="padding: 16px; background-color: #FFFFFF">
+      <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+        <td width="100%"
+            style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-size:16px;line-height:24px;color:#303030;font-style:normal;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background-color: #FFFFFF;box-sizing:border-box;border-spacing: 0;border-radius: 8px;border: 1px solid #E1E1E1; padding: 16px"
+                 role="presentation">
+            <tr>
+              <td>
+                <table border="0" cellpadding="0" cellspacing="0" style="width: 100%">
+                  <tr>
+                    <td align="center" valign="top">
+                      <table align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width:50%;height: 200px">
+                        <tr>
+                          <td valign="top" style="padding: 0;vertical-align: middle;">
+                            <table cellspacing="0" cellpadding="0">
+                              <tr>
+                                <td colspan="0" style="padding: 0">
+                                  <img style="max-width: 100%;height: auto;max-height: 200px;" width="285px" aria-hidden="true" height="232px" src="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/65b9861d-da5f-4ec8-a45d-bb40df1d3b00.jpg">
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                      <table id="secondTable" align="left" border="0" cellpadding="10" cellspacing="0" class="fullWithMobile" style="width:50%;padding-left: 16px;min-height: 200px">
+                        <tr>
+                          <td colspan="0" style="padding: 0;">
+                            <table cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td colspan="0" style="padding: 0 0 12px 0;">
+                                  <table cellspacing="0" cellpadding="0">
+                                    <tr>
+                                      <td colspan="0">
+                                        <img width="40px" aria-hidden="true" height="40px" src="https://s.latamairlines.com/images/emails/icons/one-plus-one-background.png" alt=""
+                                             style="display: block; max-width: 40px;">
+                                      </td>
+                                      <td colspan="0">
+                                        <h4 style="color:#303030;font-family: Trebuchet MS;font-size: 18px;font-style: normal;font-weight: 700;line-height: 120%;margin: 0; padding-left: 10px">
+                                          Compensar para preservar
+                                        </h4>
+                                      </td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td colspan="0" style="margin: 0;padding: 0;">
+                                  <p style="padding-bottom: 8px;color:#303030;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 400;line-height: 140%;margin: 0"><b>É mais fácil preservar “Pteronura brasiliensis” do que falar!</b><br> A LATAM, a companhia aérea mais sustentável das Américas*, convida você a fazer parte do 1+1. Compense suas emissões e ajude a proteger espécies como a ariranha. Seu impacto vale por dois!</p>
+                                  <a style="color: #4658DF;font-family: Trebuchet MS;font-size: 14px;font-style: normal;font-weight: 700;line-height: 20px;letter-spacing: 0.3px;text-decoration-line: underline;" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjEwMzE1YjJlLTU1OTItNGM4Ny04ZWY0LWFmZGMzMjg1NDBiMiIsImRla1ZlcnNpb24iOjEsIml2IjoiaGJ4bEpnTXIvWHdSbldSMURHZ09rQT09IiwiY2lwaGVyVGV4dCI6ImRLMkNjVzJqVUJMbUF0WUxOcFY2L0xhUHJrZHlnYWZmUGkyOFNrYVdHRUtHOEF2eXBQd1k2UGFpRUhUQ1BESEpRUlRiZitYNFFRNUNGQTJtSHo5N2IvalBIaUgwdTczQmJkTmJkejIzaGJ4bEpnTXIvWHdSbldSMURHZ09rQT09IiwiYXV0aFRhZyI6ImUyLzR6eDRoOUx1OXdXM1RXM2M5dHc9PSJ9">Compense seu voo aqui</a>
+                                  <a style="line-height:20px;"
+                                     href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjI1NjRhZGVhLWQxNDEtNDYzNi04NGQ3LWFiZGEyMDVlYzlmNCIsImRla1ZlcnNpb24iOjEsIml2IjoiMzRBMmlseFFIeDZFN1VsUmlZNFJFZz09IiwiY2lwaGVyVGV4dCI6Ik5pWm15N1cyb2dlbjAwVWQ3T2s5bW04WWdCOGQrRnQzWC84TEJvMGFrSlRmYU5kdGlGdXdZckRwZXJLdFNrMjZTQmpYWWhoWWNsUVl3QW5hVW5vaW5sRkNwbFFxUktGMmlvQmhnczBJMzRBMmlseFFIeDZFN1VsUmlZNFJFZz09IiwiYXV0aFRhZyI6IklwNVJRcVpVS2tTaGRvcUFZWUxOQ0E9PSJ9" target="_blank">
+                                    <img aria-hidden="true" style="width:16px;height:16px;vertical-align: middle;display: inline-block;"
+                                         src="https://s.latamairlines.com/images/emails/icon_open_link.png">
+                                  </a>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+
+
+<div style="padding:16px; background-color: #FFFFFF">
+
+
+                                <p width="100%"
+                                    style="text-align: left;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 400;line-height: 140%;color: #5C5C5C;">
+                                    Nos vemos a bordo!
+                                </p>
+                                <p width="100%"
+                                    style="text-align: left;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 700;line-height: 140%;color: #5C5C5C;">
+                                    Equipe LATAM Airlines
+                                </p>
+</div>
+
+
+                  </table>
+
+
+                  <center                     style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;width:100%;background-color:#f3f2f6;height:100%;">
+                    
+
+  <table cellpadding="0" cellspacing="0" width="100%">
+    <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;background-color:#ffffff;">
+      <td style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;max-width:650px;padding-top:0;padding-bottom:0;padding-right:8px;padding-left:8px;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+        <table role="presentation" cellspacing="0" cellpadding="0" width="100%" style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-spacing:0;border-collapse:collapse;table-layout:fixed;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+          <!-- FOOTER -->
+          <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;background-color:#ffffff;">
+            <td width="100%" style="color:#5c5c5c;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;padding:24px 16px 24px 16px;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;mso-table-lspace:0;mso-table-rspace:0;border-spacing:0;border-collapse:collapse;table-layout:fixed;margin: 0 auto;">
+                  <!--ENCUESTA -->
+                  <tr style="border: 1px solid #EEEEEE;width: 100%;">
+                      <td></td>
+                  </tr>
+                  <tr>
+                      <td style="text-align: center" colspan="2">
+                          <center>
+                              <p style="font-family: Trebuchet MS, sans-serif;color:#5c5c5c;line-height:20px;font-size:14px;padding-top:24px;padding-bottom:16px;font-weight: normal;" alt="@surveyA11y">
+                                  Esta informação foi útil?
+                              </p>
+                          </center>
+                      </td>
+                  </tr>
+                  <tr>
+                      <!-- SÍ -->
+                      <td style="text-align: right" colspan="1" width="50%">
+                        <table
+                          style="text-decoration:none;border: 1px solid #F3F2F6;box-sizing:border-box;border-radius:8px;margin-right: 10px;margin-left: auto;border-spacing:0;"
+                          cellspacing="0" cellpadding="0"
+                        >
+                          <tr>
+                            <td width="50%" style="height: 100%;mso-margin-top-alt: 16px;">
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImExN2IyYWRhLTJiNjktNDc1My1hMzRiLTEzZGI5Nzc1MmZkMCIsImRla1ZlcnNpb24iOjEsIml2IjoiK3RKc3hTRkU1cUhqMFNSbFJwRk5kQT09IiwiY2lwaGVyVGV4dCI6Ino0cnd6Vzh3UURIU3Fsc1FSNnhvNXpLOExrbGdzNmlnU3c1WWc2S05YS3VHUG44d1pXV1NpbDdsSVNaU3YxdVpDUWFOSTVoL09aOS92d1phWmNEWks3K2R5K3B0YWNSV3dwZnQ4WmphK3RKc3hTRkU1cUhqMFNSbFJwRk5kQT09IiwiYXV0aFRhZyI6IjJTdS9uY3ZxYlduRVZzS1g3ZkdZMmc9PSJ9">
+                                <img class="icon" src="https://s.latamairlines.com/images/emails/check_positive.png" alt="Si" width="20" height="20" style="vertical-align:middle;padding:10px">
+                              </a>
+                            </td>
+                            <td width="50%" style="height: 100%;text-align: left;vertical-align: center;mso-margin-left-alt: 10">
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImFiZmM1Yjk3LWZkYWYtNDA3My05ZTM0LWQ5MTUyMTU2NzNlZiIsImRla1ZlcnNpb24iOjEsIml2IjoiZE9ROUdGQXJxS0hzeXFmeUlQanVUQT09IiwiY2lwaGVyVGV4dCI6ImlkUkJhUnExVGowSEYzeHdnZmdqcjcvendic3puUEU1M2NYK3hIS1lMcTJEUzJOcy96Z3R4UzBXVU9ieHZ2YzA4Um1rOWlLdENKN0llRDQ0a3Q4UkNBMGJRUTh0VDJCeTJtcVAyR3M3ZE9ROUdGQXJxS0hzeXFmeUlQanVUQT09IiwiYXV0aFRhZyI6IkVRZ05HMEVQTFU5Z2N0cHFqOWhyT3c9PSJ9" style="text-decoration:none;">
+                                <p style="font-family: Trebuchet MS, sans-serif;color:#303030;line-height:100%;margin:0px;padding:10px 10px 10px 0px;">
+                                  <span style="margin: 0px;font-size: 14px;">Sim</span>
+                                </p>
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <!-- NO -->
+                      <td style="text-align: left" colspan="1" width="50%">
+                        <table
+                          style="text-decoration:none;border: 1px solid #F3F2F6;box-sizing:border-box;border-radius:8px;margin-right: auto;margin-left: 10px;border-spacing:0;"
+                          cellspacing="0" cellpadding="0"
+                        >
+                          <tr>
+                            <td width="50%" style="height: 100%;mso-margin-top-alt: 16px;">
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjRjOGI4YTZlLWFiNWQtNDNjNS04ODY2LWExYWNjMDUwZjI0OCIsImRla1ZlcnNpb24iOjEsIml2IjoiY044blo5U0VNVW4zZkRYdXU3VSt6dz09IiwiY2lwaGVyVGV4dCI6IjN0bFZ2R1NmQkhkYWxCSzNOZG1mLzlEdlJ1aG9WZVUyWWFyTE9Sa0hGZXRUblpzY0dhZ1Mxc1g3d0dGNGptMEpOdVdsMjBIdWEvbzhoNkxHc2RxbXVlNWdYTGpWUlRYb3JJSlhyZmF3Y044blo5U0VNVW4zZkRYdXU3VSt6dz09IiwiYXV0aFRhZyI6InBybnVZRnk0MVVVMTZLeUNWNjMyc0E9PSJ9">
+                                <img class="icon" src="https://s.latamairlines.com/images/emails/check_negative.png" alt="No" width="20" height="20" style="vertical-align:middle;padding:10px">
+                              </a>
+                            </td>
+                            <td width="50%" style="height: 100%;text-align: left;vertical-align: center;mso-margin-left-alt: 10">
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjViMzUyZmYwLTBiODctNDlkNy1iNzU0LWZjYmUxMDE4N2YzNyIsImRla1ZlcnNpb24iOjEsIml2Ijoid1NuK05tbEUrRlJIcjU0ZGpvU1Y3QT09IiwiY2lwaGVyVGV4dCI6IlpZU3VzNGpKYjlraU44aUlVSlZML3Qya2U2czZGYjRrL1BJOWZ1akl1dHpCdUJGcGEwYTduTXgrTmFOYnUzRkkwYzh2Y2NsZ3lTajN6RmhTV2pNZE1NeXlDZFdySGg3eVpyQ1l6c0xod1NuK05tbEUrRlJIcjU0ZGpvU1Y3QT09IiwiYXV0aFRhZyI6IkhURE1zZ25WcXg0ZThtYXdtTTdDNFE9PSJ9" style="text-decoration:none;">
+                                <p style="font-family: Trebuchet MS, sans-serif;color:#303030;line-height:100%;margin:0px;padding:10px 10px 10px 0px;">
+                                  <span style="margin: 0px;font-size: 14px;">Não</span>
+                                </p>
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                  </tr>
+                  <tr style="height: 40px">
+                      <td>
+                      </td>
+                  </tr>
+                <tr style="border: 1px solid #EEEEEE;width: 100%;margin-top: 24px">
+                  <td></td>
+                </tr>
+                <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%">
+                  <td width="100%" colspan="2" style="width:100%;color:#303030;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;padding: 24px 8px;font-style:normal;font-weight:normal;font-size:12px;line-height:18px;text-align:center;mso-table-lspace:0;mso-table-rspace:0;letter-spacing:0.06px">
+                    <table align="center" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%">
+                          <p>
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjRlNmViYzNiLTM2NTctNGI1YS1hMWVjLTNmMDlmNTM5NGUyMCIsImRla1ZlcnNpb24iOjEsIml2IjoiaWZXRG43a1lwajR3ZHQrckk4Q3lWdz09IiwiY2lwaGVyVGV4dCI6IkxqMGdRR2lrR2w3TjkzU1dlN0VaaGVLUFYwRVpkZG52QWUwUTBDUTNURTUyYTdEb3dlWmVSY2ZFOGZtUGJQVjcwS1VYNUtmakFGZEowN0VEcFkrTjdNbmkwNGNMdmdHZXVKc2JOK0QxaWZXRG43a1lwajR3ZHQrckk4Q3lWdz09IiwiYXV0aFRhZyI6Impleko0dE9IQzc0Qm5yaWJHemZnOVE9PSJ9"
+                                style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-weight:bold;font-size:12px;line-height:18px;text-decoration-line:underline;color:#303030;"
+                                alt="@prepareYourTripA11y"
+                              >
+                                Prepare sua viagem
+                              </a>
+                              <span style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-family: Trebuchet MS, sans-serif;padding: 0 8px">·</span>
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImU0MDZlNDk1LTgwMmYtNGI5YS1hN2JhLTUyMDkwNTU4YzZhNSIsImRla1ZlcnNpb24iOjEsIml2IjoiRG9objhOTTNGL3plLzZNS2VHcVVNZz09IiwiY2lwaGVyVGV4dCI6Im5INDZ4cFo0cnVrMEw1MVRZZk53bWFrRHl3NE01ZzdhaDdzU2pjc21pd2hETUxkZkhEcUxnMUNzUTNKQTUzY2NEQ25rdWd4aXRsR29mMUl5NXBWSEpNVGYzanI1bXlubUhFMWZpWjQvRG9objhOTTNGL3plLzZNS2VHcVVNZz09IiwiYXV0aFRhZyI6IlJ5VEUzOTQ2K1pzcDVoeE5YNG1lUHc9PSJ9"
+                                style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-weight:bold;font-size:12px;line-height:18px;text-decoration-line:underline;color:#303030;"
+                                alt="@secondDetailA11y"
+                              >
+                                Minhas viagens
+                              </a>
+                              <span style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-family: Trebuchet MS, sans-serif;padding: 0 8px">·</span>
+                              <a target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjgxMGQ0YTUzLTdhOGUtNDI0Yi1iMjJjLWVjNjdiZGVlOTRkZiIsImRla1ZlcnNpb24iOjEsIml2IjoiYXordk9GbEZIYVpoeFR4THhuMjRpUT09IiwiY2lwaGVyVGV4dCI6IjBIRFRKZk5BZVM3dE51bGQ0bWhHNGVXaVU5TEt3TzVJMHlRMnNpUythd2dLZlZ1bU9nME9NNUpLMEFjeFIxTnZKQjlXTWg1ekxpZWJ5bWE4em1tclJFREFQYjhlNkJ4VUZES3ptSWJWYXordk9GbEZIYVpoeFR4THhuMjRpUT09IiwiYXV0aFRhZyI6InEwUkF3RDIvSHVnY1ZCUXlzNWlHMVE9PSJ9"
+                                style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-weight:bold;font-size:12px;line-height:18px;text-decoration-line:underline;color:#303030;"
+                                alt="@fareDetailA11y"
+                              >
+                                Que está incluído na tarifa
+                              </a>
+                            </p>
+                          
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <!-- solo se muestra para los países que tienen delfina -->
+                  <tr>
+                    <td colspan="2">
+                      <table width="100%" border="0" cellpadding="0" cellspacing="0" align="center">
+                        <tr>
+                          <td colspan="10" align="center" style="padding-top: 16px; padding-bottom: 16px">
+                            <center>
+                              <p style="font-weight: 400;font-size: 14px;line-height: 20px;letter-spacing: 0.3px;color: #5C5C5C; font-family: 'Trebuchet MS';">
+                                Se precisar de ajuda, <b style="font-weight: 700">outras informações</b> ou quiser <b style="font-weight: 700">administrar sua viagem,</b> pode nos escrever:
+                              </p>
+                            </center>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="margin-top: 16px">
+                            <center>
+                              <img style="vertical-align: middle;margin-right: 16px" width="24px" height="24px" src="https://s.latamairlines.com/images/emails/logos/whatsapp.png" alt="whatsapp">
+                              <a href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImFlYmM5NWUxLWI4NWYtNDc1OC1hOTU5LWFhMjc5MWEwMzM0MCIsImRla1ZlcnNpb24iOjEsIml2IjoibGs5cXRBTXBzUVVVUXFwYXhjT3dZUT09IiwiY2lwaGVyVGV4dCI6ImZvRjNsTHdCKzlKZTFuWWhsaDV2bmR2Rnhia28xV2twQTBVQW9ISDZvZ1A0Tlk5RW1ldk5pUmJyNksya09BVjROUmpWMGE0eDNBUnQzUE9na01RSUZaVS9LcEFNWktCY1l4SXZsMFZHbGs5cXRBTXBzUVVVUXFwYXhjT3dZUT09IiwiYXV0aFRhZyI6IkNCV1ZQeXFRREdTZ1hHTVNMNWRGUmc9PSJ9"
+                                style="font-family: 'Trebuchet MS';font-style: normal;font-weight: 700;font-size: 16px;line-height: 24px;color: #4658DF"
+                                aria-label="delfinaA11y"
+                              >
+                                Escrever pelo WhatsApp
+                              </a>
+                            </center>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                
+              </table>
+              <!-- FIN DE ENCUESTA -->
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+
+
+
+<table id="subfooter_company_info" cellpadding="0" cellspacing="0" width="100%">
+    <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+        <td valign="top" style="-ms-text-size-adjust:100%;mso-table-lspace:0;mso-table-rspace:0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+                style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;mso-table-lspace:0;mso-table-rspace:0;border-spacing:0;border-collapse:collapse;table-layout:fixed;margin-top:0;margin-bottom:0;margin-right:auto;margin-left:auto;">
+                <tr style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;">
+                    <td width="100%"
+                        style="color:#303030;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;padding: 10px 8px 24px;font-style:normal;font-weight:normal;font-size:12px;line-height:18px;text-align:center;mso-table-lspace:0;mso-table-rspace:0;">
+                        <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td id="subFooterCompanyInfoMessage" width="100%" colspan="2" style="padding-bottom: 8px">
+                                  
+                                    <p style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;letter-spacing:0.01em; text-align: left"
+                                        alt="@lastMessageA11y">
+                                        Esta mensagem é enviada pela <b style="font-weight: 700">LATAM Airlines</b> devido à sua relação comercial com a LATAM. <b style="font-weight: 700"> </b> Por favor, não responda a este email, já que ele é enviado automaticamente e não podemos ver as respostas.
+                                    </p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="2"
+                                    style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-family: Trebuchet MS, sans-serif;text-align: left">
+                                  
+
+                                    <a id="subFooterCompanyInfoTermsOfUse" target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjViMzAxYzdmLTU3OTMtNDZjOS1hODk3LTkwYjdhNWRlNjVmYSIsImRla1ZlcnNpb24iOjEsIml2IjoiSnhCd0RHVGF1ZlovdER0dUs0WnZwQT09IiwiY2lwaGVyVGV4dCI6IjBuV3pzdDh4cWRTRW5kdEtqVENDS2NVM3BaSGdXOHFDVG5WaDRKb2Y5V3huenRDaGlaRjNYdTE2RDl4c3BNWHBWUlNDRVBlK1N4SzVBQnQwTXZPMkJQNXBIU05YOVNKRmpkbmlBTElQSnhCd0RHVGF1ZlovdER0dUs0WnZwQT09IiwiYXV0aFRhZyI6InRnVCthUjBqVi9VaVJZM1o0Z0N5RHc9PSJ9"
+                                        style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-weight:bold;font-size:12px;line-height:18px;text-decoration-line:underline;color:#303030;"
+                                        alt="@useTermsA11y">Termos de uso</a>
+                                    ·
+                                    <a id="subFooterCompanyInfoPrivacyPolicies" target="_blank" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjA3NzUyNTk0LTcyODQtNGY4Yy04YjE4LTk0NGNiNmU4NTQxNCIsImRla1ZlcnNpb24iOjEsIml2IjoiTkZNWS9CYWFDWkpvSCs0Q0UyenpwZz09IiwiY2lwaGVyVGV4dCI6ImE1NUZNbS9iSGYzbE1ZWjVieW1teHZmeHFoN3JSaGlpeWpyU1pZR0Z3eEc4bHkzRU1HdzVNaU9RcHYxRE9JamkxQzkxakMvVUl6aGplL0ZiaG9pcGtFM2JLdFk3NVV1ajdyblRqbitvTkZNWS9CYWFDWkpvSCs0Q0UyenpwZz09IiwiYXV0aFRhZyI6InFaQk4yeXJXTytWTG8rNjUwNDUvcUE9PSJ9"
+                                        style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;font-weight:bold;font-size:12px;line-height:18px;text-decoration-line:underline;color:#303030;"
+                                        alt="@privacyPolicyA11y">Políticas de privacidade</a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td id="subFooterCompanyInfoSocialNetworks" colspan="2"
+                                    style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;max-height:40px;padding-top:30px;padding-bottom:16px; text-align: left">
+                                    <a id="subFooterCompanyInfoSNFacebook" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjBmZWQzMDYzLWE2YzQtNDE4OS1hODI3LWI4ZTY3ZTc5MmU0OSIsImRla1ZlcnNpb24iOjEsIml2IjoidXFQQzFqZlpTQ3ovVjY3Q1lYQXRmQT09IiwiY2lwaGVyVGV4dCI6ImtsajRISlBYVDBRUTQ1ZlZvWUJsUllwSHl1Q0lHWDNGVEpuQVVlRU80dDl4dHo0K1JlMWpLTFNYbW1ieUFicm1wem9uTlRsVk5jaVZKSEVaTzFmU0NmbU9qUlc3Q1dCY3NnL2NpRmVPdXFQQzFqZlpTQ3ovVjY3Q1lYQXRmQT09IiwiYXV0aFRhZyI6IjBnbjVqbzBWdXdsZ1hMSVAzSWhYamc9PSJ9" target="_blank"
+                                        style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;text-decoration:none;color:#0d0cb5;margin-right:4px;">
+                                        <img src="https://s.latamairlines.com/images/emails/facebook.png"
+                                            alt="@facebookA11y" title="facebook" display="block" width="40" height="40">
+                                    </a>
+                                    <a id="subFooterCompanyInfoSNX" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6IjIzZWJhYjkyLTYzZjYtNDNjOC1iMDFlLWQ0OGY2YjNjZjg2MCIsImRla1ZlcnNpb24iOjEsIml2IjoiZ0pESnlQK2hSUzhZN2cvd2FFMDV5dz09IiwiY2lwaGVyVGV4dCI6IkhqdmlHNWpNSXRwTmpEV1M0dVhQMW1EK2RyeFhPQXpqMzkrTjdOaytiODRTYTd6RldOLytIME5BS001RytYcHg5Wlc2U0xaNHNGSm5oc2dPM2EvRFFYWEtxZDdLVnJzdkJOVmZiL0l6Z0pESnlQK2hSUzhZN2cvd2FFMDV5dz09IiwiYXV0aFRhZyI6IncwRjF5cW5leWxhN0x3VFZYMi95TXc9PSJ9" target="_blank"
+                                        style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;text-decoration:none;color:#0d0cb5;margin-left:4px;margin-right:4px;">
+                                        <img src="https://image.info.latam.com/lib/fe3c11717d640479751570/m/1/0747fca0-efcc-4662-8d44-6989b3f80c3f.png"
+                                            alt="@twitterA11y" title="twitter" display="block" width="40" height="40">
+                                    </a>
+                                    <a id="subFooterCompanyInfoSNInstagram" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImQ3MWIzOTcxLWU2MzktNDZjZS04Mzg3LTc4Y2NiNGZhMGE2YSIsImRla1ZlcnNpb24iOjEsIml2IjoiZzladmF1eXh1RjQ3RXdzaHFEUVFBUT09IiwiY2lwaGVyVGV4dCI6IkQvdXhUU0hFZDRJQTZ2eGEvRlY2WnRtNS8rUE53dDR2MFUyWUsrdXdTR3d0TDJxRklFOWlMKzV2UGJhbDBoN1RSZjAvWU9JRExxSmhiZG4wZXBOejFDbTI3cFV0dS9xNG9Gb3JDZ3dpZzladmF1eXh1RjQ3RXdzaHFEUVFBUT09IiwiYXV0aFRhZyI6ImM5UXB0dTZWTGJ2NnVLQmFLd29NSWc9PSJ9" target="_blank"
+                                        style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;text-decoration:none;color:#0d0cb5;margin-left:4px;margin-right:4px;">
+                                        <img src="https://s.latamairlines.com/images/emails/Instagram.png"
+                                            alt="@instagramA11y" title="instagram" display="block" width="40"
+                                            height="40">
+                                    </a>
+                                    <a id="subFooterCompanyInfoSNYoutube" href="https://click.info.latam.com/?qs=eyJkZWtJZCI6ImJlNGUzODM5LTQ2MjEtNDkyMC1iNDA4LWFkYTczMWQ3M2U4MyIsImRla1ZlcnNpb24iOjEsIml2IjoiUTh6eDBCdEhxZFFnL0cyNllhaVN0QT09IiwiY2lwaGVyVGV4dCI6Ik1TdXZsTVpEL0FNOTNzZFVuT1VOR2hwVFk3Smt4YW83Q1hqQm9neHIzaEpLbC8zNnU1RmxPYU1UOVVKSUVNQ2t4cEJVTHl2UjZXanozT3NpdlFYbjJ0TXhWbDA4TjRDeVZQVm5hSEFMUTh6eDBCdEhxZFFnL0cyNllhaVN0QT09IiwiYXV0aFRhZyI6IjU5clRNVlpkUERlQXNsVDFaMmh3Q3c9PSJ9" target="_blank"
+                                        style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;text-decoration:none;color:#0d0cb5;margin-left:4px;margin-right:4px;">
+                                        <img src="https://s.latamairlines.com/images/emails/Youtube.png"
+                                            alt="@youtubeA11y" title="youtube" display="block" width="40" height="40">
+                                    </a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="1"
+                                    style="-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;max-height:24px;padding:0;mso-margin-top-alt: 32px; text-align: left;    padding-right: 8px;">
+                                    <img src="https://s.latamairlines.com/images/emails/latam_iso_negative_indigo_normal.png"
+                                        alt="logotipo LATAM Airlines" display="block" width="20" height="32">
+                                </td>
+                                <td colspan="0">
+                                    <p
+                                        style="font-family: Trebuchet MS, sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;letter-spacing:0.01em; text-align: left;">
+                                        <!-- texto cambia por país -->
+                                        © 2026 LATAM Airlines Brasil Rua Ática nº 673, 6º andar sala 62, CEP 04634-042 São Paulo/SP
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+
+
+                  </center>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+  <img src="https://click.info.latam.com/open.aspx?CJFHLOTDWINEBNZA376S4HGE7Q.70246&d=70246&bmt=0" width="1" height="1" alt="">
+</body>
+
+</html>
+
+--wGIBqlTVA8FX=_?:--
+
+
+--XsjXJ9IkgBeb=_?:
+Content-Type: application/pdf;
+	name="Comprovante-LATAM-LATESTNUMBER0000.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline;
+	filename="Comprovante-LATAM-LATESTNUMBER0000.pdf"
+
+JVBERi0xLjQgMSAwIG9iajw8L1R5cGUgL0NhdGFsb2c+PmVuZG9iag==
+--XsjXJ9IkgBeb=_?:--
+
