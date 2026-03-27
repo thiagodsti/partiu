@@ -156,20 +156,26 @@
       <div class="checklist">
         {#each items as item, idx (idx)}
           <div class="checklist-item">
-            <button
-              class="check-btn"
-              class:checked={item.checked}
-              onclick={() => toggleItem(idx)}
-              aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
-            >{item.checked ? '✓' : ''}</button>
             <input
-              type="text"
+              type="checkbox"
+              class="check-btn"
+              checked={item.checked}
+              onchange={() => toggleItem(idx)}
+              aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+            />
+            <textarea
               class="check-input"
               class:done={item.checked}
               placeholder={$t('planner.checklist_item_placeholder')}
+              rows={1}
               value={item.text}
-              oninput={(e) => updateItemText(idx, (e.currentTarget as HTMLInputElement).value)}
-            />
+              oninput={(e) => {
+                const el = e.currentTarget as HTMLTextAreaElement;
+                updateItemText(idx, el.value);
+                el.style.height = 'auto';
+                el.style.height = el.scrollHeight + 'px';
+              }}
+            ></textarea>
             <button
               class="check-item-delete"
               onclick={() => deleteItem(idx)}
@@ -190,12 +196,13 @@
         <div class="checklist">
           {#each items as item, idx (idx)}
             <div class="checklist-item">
-              <button
+              <input
+                type="checkbox"
                 class="check-btn"
-                class:checked={item.checked}
-                onclick={(e) => { e.stopPropagation(); toggleItem(idx); }}
+                checked={item.checked}
+                onchange={(e) => { e.stopPropagation(); toggleItem(idx); }}
                 aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
-              >{item.checked ? '✓' : ''}</button>
+              />
               <span class="check-text" class:done={item.checked}>{item.text || '…'}</span>
             </div>
           {/each}
@@ -344,31 +351,18 @@
 
   .checklist-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-xs);
   }
 
   .check-btn {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    border: 2px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface);
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    margin-top: 3px;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem;
-    color: var(--success, #16a34a);
-    padding: 0;
+    accent-color: var(--success, #16a34a);
     touch-action: manipulation;
-    transition: background 0.1s, border-color 0.1s;
-  }
-
-  .check-btn.checked {
-    background: var(--success-bg, #dcfce7);
-    border-color: var(--success, #16a34a);
   }
 
   .check-input {
@@ -377,9 +371,13 @@
     border: none;
     background: transparent;
     font-size: 1rem; /* must be ≥16px to prevent iOS auto-zoom on focus */
+    font-family: inherit;
+    line-height: 1.4;
     color: var(--text);
     padding: 2px 0;
     outline: none;
+    resize: none;
+    overflow: hidden;
     touch-action: manipulation;
   }
 
@@ -395,6 +393,7 @@
     font-size: 0.65rem;
     color: var(--text-muted);
     padding: 2px 4px;
+    margin-top: 2px;
     flex-shrink: 0;
     border-radius: 4px;
     touch-action: manipulation;
