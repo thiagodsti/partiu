@@ -317,7 +317,7 @@
     width: 100%;
     box-sizing: border-box;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 1rem; /* must be ≥16px to prevent iOS auto-zoom on focus */
     line-height: 1.55;
     padding: var(--space-sm);
     border: 1px solid var(--border);
@@ -376,7 +376,7 @@
     min-width: 0;
     border: none;
     background: transparent;
-    font-size: 0.9rem;
+    font-size: 1rem; /* must be ≥16px to prevent iOS auto-zoom on focus */
     color: var(--text);
     padding: 2px 0;
     outline: none;
