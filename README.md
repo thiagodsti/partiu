@@ -12,20 +12,82 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 
 ![demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
 
-## What it does!
+## Features
 
+### Email sync & flight parsing
+- Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
+- Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
+- Generic PDF extraction fallback for attachments
+- Built-in parser rules for 6 airlines (see [Supported airlines](#supported-airlines))
+- Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
+- Failed email queue: stores unparseable emails for later retry
+- Manual "sync now" trigger and configurable sync interval (admin)
 
-- Connects to your Gmail via IMAP and scans for flight confirmation emails!
-
-- Parses booking details (flight number, airports, times, seat, cabin class, passenger name, booking reference) from HTML emails
-- Groups flights into trips automatically — by booking reference or time proximity
+### Trip & flight management
+- Auto-groups flights into trips by booking reference, then 48h time proximity
+- Create and edit trips and flights manually
 - Shows outbound / return legs with connection badges and layover times
-- Tracks flight status (upcoming / completed) in real time
-- Looks up aircraft type while a flight is airborne (Boeing 737, Airbus A320, etc.)
-- Works as a PWA — installable on iOS and Android as a home screen app
-- Accepts forwarded emails via a built-in inbound SMTP server (no Gmail required for that path)
-- Multi-user support with per-user email accounts, admin management, and optional 2FA (TOTP)
-- **Immich integration** — create photo albums from your completed trips automatically, based on trip date range
+- Tracks flight status: upcoming, in-progress, completed
+- Export any trip as an iCalendar (.ics) file
+- Add notes per flight (up to 10,000 chars)
+- Calendar-style day notes per trip
+
+### Boarding passes & documents
+- Extracts boarding passes from confirmation emails (BCBP barcode format)
+- Manual upload of boarding pass images (PNG, JPEG, WebP)
+- Upload trip documents: PDFs and images, up to 20 MB each, with multi-page PDF viewer
+- Passenger name and seat parsed from BCBP data
+
+### Trip sharing & collaboration
+- Invite other Partiu users to a trip by username
+- Pending / accepted / rejected invitation states with an in-app Invitations page
+- Trusted users list: invitations from trusted users are auto-accepted
+- Shared collaborators get full read/write access on trip content
+- Owner can revoke access; collaborators can leave a trip
+- Both owner and collaborators can rate trips (0.5–5 stars) and edit shared notes
+
+### Travel statistics
+- Total km travelled, total flights, total hours in the air
+- Unique airports and countries visited
+- Earth circumference laps
+- Longest flight, top routes, top airports, top airlines
+- Year filter with available-years selector
+
+### Aircraft & flight enrichment
+- Looks up aircraft type (Boeing 737-800, Airbus A320, …) while a flight is airborne
+- Falls back to OpenSky Network if AviationStack is not configured
+- Timezone-aware departure/arrival times (airport coordinates → TimezoneFinder)
+- Live flight status tracking (delays, cancellations, estimated times)
+
+### Destination images
+- Auto-fetches a destination photo from Wikipedia for each trip
+- Manual refresh to cycle to a different image
+
+### Immich integration (optional)
+- Create a photo album in your Immich instance for any completed trip
+- Album is populated with photos taken during the trip's date range
+- "Open Immich Album" button on trip cards once an album exists
+
+### Notifications
+- Web push notifications (VAPID) for flight reminders, check-in reminders, delays, new flights detected, and more
+- In-app notification inbox with unread count badge
+- Per-user notification preferences
+
+### Authentication & security
+- Username / password login with session cookies (30-day expiration, server-side revocable)
+- TOTP-based 2FA — enable/disable from Settings; QR code for any authenticator app
+- Login rate-limiting and TOTP lockout after repeated failures
+- Audit logging of auth events
+
+### Multi-user & admin
+- Multi-user support with per-user Gmail/IMAP credentials
+- Admin: create, list, update, reset passwords, delete users
+- Admin: configure sync interval, max emails per sync, SMTP server, VAPID keys, airport data reload
+- Per-user locale (English / Portuguese Brazil)
+
+### PWA
+- Installable on iOS and Android as a home screen app
+- Works as a PWA — offline-capable shell, mobile-first responsive design
 
 ## Supported airlines
 
@@ -35,6 +97,8 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 | SAS Scandinavian Airlines | SK |
 | Norwegian Air Shuttle | DY |
 | Azul Brazilian Airlines | AD |
+| Lufthansa | LH |
+| Kiwi.com (multi-airline bookings) | — |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
 

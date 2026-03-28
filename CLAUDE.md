@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development rules
 
+- **After every new feature**, update both `README.md` and `CLAUDE.md` to reflect the new capability — add it to the relevant section in the Features list of each file.
+
+- **After adding support for a new airline**, update the supported airlines table in `README.md`, the airline rules count and list in both `README.md` and `CLAUDE.md`, and increment `RULES_VERSION` in `backend/parsers/builtin_rules.py`.
+
 - **After every implementation**, always run all three checks before considering the work done:
   1. `uv run ruff check backend/` — fix any lint errors (use `--fix` for auto-fixable ones)
   2. `uv run ty check backend/` — fix all type errors
@@ -84,7 +88,7 @@ docker compose up -d --build
 - **`App.svelte`** — SPA router, auth checks, main layout
 - **`api/client.ts`** — All HTTP calls to the backend
 - **`lib/authStore.ts`** — Auth state (session user)
-- Pages: TripsListPage, TripDetailPage, FlightDetailPage, HistoryPage, SettingsPage, LoginPage, SetupPage, UsersPage
+- Pages: TripsListPage, TripDetailPage, FlightDetailPage, HistoryPage, StatsPage, SettingsPage, NotificationsPage, InvitationsPage, LoginPage, SetupPage, UsersPage (admin)
 
 ### Data & Config
 - SQLite at `data/tripit.db` (gitignored); seed airports with `python load_airports.py`
@@ -93,3 +97,71 @@ docker compose up -d --build
 
 ### CI (`.github/workflows/pr.yml`)
 Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (Playwright).
+
+## Features
+
+### Trip & flight management
+- Auto-groups flights into trips by booking reference, then 48h time proximity
+- Create/edit trips and flights manually; delete (owner only)
+- Export trips as iCalendar (.ics) files
+- Notes per flight (up to 10,000 chars); calendar-style day notes per trip
+- Trip rating (0.5–5 stars in 0.5 increments)
+
+### Trip sharing & collaboration
+- Invite users to a trip by username; pending/accepted/rejected invitation states
+- Trusted users list: invitations from trusted users are auto-accepted
+- Shared collaborators get full read/write access on trip content
+- Owner can revoke access; collaborators can leave a trip
+- Both owner and collaborators can rate trips and edit shared trip notes
+- Invitations page (`/invitations`) — accept or reject pending invitations
+
+### Boarding passes & documents
+- Extracts boarding passes from confirmation emails (BCBP barcode format)
+- Manual boarding pass image upload (PNG, JPEG, WebP)
+- Trip documents: upload PDFs/images up to 20 MB; multi-page PDF viewer
+- BCBP parsing: passenger name and seat extracted automatically
+
+### Email sync & parsing
+- IMAP sync (Gmail App Password or custom IMAP host/port) per user
+- Built-in airline rules — 6 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), Kiwi.com; `RULES_VERSION = '13'`
+- PDF extraction fallback
+- Failed email queue — store, retry (per-email or all), delete by sender domain
+- Manual sync trigger and configurable sync interval + email limit (admin)
+- Reset & re-sync: delete auto-synced flights and re-fetch from email
+- Inbound SMTP server (aiosmtpd, default port 2525) for email forwarding
+
+### Flight enrichment
+- Aircraft type lookup: AviationStack → OpenSky Network fallback; result cached
+- Timezone-aware departure/arrival times (airport coords + TimezoneFinder)
+- Live flight status tracking (delays, cancellations, estimated times)
+
+### Travel statistics (Stats page)
+- Total km, flights, hours in air, unique airports, unique countries, Earth laps
+- Longest flight, top 5 routes/airports/airlines
+- Year filter with available-years selector
+
+### Destination images
+- Auto-fetch trip destination photo from Wikipedia; manual refresh
+
+### Immich integration (optional)
+- Create Immich album for a trip populated with photos in the trip's date range
+- "Open Immich Album" deep link once album exists; per-user URL + API key (encrypted)
+
+### Notifications
+- Web push notifications via VAPID (flight reminders, delays, check-in, new flights, boarding passes, failed parses)
+- In-app notification inbox with unread count badge; per-user preferences
+- Admin: generate/manage VAPID keys; test push endpoint
+
+### Authentication & security
+- Username/password + session cookies (30-day, server-side revocable)
+- TOTP 2FA (enable/disable from Settings; QR code for any authenticator app)
+- Login rate-limit (5/min per IP); TOTP lockout after 5 failures in 15 min
+- Audit logging of auth events; password change requires 2FA code
+
+### Multi-user & admin
+- Per-user IMAP credentials, SMTP recipient, Immich config, notification prefs, locale (en / pt-BR)
+- Admin: create/list/update/reset-password/delete users
+- Admin: sync interval, max emails per sync, first-sync lookback days, SMTP server toggle/port/domain, VAPID, airport data reload
+
+### Frontend pages
+TripsListPage, TripDetailPage, FlightDetailPage, HistoryPage, StatsPage, SettingsPage, NotificationsPage, InvitationsPage, UsersPage (admin), LoginPage, SetupPage
