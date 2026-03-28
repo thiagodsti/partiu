@@ -347,6 +347,8 @@ img {
   flex-wrap: wrap;
 }
 
+
+
 /* ---- Trip Card Cover Image ---- */
 .trip-card-cover {
   position: relative;
@@ -1223,6 +1225,130 @@ img {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+/* ---- Shared star display (cards + rating widget) ---- */
+/*
+  Each star uses two pseudo-elements:
+    ::before  — empty star (☆), always visible as background
+    ::after   — filled star (★), clipped to --fill (0%, 50%, or 100%)
+*/
+.star-display,
+.rating-star-glyph {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+  user-select: none;
+}
+
+.star-display::before,
+.rating-star-glyph::before {
+  content: '☆';
+  color: var(--border);
+}
+
+.star-display::after,
+.rating-star-glyph::after {
+  content: '★';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--fill, 0%);
+  overflow: hidden;
+  color: var(--warning, #f59e0b);
+  white-space: nowrap;
+}
+
+/* ---- Trip card stars (small) ---- */
+.trip-card-stars {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.trip-card-stars .star-display {
+  font-size: 0.95rem;
+}
+
+/* ---- Rating widget (large, interactive) ---- */
+.trip-rating-stars {
+  display: flex;
+  gap: 4px;
+}
+
+.rating-star-wrap {
+  position: relative;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+}
+
+.rating-star-glyph {
+  font-size: 2rem;
+  pointer-events: none;
+  transition: transform 0.1s;
+}
+
+.rating-half {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  opacity: 0;
+  z-index: 1;
+}
+
+.rating-half.left  { left: 0; }
+.rating-half.right { right: 0; }
+
+.rating-half:hover ~ .rating-star-glyph {
+  transform: scale(1.15);
+}
+
+@media (max-width: 640px) {
+  .rating-star-wrap {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .rating-star-glyph {
+    font-size: 2.75rem;
+  }
+}
+
+/* ---- Shared note ---- */
+.trip-note-textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color 0.2s;
+  -webkit-appearance: none;
+}
+
+.trip-note-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.note-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.note-status-ok {
+  color: var(--success);
 }
 
 .section-toggle:hover .trip-section-title {

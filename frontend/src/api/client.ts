@@ -72,6 +72,7 @@ async function _request<T>(method: string, path: string, body: unknown = null): 
 
 const get = <T>(path: string) => _request<T>('GET', path);
 const post = <T>(path: string, body?: unknown) => _request<T>('POST', path, body ?? null);
+const put = <T>(path: string, body?: unknown) => _request<T>('PUT', path, body ?? null);
 const patch = <T>(path: string, body?: unknown) => _request<T>('PATCH', path, body ?? null);
 const del = <T>(path: string) => _request<T>('DELETE', path);
 
@@ -121,6 +122,8 @@ export const tripsApi = {
   refreshImage: (id: string) => post<{ ok: boolean }>(`/api/trips/${id}/image/refresh`),
   createImmichAlbum: (id: string) => post<ImmichAlbumResponse>(`/api/trips/${id}/immich-album`),
   checkImmichAlbum: (id: string) => get<{ album_id: string | null; exists: boolean }>(`/api/trips/${id}/immich-album/status`),
+  setRating: (id: string, rating: number | null) => put<{ rating: number | null }>(`/api/trips/${id}/rating`, { rating }),
+  setNote: (id: string, note: string | null) => put<{ note: string | null }>(`/api/trips/${id}/note`, { note }),
 };
 
 // ---- Flights ----

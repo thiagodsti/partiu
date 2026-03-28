@@ -31,6 +31,9 @@ def _row_to_trip(row, owner_user_id: int | None = None) -> dict:
         d["booking_refs"] = []
     if owner_user_id is not None:
         d["is_owner"] = d.get("user_id") == owner_user_id
+    # Ensure new columns are always present even on old rows
+    d.setdefault("rating", None)
+    d.setdefault("note", None)
     return d
 
 
@@ -562,3 +565,44 @@ async def refresh_trip_image(trip_id: str, user: dict = Depends(get_current_user
         return {"ok": True}
 
     raise HTTPException(status_code=404, detail="No image available")
+
+
+class RatingBody(BaseModel):
+    rating: float | None
+
+
+@router.put("/{trip_id}/rating")
+def set_trip_rating(trip_id: str, body: RatingBody, user: dict = Depends(get_current_user)):
+    """Set or clear the shared trip rating (0.5–5 in steps of 0.5). Accessible to owner and shared users."""
+    if body.rating is not None:
+        if body.rating not in [x / 2 for x in range(1, 11)]:
+            raise HTTPException(
+                status_code=422, detail="Rating must be a multiple of 0.5 between 0.5 and 5"
+            )
+    with db_conn() as conn:
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+    with db_write() as conn:
+        conn.execute(
+            "UPDATE trips SET rating = ?, updated_at = ? WHERE id = ?",
+            (body.rating, now_iso(), trip_id),
+        )
+    return {"rating": body.rating}
+
+
+class NoteBody(BaseModel):
+    note: str | None
+
+
+@router.put("/{trip_id}/note")
+def set_trip_note(trip_id: str, body: NoteBody, user: dict = Depends(get_current_user)):
+    """Set or clear the shared trip note. Accessible to owner and shared users."""
+    with db_conn() as conn:
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+    with db_write() as conn:
+        conn.execute(
+            "UPDATE trips SET note = ?, updated_at = ? WHERE id = ?",
+            (body.note, now_iso(), trip_id),
+        )
+    return {"note": body.note}

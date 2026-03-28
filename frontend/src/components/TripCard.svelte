@@ -10,17 +10,26 @@
     imageUrl: string;
     imgFailed: boolean;
     refreshing: boolean;
+    showStars?: boolean;
     onImageError: (e: Event) => void;
     onRefreshImage: (e: MouseEvent) => void;
     badge: Snippet;
     footer?: Snippet;
   }
 
-  const { trip, href, imageUrl, imgFailed, refreshing, onImageError, onRefreshImage, badge, footer }: Props = $props();
+  const { trip, href, imageUrl, imgFailed, refreshing, showStars = false, onImageError, onRefreshImage, badge, footer }: Props = $props();
 
   const dateRange = $derived(formatDateRange(trip.start_date, trip.end_date));
   const flightCount = $derived(trip.flight_count ?? 0);
   const refs = $derived((trip.booking_refs ?? []).join(', '));
+  const showStarRow = $derived(showStars || !!trip.rating);
+
+  function starFill(star: number, rating: number | null | undefined): '100%' | '50%' | '0%' {
+    const r = rating ?? 0;
+    if (r >= star) return '100%';
+    if (r >= star - 0.5) return '50%';
+    return '0%';
+  }
 </script>
 
 <a class="card-link" {href}>
@@ -60,6 +69,13 @@
     <div class="trip-card-footer">
       {#if refs}
         <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
+      {/if}
+      {#if showStarRow}
+        <span class="trip-card-stars" aria-label={$t('trips.rating_label')}>
+          {#each [1,2,3,4,5] as star}
+            <span class="star-display" style="--fill: {starFill(star, trip.rating)}"></span>
+          {/each}
+        </span>
       {/if}
       {#if footer}{@render footer()}{/if}
     </div>

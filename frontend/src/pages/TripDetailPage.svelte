@@ -102,6 +102,35 @@
 
   const isCompleted = $derived(trip ? inferTripStatus(trip) === 'completed' : false);
 
+  // ---- Rating ----
+  let hoverRating = $state<number | null>(null);
+
+  async function setRating(star: number | null) {
+    if (!trip) return;
+    const newRating = star === null || trip.rating === star ? null : star;
+    const id = trip.id;
+    trip = { ...trip, rating: newRating };
+    await tripsApi.setRating(id, newRating);
+  }
+
+  // ---- Shared note ----
+  let noteSaving = $state(false);
+  let noteSaved = $state(false);
+  let noteTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleNoteSave(value: string) {
+    if (!trip) return;
+    trip = { ...trip, note: value };
+    if (noteTimer) clearTimeout(noteTimer);
+    noteTimer = setTimeout(async () => {
+      noteSaving = true;
+      await tripsApi.setNote(trip!.id, value || null);
+      noteSaving = false;
+      noteSaved = true;
+      setTimeout(() => { noteSaved = false; }, 2000);
+    }, 800);
+  }
+
   // ---- Documents ----
   let documents = $state<TripDocument[]>([]);
   let tripBoardingPasses = $state<TripBoardingPass[]>([]);
@@ -549,6 +578,62 @@
         />
       </div>
     {/if}
+
+    <!-- Rating -->
+    <div class="trip-section no-print">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('trips.rating_label')}</h3>
+        {#if trip.rating}
+          <button class="btn btn-secondary btn-sm" onclick={() => setRating(null)}>
+            {$t('trips.rating_clear')}
+          </button>
+        {/if}
+      </div>
+      <div class="trip-rating-stars" onmouseleave={() => hoverRating = null}>
+        {#each [1,2,3,4,5] as star}
+          {@const displayRating = hoverRating ?? trip.rating ?? 0}
+          <span class="rating-star-wrap">
+            <!-- left half = star - 0.5, right half = star -->
+            <button
+              class="rating-half left"
+              onmouseenter={() => hoverRating = star - 0.5}
+              onclick={() => setRating(star - 0.5)}
+              aria-label="Rate {star - 0.5} out of 5"
+            ></button>
+            <button
+              class="rating-half right"
+              onmouseenter={() => hoverRating = star}
+              onclick={() => setRating(star)}
+              aria-label="Rate {star} out of 5"
+            ></button>
+            <span
+              class="rating-star-glyph"
+              style="--fill: {displayRating >= star ? '100%' : displayRating >= star - 0.5 ? '50%' : '0%'}"
+              aria-hidden="true"
+            ></span>
+          </span>
+        {/each}
+      </div>
+    </div>
+
+    <!-- Shared note -->
+    <div class="trip-section no-print">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('trips.note_label')}</h3>
+        {#if noteSaving}
+          <span class="note-status">…</span>
+        {:else if noteSaved}
+          <span class="note-status note-status-ok">✓ {$t('trips.note_saved')}</span>
+        {/if}
+      </div>
+      <textarea
+        class="trip-note-textarea"
+        placeholder={$t('trips.note_placeholder')}
+        value={trip.note ?? ''}
+        oninput={(e) => scheduleNoteSave((e.currentTarget as HTMLTextAreaElement).value)}
+        rows={4}
+      ></textarea>
+    </div>
 
     <!-- Documents -->
     <div class="trip-section no-print">

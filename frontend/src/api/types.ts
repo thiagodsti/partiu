@@ -36,6 +36,8 @@ export interface Trip {
   immich_album_id?: string | null;
   is_owner?: boolean;
   owner_username?: string | null;
+  rating?: number | null;
+  note?: string | null;
 }
 
 export interface TripShare {
