@@ -1273,6 +1273,8 @@ img {
 .trip-rating-stars {
   display: flex;
   gap: 4px;
+  touch-action: pan-y;
+  user-select: none;
 }
 
 .rating-star-wrap {
@@ -1305,8 +1307,10 @@ img {
 .rating-half.left  { left: 0; }
 .rating-half.right { right: 0; }
 
-.rating-half:hover ~ .rating-star-glyph {
-  transform: scale(1.15);
+@media (hover: hover) {
+  .rating-half:hover ~ .rating-star-glyph {
+    transform: scale(1.15);
+  }
 }
 
 @media (max-width: 640px) {

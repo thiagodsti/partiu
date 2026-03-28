@@ -104,6 +104,7 @@
 
   // ---- Rating ----
   let hoverRating = $state<number | null>(null);
+  let touchSliding = $state(false);
 
   async function setRating(star: number | null) {
     if (!trip) return;
@@ -111,6 +112,31 @@
     const id = trip.id;
     trip = { ...trip, rating: newRating };
     await tripsApi.setRating(id, newRating);
+  }
+
+  function ratingFromTouch(e: TouchEvent, el: HTMLElement): number {
+    const rect = el.getBoundingClientRect();
+    const x = e.touches[0].clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    return Math.max(0.5, Math.min(5, Math.round(ratio * 10) / 2));
+  }
+
+  function onRatingTouchStart(e: TouchEvent) {
+    touchSliding = true;
+    hoverRating = ratingFromTouch(e, e.currentTarget as HTMLElement);
+  }
+
+  function onRatingTouchMove(e: TouchEvent) {
+    if (!touchSliding) return;
+    e.preventDefault();
+    hoverRating = ratingFromTouch(e, e.currentTarget as HTMLElement);
+  }
+
+  function onRatingTouchEnd() {
+    if (!touchSliding) return;
+    touchSliding = false;
+    setRating(hoverRating);
+    hoverRating = null;
   }
 
   // ---- Shared note ----
@@ -589,20 +615,28 @@
           </button>
         {/if}
       </div>
-      <div class="trip-rating-stars" onmouseleave={() => hoverRating = null}>
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="trip-rating-stars"
+        role="group"
+        ontouchstart={onRatingTouchStart}
+        ontouchmove={onRatingTouchMove}
+        ontouchend={onRatingTouchEnd}
+        onpointerleave={(e) => { if (e.pointerType === 'mouse') hoverRating = null; }}
+      >
         {#each [1,2,3,4,5] as star}
           {@const displayRating = hoverRating ?? trip.rating ?? 0}
           <span class="rating-star-wrap">
             <!-- left half = star - 0.5, right half = star -->
             <button
               class="rating-half left"
-              onmouseenter={() => hoverRating = star - 0.5}
+              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star - 0.5; }}
               onclick={() => setRating(star - 0.5)}
               aria-label="Rate {star - 0.5} out of 5"
             ></button>
             <button
               class="rating-half right"
-              onmouseenter={() => hoverRating = star}
+              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star; }}
               onclick={() => setRating(star)}
               aria-label="Rate {star} out of 5"
             ></button>
