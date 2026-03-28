@@ -179,17 +179,19 @@
       {#if stats.flight_breakdown && stats.flight_breakdown.length > 0}
         <div class="stat-section">
           <div class="stat-section-title">{$t('stats.distance_breakdown')}</div>
-          <div class="stat-list">
-            {#each stats.flight_breakdown as f}
-              <div class="stat-list-item">
-                <div class="breakdown-main">
-                  <span class="stat-list-label route-mono">{f.route.replace('→', ' → ')}</span>
-                  {#if f.trip_name}<span class="breakdown-trip">{f.trip_name}</span>{/if}
+          <div class="stat-list breakdown-list">
+            <div class="breakdown-scroll">
+              {#each stats.flight_breakdown as f}
+                <div class="stat-list-item">
+                  <div class="breakdown-main">
+                    <span class="stat-list-label route-mono">{f.route.replace('→', ' → ')}</span>
+                    {#if f.trip_name}<span class="breakdown-trip">{f.trip_name}</span>{/if}
+                  </div>
+                  {#if f.flight}<span class="breakdown-flight">{f.flight}</span>{/if}
+                  <span class="stat-list-count">{f.km > 0 ? f.km.toLocaleString() + ' km' : '—'}</span>
                 </div>
-                {#if f.flight}<span class="breakdown-flight">{f.flight}</span>{/if}
-                <span class="stat-list-count">{f.km > 0 ? f.km.toLocaleString() + ' km' : '—'}</span>
-              </div>
-            {/each}
+              {/each}
+            </div>
             <div class="stat-list-item breakdown-total">
               <span class="stat-list-label">{$t('stats.total')}</span>
               <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
@@ -357,6 +359,15 @@
   }
 
   /* ---- List rows ---- */
+  .breakdown-scroll {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .breakdown-list .breakdown-total {
+    border-top: 2px solid var(--border);
+  }
+
   .stat-list {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -481,7 +492,6 @@
   }
 
   .breakdown-total {
-    border-top: 1px solid var(--border) !important;
     font-weight: 600;
   }
 
