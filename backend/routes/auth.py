@@ -3,6 +3,7 @@ Authentication routes: setup, login, logout, me, change-password, 2FA.
 """
 
 import collections
+import os
 import time
 
 import pyotp
@@ -25,6 +26,8 @@ from ..auth import (
 )
 from ..database import db_conn, db_write
 from ..limiter import limiter
+
+SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "true").lower() != "false"
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -142,7 +145,7 @@ def setup(request: Request, body: SetupRequest, response: Response):
         token,
         httponly=True,
         samesite="lax",
-        secure=True,
+        secure=SECURE_COOKIES,
         max_age=30 * 86400,
     )
     return {
@@ -182,7 +185,12 @@ def login(request: Request, body: LoginRequest, response: Response):
         pending_token = create_pending_2fa_cookie(row["id"])
         resp = JSONResponse({"requires_2fa": True}, status_code=200)
         resp.set_cookie(
-            "pending_2fa", pending_token, httponly=True, samesite="lax", secure=True, max_age=300
+            "pending_2fa",
+            pending_token,
+            httponly=True,
+            samesite="lax",
+            secure=SECURE_COOKIES,
+            max_age=300,
         )
         return resp
 
@@ -198,7 +206,7 @@ def login(request: Request, body: LoginRequest, response: Response):
         token,
         httponly=True,
         samesite="lax",
-        secure=True,
+        secure=SECURE_COOKIES,
         max_age=30 * 86400,
     )
     return {
@@ -253,7 +261,7 @@ def verify_2fa(request: Request, body: TwoFAVerifyRequest, response: Response):
         token,
         httponly=True,
         samesite="lax",
-        secure=True,
+        secure=SECURE_COOKIES,
         max_age=30 * 86400,
     )
     return {
