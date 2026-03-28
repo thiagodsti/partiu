@@ -25,6 +25,13 @@
 
   const { tripId, date, flights, initialContent, initiallyExpanded, forceExpanded = false }: Props = $props();
 
+  function autogrow(el: HTMLTextAreaElement) {
+    const resize = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+    resize();
+    el.addEventListener('input', resize);
+    return { destroy() { el.removeEventListener('input', resize); } };
+  }
+
   // ---- Local state (isolated per card) ----
   // untrack: intentionally snapshot props at mount, changes after mount are ignored
   let note = $state(untrack(() => initialContent.note));
@@ -66,10 +73,6 @@
     scheduleSave();
   }
 
-  function updateItemText(idx: number, text: string) {
-    items[idx] = { ...items[idx], text };
-    scheduleSave();
-  }
 
   function addItem() {
     items = [...items, { text: '', checked: false }];
@@ -168,13 +171,9 @@
               class:done={item.checked}
               placeholder={$t('planner.checklist_item_placeholder')}
               rows={1}
-              value={item.text}
-              oninput={(e) => {
-                const el = e.currentTarget as HTMLTextAreaElement;
-                updateItemText(idx, el.value);
-                el.style.height = 'auto';
-                el.style.height = el.scrollHeight + 'px';
-              }}
+              bind:value={items[idx].text}
+              use:autogrow
+              oninput={scheduleSave}
             ></textarea>
             <button
               class="check-item-delete"
