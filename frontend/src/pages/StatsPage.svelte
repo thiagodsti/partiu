@@ -120,10 +120,10 @@
           <div class="stat-value">{stats.unique_airports}</div>
           <div class="stat-label">{$t('stats.airports')}</div>
         </div>
-        <div class="stat-card">
+        <a class="stat-card stat-card-link" href="#/stats/map">
           <div class="stat-value">{stats.unique_countries}</div>
-          <div class="stat-label">{$t('stats.countries')}</div>
-        </div>
+          <div class="stat-label">{$t('stats.countries')} →</div>
+        </a>
       </div>
 
       <!-- Longest flight -->
@@ -301,6 +301,19 @@
     border-radius: var(--radius-md);
     padding: var(--space-md);
     text-align: center;
+  }
+
+  .stat-card-link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  @media (hover: hover) {
+    .stat-card-link:hover {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+    }
   }
 
   .stat-value {

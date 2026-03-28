@@ -21,6 +21,8 @@
   "stats.airlines": "Airlines flown",
   "stats.distance_breakdown": "Distance per flight",
   "stats.total": "Total",
+  "stats.countries_visited": "Countries Visited",
+  "stats.countries_visited_map": "World Map",
   "login.title": "Partiu",
   "login.subtitle": "Sign in to your account",
   "login.username": "Username",

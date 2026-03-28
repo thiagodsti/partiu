@@ -21,6 +21,8 @@
   "stats.airlines": "Companhias aéreas",
   "stats.distance_breakdown": "Distância por voo",
   "stats.total": "Total",
+  "stats.countries_visited": "Países Visitados",
+  "stats.countries_visited_map": "Mapa Mundi",
   "login.title": "Partiu",
   "login.subtitle": "Entre na sua conta",
   "login.username": "Usuário",

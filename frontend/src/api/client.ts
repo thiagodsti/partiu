@@ -249,6 +249,7 @@ export const statsApi = {
       top_airports: { key: string; count: number }[];
       top_airlines: { key: string; count: number }[];
       years: string[];
+      visited_countries: string[];
       flight_breakdown: { route: string; flight: string; km: number; trip_name: string }[];
     }>(`/api/stats${year ? `?year=${year}` : ''}`),
 };

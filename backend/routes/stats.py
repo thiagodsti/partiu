@@ -4,6 +4,7 @@ Travel statistics endpoint.
 
 import math
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 
@@ -40,6 +41,7 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
             SELECT
                 f.flight_number, f.airline_code,
                 f.departure_airport, f.arrival_airport,
+                f.departure_datetime, f.arrival_datetime,
                 f.duration_minutes,
                 dep.latitude  AS dep_lat,  dep.longitude AS dep_lon,
                 dep.city_name AS dep_city, dep.country_code AS dep_country,
@@ -103,18 +105,64 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
         if r["duration_minutes"]:
             total_minutes += r["duration_minutes"]
 
-        for code, country in ((dep, r["dep_country"]), (arr, r["arr_country"])):
+        for code in (dep, arr):
             if code:
                 airports.add(code)
                 airport_counts[code] += 1
-            if country:
-                countries.add(country)
 
         if dep and arr:
             route_counts[f"{dep}→{arr}"] += 1
 
         if r["airline_code"]:
             airline_counts[r["airline_code"]] += 1
+
+    # Visited countries: first departure + last arrival always count.
+    # Middle stops count only if the layover in that country is >= 24h.
+    LAYOVER_THRESHOLD = timedelta(hours=24)
+
+    def _parse_dt(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            return None
+
+    for i, r in enumerate(rows):
+        dep_country = r["dep_country"]
+        arr_country = r["arr_country"]
+
+        # First flight: departure country always counts
+        if i == 0 and dep_country:
+            countries.add(dep_country)
+
+        # Last flight: arrival country always counts
+        if i == len(rows) - 1 and arr_country:
+            countries.add(arr_country)
+
+        # Middle arrivals: count only if next departure from same country is >= 24h later
+        if i < len(rows) - 1 and arr_country:
+            nxt = rows[i + 1]
+            if nxt["dep_country"] == arr_country:
+                arr_dt = _parse_dt(r["arrival_datetime"])
+                dep_dt = _parse_dt(nxt["departure_datetime"])
+                if arr_dt and dep_dt and (dep_dt - arr_dt) >= LAYOVER_THRESHOLD:
+                    countries.add(arr_country)
+            else:
+                # Next flight departs from a different country → this was a real stop
+                countries.add(arr_country)
+
+        # Middle departures: count only if previous arrival in same country was >= 24h ago
+        if i > 0 and dep_country:
+            prev = rows[i - 1]
+            if prev["arr_country"] == dep_country:
+                prev_arr_dt = _parse_dt(prev["arrival_datetime"])
+                dep_dt = _parse_dt(r["departure_datetime"])
+                if prev_arr_dt and dep_dt and (dep_dt - prev_arr_dt) >= LAYOVER_THRESHOLD:
+                    countries.add(dep_country)
+            else:
+                # Previous flight arrived from a different country → fresh start here
+                countries.add(dep_country)
 
     def top(d: dict, n: int = 5) -> list[dict]:
         return [
@@ -128,6 +176,7 @@ def get_stats(year: int | None = None, user: dict = Depends(get_current_user)):
         "total_hours": round(total_minutes / 60, 1),
         "unique_airports": len(airports),
         "unique_countries": len(countries),
+        "visited_countries": sorted(countries),
         "earth_laps": round(total_km / EARTH_CIRCUMFERENCE_KM, 2),
         "longest_flight_km": round(longest_flight_km),
         "longest_flight_route": longest_flight_route,
