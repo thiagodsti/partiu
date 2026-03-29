@@ -32,7 +32,7 @@ def austrian_rule(austrian_email):
 
 
 @pytest.fixture(scope="module")
-def austrian_flights(austrian_email, austrian_rule):
+def austrian_flights(austrian_email, austrian_rule, seeded_airports_db):
     from backend.parsers.engine import extract_flights_from_email
 
     assert austrian_rule is not None, "No rule matched the Austrian Airlines fixture"

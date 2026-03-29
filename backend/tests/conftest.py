@@ -174,6 +174,55 @@ def load_anonymized_fixture(json_filename: str):
     )
 
 
+@pytest.fixture(scope="module")
+def seeded_airports_db(tmp_path_factory):
+    """
+    Create a temporary SQLite DB with a minimal airports table seeded.
+
+    Parser tests that call _resolve_iata() need this; without it the airports
+    table is empty in CI and all IATA lookups return "", causing parsers to
+    return zero flights.
+    """
+    import backend.config as cfg_module
+    import backend.database as db_module
+
+    db_path = str(tmp_path_factory.mktemp("airports_db") / "test.db")
+    original_path = db_module.settings.DB_PATH
+
+    db_module.settings.DB_PATH = db_path
+    cfg_module.settings.DB_PATH = db_path
+
+    from backend.database import db_write, init_database
+
+    init_database()
+
+    airports = [
+        ("ARN", "Stockholm Arlanda Airport", "Stockholm", "SE"),
+        ("LHR", "London Heathrow Airport", "London", "GB"),
+        ("GRU", "Guarulhos International Airport", "Sao Paulo", "BR"),
+        ("MAD", "Madrid-Barajas Airport", "Madrid", "ES"),
+        ("VIE", "Vienna International Airport", "Vienna", "AT"),
+        ("FCO", "Rome Fiumicino Airport", "Rome", "IT"),
+        ("CPH", "Copenhagen Airport", "Copenhagen", "DK"),
+        ("OSL", "Oslo Gardermoen Airport", "Oslo", "NO"),
+        ("HEL", "Helsinki-Vantaa Airport", "Helsinki", "FI"),
+        ("GIG", "Rio de Janeiro Galeao Airport", "Rio de Janeiro", "BR"),
+        ("VCP", "Campinas Viracopos Airport", "Campinas", "BR"),
+        ("GRU", "Sao Paulo Guarulhos International Airport", "Sao Paulo", "BR"),
+    ]
+    with db_write() as conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO airports (iata_code, name, city_name, country_code)"
+            " VALUES (?, ?, ?, ?)",
+            airports,
+        )
+
+    yield db_path
+
+    db_module.settings.DB_PATH = original_path
+    cfg_module.settings.DB_PATH = original_path
+
+
 def load_eml_as_email_message(eml_filename: str):
     """Parse a .eml fixture file into an EmailMessage for parser pipeline tests."""
     from backend.parsers.email_connector import EmailMessage, decode_header_value

@@ -32,7 +32,7 @@ def ba_rule(ba_email):
 
 
 @pytest.fixture(scope="module")
-def ba_flights(ba_email, ba_rule):
+def ba_flights(ba_email, ba_rule, seeded_airports_db):
     from backend.parsers.engine import extract_flights_from_email
 
     assert ba_rule is not None, "No rule matched the BA fixture"
