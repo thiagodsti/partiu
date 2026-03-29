@@ -330,6 +330,7 @@
   "upcoming": "upcoming",
   "signout": "Sign out",
   "sync.running": "Syncing…",
+  "sync.running_progress": "Syncing… — {processed} / {total} emails",
   "sync.error": "Sync error",
   "sync.last_sync": "Last sync: {time}",
   "sync.next_sync": "({label})",

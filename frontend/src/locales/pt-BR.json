@@ -330,6 +330,7 @@
   "upcoming": "próxima",
   "signout": "Deslogar",
   "sync.running": "Sincronizando…",
+  "sync.running_progress": "Sincronizando… — {processed} / {total} e-mails",
   "sync.error": "Erro de sincronização",
   "sync.last_sync": "Última sincronização: {time}",
   "sync.next_sync": "({label})",

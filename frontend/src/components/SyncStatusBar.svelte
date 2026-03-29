@@ -45,7 +45,7 @@
   <span class="sync-text">
     {#if syncRunning}
       {#if syncStatus?.emails_total && syncStatus.emails_total > 0}
-        {$t('sync.running')} — {syncStatus.emails_processed ?? 0} / {syncStatus.emails_total} emails
+        {$t('sync.running_progress', { values: { processed: syncStatus.emails_processed ?? 0, total: syncStatus.emails_total } })}
       {:else}
         {$t('sync.running')}
       {/if}
