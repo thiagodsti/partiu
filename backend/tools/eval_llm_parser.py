@@ -10,6 +10,7 @@ Options:
     --ollama-url URL  Ollama base URL (default: from OLLAMA_URL env or http://localhost:11434)
     --output FILE   Write full results JSON to FILE (optional)
     --user-id N     Only process failed emails for this user (optional)
+    --workers N     Parallel Ollama requests (default: 4)
 
 Examples:
     # Quick test: first 20 emails against local Ollama
@@ -30,7 +31,9 @@ import email.utils as _eu
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 
@@ -43,6 +46,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ollama-url", default="", help="Ollama base URL")
     p.add_argument("--output", default="", help="Write JSON results to this file")
     p.add_argument("--user-id", type=int, default=0, help="Only process this user's emails")
+    p.add_argument(
+        "--db-path",
+        default="",
+        help="SQLite DB to use instead of default (useful for eval snapshots)",
+    )
+    p.add_argument("--workers", type=int, default=4, help="Parallel Ollama requests (default: 4)")
     return p.parse_args()
 
 
@@ -90,6 +99,8 @@ def main() -> None:
         os.environ["OLLAMA_URL"] = args.ollama_url
     if args.model:
         os.environ["OLLAMA_MODEL"] = args.model
+    if args.db_path:
+        os.environ["DB_PATH"] = args.db_path
 
     # Default Ollama URL for local dev if nothing set at all
     if not os.environ.get("OLLAMA_URL"):
@@ -143,50 +154,44 @@ def main() -> None:
 
     print()
 
-    results = []
-    n_extracted = 0
-    n_rejected = 0
-    n_failed = 0
-    n_no_eml = 0
-    latencies: list[float] = []
+    print_lock = threading.Lock()
+    done_count = 0
 
-    for i, row in enumerate(rows, 1):
+    def _process_row(row: dict) -> dict:
+        from datetime import UTC, datetime
+
+        from bs4 import BeautifulSoup
+
         eml_path = row.get("eml_path")
-        label = f"[{i:3}/{len(rows)}]"
 
         if not eml_path or not Path(eml_path).exists():
-            print(f"{label} SKIP  (no .eml file)  {row['sender'][:50]}")
-            n_no_eml += 1
-            results.append(
-                {
-                    "id": row["id"],
-                    "sender": row["sender"],
-                    "subject": row["subject"],
-                    "status": "no_eml",
-                    "flights": [],
-                }
-            )
-            continue
+            return {
+                "id": row["id"],
+                "sender": row["sender"],
+                "subject": row["subject"],
+                "status": "no_eml",
+                "flights": [],
+            }
 
         try:
             email_msg = _load_email(eml_path)
         except Exception as e:
-            print(f"{label} ERROR (load failed: {e})")
-            n_failed += 1
-            results.append(
-                {
-                    "id": row["id"],
-                    "sender": row["sender"],
-                    "subject": row["subject"],
-                    "status": "load_error",
-                    "error": str(e),
-                    "flights": [],
-                }
-            )
-            continue
+            return {
+                "id": row["id"],
+                "sender": row["sender"],
+                "subject": row["subject"],
+                "status": "load_error",
+                "error": str(e),
+                "flights": [],
+            }
 
-        body_text = (email_msg.body or "")[:4000]
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        body_text = email_msg.body or ""
+        if not body_text and email_msg.html_body:
+            body_text = BeautifulSoup(email_msg.html_body, "lxml").get_text(separator="\n")
+        body_text = body_text[:4000]
         prompt = _PROMPT_USER_TEMPLATE.format(
+            today=today,
             sender=email_msg.sender or "",
             subject=email_msg.subject or "",
             body=body_text,
@@ -195,38 +200,29 @@ def main() -> None:
         t0 = time.monotonic()
         raw = _call_ollama(prompt, model, ollama_url)
         elapsed = time.monotonic() - t0
-        latencies.append(elapsed)
 
         if raw is None:
-            print(f"{label} ERROR (Ollama timeout/error)  {row['subject'][:50]}")
-            n_failed += 1
-            results.append(
-                {
-                    "id": row["id"],
-                    "sender": row["sender"],
-                    "subject": row["subject"],
-                    "status": "ollama_error",
-                    "flights": [],
-                }
-            )
-            continue
+            return {
+                "id": row["id"],
+                "sender": row["sender"],
+                "subject": row["subject"],
+                "status": "ollama_error",
+                "elapsed": elapsed,
+                "flights": [],
+            }
 
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            print(f"{label} ERROR (bad JSON)  {row['subject'][:50]}")
-            n_failed += 1
-            results.append(
-                {
-                    "id": row["id"],
-                    "sender": row["sender"],
-                    "subject": row["subject"],
-                    "status": "json_error",
-                    "raw_response": raw[:200],
-                    "flights": [],
-                }
-            )
-            continue
+            return {
+                "id": row["id"],
+                "sender": row["sender"],
+                "subject": row["subject"],
+                "status": "json_error",
+                "raw_response": raw[:200],
+                "elapsed": elapsed,
+                "flights": [],
+            }
 
         has_flight = data.get("has_flight", False)
         raw_flights = data.get("flights") or []
@@ -241,31 +237,80 @@ def main() -> None:
 
         if has_flight and valid_flights:
             status = "extracted"
-            n_extracted += 1
-            fn_list = ", ".join(f.get("flight_number", "?") for f in valid_flights)
-            print(f"{label} ✓ FLIGHTS  [{fn_list}]  {row['subject'][:45]}  ({elapsed:.1f}s)")
         elif has_flight and not valid_flights:
-            # LLM said yes but validation failed
             status = "invalid_data"
-            n_failed += 1
-            print(
-                f"{label} ✗ INVALID  (LLM said flight but data failed validation)  {row['subject'][:40]}  ({elapsed:.1f}s)"
-            )
         else:
             status = "rejected"
-            n_rejected += 1
-            print(f"{label} — rejected  {row['subject'][:52]}  ({elapsed:.1f}s)")
 
-        results.append(
-            {
-                "id": row["id"],
-                "sender": row["sender"],
-                "subject": row["subject"],
-                "status": status,
-                "llm_raw": data,
-                "flights": valid_flights,
-            }
-        )
+        return {
+            "id": row["id"],
+            "sender": row["sender"],
+            "subject": row["subject"],
+            "status": status,
+            "llm_raw": data,
+            "elapsed": elapsed,
+            "flights": valid_flights,
+        }
+
+    # Submit all rows to the thread pool
+    future_to_row = {}
+    results_by_id: dict[int, dict] = {}
+    n_extracted = 0
+    n_rejected = 0
+    n_failed = 0
+    n_no_eml = 0
+    latencies: list[float] = []
+
+    print(f"Workers: {args.workers}\n")
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        future_to_row = {executor.submit(_process_row, row): row for row in rows}
+        for future in as_completed(future_to_row):
+            result = future.result()
+            results_by_id[result["id"]] = result
+            elapsed = result.get("elapsed", 0.0)
+            status = result["status"]
+            done_count += 1
+            label = f"[{done_count:3}/{len(rows)}]"
+
+            if elapsed:
+                latencies.append(elapsed)
+
+            with print_lock:
+                if status == "no_eml":
+                    print(f"{label} SKIP  (no .eml file)  {result['sender'][:50]}")
+                    n_no_eml += 1
+                elif status == "load_error":
+                    print(
+                        f"{label} ERROR (load failed: {result.get('error', '')})  {result['subject'][:40]}"
+                    )
+                    n_failed += 1
+                elif status == "ollama_error":
+                    print(
+                        f"{label} ERROR (Ollama timeout/error)  {result['subject'][:50]}  ({elapsed:.1f}s)"
+                    )
+                    n_failed += 1
+                elif status == "json_error":
+                    print(f"{label} ERROR (bad JSON)  {result['subject'][:50]}  ({elapsed:.1f}s)")
+                    n_failed += 1
+                elif status == "extracted":
+                    fn_list = ", ".join(f.get("flight_number") or "?" for f in result["flights"])
+                    print(
+                        f"{label} ✓ FLIGHTS  [{fn_list}]  {result['subject'][:45]}  ({elapsed:.1f}s)"
+                    )
+                    n_extracted += 1
+                elif status == "invalid_data":
+                    print(
+                        f"{label} ✗ INVALID  (LLM said flight but data failed validation)  {result['subject'][:40]}  ({elapsed:.1f}s)"
+                    )
+                    n_failed += 1
+                else:
+                    print(f"{label} — rejected  {result['subject'][:52]}  ({elapsed:.1f}s)")
+                    n_rejected += 1
+
+    # Restore original order (by position in rows list)
+    id_order = [row["id"] for row in rows]
+    results = [results_by_id[eid] for eid in id_order if eid in results_by_id]
 
     # Summary
     avg_lat = sum(latencies) / len(latencies) if latencies else 0

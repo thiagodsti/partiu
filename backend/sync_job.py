@@ -10,7 +10,12 @@ from datetime import UTC, datetime, timedelta
 from .boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
 from .database import db_conn, db_write, get_global_setting
 from .email_cache import save_emails
-from .failed_email_queue import email_has_flight_keywords, retry_failed_emails, save_failed_email
+from .failed_email_queue import (
+    email_has_flight_keywords,
+    is_non_flight_domain,
+    retry_failed_emails,
+    save_failed_email,
+)
 from .flight_store import find_existing_flight, insert_flight, update_flight
 from .grouping import auto_group_flights
 from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
@@ -353,7 +358,11 @@ def _process_emails(
             if not flights_data:
                 # If the email had flight-like keywords but we couldn't parse it,
                 # save it to the failed queue for later reprocessing
-                if email_has_flight_keywords(email_msg) and not bcbp_legs:
+                if (
+                    email_has_flight_keywords(email_msg)
+                    and not bcbp_legs
+                    and not is_non_flight_domain(email_msg.sender or "")
+                ):
                     if rule:
                         reason = "rule matched but extraction empty"
                     elif email_msg.pdf_attachments or email_msg.html_body:

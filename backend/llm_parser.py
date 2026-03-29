@@ -23,41 +23,99 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _PROMPT_SYSTEM = """\
-You are a flight data extraction assistant. Your only job is to extract \
-structured flight booking information from airline confirmation emails.
+You are a flight data extraction assistant. Extract structured flight booking \
+information from airline confirmation emails.
 
-Rules:
-- Extract ONLY flights that have a real booking confirmation (ticket issued, \
-  booking reference present, or clear itinerary with flight numbers).
-- Do NOT extract flights from marketing emails, loyalty programme updates, \
-  "time to check in" reminders with no booking data, or promotional offers.
-- Return a JSON object. Nothing else — no explanation, no markdown fences.
-- If the email contains valid flight bookings return:
-  {"has_flight": true, "booking_reference": "...", "flights": [...]}
-- If the email does NOT contain a valid flight booking return:
-  {"has_flight": false}
+RULES:
+- Extract ONLY confirmed bookings: ticket issued, booking reference present, \
+  clear itinerary with flight numbers and dates.
+- Do NOT extract from: marketing emails, loyalty updates, seat upgrade offers, \
+  check-in reminders that contain no itinerary, or promotional emails.
+- Return ONLY a JSON object. No explanation, no markdown, no extra text.
+- Use ONLY data that explicitly appears in the email. Never invent or guess \
+  airport codes, dates, or flight numbers. If a value is not in the email, \
+  use null.
 
-Each flight object must have these exact keys (use null if unknown):
-  flight_number   – e.g. "LA3045" (IATA airline code + digits, no spaces)
-  dep_airport     – 3-letter IATA code, e.g. "GRU"
-  arr_airport     – 3-letter IATA code, e.g. "LIS"
-  dep_datetime    – ISO 8601 local time, e.g. "2026-04-10T23:15:00"
-  arr_datetime    – ISO 8601 local time, e.g. "2026-04-11T13:30:00"
-  dep_date        – "YYYY-MM-DD" (used when full datetime is not available)
-  airline_name    – full airline name, e.g. "LATAM Airlines"
-  airline_code    – 2-letter IATA code, e.g. "LA"
-  passenger_name  – full name if present, else null
-  seat            – seat number if present, else null
-  cabin_class     – e.g. "Economy", "Business", else null
+DATES:
+- Dates MUST be taken from the email content. NEVER use today's date.
+- If no date is clearly written in the email, use null — do not guess.
+- dep_datetime and arr_datetime format: "YYYY-MM-DDTHH:MM:SS" (e.g. "2025-06-10T23:15:00").
+- dep_date format: "YYYY-MM-DD" (e.g. "2025-06-10").
+
+AIRPORT CODES:
+- dep_airport and arr_airport MUST be exactly 3 uppercase IATA letters (e.g. GRU, LIS, CDG, ARN, CPT).
+- IATA airport codes are always 3 letters. City names, addresses, and country names are NOT airport codes.
+- If you cannot find the 3-letter IATA code in the email, use null — never use a city name or address.
+- Common codes: Stockholm=ARN, Lisbon=LIS, London Heathrow=LHR, Paris CDG=CDG, Frankfurt=FRA, \
+  São Paulo Guarulhos=GRU, Oslo=OSL, Copenhagen=CPH, Helsinki=HEL, Cape Town=CPT, \
+  Johannesburg=JNB, Rome=FCO, Milan Linate=LIN, Milan Malpensa=MXP.
+
+FLIGHT NUMBERS:
+- Flight numbers are assigned by airlines and look like: SK1462, LA3045, FR2878, LH803, BA436.
+- Format: 2-letter airline IATA code + 3-5 digits, no spaces (e.g. SK117, LH271, TP523).
+- Booking references (e.g. KI4K6A, Y52PHH, ABC123) are NOT flight numbers — put them in booking_reference.
+- Ticket numbers (long numeric strings like 117-2539936905) are NOT flight numbers — use null.
+- If you cannot find a proper flight number, use null.
+
+AIRLINE CODES:
+- airline_code MUST be the 2-letter IATA code (e.g. SK for SAS, LA for LATAM, LH for Lufthansa, \
+  BA for British Airways, TP for TAP, FR for Ryanair, DY for Norwegian, AY for Finnair).
+- Never use 3-letter codes (e.g. "SAS", "TAP") — always use the 2-letter IATA code.
+
+OUTPUT FORMAT — with flights:
+{"has_flight": true, "booking_reference": "ABC123", "flights": [<flight>, ...]}
+
+OUTPUT FORMAT — no valid booking:
+{"has_flight": false}
+
+Each flight object:
+{
+  "flight_number":  "SK117",
+  "dep_airport":    "ARN",
+  "arr_airport":    "LIS",
+  "dep_datetime":   "2025-06-10T23:15:00",
+  "arr_datetime":   "2025-06-11T05:30:00",
+  "dep_date":       "2025-06-10",
+  "airline_name":   "SAS",
+  "airline_code":   "SK",
+  "passenger_name": "JOHN DOE",
+  "seat":           "12A",
+  "cabin_class":    "Economy"
+}
+
+EXAMPLE — SAS two-leg booking:
+Email says: "Booking ref Y52PHH. SK117 ARN→CPH 10Jun2025 06:15, SK563 CPH→LIS 10Jun2025 09:00. Passenger: JOHN DOE"
+Output:
+{"has_flight": true, "booking_reference": "Y52PHH", "flights": [
+  {"flight_number": "SK117", "dep_airport": "ARN", "arr_airport": "CPH",
+   "dep_datetime": "2025-06-10T06:15:00", "arr_datetime": null,
+   "dep_date": "2025-06-10", "airline_name": "SAS", "airline_code": "SK",
+   "passenger_name": "JOHN DOE", "seat": null, "cabin_class": null},
+  {"flight_number": "SK563", "dep_airport": "CPH", "arr_airport": "LIS",
+   "dep_datetime": "2025-06-10T09:00:00", "arr_datetime": null,
+   "dep_date": "2025-06-10", "airline_name": "SAS", "airline_code": "SK",
+   "passenger_name": "JOHN DOE", "seat": null, "cabin_class": null}
+]}
+
+EXAMPLE — not a booking:
+Email says: "Earn double miles this weekend on all SAS flights!"
+Output:
+{"has_flight": false}
+
+EXAMPLE — check-in reminder with no itinerary:
+Email says: "It's time to check in for your flight tomorrow!"
+Output:
+{"has_flight": false}
 """
 
 _PROMPT_USER_TEMPLATE = """\
-Extract flight data from the following email.
+Extract flight data from the following email. Use ONLY dates and codes that appear in the email body.
 
 Sender: {sender}
 Subject: {subject}
+Email date: {today}
 
-Email body (first 4000 chars):
+Email body:
 {body}
 """
 
@@ -112,11 +170,14 @@ def _validate_flight(flight: dict[str, Any]) -> bool:
     dep = (flight.get("dep_airport") or "").upper()
     arr = (flight.get("arr_airport") or "").upper()
     fn = (flight.get("flight_number") or "").upper().replace(" ", "").replace("\xa0", "")
+    # All three are required
+    if not dep or not arr or not fn:
+        return False
     if not _IATA_RE.match(dep) or not _IATA_RE.match(arr):
         return False
     if dep == arr:
         return False
-    if fn and not _FN_RE.match(fn):
+    if not _FN_RE.match(fn):
         return False
     # Must have at least a dep_date or dep_datetime
     if not flight.get("dep_datetime") and not flight.get("dep_date"):
@@ -196,8 +257,20 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
     if not settings.OLLAMA_URL:
         return []
 
-    body_text = (email_msg.body or "")[:4000]
+    from datetime import UTC, datetime
+
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Prefer plain-text body; fall back to stripped HTML
+    body_text = email_msg.body or ""
+    if not body_text and email_msg.html_body:
+        from bs4 import BeautifulSoup
+
+        body_text = BeautifulSoup(email_msg.html_body, "lxml").get_text(separator="\n")
+    body_text = body_text[:4000]
+
     prompt = _PROMPT_USER_TEMPLATE.format(
+        today=today,
         sender=email_msg.sender or "",
         subject=email_msg.subject or "",
         body=body_text,

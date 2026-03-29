@@ -13,12 +13,193 @@ from .utils import dt_to_iso, now_iso
 
 logger = logging.getLogger(__name__)
 
+
+def _delete_eml_files(eml_path: str | None) -> None:
+    """Delete the raw .eml and its anonymized companion from disk."""
+    if not eml_path:
+        return
+    p = Path(eml_path)
+    for f in (p, p.with_name(p.stem + "_anonymized.json")):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def delete_failed_email_row(email_id: str, eml_path: str | None = None) -> None:
+    """Delete a failed_email row and its files from disk.
+
+    If eml_path is not provided it is looked up from the DB first.
+    """
+    if eml_path is None:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT eml_path FROM failed_emails WHERE id = ?", (email_id,)
+            ).fetchone()
+            eml_path = row["eml_path"] if row else None
+    with db_write() as conn:
+        conn.execute("DELETE FROM failed_emails WHERE id = ?", (email_id,))
+    _delete_eml_files(eml_path)
+
+
 _FLIGHT_KEYWORDS = re.compile(
     r"\b(?:itinerary?|e-?ticket|booking\s*confirm\w*|flight\s*confirm\w*|"
     r"reservat\w*|check-?in|boarding)\b"
     r"|\b[A-Z]{2}\d{3,4}\b",
     re.IGNORECASE,
 )
+
+# Sender domains that never contain flight bookings — skip them entirely.
+# Subdomains are also matched (e.g. "property.booking.com" matches "booking.com").
+NON_FLIGHT_DOMAINS: frozenset[str] = frozenset(
+    [
+        # Accommodation
+        "airbnb.com",
+        "booking.com",
+        "property.booking.com",
+        "reservation.accor-mail.com",
+        # Car rental
+        "emails.hertz.com",
+        "europcar.com",
+        "sixt.com",
+        # Restaurants & events
+        "bookatable.com",
+        "caspeco.net",
+        "boxoffice.axs.nu",
+        "ticketmaster.se",
+        "bookatable.co.uk",
+        # Business / consulting
+        "alphasights.com",
+        # Tech / SaaS
+        "pipdecks.com",
+        "aws-experience.com",
+        # Government / public services
+        "migrationsverket.se",
+        "ventus.com",
+        # Retail
+        "medlem.kjell.com",
+        # Travel aggregators that send non-booking emails
+        "tripit.com",
+        # Schools
+        "folkuniversitetet.se",
+    ]
+)
+
+# Sender domains that are always airline/flight related — prioritise parsing.
+AIRLINE_DOMAINS: frozenset[str] = frozenset(
+    [
+        # LATAM
+        "latam.com",
+        "info.latam.com",
+        "mail.latam.com",
+        # TAP Air Portugal
+        "flytap.com",
+        "info.flytap.com",
+        # SAS
+        "flysas.com",
+        "msg.flysas.com",
+        "no-reply-info.flysas.com",
+        # Norwegian
+        "norwegian.com",
+        "norwegian.no",
+        "norwegian.se",
+        # Ryanair
+        "ryanair.com",
+        "ryanairemail.com",
+        "change.ryanair.com",
+        "service.ryanairemail.com",
+        # Lufthansa Group
+        "lufthansa.com",
+        "booking-lufthansa.com",
+        "your.lufthansa-group.com",
+        # Austrian Airlines
+        "austrian.com",
+        "information.austrian.com",
+        "notifications.austrian.com",
+        # British Airways
+        "email.ba.com",
+        "britishairways.com",
+        # ITA Airways
+        "enews.ita-airways.com",
+        "ita-airways.com",
+        # Swiss
+        "notifications.swiss.com",
+        "swiss.com",
+        # Air France
+        "infos-airfrance.com",
+        "airfrance.com",
+        # Qatar Airways
+        "qatarairways.com",
+        "qatarairways.com.qa",
+        # EasyJet
+        "info.easyjet.com",
+        "easyjet.com",
+        # GOL
+        "acomodacao.voegol.com.br",
+        "voegol.com.br",
+        # Maxmilhas (Brazilian flight reseller)
+        "maxmilhas.com.br",
+        # Finnair
+        "finnair.com",
+        # Azul
+        "voeazul.com.br",
+    ]
+)
+
+
+def _sender_domain(sender: str) -> str:
+    """Extract the domain from a sender address."""
+    m = re.search(r"@([\w.-]+)", sender or "")
+    return m.group(1).lower() if m else ""
+
+
+def is_non_flight_domain(sender: str) -> bool:
+    """Return True if the sender domain is known to never send flight bookings.
+
+    Checks both the hardcoded NON_FLIGHT_DOMAINS set and the non_flight_domains
+    DB table (user-managed). Subdomain matching is applied to both sources.
+    """
+    domain = _sender_domain(sender)
+    if not domain:
+        return False
+
+    def _matches(domain: str, blocked: str) -> bool:
+        return domain == blocked or domain.endswith("." + blocked)
+
+    # Check hardcoded set first (no DB hit)
+    if any(_matches(domain, d) for d in NON_FLIGHT_DOMAINS):
+        return True
+
+    # Check DB table
+    try:
+        with db_conn() as conn:
+            rows = conn.execute("SELECT domain FROM non_flight_domains").fetchall()
+        return any(_matches(domain, row["domain"]) for row in rows)
+    except Exception:
+        return False
+
+
+def add_non_flight_domain(domain: str, note: str = "") -> None:
+    """Persist a new non-flight domain to the DB and delete its existing failed emails."""
+    domain = domain.strip().lower()
+    if not domain:
+        return
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, eml_path FROM failed_emails WHERE airline_hint = ? OR airline_hint LIKE ?",
+            (domain, "%." + domain),
+        ).fetchall()
+    with db_write() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO non_flight_domains (domain, note) VALUES (?, ?)",
+            (domain, note),
+        )
+        conn.execute(
+            "DELETE FROM failed_emails WHERE airline_hint = ? OR airline_hint LIKE ?",
+            (domain, "%." + domain),
+        )
+    for row in rows:
+        _delete_eml_files(row["eml_path"])
 
 
 def email_has_flight_keywords(email_msg) -> bool:
@@ -31,12 +212,38 @@ def email_has_flight_keywords(email_msg) -> bool:
 
 def detect_airline_hint(email_msg) -> str:
     """Try to guess the airline from the sender domain."""
-    m = re.search(r"@([\w.-]+)", email_msg.sender or "")
-    return m.group(1).lower() if m else ""
+    return _sender_domain(email_msg.sender or "")
+
+
+def _build_synthetic_eml(email_msg) -> bytes | None:
+    """Build a minimal RFC-2822 EML from an EmailMessage when raw_eml is unavailable."""
+    import email.mime.multipart
+    import email.mime.text
+    import email.utils
+
+    try:
+        msg = email.mime.multipart.MIMEMultipart("alternative")
+        msg["From"] = email_msg.sender or ""
+        msg["Subject"] = email_msg.subject or ""
+        msg["Message-ID"] = email_msg.message_id or ""
+        if email_msg.date:
+            msg["Date"] = email.utils.format_datetime(email_msg.date)
+        if email_msg.body:
+            msg.attach(email.mime.text.MIMEText(email_msg.body, "plain", "utf-8"))
+        if email_msg.html_body:
+            msg.attach(email.mime.text.MIMEText(email_msg.html_body, "html", "utf-8"))
+        return msg.as_bytes()
+    except Exception as e:
+        logger.debug("Could not build synthetic EML: %s", e)
+        return None
 
 
 def save_failed_email(user_id: int, email_msg, reason: str) -> None:
     """Persist a failed-to-parse email to the DB and save the raw .eml to disk."""
+    if is_non_flight_domain(email_msg.sender or ""):
+        logger.debug("Skipping failed email from known non-flight domain: %s", email_msg.sender)
+        return
+
     airline_hint = detect_airline_hint(email_msg)
 
     # Check for duplicate BEFORE writing any files — otherwise a second sync
@@ -62,6 +269,8 @@ def save_failed_email(user_id: int, email_msg, reason: str) -> None:
         eml_dir = Path(settings.DB_PATH).parent / "failed_emails"
         eml_dir.mkdir(parents=True, exist_ok=True)
         raw = getattr(email_msg, "raw_eml", None)
+        if not raw:
+            raw = _build_synthetic_eml(email_msg)
         if raw:
             eml_path = str(eml_dir / f"{failed_id}.eml")
             Path(eml_path).write_bytes(raw)
@@ -169,14 +378,7 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
                 continue
             insert_flight(flight_data, email_msg, user_id)
 
-        with db_write() as conn:
-            conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
-        p = Path(eml_path)
-        for f in (p, p.with_name(p.stem + "_anonymized.json")):
-            try:
-                f.unlink(missing_ok=True)
-            except OSError:
-                pass
+        delete_failed_email_row(row["id"], eml_path)
         return True
 
     # --- Boarding-pass seat updater (no new flight, just patch seat) ---
@@ -197,14 +399,7 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
                         seat_upd["flight_number"],
                         seat_upd["seat"],
                     )
-                with db_write() as conn:
-                    conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
-                p = Path(eml_path)
-                for f in (p, p.with_name(p.stem + "_anonymized.json")):
-                    try:
-                        f.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                delete_failed_email_row(row["id"], eml_path)
                 return True
 
     # --- LLM fallback (only if Ollama is configured) ---
@@ -234,14 +429,7 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
                 insert_flight(flight_data, email_msg, user_id)
                 inserted += 1
             if inserted:
-                with db_write() as conn:
-                    conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
-                p = Path(eml_path)
-                for f in (p, p.with_name(p.stem + "_anonymized.json")):
-                    try:
-                        f.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                delete_failed_email_row(row["id"], eml_path)
                 logger.info(
                     "LLM fallback recovered %d flight(s) from failed email %s", inserted, row["id"]
                 )

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
 from ..database import db_conn, db_write
+from ..failed_email_queue import _delete_eml_files, delete_failed_email_row
 
 router = APIRouter(tags=["failed-emails"])
 
@@ -73,7 +74,7 @@ def delete_failed_email(email_id: str, user: dict = Depends(get_current_user)):
     if not row:
         raise HTTPException(status_code=404, detail="Failed email not found")
 
-    _delete_failed_email_row(email_id, row["eml_path"])
+    delete_failed_email_row(email_id, row["eml_path"])
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +116,7 @@ def admin_delete_sender(body: _SenderBody, user: dict = Depends(require_admin)):
         conn.execute("DELETE FROM failed_emails WHERE airline_hint = ?", (body.sender,))
 
     for row in rows:
-        if row["eml_path"]:
-            _delete_eml_files(row["eml_path"])
+        _delete_eml_files(row["eml_path"])
 
 
 @router.post("/api/admin/failed-emails/retry-all")
@@ -135,29 +135,40 @@ def admin_retry_all(user: dict = Depends(require_admin)):
     return {"results": results}
 
 
+@router.get("/api/admin/non-flight-domains")
+def admin_list_non_flight_domains(user: dict = Depends(require_admin)):
+    """Admin: list all blocked non-flight sender domains."""
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT domain, note, created_at FROM non_flight_domains ORDER BY domain"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+class _DomainBody(BaseModel):
+    domain: str
+    note: str = ""
+
+
+@router.post("/api/admin/non-flight-domains", status_code=201)
+def admin_add_non_flight_domain(body: _DomainBody, user: dict = Depends(require_admin)):
+    """Admin: add a domain to the non-flight blocklist and delete its existing failed emails."""
+    from ..failed_email_queue import add_non_flight_domain
+
+    add_non_flight_domain(body.domain, body.note)
+    return {"domain": body.domain.strip().lower()}
+
+
+@router.delete("/api/admin/non-flight-domains/{domain:path}", status_code=204)
+def admin_delete_non_flight_domain(domain: str, user: dict = Depends(require_admin)):
+    """Admin: remove a domain from the non-flight blocklist."""
+    with db_write() as conn:
+        conn.execute("DELETE FROM non_flight_domains WHERE domain = ?", (domain,))
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _delete_eml_files(eml_path: str) -> None:
-    """Delete the raw .eml and its anonymized JSON companion if they exist."""
-    from pathlib import Path
-
-    p = Path(eml_path)
-    for f in (p, p.with_name(p.stem + "_anonymized.json")):
-        try:
-            f.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
-def _delete_failed_email_row(email_id: str, eml_path: str | None) -> None:
-    with db_write() as conn:
-        conn.execute("DELETE FROM failed_emails WHERE id = ?", (email_id,))
-
-    if eml_path:
-        _delete_eml_files(eml_path)
 
 
 def _retry_one(row: dict, user_id: int) -> None:
