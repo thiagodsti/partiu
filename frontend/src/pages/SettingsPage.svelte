@@ -117,6 +117,7 @@
       syncStatus = status;
       airportCount = airportData?.count ?? 0;
       cacheInfo = cache;
+      if (status?.status === 'running') startSyncPoll();
       // Populate form
       gmailAddress = s.gmail_address ?? "";
       imapHost = s.imap_host ?? "imap.gmail.com";
@@ -204,13 +205,11 @@
 
   function startSyncPoll() {
     stopSyncPoll();
-    let polls = 0;
     syncPollInterval = setInterval(async () => {
-      polls++;
       try {
         const status = await syncApi.status();
         syncStatus = status;
-        if (status.status !== "running" || polls > 60) {
+        if (status.status !== "running") {
           stopSyncPoll();
         }
       } catch {
