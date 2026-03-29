@@ -73,7 +73,7 @@ def llm_available() -> bool:
     return bool(settings.OLLAMA_URL)
 
 
-def _call_ollama(prompt: str, model: str, ollama_url: str) -> str | None:
+def _call_ollama(prompt: str, model: str, ollama_url: str, timeout: int = 180) -> str | None:
     """Send a chat completion request to Ollama and return the raw response text."""
     payload = json.dumps(
         {
@@ -96,7 +96,7 @@ def _call_ollama(prompt: str, model: str, ollama_url: str) -> str | None:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
             return data.get("message", {}).get("content", "")
     except urllib.error.URLError as e:
@@ -203,7 +203,9 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         body=body_text,
     )
 
-    raw = _call_ollama(prompt, settings.OLLAMA_MODEL, settings.OLLAMA_URL)
+    raw = _call_ollama(
+        prompt, settings.OLLAMA_MODEL, settings.OLLAMA_URL, timeout=settings.OLLAMA_TIMEOUT
+    )
     if not raw:
         return []
 
