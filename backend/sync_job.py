@@ -422,9 +422,11 @@ def _process_emails(
             logger.error(err, exc_info=True)
             errors.append(err)
         finally:
-            # Report progress every 10 emails to avoid excessive DB writes
+            # Report progress every 10 emails to avoid excessive DB writes.
+            # Skip total_seen == 0 to avoid resetting the counter to 0 at the
+            # start of processing (which would look like a restart to the user).
             total_seen = emails_processed + failed_emails_added + len(errors)
-            if progress_callback and total_seen % 10 == 0:
+            if progress_callback and total_seen > 0 and total_seen % 10 == 0:
                 try:
                     progress_callback(total_seen)  # type: ignore[operator]
                 except Exception:
@@ -566,6 +568,10 @@ def run_email_sync_for_user(user: dict) -> dict:
         logger.info("User %d: Fetched %d matching emails", user_id, len(emails))
         if emails:
             save_emails(emails)
+
+        # Reset processing counter so the UI shows a clean 0→N progress for
+        # the parse phase (separate from the IMAP fetch counter above).
+        _upsert_sync_state(user_id, emails_processed=0, emails_total=len(emails))
 
         # LLM fallback only on incremental syncs — full re-scans can touch
         # hundreds of historical emails and would be too slow.
