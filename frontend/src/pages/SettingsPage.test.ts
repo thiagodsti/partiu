@@ -31,7 +31,7 @@ vi.mock('../api/client', () => ({
     reloadAirports: mockReloadAirports,
     testImmich: vi.fn(),
   },
-  syncApi: { status: mockSyncStatus, now: mockSyncNow },
+  syncApi: { status: mockSyncStatus, now: mockSyncNow, cacheInfo: vi.fn().mockResolvedValue({ exists: false, count: 0, oldest: null, newest: null }), fromCache: vi.fn() },
   authApi: { changePassword: mockAuthChangePassword },
   notificationsApi: {
     vapidStatus: mockNotifVapidStatus,
