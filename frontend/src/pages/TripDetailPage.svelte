@@ -223,6 +223,44 @@
     }
   }
 
+  // ---- Merge trip ----
+  let showMergeModal = $state(false);
+  let mergeTrips = $state<Trip[]>([]);
+  let mergeTargetId = $state('');
+  let mergeError = $state<string | null>(null);
+  let merging = $state(false);
+  let mergeLoading = $state(false);
+
+  async function openMergeModal() {
+    showMergeModal = true;
+    mergeError = null;
+    mergeTargetId = '';
+    mergeLoading = true;
+    try {
+      const res = await tripsApi.list();
+      mergeTrips = res.trips.filter((t) => t.id !== trip?.id && t.is_owner !== false);
+    } catch (err) {
+      mergeError = (err as Error).message;
+    } finally {
+      mergeLoading = false;
+    }
+  }
+
+  async function confirmMerge() {
+    if (!trip || !mergeTargetId) return;
+    merging = true;
+    mergeError = null;
+    try {
+      const result = await tripsApi.merge(trip.id, mergeTargetId);
+      showMergeModal = false;
+      window.location.hash = `/trips/${result.target_trip_id}`;
+    } catch (err) {
+      mergeError = (err as Error).message;
+    } finally {
+      merging = false;
+    }
+  }
+
   // ---- Share trip ----
   let showSharePanel = $state(false);
   let shareUsername = $state('');
@@ -451,6 +489,13 @@
             onclick={() => { showSharePanel = !showSharePanel; }}
           >
             ⤷ {$t('trip.share')}
+          </button>
+          <button
+            class="btn btn-secondary"
+            style="font-size:0.85rem"
+            onclick={openMergeModal}
+          >
+            ⇄ {$t('trip.merge')}
           </button>
           <button
             class="btn btn-danger"
@@ -718,6 +763,50 @@
     onConfirm={confirmDeleteTrip}
     onCancel={() => (showDeleteConfirm = false)}
   />
+{/if}
+
+{#if showMergeModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    role="presentation"
+    style="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:var(--space-md)"
+    onclick={() => (showMergeModal = false)}
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      style="background:var(--bg-card);border-radius:var(--radius-md);padding:var(--space-lg);max-width:420px;width:100%;box-shadow:var(--shadow-lg)"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <h3 style="margin:0 0 var(--space-sm);font-size:1rem">{$t('trip.merge_title')}</h3>
+      <p style="margin:0 0 var(--space-md);font-size:0.875rem;color:var(--text-muted)">{$t('trip.merge_description')}</p>
+      {#if mergeLoading}
+        <p style="font-size:0.875rem;color:var(--text-muted)">{$t('trip.merge_loading')}</p>
+      {:else if mergeTrips.length === 0}
+        <p style="font-size:0.875rem;color:var(--text-muted)">{$t('trip.merge_no_trips')}</p>
+      {:else}
+        <select class="form-input" style="width:100%;margin-bottom:var(--space-md)" bind:value={mergeTargetId}>
+          <option value="">{$t('trip.merge_select_placeholder')}</option>
+          {#each mergeTrips as t (t.id)}
+            <option value={t.id}>{t.name}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if mergeError}
+        <p style="color:var(--danger);font-size:0.85rem;margin:0 0 var(--space-sm)">{mergeError}</p>
+      {/if}
+      <div style="display:flex;gap:var(--space-sm);justify-content:flex-end;margin-top:var(--space-md)">
+        <button class="btn btn-secondary" onclick={() => (showMergeModal = false)}>
+          {$t('trip.merge_cancel')}
+        </button>
+        <button class="btn btn-primary" disabled={!mergeTargetId || merging} onclick={confirmMerge}>
+          {merging ? $t('trip.merge_merging') : $t('trip.merge_confirm')}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <!-- Document viewer modal -->

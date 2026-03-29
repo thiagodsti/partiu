@@ -8,10 +8,19 @@
   let loading = $state(true);
   let tooltip = $state<{ name: string; x: number; y: number } | null>(null);
   let tappedCountry = $state<string | null>(null);
+  let yearLabel = $state<number | null>(null);
 
   onMount(async () => {
     try {
-      const stats = await statsApi.get();
+      // Read year directly from the hash (e.g. #/stats/map?year=2020)
+      const hash = window.location.hash;
+      const qmark = hash.indexOf('?');
+      const qs = qmark >= 0 ? hash.slice(qmark + 1) : '';
+      const yearStr = new URLSearchParams(qs).get('year');
+      const year = yearStr ? Number(yearStr) : undefined;
+      yearLabel = year ?? null;
+
+      const stats = await statsApi.get(year);
       visitedSet = new Set(stats.visited_countries.map((c) => c.toLowerCase()));
     } finally {
       loading = false;
@@ -38,7 +47,7 @@
 <div class="map-page">
   <div class="map-header">
     <a href="#/stats" class="btn btn-secondary btn-sm back-btn">← {$t('flight.back')}</a>
-    <h2 class="map-title">{$t('stats.countries_visited')}</h2>
+    <h2 class="map-title">{$t('stats.countries_visited')}{yearLabel ? ` · ${yearLabel}` : ''}</h2>
     <span class="map-count">{visitedSet.size}</span>
   </div>
 
@@ -74,7 +83,7 @@
 
     <div class="country-list">
       {#each [...visitedSet].sort() as code}
-        {@const loc = worldMap.locations.find((l) => l.id === code)}
+        {@const loc = worldMap.locations.find((l: { id: string; name: string }) => l.id === code)}
         {#if loc}
           <span class="country-chip">{loc.name}</span>
         {/if}
@@ -86,7 +95,7 @@
 {#if tooltip}
   <div class="map-tooltip" style="left:{tooltip.x + 12}px; top:{tooltip.y - 8}px">
     {tooltip.name}
-    {#if visitedSet.has(worldMap.locations.find((l) => l.name === tooltip?.name)?.id ?? '')}
+    {#if visitedSet.has(worldMap.locations.find((l: { id: string; name: string }) => l.name === tooltip?.name)?.id ?? '')}
       <span class="tooltip-visited">✓</span>
     {/if}
   </div>

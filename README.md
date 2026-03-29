@@ -18,10 +18,13 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 - Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
 - Generic PDF extraction fallback for attachments
-- Built-in parser rules for 6 airlines (see [Supported airlines](#supported-airlines))
+- Built-in parser rules for 12 airlines (see [Supported airlines](#supported-airlines))
+- **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are parsed by a local LLM (e.g. `qwen2.5:1.5b`); LLM output is validated against the airports DB before import
+- LLM is used for incremental sync and failed-email retries (not full rescan, to avoid slow rescans)
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
 - Failed email queue: stores unparseable emails for later retry
 - Manual "sync now" trigger and configurable sync interval (admin)
+- CLI audit tool (`verify_flights_llm.py`): cross-checks imported flights against Ollama's reading of the source email, flags mismatches
 
 ### Trip & flight management
 - Auto-groups flights into trips by booking reference, then 48h time proximity
@@ -79,6 +82,8 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 - Login rate-limiting and TOTP lockout after repeated failures
 - Audit logging of auth events
 
+> **Privacy note:** When an email cannot be parsed, Partiu saves the raw `.eml` file to `data/failed_emails/` on disk for later retry. These files contain the original email content, including any personal information present in the confirmation email (passenger name, booking reference, etc.). Anyone with access to the server's filesystem can read them. Delete the files from Settings → Failed Emails once you no longer need them, or restrict filesystem access to the user running Partiu.
+
 ### Multi-user & admin
 - Multi-user support with per-user Gmail/IMAP credentials
 - Admin: create, list, update, reset passwords, delete users
@@ -98,7 +103,13 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 | Norwegian Air Shuttle | DY |
 | Azul Brazilian Airlines | AD |
 | Lufthansa | LH |
+| British Airways (+ Iberia legs on BA itineraries) | BA |
+| ITA Airways | AZ |
 | Kiwi.com (multi-airline bookings) | — |
+| Ryanair | FR |
+| Austrian Airlines | OS |
+| TAP Air Portugal | TP |
+| Finnair | AY |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
 

@@ -59,6 +59,16 @@ _KNOWN_AIRPORTS: dict[str, str] = {
     "barcelona": "BCN",
     "rome fiumicino": "FCO",
     "milan malpensa": "MXP",
+    "milan linate": "LIN",
+    "milan bergamo": "BGY",
+    "bergamo": "BGY",
+    "orio al serio": "BGY",
+    "berlin brandenburg": "BER",
+    "berlin tegel": "TXL",
+    "berlin schonefeld": "SXF",
+    "berlin schoenefeld": "SXF",
+    "warsaw chopin": "WAW",
+    "warsaw modlin": "WMI",
     "new york jfk": "JFK",
     "new york newark": "EWR",
     "los angeles": "LAX",
@@ -113,20 +123,24 @@ def _resolve_airport(text: str) -> str:
 
     try:
         from ...database import db_conn
+
         with db_conn() as conn:
-            if len(words) > 1:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE name LIKE ? LIMIT 1",
-                    (f"%{words[-1]}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
+            # Full-name match first (most precise)
             row = conn.execute(
-                "SELECT iata_code FROM airports WHERE name LIKE ? OR city_name LIKE ? LIMIT 1",
+                "SELECT iata_code FROM airports WHERE lower(name) LIKE ? OR lower(city_name) LIKE ? LIMIT 1",
                 (f"%{name_lower}%", f"%{name_lower}%"),
             ).fetchone()
             if row:
                 return row["iata_code"]
+            # Last-word fallback — only use if last word is ≥6 chars to avoid
+            # false positives (e.g. "Brandenburg" matching "Neubrandenburg")
+            if len(words) > 1 and len(words[-1]) >= 6:
+                row = conn.execute(
+                    "SELECT iata_code FROM airports WHERE lower(name) LIKE ? LIMIT 1",
+                    (f"{words[-1].lower()}%",),  # prefix match, not substring
+                ).fetchone()
+                if row:
+                    return row["iata_code"]
     except Exception:
         pass
 
@@ -156,9 +170,7 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     booking_ref = _extract_booking_reference(soup, email_msg.subject)
 
     date_re = re.compile(r"(?:^|\s)(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?:\s|$)")
-    route_re = re.compile(
-        r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})"
-    )
+    route_re = re.compile(r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})")
     time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
     flight_num_re = re.compile(rf"({_FLIGHT_NUM_CODES}\s*\d{{2,5}})")
 
@@ -174,29 +186,39 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
         block_end = date_matches[i + 1].start() if i + 1 < len(date_matches) else len(text)
         block = text[block_start:block_end]
 
-        route_m = route_re.search(block)
-        time_m = time_re.search(block)
-        fn_m = flight_num_re.search(block)
-        if not all([route_m, time_m, fn_m]):
-            continue
-        assert route_m is not None and time_m is not None and fn_m is not None
+        fn_matches = list(flight_num_re.finditer(block))
+        route_matches = list(route_re.finditer(block))
+        time_matches = list(time_re.finditer(block))
 
-        dep_airport = route_m.group(1)
-        arr_airport = route_m.group(2)
-        dep_time = time_m.group(1)
-        arr_time = time_m.group(2)
-        flight_number = fn_m.group(1).replace(" ", "")
+        # Anchor on flight numbers to avoid picking up summary rows.
+        # SAS emails start with a summary ("ARN–JNB 18:10–11:30 1 stopp")
+        # before the individual legs. Finding the nearest route/time before
+        # each flight number ensures we get per-leg data, not the summary.
+        for fn_m in fn_matches:
+            fn_pos = fn_m.start()
 
-        dep_dt = _build_datetime(dep_date, dep_time)
-        arr_dt = _build_datetime(dep_date, arr_time)
+            route_m = next((r for r in reversed(route_matches) if r.start() < fn_pos), None)
+            time_m = next((t for t in reversed(time_matches) if t.start() < fn_pos), None)
+            if not route_m or not time_m:
+                continue
 
-        # Handle overnight flights
-        if arr_dt and dep_dt and arr_dt < dep_dt:
-            arr_dt = _build_datetime(dep_date + timedelta(days=1), arr_time)
+            dep_airport = route_m.group(1)
+            arr_airport = route_m.group(2)
+            dep_time = time_m.group(1)
+            arr_time = time_m.group(2)
+            flight_number = fn_m.group(1).replace(" ", "")
 
-        flight = _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref)
-        if flight:
-            flights.append(flight)
+            dep_dt = _build_datetime(dep_date, dep_time)
+            arr_dt = _build_datetime(dep_date, arr_time)
+
+            if arr_dt and dep_dt and arr_dt < dep_dt:
+                arr_dt = _build_datetime(dep_date + timedelta(days=1), arr_time)
+
+            flight = _make_flight_dict(
+                rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref
+            )
+            if flight:
+                flights.append(flight)
 
     return flights
 
@@ -207,12 +229,32 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
 
 
 def extract(email_msg, rule) -> list[dict]:
-    """Unified entry point: try HTML (BS4), then plain-text regex."""
+    """Unified entry point: HTML (BS4) → plain-text regex → PDF attachments."""
     if email_msg.html_body:
         result = extract_bs4(email_msg.html_body, rule, email_msg)
         if result:
             return result
-    return extract_regex(email_msg, rule)
+
+    result = extract_regex(email_msg, rule)
+    if result:
+        return result
+
+    # Some SAS e-ticket emails carry flight data only in a PDF attachment
+    # (no usable HTML/text body). Try the SAS tabular PDF format directly.
+    if email_msg.pdf_attachments:
+        from ..email_connector import _extract_text_from_pdf
+
+        for pdf_bytes in email_msg.pdf_attachments:
+            pdf_text = _extract_text_from_pdf(pdf_bytes)
+            if not pdf_text:
+                continue
+            booking_ref = _booking_ref_from_text(email_msg.subject + "\n" + pdf_text)
+            passenger = _passenger_from_text(pdf_text)
+            flights = _extract_pdf_tabular(pdf_text, email_msg, rule, booking_ref, passenger)
+            if flights:
+                return flights
+
+    return []
 
 
 def extract_regex(email_msg, rule) -> list[dict]:
@@ -237,7 +279,8 @@ def _booking_ref_from_text(text: str) -> str:
     m = re.search(
         r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
         r"Bokning|Reserva|PNR|Buchungscode|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        text, re.IGNORECASE,
+        text,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
@@ -245,7 +288,8 @@ def _booking_ref_from_text(text: str) -> str:
 def _passenger_from_text(body: str) -> str:
     m = re.search(
         r"(?:Mr|Mrs|Ms|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)\s+Date\s+of\s+Issue",
-        body, re.IGNORECASE,
+        body,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
@@ -307,14 +351,20 @@ def _extract_pdf_tabular(body, email_msg, rule, booking_ref, passenger) -> list[
         dep_h, dep_m_val = map(int, dep_time_str.split(":"))
         arr_h, arr_m_val = map(int, arr_time_str.split(":"))
 
-        dep_dt = _make_aware(datetime(flight_date.year, flight_date.month, flight_date.day, dep_h, dep_m_val))
+        dep_dt = _make_aware(
+            datetime(flight_date.year, flight_date.month, flight_date.day, dep_h, dep_m_val)
+        )
 
         arr_date = flight_date
         if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
             arr_date = flight_date + timedelta(days=1)
-        arr_dt = _make_aware(datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val))
+        arr_dt = _make_aware(
+            datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val)
+        )
 
-        base = _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger)
+        base = _make_flight_dict(
+            rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger
+        )
         if base is None:
             continue
         flight = {**base, "departure_terminal": terminal}
@@ -331,9 +381,7 @@ def _extract_block_style(body: str, rule, booking_ref: str) -> list[dict]:
       SK1829  10:00 – 11:50
     """
     date_re = re.compile(r"(?:^|\s)(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?:\s|$)")
-    route_re = re.compile(
-        r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})"
-    )
+    route_re = re.compile(r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})")
     time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
     flight_num_re = re.compile(rf"({_FLIGHT_NUM_CODES}\s*\d{{2,5}})")
 
@@ -363,14 +411,20 @@ def _extract_block_style(body: str, rule, booking_ref: str) -> list[dict]:
             dep_h, dep_m_val = map(int, dep_time_str.split(":"))
             arr_h, arr_m_val = map(int, arr_time_str.split(":"))
 
-            dep_dt = _make_aware(datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m_val))
+            dep_dt = _make_aware(
+                datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m_val)
+            )
 
             arr_date = dep_date
             if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
                 arr_date = dep_date + timedelta(days=1)
-            arr_dt = _make_aware(datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val))
+            arr_dt = _make_aware(
+                datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val)
+            )
 
-            flight = _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref)
+            flight = _make_flight_dict(
+                rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref
+            )
             if flight:
                 flights.append(flight)
 

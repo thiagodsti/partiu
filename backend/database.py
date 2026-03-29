@@ -438,7 +438,15 @@ _LEGACY_MIGRATIONS: list[tuple[int, str, list[str]]] = [
             "ALTER TABLE users ADD COLUMN notif_delay_alert INTEGER NOT NULL DEFAULT 1",
         ],
     ),
+    (
+        26,
+        "Fix airport city names: BGY Orio al Serio → Bergamo",
+        [
+            "UPDATE airports SET city_name = 'Bergamo' WHERE iata_code = 'BGY'",
+        ],
+    ),
 ]
+
 
 def _get_alembic_config():
     from alembic.config import Config
@@ -492,9 +500,7 @@ def _encrypt_existing_credentials() -> None:
     from .crypto import encrypt, is_encrypted
 
     with db_conn() as conn:
-        users = conn.execute(
-            "SELECT id, gmail_app_password, immich_api_key FROM users"
-        ).fetchall()
+        users = conn.execute("SELECT id, gmail_app_password, immich_api_key FROM users").fetchall()
 
     for user in users:
         updates: dict = {}

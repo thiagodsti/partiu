@@ -44,7 +44,6 @@
     }
   }
   let syncInterval = $state(10);
-  let maxEmailsPerSync = $state(200);
   let firstSyncDays = $state(90);
   let smtpEnabled = $state(false);
   let smtpPort = $state(2525);
@@ -93,6 +92,9 @@
   let imapTestOk = $state(false);
 
   let regrouping = $state(false);
+  let fullSyncing = $state(false);
+  let fromCacheSyncing = $state(false);
+  let cacheInfo = $state<{ exists: boolean; count: number; oldest: string | null; newest: string | null } | null>(null);
   let resetting = $state(false);
   let resetConfirmStep = $state(false);
   let resetConfirmText = $state("");
@@ -105,20 +107,21 @@
     loading = true;
     error = null;
     try {
-      const [s, status, airportData] = await Promise.all([
+      const [s, status, airportData, cache] = await Promise.all([
         settingsApi.get(),
         syncApi.status().catch(() => null),
         settingsApi.airportCount().catch(() => null),
+        syncApi.cacheInfo().catch(() => null),
       ]);
       currentSettings = s;
       syncStatus = status;
       airportCount = airportData?.count ?? 0;
+      cacheInfo = cache;
       // Populate form
       gmailAddress = s.gmail_address ?? "";
       imapHost = s.imap_host ?? "imap.gmail.com";
       imapPort = s.imap_port ?? 993;
       syncInterval = s.sync_interval_minutes ?? 10;
-      maxEmailsPerSync = s.max_emails_per_sync ?? 200;
       firstSyncDays = s.first_sync_days ?? 90;
       smtpEnabled = s.smtp_server_enabled ?? false;
       smtpPort = s.smtp_server_port ?? 2525;
@@ -149,6 +152,32 @@
       showMsg(`Error: ${(err as Error).message}`, "error");
     } finally {
       regrouping = false;
+    }
+  }
+
+  async function fullSync() {
+    fullSyncing = true;
+    try {
+      await syncApi.fullSync();
+      if (syncStatus) syncStatus = { ...syncStatus, status: 'running' };
+      startSyncPoll();
+    } catch (err) {
+      showMsg(`Error: ${(err as Error).message}`, "error");
+    } finally {
+      fullSyncing = false;
+    }
+  }
+
+  async function fromCacheSync() {
+    fromCacheSyncing = true;
+    try {
+      await syncApi.fromCache();
+      if (syncStatus) syncStatus = { ...syncStatus, status: 'running' };
+      startSyncPoll();
+    } catch (err) {
+      showMsg(`Error: ${(err as Error).message}`, "error");
+    } finally {
+      fromCacheSyncing = false;
     }
   }
 
@@ -211,8 +240,6 @@
     if ($currentUser?.is_admin) {
       if (!isNaN(syncInterval) && syncInterval > 0)
         data.sync_interval_minutes = syncInterval;
-      if (!isNaN(maxEmailsPerSync) && maxEmailsPerSync > 0)
-        data.max_emails_per_sync = maxEmailsPerSync;
       if (!isNaN(firstSyncDays) && firstSyncDays > 0)
         data.first_sync_days = firstSyncDays;
       data.smtp_server_enabled = smtpEnabled;
@@ -558,6 +585,8 @@
 
   let adminFailedGroups = $state<AdminFailedEmailGroup[]>([]);
   let adminRetryingAll = $state(false);
+  let adminRetryResult = $state<{ retried: number; recovered: number } | null>(null);
+  let retryAllProgress = $state<{ current: number; total: number } | null>(null);
 
   async function loadFailedEmails() {
     failedEmailsLoading = true;
@@ -610,11 +639,32 @@
 
   async function adminRetryAll() {
     adminRetryingAll = true;
+    adminRetryResult = null;
+    retryAllProgress = null;
     try {
-      await failedEmailsApi.adminRetryAll();
+      // Retry one-by-one so we can show progress
+      const toRetry = [...failedEmails];
+      retryAllProgress = { current: 0, total: toRetry.length };
+      let recovered = 0;
+      for (const fe of toRetry) {
+        retryAllProgress = { current: retryAllProgress.current + 1, total: toRetry.length };
+        try {
+          const result = await failedEmailsApi.retry(fe.id);
+          if (result.status === 'recovered') {
+            recovered++;
+            failedEmails = failedEmails.filter(e => e.id !== fe.id);
+          } else if (result.record) {
+            failedEmails = failedEmails.map(e => e.id === fe.id ? result.record! : e);
+          }
+        } catch { /* continue with next */ }
+      }
+      adminRetryResult = { retried: toRetry.length, recovered };
       await loadFailedEmails();
-    } catch { /* ignore */ } finally {
+    } catch {
+      adminRetryResult = null;
+    } finally {
       adminRetryingAll = false;
+      retryAllProgress = null;
     }
   }
 
@@ -682,6 +732,29 @@
       >
         {regrouping ? $t("settings.regrouping") : $t("settings.regroup")}
       </button>
+
+      <button
+        class="btn btn-secondary btn-full"
+        style="margin-top:var(--space-sm)"
+        onclick={fullSync}
+        disabled={fullSyncing}
+      >
+        {fullSyncing ? $t("settings.full_syncing") : $t("settings.full_sync")}
+      </button>
+
+      {#if cacheInfo?.exists}
+        <button
+          class="btn btn-secondary btn-full"
+          style="margin-top:var(--space-sm)"
+          onclick={fromCacheSync}
+          disabled={fromCacheSyncing}
+          title={cacheInfo.oldest ? `Oldest cached email: ${new Date(cacheInfo.oldest).toLocaleDateString()}` : ''}
+        >
+          {fromCacheSyncing
+            ? $t("settings.from_cache_syncing")
+            : `${$t("settings.from_cache_sync")} (${cacheInfo.count} emails${cacheInfo.oldest ? `, oldest: ${new Date(cacheInfo.oldest).toLocaleDateString()}` : ''})`}
+        </button>
+      {/if}
 
       {#if !resetConfirmStep}
         <button
@@ -847,20 +920,6 @@
               max="1440"
             />
             <div class="form-hint">{$t("settings.sync_interval_hint")}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="max-emails"
-              >{$t("settings.max_emails")}</label
-            >
-            <input
-              class="form-input"
-              id="max-emails"
-              type="number"
-              bind:value={maxEmailsPerSync}
-              min="1"
-              max="10000"
-            />
-            <div class="form-hint">{$t("settings.max_emails_hint")}</div>
           </div>
           <div class="form-group">
             <label class="form-label" for="first-sync-days"
@@ -1260,8 +1319,13 @@
               {$t("settings.failed_email_hint", { values: { sender: fe.sender } })}
               {#if fe.received_at} · {new Date(fe.received_at).toLocaleDateString()}{/if}
             </div>
-            <div style="font-size:0.8rem;color:var(--danger);margin-top:2px">
-              {$t("settings.failed_email_reason", { values: { reason: fe.reason } })}
+            <div style="font-size:0.8rem;color:var(--danger);margin-top:2px;display:flex;align-items:center;gap:6px">
+              {$t(`settings.failed_email_reason.${fe.reason}`, { default: $t("settings.failed_email_reason", { values: { reason: fe.reason } }) })}
+              {#if fe.llm_verdict === 'no_flight'}
+                <span style="font-size:0.7rem;background:var(--text-muted);color:var(--bg-primary);padding:1px 6px;border-radius:999px;font-weight:600">LLM: no flight</span>
+              {:else if fe.llm_verdict === 'no_eml'}
+                <span style="font-size:0.7rem;background:var(--text-muted);color:var(--bg-primary);padding:1px 6px;border-radius:999px;font-weight:600">no raw email</span>
+              {/if}
             </div>
             {#if failedEmailMsg[fe.id]}
               <div style="font-size:0.8rem;margin-top:4px;color:{failedEmailMsg[fe.id].ok ? 'var(--success)' : 'var(--danger)'}">
@@ -1320,8 +1384,19 @@
             disabled={adminRetryingAll}
             onclick={adminRetryAll}
           >
-            {adminRetryingAll ? $t("settings.admin_failed_emails_retrying") : $t("settings.admin_failed_emails_retry_all")}
+            {#if adminRetryingAll && retryAllProgress}
+              {$t("settings.admin_failed_emails_retrying")} {retryAllProgress.current} / {retryAllProgress.total}
+            {:else if adminRetryingAll}
+              {$t("settings.admin_failed_emails_retrying")}
+            {:else}
+              {$t("settings.admin_failed_emails_retry_all")}
+            {/if}
           </button>
+          {#if adminRetryResult}
+            <p style="font-size:0.8rem;margin-top:6px;color:{adminRetryResult.recovered > 0 ? 'var(--success)' : 'var(--text-secondary)'}">
+              {$t("settings.admin_failed_emails_retry_result", { values: { retried: adminRetryResult.retried, recovered: adminRetryResult.recovered } })}
+            </p>
+          {/if}
         {/if}
       </div>
     {/if}

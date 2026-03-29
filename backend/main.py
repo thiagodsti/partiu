@@ -57,6 +57,15 @@ async def lifespan(app: FastAPI):
     from .push import ensure_vapid_keys
 
     ensure_vapid_keys()
+    # Reset any sync states left as "running" from a previous crash/kill
+    from .database import db_write
+
+    with db_write() as conn:
+        stale = conn.execute(
+            "UPDATE email_sync_state SET status = 'idle' WHERE status = 'running'"
+        ).rowcount
+    if stale:
+        logger.warning("Reset %d stale 'running' sync state(s) from previous crash", stale)
     start_scheduler()
     start_smtp_server()
     logger.info("Startup complete")

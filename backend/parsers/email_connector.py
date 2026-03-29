@@ -248,9 +248,9 @@ def connect_imap(
 # Subject keywords that suggest a flight-related email from any airline.
 # Used to catch emails from unknown senders that might contain itinerary data.
 _FLIGHT_SUBJECT_KEYWORDS = re.compile(
-    r'\b(?:itinerar|e-?ticket|boarding|reserv|booking\s*confirm|'
-    r'confirmation|check-?in|flight\s*confirm|viagem|voo|'
-    r'[A-Z]{2}\d{3,4})\b',
+    r"\b(?:itinerary?|e-?ticket|boarding|reservat\w*|booking\s*confirm\w*|"
+    r"confirmation|check-?in|flight\s*confirm\w*|viagem|voo)\b"
+    r"|\b[A-Z]{2}\d{3,4}\b",
     re.IGNORECASE,
 )
 
@@ -283,10 +283,12 @@ def fetch_emails_imap(
     sender_patterns: list[str] | None = None,
     since_date: datetime | None = None,
     folder: str = "INBOX",
-    max_results: int = 200,
+    progress_callback: object = None,
 ) -> ImapFetchResult:
     """
     Fetch emails from an IMAP server, filtering by sender patterns OR flight keywords.
+
+    progress_callback: optional callable(fetched, total) called as emails are downloaded.
 
     Returns an ImapFetchResult — never raises; check .success and .error on the result.
 
@@ -296,8 +298,10 @@ def fetch_emails_imap(
             Emails NOT matching are also fetched if their subject contains
             flight-like keywords (catches unknown/new airlines).
         since_date: Only fetch emails after this date.
-        max_results: Maximum number of emails to return.
     """
+    # Reconnect every BATCH_SIZE fetches to avoid SSL session timeouts on large mailboxes
+    BATCH_SIZE = 100
+
     messages: list[EmailMessage] = []
     try:
         conn = connect_imap(host, port, username, password, use_ssl)
@@ -318,59 +322,84 @@ def fetch_emails_imap(
 
         msg_ids = data[0].split()
         # Process most recent first
-        msg_ids = msg_ids[-max_results:]
         msg_ids.reverse()
-
-        for msg_id in msg_ids:
-            try:
-                status, msg_data = conn.fetch(msg_id, "(RFC822)")
-                if status != "OK":
-                    continue
-                item = msg_data[0]
-                if not isinstance(item, (tuple, list)):
-                    continue
-                raw_email: bytes = item[1]
-                msg = email.message_from_bytes(raw_email)
-
-                sender = decode_header_value(msg.get("From", ""))
-                subject = decode_header_value(msg.get("Subject", ""))
-                message_id = msg.get("Message-ID", f"imap-{msg_id.decode()}")
-
-                # Filter: known sender pattern OR flight-like subject keyword
-                if not _matches_flight_filter(sender, subject, sender_patterns):
-                    continue
-
-                body, raw_html, pdf_bytes_list = get_email_body_and_html(msg)
-
-                # Parse date
-                date_str = msg.get("Date", "")
-                msg_date = None
-                if date_str:
-                    try:
-                        msg_date = email.utils.parsedate_to_datetime(date_str)
-                    except Exception:
-                        pass
-
-                messages.append(
-                    EmailMessage(
-                        message_id=message_id,
-                        sender=sender,
-                        subject=subject,
-                        body=body,
-                        date=msg_date,
-                        html_body=raw_html,
-                        pdf_attachments=pdf_bytes_list,
-                        raw_eml=raw_email,
-                    )
-                )
-            except Exception as e:
-                logger.warning("Error processing email %s: %s", msg_id, e)
-                continue
-
         conn.logout()
+
+        # Report total as soon as we know it
+        if progress_callback and msg_ids:
+            try:
+                progress_callback(0, len(msg_ids))  # type: ignore[operator]
+            except Exception:
+                pass
     except Exception as e:
         err = f"IMAP connection error: {e}"
         logger.error(err)
         return ImapFetchResult(success=False, emails=[], error=err)
+
+    total = len(msg_ids)
+    fetched = 0
+
+    # Fetch emails in batches, reconnecting between each to avoid SSL timeouts
+    for batch_start in range(0, total, BATCH_SIZE):
+        batch = msg_ids[batch_start : batch_start + BATCH_SIZE]
+        try:
+            conn = connect_imap(host, port, username, password, use_ssl)
+            conn.select(folder, readonly=True)
+            for msg_id in batch:
+                try:
+                    status, msg_data = conn.fetch(msg_id, "(RFC822)")
+                    if status != "OK":
+                        continue
+                    item = msg_data[0]
+                    if not isinstance(item, (tuple, list)):
+                        continue
+                    raw_email: bytes = item[1]
+                    msg = email.message_from_bytes(raw_email)
+
+                    sender = decode_header_value(msg.get("From", ""))
+                    subject = decode_header_value(msg.get("Subject", ""))
+                    message_id = msg.get("Message-ID", f"imap-{msg_id.decode()}")
+
+                    # Filter: known sender pattern OR flight-like subject keyword
+                    if not _matches_flight_filter(sender, subject, sender_patterns):
+                        continue
+
+                    body, raw_html, pdf_bytes_list = get_email_body_and_html(msg)
+
+                    # Parse date
+                    date_str = msg.get("Date", "")
+                    msg_date = None
+                    if date_str:
+                        try:
+                            msg_date = email.utils.parsedate_to_datetime(date_str)
+                        except Exception:
+                            pass
+
+                    messages.append(
+                        EmailMessage(
+                            message_id=message_id,
+                            sender=sender,
+                            subject=subject,
+                            body=body,
+                            date=msg_date,
+                            html_body=raw_html,
+                            pdf_attachments=pdf_bytes_list,
+                            raw_eml=raw_email,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning("Error processing email %s: %s", msg_id, e)
+                finally:
+                    fetched += 1
+                    if progress_callback:
+                        try:
+                            progress_callback(fetched, total)  # type: ignore[operator]
+                        except Exception:
+                            pass
+            conn.logout()
+        except Exception as e:
+            err = f"IMAP connection error: {e}"
+            logger.error(err)
+            return ImapFetchResult(success=False, emails=[], error=err)
 
     return ImapFetchResult(success=True, emails=messages)

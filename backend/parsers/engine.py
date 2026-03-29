@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Multilingual month-name → month-number map
 # ---------------------------------------------------------------------------
 
+
 def _build_month_map() -> dict[str, int]:
     """
     Build a lowercase month-name → month-number mapping.
@@ -43,22 +44,55 @@ def _build_month_map() -> dict[str, int]:
     # Non-English month names (only entries not already covered by English)
     _EXTRA: dict[str, int] = {
         # Portuguese
-        "janeiro": 1, "fevereiro": 2, "março": 3, "abril": 4,
-        "maio": 5, "junho": 6, "julho": 7, "agosto": 8,
-        "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
-        "fev": 2, "abr": 4, "mai": 5, "ago": 8, "set": 9, "out": 10, "dez": 12,
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+        "fev": 2,
+        "abr": 4,
+        "mai": 5,
+        "ago": 8,
+        "set": 9,
+        "out": 10,
+        "dez": 12,
         # Spanish
-        "enero": 1, "febrero": 2, "marzo": 3, "mayo": 5,
-        "junio": 6, "julio": 7, "septiembre": 9,
-        "octubre": 10, "noviembre": 11, "diciembre": 12,
-        "ene": 1, "dic": 12,
+        "enero": 1,
+        "febrero": 2,
+        "marzo": 3,
+        "mayo": 5,
+        "junio": 6,
+        "julio": 7,
+        "septiembre": 9,
+        "octubre": 10,
+        "noviembre": 11,
+        "diciembre": 12,
+        "ene": 1,
+        "dic": 12,
         # German
-        "märz": 3, "oktober": 10, "dezember": 12, "mär": 3,
+        "märz": 3,
+        "oktober": 10,
+        "dezember": 12,
+        "mär": 3,
         # Scandinavian (Swedish / Norwegian / Danish)
-        "marts": 3, "maj": 5, "juni": 6, "juli": 7, "augusti": 8, "des": 12,
+        "marts": 3,
+        "maj": 5,
+        "juni": 6,
+        "juli": 7,
+        "augusti": 8,
+        "okt": 10,
+        "des": 12,
     }
     mapping.update(_EXTRA)
     return mapping
+
 
 MONTH_MAP = _build_month_map()
 
@@ -133,12 +167,12 @@ def match_rule_to_email(email_msg: EmailMessage, rules):
 
 def _extract_forwarded_senders(body: str) -> list[str]:
     """Extract From: addresses from forwarded-message headers in the email body."""
-    return re.findall(r'^From:\s*(.+)$', body[:5000], re.MULTILINE)
+    return re.findall(r"^From:\s*(.+)$", body[:5000], re.MULTILINE)
 
 
 def _extract_forwarded_subjects(body: str) -> list[str]:
     """Extract Subject: lines from forwarded-message headers in the email body."""
-    return re.findall(r'^Subject:\s*(.+)$', body[:5000], re.MULTILINE)
+    return re.findall(r"^Subject:\s*(.+)$", body[:5000], re.MULTILINE)
 
 
 def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
@@ -158,7 +192,8 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
         except Exception:
             logger.debug(
                 "Extractor for '%s' raised an exception, trying generic fallback",
-                rule.airline_name, exc_info=True,
+                rule.airline_name,
+                exc_info=True,
             )
             results = []
 
@@ -173,6 +208,7 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     # Legacy / generic fallback — used when no extractor is attached (custom rules)
     if email_msg.html_body:
         from .airlines import extract_with_bs4
+
         bs4_result = extract_with_bs4(email_msg.html_body, rule, email_msg)
         if bs4_result:
             return bs4_result
@@ -185,10 +221,8 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
 def _try_generic_pdf(email_msg: EmailMessage) -> list[dict]:
     """Extract flights from PDF attachments using the generic pattern."""
     from .email_connector import _extract_text_from_pdf
-    pdf_text = '\n'.join(
-        t for b in email_msg.pdf_attachments
-        if (t := _extract_text_from_pdf(b))
-    )
+
+    pdf_text = "\n".join(t for b in email_msg.pdf_attachments if (t := _extract_text_from_pdf(b)))
     return _extract_generic_pdf(pdf_text, email_msg) if pdf_text else []
 
 
@@ -237,10 +271,8 @@ def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:
         return []
 
     from .email_connector import _extract_text_from_pdf
-    pdf_text = '\n'.join(
-        t for b in email_msg.pdf_attachments
-        if (t := _extract_text_from_pdf(b))
-    )
+
+    pdf_text = "\n".join(t for b in email_msg.pdf_attachments if (t := _extract_text_from_pdf(b)))
     if not pdf_text:
         return []
 
@@ -263,11 +295,20 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
     shared_passenger = _extract_passenger(body)
 
     _CABIN_MAP = {
-        "economy": "economy", "eco": "economy", "y": "economy",
-        "econômica": "economy", "económica": "economy",
-        "premium economy": "premium_economy", "premium": "premium_economy", "w": "premium_economy",
-        "business": "business", "j": "business", "c": "business", "ejecutiva": "business",
-        "first": "first", "f": "first",
+        "economy": "economy",
+        "eco": "economy",
+        "y": "economy",
+        "econômica": "economy",
+        "económica": "economy",
+        "premium economy": "premium_economy",
+        "premium": "premium_economy",
+        "w": "premium_economy",
+        "business": "business",
+        "j": "business",
+        "c": "business",
+        "ejecutiva": "business",
+        "first": "first",
+        "f": "first",
     }
 
     try:
@@ -277,7 +318,11 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
         return flights_data
 
     if not matches:
-        logger.debug("No body_pattern matches for rule '%s' in email %s", rule.airline_name, email_msg.message_id)
+        logger.debug(
+            "No body_pattern matches for rule '%s' in email %s",
+            rule.airline_name,
+            email_msg.message_id,
+        )
         return flights_data
 
     ref_year = email_msg.date.year if email_msg.date else datetime.now().year
@@ -310,7 +355,9 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
 
         # If no explicit date in the match, look for one in the preceding body text
         if not dep_date_str:
-            ctx_dates = list(re.finditer(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})", body[: match.start()]))
+            ctx_dates = list(
+                re.finditer(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})", body[: match.start()])
+            )
             if ctx_dates:
                 dep_date_str = ctx_dates[-1].group(1)
 
@@ -341,7 +388,11 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
             continue
         flight_data["arrival_datetime"] = arr_dt
 
-        if flight_data["flight_number"] and flight_data["departure_airport"] and flight_data["arrival_airport"]:
+        if (
+            flight_data["flight_number"]
+            and flight_data["departure_airport"]
+            and flight_data["arrival_airport"]
+        ):
             flights_data.append(flight_data)
         else:
             logger.debug("Skipping incomplete flight match: %s", flight_data)
@@ -354,7 +405,8 @@ def _extract_booking_ref(text: str) -> str:
         r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
         r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|reservation\s*code|"
         r"confirmation\s*code|Reservierungscode)[:\s\[]+([A-Z0-9]{5,8})",
-        text, re.IGNORECASE,
+        text,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
@@ -365,7 +417,8 @@ def _extract_passenger(body: str) -> str:
         r"Passagier|Reisender|passager|passasjer)"
         r"[\s:]*\n\s*(?:[-•·]\s*)?"
         r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ ]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
-        body, re.IGNORECASE,
+        body,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
@@ -405,25 +458,25 @@ def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:
 # Each section allows a few intervening lines so it survives extra content
 # (airport names, carrier info, etc.) without matching across unrelated blocks.
 _GENERIC_PDF_RE = re.compile(
-    r'^(\d{1,2}:\d{2})\s+([A-Z]{3})\b[^\n]*\n'   # dep time + dep IATA
-    r'(?:[^\n]*\n){0,4}'                            # up to 4 content lines
-    r'([^\n]*\b\d{4}\b[^\n]*)\n'                   # date line (contains a 4-digit year)
-    r'(?:[^\n]*\n){0,4}'                            # up to 4 more lines
-    r'[^\n]*\b([A-Z]{2}\s*\d{2,5})\b[^\n]*\n'     # flight number
-    r'(?:[^\n]*\n){0,3}'                            # up to 3 more lines
-    r'^(\d{1,2}:\d{2})\s+([A-Z]{3})\b',            # arr time + arr IATA
+    r"^(\d{1,2}:\d{2})\s+([A-Z]{3})\b[^\n]*\n"  # dep time + dep IATA
+    r"(?:[^\n]*\n){0,4}"  # up to 4 content lines
+    r"([^\n]*\b\d{4}\b[^\n]*)\n"  # date line (contains a 4-digit year)
+    r"(?:[^\n]*\n){0,4}"  # up to 4 more lines
+    r"[^\n]*\b([A-Z]{2}\s*\d{2,5})\b[^\n]*\n"  # flight number
+    r"(?:[^\n]*\n){0,3}"  # up to 3 more lines
+    r"^(\d{1,2}:\d{2})\s+([A-Z]{3})\b",  # arr time + arr IATA
     re.MULTILINE,
 )
 
 _GENERIC_BOOKING_RE = re.compile(
-    r'(?:booking\s*(?:ref|code|reference|number)|PNR|confirmation\s*(?:code|number)|'
-    r'N[UÚ]MERO\s+DE\s+RESERVA|Buchungsnummer|Reservierungscode)'
-    r'[:\s#]+([\w\s]{5,20})',
+    r"(?:booking\s*(?:ref|code|reference|number)|PNR|confirmation\s*(?:code|number)|"
+    r"N[UÚ]MERO\s+DE\s+RESERVA|Buchungsnummer|Reservierungscode)"
+    r"[:\s#]+([\w\s]{5,20})",
     re.IGNORECASE,
 )
 
 _GENERIC_PASSENGER_RE = re.compile(
-    r'(?:Ms\.|Mr\.|Mrs\.|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?=\s+\d|\s*\n)',
+    r"(?:Ms\.|Mr\.|Mrs\.|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?=\s+\d|\s*\n)",
 )
 
 
@@ -432,12 +485,12 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
     Extract flights from a PDF using common itinerary patterns.
     Used as a last resort when no airline rule matched the email.
     """
-    booking_ref = ''
+    booking_ref = ""
     m = _GENERIC_BOOKING_RE.search(pdf_text)
     if m:
-        booking_ref = m.group(1).strip().replace(' ', '')
+        booking_ref = m.group(1).strip().replace(" ", "")
 
-    passenger = ''
+    passenger = ""
     m = _GENERIC_PASSENGER_RE.search(pdf_text)
     if m:
         passenger = m.group(1).strip()
@@ -448,11 +501,11 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
 
     for m in _GENERIC_PDF_RE.finditer(pdf_text):
         dep_time_str = m.group(1)
-        dep_airport  = m.group(2)
-        date_line    = m.group(3)
-        flight_num   = m.group(4).replace(' ', '')
+        dep_airport = m.group(2)
+        date_line = m.group(3)
+        flight_num = m.group(4).replace(" ", "")
         arr_time_str = m.group(5)
-        arr_airport  = m.group(6)
+        arr_airport = m.group(6)
 
         # Skip if airports are identical (false positive)
         if dep_airport == arr_airport:
@@ -465,18 +518,18 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
         seen.add(key)
 
         # Extract a parseable date from the date line
-        date_m = re.search(r'(\d{1,2}\s+\w+\.?\s+\d{4})', date_line)
+        date_m = re.search(r"(\d{1,2}\s+\w+\.?\s+\d{4})", date_line)
         if not date_m:
             # Try DD/MM/YYYY
-            date_m = re.search(r'(\d{1,2}/\d{2}/\d{4})', date_line)
+            date_m = re.search(r"(\d{1,2}/\d{2}/\d{4})", date_line)
         if not date_m:
             continue
         dep_date = parse_flight_date(date_m.group(1))
         if dep_date is None:
             # Year-less date — inject ref_year
-            date_m2 = re.search(r'(\d{1,2}\s+\w+\.?)', date_line)
+            date_m2 = re.search(r"(\d{1,2}\s+\w+\.?)", date_line)
             if date_m2:
-                dep_date = parse_flight_date(date_m2.group(1) + f' {ref_year}')
+                dep_date = parse_flight_date(date_m2.group(1) + f" {ref_year}")
         if dep_date is None:
             continue
 
@@ -485,38 +538,42 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
             continue
 
         # Arrival date: same day unless time wraps past midnight
-        dep_h = int(dep_time_str.split(':')[0])
-        arr_h = int(arr_time_str.split(':')[0])
+        dep_h = int(dep_time_str.split(":")[0])
+        arr_h = int(arr_time_str.split(":")[0])
         arr_date = dep_date
         if arr_h < dep_h:
             from datetime import timedelta
+
             arr_date = dep_date + timedelta(days=1)
         arr_dt = _parse_time_on_date(arr_date, arr_time_str)
         if arr_dt is None:
             continue
 
         airline_code = flight_num[:2]
-        flights.append({
-            'airline_name': airline_code,   # best we can do without a rule
-            'airline_code': airline_code,
-            'flight_number': flight_num,
-            'departure_airport': dep_airport,
-            'arrival_airport': arr_airport,
-            'departure_datetime': dep_dt,
-            'arrival_datetime': arr_dt,
-            'booking_reference': booking_ref,
-            'passenger_name': passenger,
-            'seat': '',
-            'cabin_class': '',
-            'departure_terminal': '',
-            'arrival_terminal': '',
-            'departure_gate': '',
-            'arrival_gate': '',
-        })
+        flights.append(
+            {
+                "airline_name": airline_code,  # best we can do without a rule
+                "airline_code": airline_code,
+                "flight_number": flight_num,
+                "departure_airport": dep_airport,
+                "arrival_airport": arr_airport,
+                "departure_datetime": dep_dt,
+                "arrival_datetime": arr_dt,
+                "booking_reference": booking_ref,
+                "passenger_name": passenger,
+                "seat": "",
+                "cabin_class": "",
+                "departure_terminal": "",
+                "arrival_terminal": "",
+                "departure_gate": "",
+                "arrival_gate": "",
+            }
+        )
 
     if flights:
         logger.info(
             "Generic PDF fallback found %d flight(s) in email %s",
-            len(flights), email_msg.message_id,
+            len(flights),
+            email_msg.message_id,
         )
     return flights

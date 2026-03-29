@@ -112,13 +112,14 @@ export interface SyncStatus {
   last_synced_at: string | null;
   last_error: string | null;
   sync_interval_minutes: number | null;
+  emails_processed: number | null;
+  emails_total: number | null;
 }
 
 export interface Settings {
   gmail_address: string | null;
   gmail_app_password_set: boolean;
   sync_interval_minutes: number;
-  max_emails_per_sync: number;
   first_sync_days: number;
   imap_host: string;
   imap_port: number;
@@ -218,6 +219,7 @@ export interface FailedEmail {
   last_retried_at: string | null;
   parser_version: string;
   created_at: string;
+  llm_verdict: string | null;
 }
 
 export interface AdminFailedEmailGroup {

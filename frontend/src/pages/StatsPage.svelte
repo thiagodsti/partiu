@@ -120,7 +120,7 @@
           <div class="stat-value">{stats.unique_airports}</div>
           <div class="stat-label">{$t('stats.airports')}</div>
         </div>
-        <a class="stat-card stat-card-link" href="#/stats/map">
+        <a class="stat-card stat-card-link" href="#/stats/map{selectedYear ? `?year=${selectedYear}` : ''}">
           <div class="stat-value">{stats.unique_countries}</div>
           <div class="stat-label">{$t('stats.countries')} →</div>
         </a>

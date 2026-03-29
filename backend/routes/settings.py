@@ -78,7 +78,6 @@ def get_settings(user: dict = Depends(get_current_user)):
         "imap_host": user.get("imap_host") or "imap.gmail.com",
         "imap_port": user.get("imap_port") or 993,
         "sync_interval_minutes": int(get_global_setting("sync_interval_minutes", "10")),
-        "max_emails_per_sync": int(get_global_setting("max_emails_per_sync", "200")),
         "first_sync_days": int(get_global_setting("first_sync_days", "90")),
         # SMTP server status — needed by all users to show/hide forwarding section
         "smtp_server_enabled": get_global_setting("smtp_server_enabled", "false") == "true",
@@ -111,7 +110,6 @@ class SettingsUpdate(BaseModel):
     immich_api_key: str | None = None
     # Global settings (admin only)
     sync_interval_minutes: int | None = None
-    max_emails_per_sync: int | None = None
     first_sync_days: int | None = None
     smtp_server_enabled: bool | None = None
     smtp_server_port: int | None = None
@@ -174,7 +172,6 @@ def update_settings(request: Request, body: SettingsUpdate, user: dict = Depends
     # Global settings — require admin
     has_global = (
         body.sync_interval_minutes is not None
-        or body.max_emails_per_sync is not None
         or body.first_sync_days is not None
         or body.smtp_server_enabled is not None
         or body.smtp_server_port is not None
@@ -187,10 +184,6 @@ def update_settings(request: Request, body: SettingsUpdate, user: dict = Depends
             if not 1 <= body.sync_interval_minutes <= 1440:
                 raise HTTPException(400, "sync_interval_minutes must be between 1 and 1440")
             set_global_setting("sync_interval_minutes", str(body.sync_interval_minutes))
-        if body.max_emails_per_sync is not None:
-            if not 1 <= body.max_emails_per_sync <= 10000:
-                raise HTTPException(400, "max_emails_per_sync must be between 1 and 10000")
-            set_global_setting("max_emails_per_sync", str(body.max_emails_per_sync))
         if body.first_sync_days is not None:
             if not 1 <= body.first_sync_days <= 3650:
                 raise HTTPException(400, "first_sync_days must be between 1 and 3650")

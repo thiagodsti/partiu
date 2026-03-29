@@ -131,6 +131,7 @@ def _get_pdf_text(email_msg) -> str:
         return email_msg.get_pdf_text() or ""
     if hasattr(email_msg, "pdf_attachments") and email_msg.pdf_attachments:
         from ..email_connector import _extract_text_from_pdf
+
         parts = []
         for b in email_msg.pdf_attachments:
             t = _extract_text_from_pdf(b)
@@ -179,8 +180,14 @@ def _process_section(
 
     if connections:
         return _process_connecting(
-            section, rule, booking_ref, passenger, pdf_segments,
-            segment_matches, flight_nums, connections,
+            section,
+            rule,
+            booking_ref,
+            passenger,
+            pdf_segments,
+            segment_matches,
+            flight_nums,
+            connections,
         )
     else:
         return _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums)
@@ -198,11 +205,14 @@ def _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums) 
             continue
         fn = flight_nums[i // 2].strip() if (i // 2) < len(flight_nums) else ""
         flight = _make_flight_dict(
-            rule, fn,
-            dep_m.group(3), arr_m.group(3),
+            rule,
+            fn,
+            dep_m.group(3),
+            arr_m.group(3),
             _build_datetime(dep_date, dep_m.group(2)),
             _build_datetime(arr_date, arr_m.group(2)),
-            booking_ref, passenger,
+            booking_ref,
+            passenger,
         )
         if flight:
             flights.append(flight)
@@ -210,15 +220,23 @@ def _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums) 
 
 
 def _process_connecting(
-    section, rule, booking_ref, passenger, pdf_segments,
-    segment_matches, flight_nums, connections,
+    section,
+    rule,
+    booking_ref,
+    passenger,
+    pdf_segments,
+    segment_matches,
+    flight_nums,
+    connections,
 ) -> list[dict]:
     """Build individual leg dicts for a connecting itinerary."""
     dep_match = segment_matches[0]
     arr_match = segment_matches[-1]
     first_flight = flight_nums[0].strip() if flight_nums else ""
 
-    segments = _build_segment_list(dep_match.group(3), arr_match.group(3), first_flight, connections)
+    segments = _build_segment_list(
+        dep_match.group(3), arr_match.group(3), first_flight, connections
+    )
     n = len(segments)
 
     # Strategy 1: email has explicit dep/arr for each individual leg
@@ -243,24 +261,32 @@ def _build_segment_list(dep_airport, arr_airport, first_flight, connections) -> 
         conn_airport = conn.group(1)
         conn_flight = conn.group(2).strip()
         layover_min = int(conn.group(3)) * 60 + int(conn.group(4))
-        segments.append({
-            "dep_airport": prev_airport,
-            "arr_airport": conn_airport,
-            "flight_number": first_flight if not segments else segments[-1].get("next_flight", conn_flight),
-            "layover_minutes": layover_min,
-            "next_flight": conn_flight,
-        })
+        segments.append(
+            {
+                "dep_airport": prev_airport,
+                "arr_airport": conn_airport,
+                "flight_number": first_flight
+                if not segments
+                else segments[-1].get("next_flight", conn_flight),
+                "layover_minutes": layover_min,
+                "next_flight": conn_flight,
+            }
+        )
         prev_airport = conn_airport
-    segments.append({
-        "dep_airport": prev_airport,
-        "arr_airport": arr_airport,
-        "flight_number": segments[-1]["next_flight"] if segments else first_flight,
-        "layover_minutes": 0,
-    })
+    segments.append(
+        {
+            "dep_airport": prev_airport,
+            "arr_airport": arr_airport,
+            "flight_number": segments[-1]["next_flight"] if segments else first_flight,
+            "layover_minutes": 0,
+        }
+    )
     return segments
 
 
-def _flights_from_explicit_times(rule, booking_ref, passenger, segments, segment_matches) -> list[dict]:
+def _flights_from_explicit_times(
+    rule, booking_ref, passenger, segments, segment_matches
+) -> list[dict]:
     flights = []
     for idx, seg in enumerate(segments):
         dep_m = segment_matches[idx * 2]
@@ -270,11 +296,14 @@ def _flights_from_explicit_times(rule, booking_ref, passenger, segments, segment
         if not dep_date or not arr_date:
             continue
         flight = _make_flight_dict(
-            rule, seg["flight_number"],
-            seg["dep_airport"], seg["arr_airport"],
+            rule,
+            seg["flight_number"],
+            seg["dep_airport"],
+            seg["arr_airport"],
             _build_datetime(dep_date, dep_m.group(2)),
             _build_datetime(arr_date, arr_m.group(2)),
-            booking_ref, passenger,
+            booking_ref,
+            passenger,
         )
         if flight:
             flights.append(flight)
@@ -293,11 +322,14 @@ def _flights_from_pdf(rule, booking_ref, passenger, segments, pdf_segments) -> l
         if not dep_date or not arr_date:
             return []
         flight = _make_flight_dict(
-            rule, seg["flight_number"],
-            seg["dep_airport"], seg["arr_airport"],
+            rule,
+            seg["flight_number"],
+            seg["dep_airport"],
+            seg["arr_airport"],
             _build_datetime(dep_date, dep_ts),
             _build_datetime(arr_date, arr_ts),
-            booking_ref, passenger,
+            booking_ref,
+            passenger,
         )
         if flight:
             flights.append(flight)
@@ -307,7 +339,9 @@ def _flights_from_pdf(rule, booking_ref, passenger, segments, pdf_segments) -> l
     return []
 
 
-def _flights_proportional(rule, booking_ref, passenger, segments, dep_match, arr_match) -> list[dict]:
+def _flights_proportional(
+    rule, booking_ref, passenger, segments, dep_match, arr_match
+) -> list[dict]:
     """
     Distribute total elapsed time across legs proportionally by great-circle distance.
     Used when neither explicit per-leg times nor PDF data are available.
@@ -324,6 +358,7 @@ def _flights_proportional(rule, booking_ref, passenger, segments, dep_match, arr
 
     try:
         from ...timezone_utils import localize_to_utc as _ltu
+
         dep_utc = _ltu(dep_dt.replace(tzinfo=None), dep_match.group(3))
         arr_utc = _ltu(arr_dt.replace(tzinfo=None), arr_match.group(3))
     except Exception:
@@ -344,10 +379,14 @@ def _flights_proportional(rule, booking_ref, passenger, segments, dep_match, arr
         seg_dep_dt = current_dt
         seg_arr_dt = seg_dep_dt + timedelta(seconds=total_flight * (dist / total_dist))
         flight = _make_flight_dict(
-            rule, seg["flight_number"],
-            seg["dep_airport"], seg["arr_airport"],
-            seg_dep_dt, seg_arr_dt,
-            booking_ref, passenger,
+            rule,
+            seg["flight_number"],
+            seg["dep_airport"],
+            seg["arr_airport"],
+            seg_dep_dt,
+            seg_arr_dt,
+            booking_ref,
+            passenger,
         )
         if flight:
             flight["_times_already_utc"] = True
@@ -381,7 +420,8 @@ def _booking_ref_from_text(text: str) -> str:
     m = re.search(
         r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
         r"Bokning|Reserva|PNR|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        text, re.IGNORECASE,
+        text,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
@@ -390,38 +430,51 @@ def _passenger_from_text(text: str) -> str:
     m = re.search(
         r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name))"
         r"[\s:]*[-•·]?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
-        text, re.IGNORECASE,
+        text,
+        re.IGNORECASE,
     )
     if m:
         return m.group(1).strip()
     m = re.search(
         r"(?:Ol[áa]|Hello|Hola)\s+(?:<b[^>]*>)?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)",
-        text, re.IGNORECASE,
+        text,
+        re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
 
 
 def _split_text_sections(body: str) -> list[str]:
     """Split plain-text body into per-direction sections (same logic as BS4)."""
-    direction_starts = list(re.finditer(
-        r"Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
-        body, re.IGNORECASE,
-    ))
+    direction_starts = list(
+        re.finditer(
+            r"Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
+            body,
+            re.IGNORECASE,
+        )
+    )
     if direction_starts:
         return [
-            body[m.start(): (direction_starts[i + 1].start() if i + 1 < len(direction_starts) else len(body))]
+            body[
+                m.start() : (
+                    direction_starts[i + 1].start() if i + 1 < len(direction_starts) else len(body)
+                )
+            ]
             for i, m in enumerate(direction_starts)
         ]
 
     trecho_starts = list(re.finditer(r"Trecho\s+\d+", body, re.IGNORECASE))
     if trecho_starts:
         return [
-            body[m.start(): (trecho_starts[i + 1].start() if i + 1 < len(trecho_starts) else len(body))]
+            body[
+                m.start() : (
+                    trecho_starts[i + 1].start() if i + 1 < len(trecho_starts) else len(body)
+                )
+            ]
             for i, m in enumerate(trecho_starts)
         ]
 
     itin_match = re.search(r"Itiner[áa]rio", body, re.IGNORECASE)
-    return [body[itin_match.start():] if itin_match else body]
+    return [body[itin_match.start() :] if itin_match else body]
 
 
 def _process_text_section(section: str, rule, booking_ref: str, passenger: str) -> list[dict]:
@@ -434,7 +487,9 @@ def _process_text_section(section: str, rule, booking_ref: str, passenger: str) 
     dep_time_str = dep_match.group(2)
     dep_airport = dep_match.group(3)
 
-    all_seg_matches = list(re.finditer(_DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE, section, re.DOTALL))
+    all_seg_matches = list(
+        re.finditer(_DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE, section, re.DOTALL)
+    )
     if len(all_seg_matches) < 2:
         # Only one date/time/airport found — try simpler pattern
         fn_match = re.search(
@@ -443,9 +498,16 @@ def _process_text_section(section: str, rule, booking_ref: str, passenger: str) 
         )
         if fn_match:
             fd = _make_segment(
-                rule, dep_date_str, dep_time_str, dep_airport,
-                dep_date_str, dep_time_str, fn_match.group(2),
-                fn_match.group(1).strip(), booking_ref, passenger,
+                rule,
+                dep_date_str,
+                dep_time_str,
+                dep_airport,
+                dep_date_str,
+                dep_time_str,
+                fn_match.group(2),
+                fn_match.group(1).strip(),
+                booking_ref,
+                passenger,
             )
             return [fd] if fd else []
         return []
@@ -467,25 +529,47 @@ def _process_text_section(section: str, rule, booking_ref: str, passenger: str) 
 
     if connections:
         return _text_connecting_flights(
-            rule, dep_date_str, dep_time_str, dep_airport,
-            arr_date_str, arr_time_str, arr_airport,
-            first_flight_num, connections, booking_ref, passenger,
+            rule,
+            dep_date_str,
+            dep_time_str,
+            dep_airport,
+            arr_date_str,
+            arr_time_str,
+            arr_airport,
+            first_flight_num,
+            connections,
+            booking_ref,
+            passenger,
         )
 
     if first_flight_num:
         fd = _make_segment(
-            rule, dep_date_str, dep_time_str, dep_airport,
-            arr_date_str, arr_time_str, arr_airport,
-            first_flight_num, booking_ref, passenger,
+            rule,
+            dep_date_str,
+            dep_time_str,
+            dep_airport,
+            arr_date_str,
+            arr_time_str,
+            arr_airport,
+            first_flight_num,
+            booking_ref,
+            passenger,
         )
         return [fd] if fd else []
     return []
 
 
 def _make_segment(
-    rule, dep_date_str, dep_time_str, dep_airport,
-    arr_date_str, arr_time_str, arr_airport,
-    flight_number, booking_ref, passenger,
+    rule,
+    dep_date_str,
+    dep_time_str,
+    dep_airport,
+    arr_date_str,
+    arr_time_str,
+    arr_airport,
+    flight_number,
+    booking_ref,
+    passenger,
 ) -> dict | None:
     dep_date = parse_flight_date(dep_date_str)
     arr_date = parse_flight_date(arr_date_str) or dep_date
@@ -499,7 +583,9 @@ def _make_segment(
         arr_dt = _make_aware(datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m))
     except (ValueError, TypeError):
         return None
-    return _make_flight_dict(rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger)
+    return _make_flight_dict(
+        rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger
+    )
 
 
 def extract(email_msg, rule) -> list[dict]:
@@ -511,10 +597,68 @@ def extract(email_msg, rule) -> list[dict]:
     return extract_regex(email_msg, rule)
 
 
+# ---------------------------------------------------------------------------
+# Boarding-pass seat updater (check-in confirmation emails)
+# ---------------------------------------------------------------------------
+
+_BP_KEYWORD_RE = re.compile(
+    r"cart[ãa]o\s+de\s+embarque|check.?in\s+feito|boarding\s+pass",
+    re.IGNORECASE,
+)
+_BP_FN_RE = re.compile(r"\b(LA\s*\d{3,5})\b")
+_BP_DATE_RE = re.compile(r"\b(\d{1,2}/\d{2}/\d{2})\b")
+# Seat comes right after "Check-in feito" section header, on its own short line
+_BP_SEAT_SECTION_RE = re.compile(
+    r"Check-in\s+feito[^<\n]*\n[\s\S]{0,200}?\n\s*(\d{1,3}[A-Z])\s*\n",
+    re.IGNORECASE,
+)
+
+
+def extract_seat_update(email_msg) -> dict | None:
+    """
+    Try to extract a seat assignment from a LATAM boarding-pass email.
+
+    Returns {"flight_number": str, "dep_date": str, "seat": str}
+    if this looks like a check-in confirmation with a seat, else None.
+    """
+    body = email_msg.body or ""
+    if not _BP_KEYWORD_RE.search(body):
+        return None
+
+    fn_m = _BP_FN_RE.search(body)
+    if not fn_m:
+        return None
+
+    date_m = _BP_DATE_RE.search(body)
+    if not date_m:
+        return None
+    dep_date = _parse_ddmmyy(date_m.group(1))
+    if not dep_date:
+        return None
+
+    seat_m = _BP_SEAT_SECTION_RE.search(body)
+    if not seat_m:
+        return None
+
+    return {
+        "flight_number": fn_m.group(1).replace(" ", ""),
+        "dep_date": dep_date.isoformat(),
+        "seat": seat_m.group(1),
+    }
+
+
 def _text_connecting_flights(
-    rule, dep_date_str, dep_time_str, dep_airport,
-    arr_date_str, arr_time_str, arr_airport,
-    first_flight_num, connections, booking_ref, passenger,
+    rule,
+    dep_date_str,
+    dep_time_str,
+    dep_airport,
+    arr_date_str,
+    arr_time_str,
+    arr_airport,
+    first_flight_num,
+    connections,
+    booking_ref,
+    passenger,
 ) -> list[dict]:
     """Build individual legs for a connecting itinerary extracted from plain text."""
     segments = []
@@ -523,21 +667,25 @@ def _text_connecting_flights(
         conn_airport = conn.group(2)
         conn_flight = conn.group(3).strip()
         layover_min = int(conn.group(4)) * 60 + int(conn.group(5))
-        segments.append({
-            "dep_airport": prev_airport,
-            "arr_airport": conn_airport,
-            "flight_number": first_flight_num if i == 0 else segments[-1]["next_flight"],
-            "layover_after_minutes": layover_min,
-            "next_flight": conn_flight,
-        })
+        segments.append(
+            {
+                "dep_airport": prev_airport,
+                "arr_airport": conn_airport,
+                "flight_number": first_flight_num if i == 0 else segments[-1]["next_flight"],
+                "layover_after_minutes": layover_min,
+                "next_flight": conn_flight,
+            }
+        )
         prev_airport = conn_airport
-    segments.append({
-        "dep_airport": prev_airport,
-        "arr_airport": arr_airport,
-        "flight_number": segments[-1]["next_flight"] if segments else first_flight_num,
-        "layover_after_minutes": 0,
-        "next_flight": "",
-    })
+    segments.append(
+        {
+            "dep_airport": prev_airport,
+            "arr_airport": arr_airport,
+            "flight_number": segments[-1]["next_flight"] if segments else first_flight_num,
+            "layover_after_minutes": 0,
+            "next_flight": "",
+        }
+    )
 
     dep_date = parse_flight_date(dep_date_str)
     arr_date = parse_flight_date(arr_date_str)
@@ -564,10 +712,14 @@ def _text_connecting_flights(
         seg_dep_dt = current_dt
         seg_arr_dt = seg_dep_dt + timedelta(seconds=flight_per_leg)
         fd = _make_flight_dict(
-            rule, seg["flight_number"],
-            seg["dep_airport"], seg["arr_airport"],
-            _make_aware(seg_dep_dt), _make_aware(seg_arr_dt),
-            booking_ref, passenger,
+            rule,
+            seg["flight_number"],
+            seg["dep_airport"],
+            seg["arr_airport"],
+            _make_aware(seg_dep_dt),
+            _make_aware(seg_arr_dt),
+            booking_ref,
+            passenger,
         )
         if fd:
             flights.append(fd)

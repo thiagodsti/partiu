@@ -9,3 +9,29 @@ services:
       - ./data:/app/data   # SQLite db + email cache persisted on host
     env_file:
       - .env
+
+  # ---------------------------------------------------------------------------
+  # Optional: LLM fallback for parsing emails from unknown airlines.
+  # To enable: uncomment this service AND set OLLAMA_URL=http://ollama:11434
+  # in your .env file. On first start, pull a model:
+  #   docker compose exec ollama ollama pull qwen2.5:1.5b
+  # ---------------------------------------------------------------------------
+  # ollama:
+  #   image: ollama/ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama_models:/root/.ollama   # model files persist across restarts
+  #   # Uncomment below to expose the API on the host (useful for local testing)
+  #   # ports:
+  #   #   - "11434:11434"
+  #   # Uncomment below to enable NVIDIA GPU passthrough
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+
+# volumes:
+#   ollama_models:

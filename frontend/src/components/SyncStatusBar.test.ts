@@ -30,6 +30,8 @@ const BASE: SyncStatus = {
   last_synced_at: '2025-01-01T12:00:00Z',
   last_error: null,
   sync_interval_minutes: 60,
+  emails_processed: null,
+  emails_total: null,
 };
 
 describe('SyncStatusBar', () => {

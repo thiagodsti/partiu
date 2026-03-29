@@ -321,6 +321,34 @@ def delete_trip(trip_id: str, user: dict = Depends(get_current_user)):
     trip_image_path(trip_id).unlink(missing_ok=True)
 
 
+class MergeBody(BaseModel):
+    target_trip_id: str
+
+
+@router.post("/{trip_id}/merge")
+def merge_trip(trip_id: str, body: MergeBody, user: dict = Depends(get_current_user)):
+    """Move all flights from source trip into target trip, then delete source trip."""
+    if trip_id == body.target_trip_id:
+        raise HTTPException(status_code=400, detail="Cannot merge a trip into itself")
+
+    with db_conn() as conn:
+        if not is_trip_owner(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+        if not can_access_trip(body.target_trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Target trip not found")
+
+    now = now_iso()
+    with db_write() as conn:
+        conn.execute(
+            "UPDATE flights SET trip_id = ?, updated_at = ? WHERE trip_id = ?",
+            (body.target_trip_id, now, trip_id),
+        )
+        conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"]))
+
+    trip_image_path(trip_id).unlink(missing_ok=True)
+    return {"target_trip_id": body.target_trip_id}
+
+
 @router.post("/{trip_id}/flights/{flight_id}")
 def add_flight_to_trip(trip_id: str, flight_id: str, user: dict = Depends(get_current_user)):
     """Assign a flight to a trip."""

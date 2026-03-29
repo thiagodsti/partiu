@@ -106,4 +106,29 @@ describe('StatsPage', () => {
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(2024));
   });
+
+  it('countries link includes year query param when year is selected', async () => {
+    mockGet.mockResolvedValue(STATS);
+    const { container } = render(StatsPage);
+    await waitFor(() => expect(container.querySelector('.year-pills')).toBeInTheDocument());
+
+    // Select year 2024
+    const yearBtn = Array.from(container.querySelectorAll('.year-pill')).find(
+      (b) => b.textContent?.includes('2024'),
+    ) as HTMLButtonElement;
+    await fireEvent.click(yearBtn);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(2024));
+
+    const mapLink = container.querySelector('.stat-card-link') as HTMLAnchorElement;
+    expect(mapLink.getAttribute('href')).toBe('#/stats/map?year=2024');
+  });
+
+  it('countries link has no year param when all-time is selected', async () => {
+    mockGet.mockResolvedValue(STATS);
+    const { container } = render(StatsPage);
+    await waitFor(() => expect(container.querySelector('.stat-card-link')).toBeInTheDocument());
+
+    const mapLink = container.querySelector('.stat-card-link') as HTMLAnchorElement;
+    expect(mapLink.getAttribute('href')).toBe('#/stats/map');
+  });
 });

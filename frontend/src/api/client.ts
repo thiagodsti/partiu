@@ -124,6 +124,7 @@ export const tripsApi = {
   checkImmichAlbum: (id: string) => get<{ album_id: string | null; exists: boolean }>(`/api/trips/${id}/immich-album/status`),
   setRating: (id: string, rating: number | null) => put<{ rating: number | null }>(`/api/trips/${id}/rating`, { rating }),
   setNote: (id: string, note: string | null) => put<{ note: string | null }>(`/api/trips/${id}/note`, { note }),
+  merge: (id: string, targetTripId: string) => post<{ target_trip_id: string }>(`/api/trips/${id}/merge`, { target_trip_id: targetTripId }),
 };
 
 // ---- Flights ----
@@ -227,7 +228,10 @@ export const syncApi = {
   status: () => get<SyncStatus>('/api/sync/status'),
   now: () => post<null>('/api/sync/now'),
   regroup: () => post<null>('/api/sync/regroup'),
+  fullSync: () => post<null>('/api/sync/full-sync'),
   resetAndSync: () => post<null>('/api/sync/reset-and-sync'),
+  cacheInfo: () => get<{ exists: boolean; count: number; oldest: string | null; newest: string | null }>('/api/sync/cache-info'),
+  fromCache: () => post<null>('/api/sync/from-cache'),
 };
 
 // ---- Airports ----

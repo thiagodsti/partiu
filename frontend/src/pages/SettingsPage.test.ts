@@ -84,7 +84,6 @@ const SETTINGS = {
   gmail_address: 'test@gmail.com',
   gmail_app_password_set: true,
   sync_interval_minutes: 10,
-  max_emails_per_sync: 50,
   first_sync_days: 30,
   imap_host: 'imap.gmail.com',
   imap_port: 993,

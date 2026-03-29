@@ -27,6 +27,9 @@ class Settings:
     VAPID_PRIVATE_KEY: str = os.getenv("VAPID_PRIVATE_KEY", "")
     VAPID_PUBLIC_KEY: str = os.getenv("VAPID_PUBLIC_KEY", "")
     VAPID_SUBJECT: str = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
+    # LLM fallback (optional — requires a running Ollama instance)
+    OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 
 
 settings = Settings()

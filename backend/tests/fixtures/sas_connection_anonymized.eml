@@ -1,0 +1,922 @@
+Delivered-To: no-reply@msg.flysas.com
+X-Google-Smtp-Source: 
+ AGHT+IHlGsfA+GELhpG02Sqsik7zYUfvO3WC9xnKlVvEU0xUIKsWPikCt7VKazBlfykAyJ0Pe2eL
+X-Received: by 2002:a05:6122:3210:b0:50d:2769:d757 with SMTP id
+ 71dfb90a1353d-515fcb05ad4mr2552048e0c.11.1733487266905;
+        Fri, 06 Dec 2024 04:14:26 -0800 (PST)
+ARC-Seal: i=1; a=rsa-sha256; t=1733487266; cv=none;
+        d=google.com; s=arc-20240605;
+        b=foEY99bCmCGWH7Hb6ELvFzznBv1L47QXosBAfDFzRx1aOC1xPSy0i1CPwyIPZIeX1i
+         KEO+zW2bcn+FQ6mOdBY7DCPJvx8xq6sEHXJQkk4h0nmkLkuL40PWyHVd6icbcKMNXRwn
+         1fUwlKkhOvHL7gwdlOmiG+2+E+1wpGK8jfDKVoed6AybemiQp7eRLUgERjgE8PQUocyt
+         iWcTBuCKlpnLw7JMRGCb1r1k7OPhwk2alOkRcgpZXf+OJ6QJfwwb96ZoZ/jg/P4mfDc1
+         FfXPljyVHK5fIoCV8Vu8Gtx463xtGc2Jgj8gCAVSX+VVyulPWAVEuyH5rzajtr3k8/3C
+         DD+Q==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com;
+ s=arc-20240605;
+        h=feedback-id:message-id:mime-version:list-help:date:subject:to:from
+         :dkim-signature:dkim-signature;
+        bh=+c/HUE1tS5HL/4G3uwWh3n1aWgQIailtbqOkTGXtMvw=;
+        fh=pIazJ3WtyYqoz16r+TcCV3a42k3sDEDFP9s4hUobeJI=;
+        b=TK1AFtWautxxnEoc47SKW8YRmOgTbnbS7F79K+3fAVXZt1kIOkIK98BgLmXVOeetPb
+         lzDQlhLCA4aU8WUMDUEwZqJaGD1+v7X4p7Ek84dlOKO+MdrvVlZxyT+uGve9U0/n5eJ8
+         GIrD4lEHAxgnVaqh9LlwgpY7G7HCR/gZ+XQvo6Ez9C1/30q3A3l6bIHRgcG8ngWcra+W
+         b+oezRXu7GeSlFnfN5ZGZ5cavmKIwDtuhnYlup/7ujRXQ9IeugdIUEVx6cAnz7ZpiXcW
+         LlKEt1PbpTEpQKlS2jqfysvbYF3WT2MBHtWp8fFvMx0AGtTkRMXW0/vikYn9aVvDzY17
+         /oDQ==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@msg.flysas.com header.s=50dkim1
+ header.b="zrYL+Hk/";
+       dkim=pass header.i=@s50.y.mc.salesforce.com header.s=fbldkim50
+ header.b=LPRKgz9H;
+       spf=pass (google.com: domain of
+ bounce-113_html-271116350-657432-510007351-2635@bounce.msg.flysas.com
+ designates 161.71.34.249 as permitted sender)
+ smtp.mailfrom=bounce-113_HTML-271116350-657432-510007351-2635@bounce.msg.flysas.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=msg.flysas.com
+Return-Path: <no-reply@msg.flysas.com>
+Received-SPF: pass (google.com: domain of
+ bounce-113_html-271116350-657432-510007351-2635@bounce.msg.flysas.com
+ designates 161.71.34.249 as permitted sender) client-ip=161.71.34.249;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@msg.flysas.com header.s=50dkim1
+ header.b="zrYL+Hk/";
+       dkim=pass header.i=@s50.y.mc.salesforce.com header.s=fbldkim50
+ header.b=LPRKgz9H;
+       spf=pass (google.com: domain of
+ bounce-113_html-271116350-657432-510007351-2635@bounce.msg.flysas.com
+ designates 161.71.34.249 as permitted sender)
+ smtp.mailfrom=bounce-113_HTML-271116350-657432-510007351-2635@bounce.msg.flysas.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=msg.flysas.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=50dkim1;
+ d=msg.flysas.com;
+ h=From:To:Subject:Date:List-Help:MIME-Version:Message-ID:Content-Type;
+ i=no-reply-info@msg.flysas.com;
+ bh=+c/HUE1tS5HL/4G3uwWh3n1aWgQIailtbqOkTGXtMvw=;
+ b=zrYL+Hk/ftij2c7a3rEYyevel/JJo7WybEegTT62EAHACALN9w+ZNPe1BVBKrVOY3E/kL+QBoESK
+   sUFF3JmCVb+rwN2t4Yj8LUhcDQDNvJDzKSYnkHMO4a+UWWVNbjJed+a1eW8t7l1Lh6G0gEy3Ef00
+   21hT2WLAWMIU6ROmsoeCvJ/nQaiq0weXHASdZn0uuGD51O9VrYHCVq2Ch4dJhumbp07WRFt+qUBQ
+   63xFPd1HaJ8HALxHPNtzAalqamAZL+qLiWzBH4vIOif+2sq8770a7WzeRn6I1loRbCfpoxz00HSa
+   LeotbYmk05BpY0a6kHg2QrwDImo6+b2skHTS2g==
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=fbldkim50;
+ d=s50.y.mc.salesforce.com;
+ h=From:To:Subject:Date:List-Help:MIME-Version:Message-ID:Content-Type;
+ bh=+c/HUE1tS5HL/4G3uwWh3n1aWgQIailtbqOkTGXtMvw=;
+ b=LPRKgz9HhZHt1CvCrvU+O8K5NXXgzjyROx/2S8pYKtI8r3DJBUeqbd6Cl9Nm0xyHfuX+r1UBnCzO
+   Vb5GhnsfyecCkFXghqXpDkzphRr3n2iZCFRXBr0eSFmSC27u6GJj6DuLnT/M+iHUyj0vtWAoEuZq
+   wPKwBv9c93uf1UTnqo2vngq/7ALWeARO/N5Z0ixcVZQGm+cJS4HnZxv1XtSX6nxJheBOYySmY3Bh
+   auAFgVjcb7tKNeyJOH33tKXRUCkZlanihsnvVTLeA1dNCfqaoRDQ/HyxWhqvfZYMnMu19aB+yqU2
+   /QY2/ElIA02uAyZ143TGSD0YpdlY9tqZ02oZCA==
+From: "SAS" <no-reply@msg.flysas.com>
+To: <no-reply@msg.flysas.com>
+Subject: Din resa [28 okt 2025], Bokning: [WD7WYD]
+Date: Fri, 06 Dec 2024 06:14:25 -0600
+List-Help: 
+ <https://click.msg.flysas.com/subscription_center.aspx?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtaWQiOiI1MTAwMDczNTEiLCJzIjoiMjcxMTE2MzUwIiwibGlkIjoiMTEzIiwiaiI6IjY1NzQzMiIsImpiIjoiMjYzNSIsImQiOiI1MDAwMTUifQ.GnmgwqY5ci9IHk9FgHzq3621JOszVOJb933BoJ--dGc>
+MIME-Version: 1.0
+x-messageKey: 6752ea537cb91ccec069906b
+X-Delivery: Transactional
+X-SFMC-Stack: 50
+x-job: 510007351_657432
+Message-ID: <43a3dae1-02db-4467-9874-16930f953d6f@fra3s50mta142.xt.local>
+Feedback-ID: 510007351:657432:161.71.34.249:sfmktgcld
+Content-Type: multipart/alternative;
+	boundary="GUXAuRIUvWpZ=_?:"
+Received: by 2002:a05:6022:565b:b0:63:d385:ec1a with SMTP id eq27csp605529lab;
+        Fri, 6 Dec 2024 04:14:27 -0800 (PST)
+Received: from mta.msg.flysas.com (mta.msg.flysas.com. [161.71.34.249])
+        by mx.google.com with ESMTPS id
+ a1e0cc1a2514c-85c2be698cesi1153251241.196.2024.12.06.04.14.26
+        for <no-reply@msg.flysas.com>
+        (version=TLS1_2 cipher=ECDHE-ECDSA-AES128-GCM-SHA256 bits=128/128);
+        Fri, 06 Dec 2024 04:14:26 -0800 (PST)
+Received: by mta.msg.flysas.com id habla42fmd4p for <no-reply@msg.flysas.com>;
+ Fri, 6 Dec 2024 12:14:25 +0000 (envelope-from <no-reply@msg.flysas.com>)
+
+This is a multi-part message in MIME format.
+
+--GUXAuRIUvWpZ=_?:
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+
+ Scandinavian Airlines
+ 
+ 
+
+
+
+  
+  
+ 
+https://view.msg.flysas.com/?qs=76c88c3045feba8eee4ef6bbf697e2c56a9668ff8cd70b050189d28fc22e6b3a2161cd5c81dcabac2ade979d429aab1f80665dacfd419e728b7f95a7ab6ad6178c68f2f2bf11938ed5271adc909580c4 
+Klicka här  om du inte kan läsa denna e-post	.
+
+
+https://click.msg.flysas.com/?qs=6ed697caf9b91e2e005e38098219ffa8aec992261f+1-555-000-0000c4d8edb87c04d5955682eafbe9a2a7ff212b3e5ffd7522e1d1aa6d6578fc1d5e89d5aaace 
+
+
+ 
+ 
+ BOKNINGS&shy;BEKRÄFTELSE
+
+
+ Här är din bokningsreferens och information om din resa.
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+MINA BOKNINGAR  
+
+
+ Bokningsreferens: WD7WYD
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+Avboka  
+
+
+ 
+ 
+UTRESA 
+
+
+ Stockholm ARN - Johannesburg JNB
+
+ 28 okt +1-555-000-0000:10 - 11:30 (16h 20min, 1 stopp)
+
+
+ ECONOMY
+
+ 1 x Incheckat bagage
+
+
+
+ 
+ 
+ 
+ 
+ 
+ Stockholm ARN - London LHR
+
+ 18:10 - 19:55 (02h 45min)  
+Avgångsterminal 5 - Ankomstterminal 2 |  Avgångsterminal 5 |  Ankomstterminal 2 |  SK 533 | SAS | Bokningsklass 
+
+
+ 
+ 
+ 
+  London - HeathrowLondon - Tid mellan flyg: 02h 35m
+
+
+ 
+ 
+ 
+ London LHR - Johannesburg JNB
+
+ 22:30 - 11:30 (11h 00min)  
+Avgångsterminal 3 - Ankomstterminal A |  Avgångsterminal 3 |  Ankomstterminal A |  VS 449 | Virgin Atlantic | Bokningsklass 
+
+
+ 
+ 
+ 
+ BETALNINGSUPPGIFTER
+
+
+ Flygning
+
+ Skatter och avgifter
+
+
+
+  54 000 p
+ 
+
+ 54 000 p
+ 
+
+3 132 SEK
+
+
+ Totalt betalt belopp
+
+
+ 3 132 SEK
+
+
+
+RESENÄRER
+
+
+ 
+ THIAGO DINIZ DA SILVEIRA
+
+Bonusprogram
+ +1-555-000-0000
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+Redigera bonusprogram 
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+Lägg till bonusprogram 
+
+Kontaktuppgifter
+
+mailto:no-reply@msg.flysas.com 
+no-reply@msg.flysas.com 
+
+ +1-555-000-0000
+
+
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+ 
+
+
+
+ 
+ BÁRBARA KÓGUS
+
+Bonusprogram
+ +1-555-000-0000
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+Redigera bonusprogram 
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+Lägg till bonusprogram 
+
+Kontaktuppgifter
+
+mailto: 
+ 
+
+ 
+
+
+
+https://click.msg.flysas.com/?qs=7c8e5411bab243935e5d8607db41948fcdd718e58936de02dbe620244a26a382146fc1f3f9b054270d7497e44c4eb908af8f3fc5d288ff3997fb985d30de0535 
+ 
+
+
+
+ 
+
+Vill du ta med specialbagage eller är i behov av assistans? Vänligen kontakta flygbolaget.
+
+
+
+ This e-mail (including any attached documents) is proprietary and confidential and may contain legally privileged information. It is intended for the named recipient(s) only. If you are not the intended recipient, you may not review, retain, copy or distribute this message, and we kindly ask you to notify the sender by reply e-mail immediately and delete this message from your system.   Thank you. E-mail is susceptible to unauthorised alterations which may corrupt the message of the e-mail. SAS Group only sends and receives e-mails on the basis that SAS Group is not liable for any unauthorised alterations.
+
+
+
+
+ 
+ 
+ 
+ 
+
+--GUXAuRIUvWpZ=_?:
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<!doctype html>
+<html lang="se" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"       xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <title>
+      Scandinavian Airlines
+    </title>
+<!--[if !mso]><!-->
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!--<![endif]-->
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style type="text/css">
+#outlook a{padding:0;}body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}table,td{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}img{border:0;height:auto;line-height:100%;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}p{display:block;margin:13px 0;}
+</style>
+<!--[if mso]> <noscript><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript> <![endif]-->
+<!--[if lte mso 11]> <style type="text/css"> .mj-outlook-group-fix{width:100% !important;} </style> <![endif]-->
+<style type="text/css">
+@media only screen and
+ (min-width:679px){.mj-column-per-100{width:100%!important;max-width:100%;}.mj-column-per-50{width:50%!important;max-width:50%;}.mj-column-per-5{width:5%!important;max-width:5%;}.mj-column-per-95{width:95%!important;max-width:95%;}.mj-column-per-48{width:48%!important;max-width:48%;}.mj-column-per-4{width:4%!important;max-width:4%;}.mj-column-px-240{width:240px!important;max-width:240px;}.mj-column-px-16{width:16px!important;max-width:16px;}.mj-column-px-156{width:156px!important;max-width:156px;}.mj-column-per-32{width:32%!important;max-width:32%;}.mj-column-per-2{width:2%!important;max-width:2%;}.mj-column-per-20{width:20%!important;max-width:20%;}.mj-column-per-35{width:35%!important;max-width:35%;}.mj-column-per-65{width:65%!important;max-width:65%;}.mj-column-px-300{width:300px!import
+ant;max-width:300px;}.mj-column-per-+1-555-000-0000{width:+1-555-000-0000%!important;max-width:+1-555-000-0000%;}.mj-column-per-40{width:40%!important;max-width:40%;}.mj-column-per-60{width:60%!important;max-width:60%;}.mj-column-per-70{width:70%!important;max-width:70%;}.mj-column-per-30{width:30%!important;max-width:30%;}}
+</style>
+<style media="screen and (min-width:679px)">.moz-text-html .mj-column-per-100{width:100%!important;max-width:100%;}.moz-text-html .mj-column-per-50{width:50%!important;max-width:50%;}.moz-text-html .mj-column-per-5{width:5%!important;max-width:5%;}.moz-text-html .mj-column-per-95{width:95%!important;max-width:95%;}.moz-text-html .mj-column-per-48{width:48%!important;max-width:48%;}.moz-text-html .mj-column-per-4{width:4%!important;max-width:4%;}.moz-text-html .mj-column-px-240{width:240px!important;max-width:240px;}.moz-text-html .mj-column-px-16{width:16px!important;max-width:16px;}.moz-text-html .mj-column-px-156{width:156px!important;max-width:156px;}.moz-text-html .mj-column-per-32{width:32%!important;max-width:32%;}.moz-text-html
+ .mj-column-per-2{width:2%!important;max-width:2%;}.moz-text-html .mj-column-per-20{width:20%!important;max-width:20%;}.moz-text-html .mj-column-per-35{width:35%!important;max-width:35%;}.moz-text-html .mj-column-per-65{width:65%!important;max-width:65%;}.moz-text-html .mj-column-px-300{width:300px!important;max-width:300px;}.moz-text-html .mj-column-per-+1-555-000-0000{width:+1-555-000-0000%!important;max-width:+1-555-000-0000%;}.moz-text-html .mj-column-per-40{width:40%!important;max-width:40%;}.moz-text-html .mj-column-per-60{width:60%!important;max-width:60%;}.moz-text-html .mj-column-per-70{width:70%!important;max-width:70%;}.moz-text-html .mj-column-per-30{width:30%!important;max-width:30%;}
+</style>
+<style type="text/css">
+@media only screen and (max-width:679px){table.mj-full-width-mobile{width:100%!important;}td.mj-full-width-mobile{width:auto!important;}}
+</style>
+<style type="text/css">
+.btn{text-decoration:underline;}[class~="x_status-outlook-fallback"]{display:block!important;}[class~="x_status-badge"]{display:none!important;}
+@media (max-width:679px){.overlay-right table td{width:100%!important;}.sm-align-center,.sm-align-center>div,.sm-align-center>table{text-align:center!important;margin-left:auto!important;margin-right:auto!important}.sm-pt-8,.sm-pt-8>div{padding-top:8px}.sm-pt-16,.sm-pt-16>div{padding-top:16px}.sm-padding-0>table>tbody>tr>td{padding:0 16px!important;}.sm-padding-32-16>table>tbody>tr>td{padding:32px 16px!important;}.sm-pt-16{padding-top:16px;}.sm-pb-16{padding-bottom:16px;}.sm-align-left>div{text-align:left!important;}.sm-font-18px>div{font-size:18px!important;line-height:20px!important;}.status-content{line-height:14px!important;}.sm-fw>table>tbody>tr>td{padding-left:16px!important;padding-right:16px!important;}.sm-fw
+ div{max-width:100%!important;}.visible-sm{display:block!important;}.sm-hidden{display:none!important;}.lg-hidden{display:block!important;}.sm-pb-32{padding-bottom:32px!important;}.sm-px-0>table>tbody tr td{padding-left:0!important;padding-right:0!important;}.sm-text-24{font-size:24px!important;line-height:30px!important;}.sm-br-top img{border-radius:8px 8px 0px 0px!important;}}
+@media screen and (max-width:400px){.xs-hidden{display:none!important;}}[data-ogsb] .status-badge{display:none!important;}.status-content{float:left;line-height:24px!important;}.status-badge{border-radius:12px;line-height:24px;height:24px;width:24px;margin-right:4px;font-size:10px;font-weight:700;text-align:center;vertical-align:middle;float:left;}.status-badge--1{background-color:#006EE6;color:#fff;}.status-badge--2{background-color:#BFBCB5;}.status-badge--3{background-color:#E1BE91;}.status-badge--4{background-color:#F4F4F4;}.status-badge--5{background-color:#272623;color:#fff!important;}.center-table{margin-left:auto;margin-right:auto;}.center,.center td,.center
+ div{text-align:center;}.label{background:#006EE6;border-radius:4px;line-height:28px;height:28px;color:#fff;font-size:14px;font-weight:bold;padding:0 10px;display:inline-table;margin:0 auto 10px;}.dot{margin-right:4px;}a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important;}.br,.br-8,.br-8>*{border-radius:8px!important;overflow:hidden!important;}.br-4{border-radius:4px;overflow:hidden;}.br-12{border-radius:12px;overflow:hidden;}u+.body .gmail-blend-screen{background:#000;mix-blend-mode:screen;}u+.body .gmail-blend-difference{background:#000;mix-blend-mode:difference;}:root{color-scheme:light dark;supported-color-schemes:light
+ dark;}.dark-img{display:none!important;}[data-ogsc] .dark-img{display:block!important;}[data-ogsc] .light-img{display:none;display:none!important;}.h1{font-size:30px!important;line-height:36px!important;}.h3{font-size:16px;line-height:18px;}.h4{color:#000066!important;font-size:16px;line-height:20px;}h1,h2,h3,h4,h5,.btn a{font-family:'Arial Black','Arial Bold',sans-serif!important;margin:0!important;font-weight:800!important;}.sm-text-10{font-size:12px!important;}.text-gray div{color:#373737!important;}.lg-hidden{display:none!important;}.border-left{border-left:1px solid #C2E5F5;padding-left:12px;display:inline-block;}.sm-px-8{
+@media (min-width:680px){padding-left:32px!important;padding-right:32px!important;}}
+</style>
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<meta name="format-detection" content="telephone=no, email=no, address=no, date=no">
+<!--[if gte mso 9]> <style type="text/css"> .status-outlook-fallback{width:14px;display:block !important;}.status-badge{display:none !important;}h1,h2,h3,h4,h5,.btn a{font-family:arial,sans-serif !important;} </style> <![endif]-->
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<meta name="format-detection" content="telephone=no, email=no, address=no, date=no">
+<!--[if gte mso 9]> <style type="text/css"> .status-outlook-fallback{width:14px;display:block !important;}.status-badge{display:none !important;}h1,h2,h3,h4,h5,.btn a{font-family:arial,sans-serif !important;} </style> <![endif]-->
+    
+    <!--  -->
+
+  </head>
+  <body style="word-spacing:normal;background-color:#fffffe;">
+    <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+      
+    </div>
+    <div          style="background-color:#fffffe;"          >
+      <!---->
+
+<!--  -->
+
+
+
+
+<!-- --> <!--  --> <!--  -->
+          
+      <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:680px" width="680"><tr><td style="line-height:0;font-size:0;mso-line-height-rule:exactly"><![endif]--><div style="margin:0 auto;max-width:680px">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0;padding:0;text-align:center">
+     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:680px"><![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:8px">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0;padding:0;word-break:break-word">
+              <div style="font-family:Arial,sans-serif;font-size:12px;line-height:18px;text-align:center;color:#009">
+               <a  href="https://view.msg.flysas.com/?qs=76c88c3045feba8eee4ef6bbf697e2c56a9668ff8cd70b050189d28fc22e6b3a2161cd5c81dcabac2ade979d429aab1f80665dacfd419e728b7f95a7ab6ad6174ed2c1277806e7382ca40e510bbf98e1" style="color:#009;text-decoration:underline" target="_blank" title="vawp">Klicka här</a> om du inte kan läsa denna e-post	.</div></td></tr></table></td></tr></table></div><!--[if mso | IE]><![endif]--></td></tr></table></div><!--[if mso | IE]><![endif]--></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- --><!-- LOGO HEADER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:680px;" width="680" bgcolor="#000099"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]-->
+<div style="background:#000099;background-color:#000099;margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#000099;background-color:#000099;width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:680px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:16px 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border-spacing:0px;">
+               
+                <tr>
+                 <td style="width:59px;">
+                  <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e2ca6964fa919d16fef759006fdb2e96d520054e75fa0121cd32d960faadfef53914bd1dce2b59875892fb7295dc487723e1ab0a4e7a16b97" target="_blank"><img alt="sas logo" height="auto" src="https://image.msg.flysas.com/lib/fe+1-555-000-0000a761171/m/1/9a9bd811-6ff8-4aad-a4fc-a8bcecee805b.png" style="border:0;display:block;outline:none;text-decoration:none;height:auto;width:100%;font-size:14px;" width="59"></a></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- LOGO-HEADER --></td></tr></table>
+      
+      <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  HERO --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" bgcolor="#f6f6f6"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="background:#f6f6f6;background-color:#f6f6f6;margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f6f6;background-color:#f6f6f6;width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:32px 90px 32px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:500px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:8px 0;word-break:break-word;">
+              <div style="font-family:'Arial Black','Arial Bold',sans-serif;font-size:30px;font-weight:800;line-height:36px;text-align:center;color:#000099;">
+               <h1 class="h1 sm-text-24" style="font-size:30px;line-height:36px;">
+                BOKNINGS&shy;BEKRÄFTELSE</h1></div></td></tr><tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation"><tr><td> <![endif]--><table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="float:none;display:inline-table;">
+               
+                <tr>
+                 <td style="padding:0;vertical-align:middle;">
+                  <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:3px;width:18px;">
+                   
+                    <tr>
+                     <td style="font-size:0;height:18px;vertical-align:middle;width:18px;">
+                     </td></tr></table></td><td style="vertical-align:middle;padding:1px 0 0 4px;">
+                 </td></tr></table><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr><tr>
+             <td align="center" class="sm-px-0" style="font-size:0px;padding:0 0 16px 0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;font-weight:normal;line-height:18px;text-align:center;color:#393939;">
+               <br>
+               Här är din bokningsreferens och information om din resa.</div></td></tr><tr>
+             <td align="center" class="btn" style="font-size:0px;padding:0;word-break:break-word;" vertical-align="middle">
+              <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;">
+               
+                <tr>
+                 <td align="center" bgcolor="#FFD6AF" role="presentation" style="border:none;border-radius:45px;cursor:auto;mso-padding-alt:16px 30px;background:#FFD6AF;" valign="middle">
+                  <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="display:inline-block;background:#FFD6AF;color:#001657;font-family:Arial,sans-serif;font-size:16px;font-weight:700;line-height:15px;margin:0;text-decoration:none;text-transform:none;padding:16px 30px;mso-padding-alt:0px;border-radius:45px;" target="_blank" title="Hantera min bokning">MINA BOKNINGAR </a></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- / HERO --><!-- BOOKING REFERENCE --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" bgcolor="#fefefe"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> 
+<![endif]--><div class="sm-fw" style="background:#fefefe;background-color:#fefefe;margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#fefefe;background-color:#fefefe;width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:24px 40px 18px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="sm-align-center-outlook" style="vertical-align:middle;width:300px;"> <![endif]--><div class="mj-column-per-50 mj-outlook-group-fix sm-align-center" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:middle;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" class="sm-align-center" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:18px;line-height:36px;text-align:left;color:#393939;">
+               Bokningsreferens:<span style="font-weight:700;font-size:24px ">&nbsp;WD7WYD</span></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td align="right" class="sm-pt-16-outlook" style="vertical-align:middle;width:300px;"> <![endif]--><div class="mj-column-per-50 mj-outlook-group-fix sm-pt-16" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:middle;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:middle;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="right" class="sm-align-center " style="font-size:0px;padding:0;word-break:break-word;">
+              <!--[if mso | IE]> <table align="right" border="0" cellpadding="0" cellspacing="0" role="presentation"><tr><td> <![endif]-->
+               
+               <!--<table align="right" border="0" cellpadding="0" cellspacing="0" role="presentation" style="float:none;display:inline-table;">                                 <tr>                  <td style="padding:0;vertical-align:middle;">                   <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:3px;width:14px;">                                         <tr>                      <td style="padding:6px;font-size:0;height:14px;vertical-align:middle;width:14px;">                      </td></tr></table></td><td style="vertical-align:middle;padding:0 8px 0 0;">                  </td></tr></table>-->
+               
+               <!--[if mso | IE]> </td><td> <![endif]--><table align="right" border="0" cellpadding="0" cellspacing="0" role="presentation" style="float:none;display:inline-table;">
+               
+                <tr>
+                 <td style="padding:0;vertical-align:middle;">
+                  <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:3px;width:14px;">
+                   
+                    <tr>
+                     <td style="padding:6px;font-size:0;height:14px;vertical-align:middle;width:14px;">
+                      <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" target="_blank" title="Hantera min bokning – Avboka"><img alt="cross icon" height="14" src="https://image.msg.flysas.com/lib/fe+1-555-000-0000a761171/m/1/7fce07fe-+1-555-000-0000de-4cee08f60124.png" style="border-radius:3px;display:block;" width="14"></a></td></tr></table></td><td style="vertical-align:middle;padding:0;">
+                  <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="color:#003DF0;font-size:14px;font-family:arial,sans-serif;line-height:18px;text-decoration:underline;" target="_blank" title="Hantera min bokning – Avboka">Avboka </a></td></tr></table><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 24px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <p style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:100%;">
+              </p><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:600px;" role="presentation" width="600px"><tr><td style="height:0;line-height:0;"> &nbsp; </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /BOOKING REFERENCE --></td></tr></table></td></tr></table> 
+           <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- ICON-TITLE: OUTBOUND --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 12px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <!--[if mso | IE]> <table align="left" border="0" cellpadding="0" cellspacing="0" role="presentation"><tr><td> <![endif]--><table align="left" border="0" cellpadding="0" cellspacing="0" role="presentation" style="float:none;display:inline-table;">
+               
+                <tr>
+                 <td style="padding:0;vertical-align:middle;">
+                  <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:3px;width:16px;">
+                   
+                    <tr>
+                     <td style="padding:6px 6px 6px 0;font-size:0;height:16px;vertical-align:middle;width:16px;">
+                      <img alt="" height="16" src="https://image.msg.flysas.com/lib/fe+1-555-000-0000a761171/m/1/4050310d-eb3b-4ead-9fc5-24419a49229f.png" style="border-radius:3px;display:block;" width="16"></td></tr></table></td><td style="vertical-align:middle;padding:0 8px 0 0;">
+                  <span style="color:#000066;font-size:16px;font-weight:bold;font-family:arial,sans-serif;line-height:18px;text-decoration:none;">UTRESA </span></td></tr></table><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /ICON-TITLE: OUTBOUND --><!-- FLIGHT SUMMARY --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 24px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:420px;"> <![endif]--><div class="mj-column-per-70 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:22px;text-align:left;color:#393939;">
+               Stockholm<b> ARN</b> - Johannesburg <b>JNB</b><br>
+               28 okt 2025<br>
+               18:10 - 11:30 (16h 20min, 1 stopp)</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:180px;"> <![endif]--><div class="mj-column-per-30 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="right" class="sm-align-left sm-pt-16" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;line-height:22px;text-align:right;color:#393939;">
+               ECONOMY<br>
+               1 x Incheckat bagage</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- / FLIGHT SUMMARY --></td></tr></table></td></tr></table>
+           
+           <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- </td></tr></table> 
+           <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- FLIGHT SEGMENT 1 --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 24px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:420px;"> <![endif]--><div class="mj-column-per-70 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;font-weight:normal;line-height:18px;text-align:left;color:#393939;">
+               Stockholm <b>ARN</b> - London <b>LHR</b><br>
+               18:10 - 19:55 (02h 45min) &nbsp;</div></td></tr><tr>
+             <td align="left" style="font-size:0px;padding:12px 0 8px 0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;text-align:left;color:#393939;">
+               <!---->Avgångsterminal 5 - Ankomstterminal 2 | <!----> SK 533 | SAS <!----></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:180px;"> <![endif]--><div class="mj-column-per-30 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="right" class="sm-align-left sm-pt-16" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;line-height:26px;text-align:right;color:#393939;">
+              </div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /FLIGHT SEGMENT 1 --></td></tr></table></td></tr></table> 
+          
+        
+           <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"> <!-- STOPOVER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 24px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;font-weight:normal;line-height:22px;text-align:left;color:#393939;">
+               <span style="border-radius:16px;padding:3px 8px;background:#eee;">London - Heathrow</span> <b style="padding-left:4px">London</b> - Tid mellan flyg: 02h 35m</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- STOPOVER --></td></tr></table> </td></tr></table> 
+           <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- FLIGHT SEGMENT 1 --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 24px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:420px;"> <![endif]--><div class="mj-column-per-70 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;font-weight:normal;line-height:18px;text-align:left;color:#393939;">
+               London <b>LHR</b> - Johannesburg <b>JNB</b><br>
+               22:30 - 11:30 (11h 00min) &nbsp;</div></td></tr><tr>
+             <td align="left" style="font-size:0px;padding:12px 0 8px 0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;text-align:left;color:#393939;">
+               <!---->Avgångsterminal 3 - Ankomstterminal A | <!----> VS 449 | Virgin Atlantic <!----></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:180px;"> <![endif]--><div class="mj-column-per-30 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="right" class="sm-align-left sm-pt-16" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:14px;line-height:26px;text-align:right;color:#393939;">
+              </div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /FLIGHT SEGMENT 1 --></td></tr></table></td></tr></table> 
+          
+        <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- 75 - TP Details 1 --><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px 4px;text-align:center;">
+     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;" ><![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial, sans-serif;font-size:18px;font-weight:bold;line-height:18px;text-align:left;color:#000066;">
+               BETALNINGSUPPGIFTER</div></td></tr></table></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--><!-- LINE ITEM LOOP --><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:2px 40px;text-align:center;">
+     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="width:600px;" ><![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0;line-height:0;text-align:left;display:inline-block;width:100%;direction:ltr;">
+      <!--[if mso | IE]><table border="0" cellpadding="0" cellspacing="0" role="presentation" ><tr><td style="vertical-align:top;width:300px;" ><![endif]--><div class="mj-column-per-50 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:50%;">
+       <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+        
+         <tr>
+          <td style="vertical-align:top;padding:0;">
+           <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+            
+             <tr>
+              <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+               <div style="font-family:Arial, sans-serif;font-size:16px;font-weight:normal;line-height:22px;text-align:left;color:#393939;">
+                Flygning<br>
+                Skatter och avgifter</div></td></tr></table></td></tr></table></div><!--[if mso | IE]></td><td style="vertical-align:top;width:300px;" ><![endif]--><div class="mj-column-per-50 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:50%;">
+       <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+        
+         <tr>
+          <td style="vertical-align:top;padding:0;">
+           <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+            
+             <tr>
+              <td align="right" style="font-size:0px;padding:0;word-break:break-word;">
+               <div style="font-family:Arial, sans-serif;font-size:16px;font-weight:normal;line-height:22px;text-align:right;color:#393939;">
+                <!----> 
+
+                 54 000 p<br>
+                <!----> 
+
+3 132 SEK</div></td></tr></table></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--></div><!--[if mso | IE]></td></tr></table><![endif]--></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--><!-- /LINE ITEM LOOP --><!-- LINE --><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:12px 40px;text-align:center;">
+     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;" ><![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <p style="border-top:solid 1px #393939;font-size:1px;margin:0px auto;width:100%;">
+              </p><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" style="border-top:solid 1px #393939;font-size:1px;margin:0px auto;width:600px;" role="presentation" width="600px" ><tr><td style="height:0;line-height:0;"> &nbsp; </td></tr></table><![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--><!-- /LINE --><!-- TOTALT --><!--[if mso | IE]><table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680" ><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:2px 40px 4px;text-align:center;">
+     <!--[if mso | IE]><table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="width:600px;" ><![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0;line-height:0;text-align:left;display:inline-block;width:100%;direction:ltr;">
+      <!--[if mso | IE]><table border="0" cellpadding="0" cellspacing="0" role="presentation" ><tr><td style="vertical-align:top;width:300px;" ><![endif]--><div class="mj-column-per-50 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:50%;">
+       <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+        
+         <tr>
+          <td style="vertical-align:top;padding:0;">
+           <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+            
+             <tr>
+              <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+               <div style="font-family:Arial, sans-serif;font-size:16px;font-weight:bold;line-height:22px;text-align:left;color:#393939;">
+                Totalt betalt belopp</div></td></tr></table></td></tr></table></div><!--[if mso | IE]></td><td style="vertical-align:top;width:300px;" ><![endif]--><div class="mj-column-per-50 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:50%;">
+       <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+        
+         <tr>
+          <td style="vertical-align:top;padding:0;">
+           <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+            
+             <tr>
+              <td align="right" style="font-size:0px;padding:0;word-break:break-word;">
+               <div style="font-family:Arial, sans-serif;font-size:24px;font-weight:bold;line-height:22px;text-align:right;color:#393939;">
+                3 132 SEK</div></td></tr></table></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--></div><!--[if mso | IE]></td></tr></table><![endif]--></td></tr></table></div><!--[if mso | IE]></td></tr></table><![endif]--><!-- /TOTALT --><!-- /75 - TP Details 1 --><!-- TRAVEL PASS BLUE DIVIDER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <p style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:100%;">
+              </p><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:600px;" role="presentation" width="600px"><tr><td style="height:0;line-height:0;"> &nbsp; </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /TRAVEL PASS BLUE DIVIDER --></td></tr></table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- PASSENGERS TITLE --><!--[if mso | IE]> 
+<table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+	<table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+		
+			<tr>
+				<td style="direction:ltr;font-size:0px;padding:16px 40px 0;text-align:center;">
+					<!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+						<table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+							
+								<tr>
+									<td style="vertical-align:top;padding:0;">
+										<table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+											
+												<tr>
+													<td align="left" style="font-size:0px;padding:0;padding-bottom:16px;word-break:break-word;">
+														<div style="font-family:Arial,sans-serif;font-size:18px;font-weight:bold;line-height:18px;text-align:left;color:#000066;">
+															RESENÄRER</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /PASSENGERS TITLE -->
+    <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- PASSENGER DETAILS --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:8px 40px 0;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;line-height:22px;text-align:left;color:#393939;">
+               THIAGO DINIZ DA SILVEIRA</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b>Bonusprogram</b><br>
+               <!----> +1-555-000-0000<br>
+               <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="color:#003DF0" title="Hantera min bokning – Bonusprogram">Redigera bonusprogram</a> <!-- --></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" class="sm-pt-16" style="font-size:0px;padding:0 4px;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b>Kontaktuppgifter</b><br>
+               <a href="mailto:no-reply@msg.flysas.com" style="color:#003DF0">no-reply@msg.flysas.com</a><br>
+               +1-555-000-0000</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" class="sm-pt-16" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b></b><br>
+               <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="color:#003DF0" title=""></a></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /PASSENGER DETAILS -->
+<!-- TRAVEL PASS BLUE DIVIDER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <p style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:100%;">
+              </p><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:600px;" role="presentation" width="600px"><tr><td style="height:0;line-height:0;"> &nbsp; </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /TRAVEL PASS BLUE DIVIDER --></td></tr></table>
+
+    <table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- PASSENGER DETAILS --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:8px 40px 0;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;line-height:22px;text-align:left;color:#393939;">
+               BÁRBARA KÓGUS</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b>Bonusprogram</b><br>
+               <!----> +1-555-000-0000<br>
+               <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="color:#003DF0" title="Hantera min bokning – Bonusprogram">Redigera bonusprogram</a> <!-- --></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" class="sm-pt-16" style="font-size:0px;padding:0 4px;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b>Kontaktuppgifter</b><br>
+               <a href="mailto:" style="color:#003DF0"></a><br>
+               </div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td><td class="" style="vertical-align:top;width:200px;"> <![endif]--><div class="mj-column-per-+1-555-000-0000 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0 8px 0 0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="left" class="sm-pt-16" style="font-size:0px;padding:0;word-break:break-word;">
+              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+               <b></b><br>
+               <a href="https://click.msg.flysas.com/?qs=6ed697caf9b91e2e7885aa91ee+1-555-000-0000d41bd1b55d11d71d03d677266e948b5a595213a575d09d7c54c7bb7d9c5afdd3588937e85e1f7b5484bb6d" style="color:#003DF0" title=""></a></div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /PASSENGER DETAILS -->
+<!-- TRAVEL PASS BLUE DIVIDER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+      <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+       
+        <tr>
+         <td style="vertical-align:top;padding:0;">
+          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+           
+            <tr>
+             <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+              <p style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:100%;">
+              </p><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" style="border-top:solid 1px #80C5E5;font-size:1px;margin:0px auto;width:600px;" role="presentation" width="600px"><tr><td style="height:0;line-height:0;"> &nbsp; </td></tr></table> <![endif]--></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /TRAVEL PASS BLUE DIVIDER --></td></tr></table>
+
+ <!-- ASSISTANCE --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+	<table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+		
+			<tr>
+				<td style="direction:ltr;font-size:0px;padding:16px 40px;text-align:center;">
+					<!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+						<table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+							
+								<tr>
+									<td style="vertical-align:top;padding:0;">
+										<table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+											
+												<tr>
+													<td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+														<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:normal;line-height:24px;text-align:left;color:#393939;">
+															<b></b></div></td></tr><tr>
+													<td align="left" style="font-size:0px;padding:0;word-break:break-word;">
+														<div style="font-family:Arial,sans-serif;font-size:14px;font-style:normal;font-weight:normal;line-height:20px;text-align:left;color:#393939;">
+															Vill du ta med specialbagage eller är i behov av assistans? Vänligen kontakta flygbolaget.</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /ASSISTANCE --></td></tr></table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!--  --><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><!-- FOOTER --><!--[if mso | IE]> <table align="center" border="0" cellpadding="0" cellspacing="0" class="sm-fw-outlook" role="presentation" style="width:680px;" width="680"><tr>
+<td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div class="sm-fw" style="margin:0px auto;max-width:680px;">
+ <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+  
+   <tr>
+    <td style="direction:ltr;font-size:0px;padding:0 40px 32px;text-align:center;">
+     <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" width="680px"> <table align="center" border="0" cellpadding="0" cellspacing="0" class="" role="presentation" style="width:600px;" width="600"><tr><td style="line-height:0px;font-size:0px;mso-line-height-rule:exactly;"> <![endif]--><div style="margin:0px auto;max-width:600px;">
+      <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+       
+        <tr>
+         <td style="direction:ltr;font-size:0px;padding:0;text-align:center;">
+          <!--[if mso | IE]> <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td class="" style="vertical-align:top;width:600px;"> <![endif]--><div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+           <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+            
+             <tr>
+              <td style="vertical-align:top;padding:0;">
+               <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="" width="100%">
+                
+                 <tr>
+                  <td align="left" style="font-size:0px;padding:16px 0 0 0;word-break:break-word;">
+                   <div style="font-family:Arial,sans-serif;font-size:12px;font-weight:normal;line-height:15px;text-align:left;color:#727272;">
+                    This e-mail (including any attached documents) is proprietary and confidential and may contain legally privileged information. It is intended for the named recipient(s) only. If you are not the intended recipient, you may not review, retain, copy or distribute this message, and we kindly ask you to notify the sender by reply e-mail immediately and delete this message from your system.   Thank you. E-mail is susceptible to unauthorised alterations which may corrupt the message of the e-mail. SAS Group only sends and receives e-mails on the basis that SAS Group is not liable for any unauthorised alterations.
+</div></td></tr></table></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> </td></tr></table> <![endif]--></td></tr></table></div><!--[if mso | IE]> </td></tr></table> <![endif]--><!-- /FOOTER --></td></tr></table></td></tr></table>
+      
+      
+      
+    </div>
+    <img src="https://click.msg.flysas.com/open.aspx?ffcb10-fec+1-555-000-0000f-fe3d+1-555-000-0000d751d73-fe+1-555-000-0000a761171-ff6a157176-fe+1-555-000-0000b761170-ff2f16767661&d=500015&bmt=0" width="1" height="1" alt="">
+  </body>
+</html>
+
+--GUXAuRIUvWpZ=_?:--
+

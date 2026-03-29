@@ -44,7 +44,11 @@
   ></span>
   <span class="sync-text">
     {#if syncRunning}
-      {$t('sync.running')}
+      {#if syncStatus?.emails_total && syncStatus.emails_total > 0}
+        {$t('sync.running')} — {syncStatus.emails_processed ?? 0} / {syncStatus.emails_total} emails
+      {:else}
+        {$t('sync.running')}
+      {/if}
     {:else if syncHasError}
       {$t('sync.error')}: {syncStatus?.last_error ?? ''}
     {:else if lastSynced}

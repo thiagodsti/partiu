@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 def _load_eml(path: Path):
     """Parse a .eml file into a backend EmailMessage."""
-    from backend.parsers.email_connector import EmailMessage
+    from backend.parsers.email_connector import EmailMessage, decode_header_value
 
     raw = path.read_bytes()
     msg = stdlib_email.message_from_bytes(raw)
@@ -51,8 +51,8 @@ def _load_eml(path: Path):
 
     return EmailMessage(
         message_id=f"debug-{path.name}",
-        sender=msg["From"] or "",
-        subject=msg["Subject"] or "",
+        sender=decode_header_value(msg.get("From") or ""),
+        subject=decode_header_value(msg.get("Subject") or ""),
         body=body,
         date=datetime.now(tz=UTC),
         html_body=html_body,

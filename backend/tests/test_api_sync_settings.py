@@ -178,7 +178,6 @@ class TestUpdateSettings:
         r = auth_client.post(
             "/api/settings",
             json={
-                "max_emails_per_sync": 100,
                 "first_sync_days": 30,
                 "smtp_server_enabled": False,
                 "smtp_server_port": 2525,

@@ -30,7 +30,7 @@ def list_failed_emails(user: dict = Depends(get_current_user)):
     with db_conn() as conn:
         rows = conn.execute(
             """SELECT id, sender, subject, received_at, reason, airline_hint,
-                      last_retried_at, parser_version, created_at
+                      last_retried_at, parser_version, created_at, llm_verdict
                FROM failed_emails
                WHERE user_id = ?
                ORDER BY created_at DESC""",
@@ -55,9 +55,7 @@ def retry_failed_email(email_id: str, user: dict = Depends(get_current_user)):
 
     # Return the updated state (may have been deleted if successful)
     with db_conn() as conn:
-        updated = conn.execute(
-            "SELECT * FROM failed_emails WHERE id = ?", (email_id,)
-        ).fetchone()
+        updated = conn.execute("SELECT * FROM failed_emails WHERE id = ?", (email_id,)).fetchone()
 
     if updated is None:
         return {"status": "recovered"}
@@ -104,8 +102,6 @@ class _SenderBody(BaseModel):
 @router.delete("/api/admin/failed-emails/sender", status_code=204)
 def admin_delete_sender(body: _SenderBody, user: dict = Depends(require_admin)):
     """Admin: delete all failed emails from a given sender domain."""
-    from pathlib import Path
-
     with db_conn() as conn:
         rows = conn.execute(
             "SELECT eml_path FROM failed_emails WHERE airline_hint = ?",
@@ -120,19 +116,14 @@ def admin_delete_sender(body: _SenderBody, user: dict = Depends(require_admin)):
 
     for row in rows:
         if row["eml_path"]:
-            try:
-                Path(row["eml_path"]).unlink(missing_ok=True)
-            except OSError:
-                pass
+            _delete_eml_files(row["eml_path"])
 
 
 @router.post("/api/admin/failed-emails/retry-all")
 def admin_retry_all(user: dict = Depends(require_admin)):
     """Admin: retry all failed emails across all users."""
     with db_conn() as conn:
-        user_ids = conn.execute(
-            "SELECT DISTINCT user_id FROM failed_emails"
-        ).fetchall()
+        user_ids = conn.execute("SELECT DISTINCT user_id FROM failed_emails").fetchall()
 
     from ..failed_email_queue import retry_failed_emails
 
@@ -149,17 +140,24 @@ def admin_retry_all(user: dict = Depends(require_admin)):
 # ---------------------------------------------------------------------------
 
 
-def _delete_failed_email_row(email_id: str, eml_path: str | None) -> None:
+def _delete_eml_files(eml_path: str) -> None:
+    """Delete the raw .eml and its anonymized JSON companion if they exist."""
     from pathlib import Path
 
+    p = Path(eml_path)
+    for f in (p, p.with_name(p.stem + "_anonymized.json")):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _delete_failed_email_row(email_id: str, eml_path: str | None) -> None:
     with db_write() as conn:
         conn.execute("DELETE FROM failed_emails WHERE id = ?", (email_id,))
 
     if eml_path:
-        try:
-            Path(eml_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        _delete_eml_files(eml_path)
 
 
 def _retry_one(row: dict, user_id: int) -> None:

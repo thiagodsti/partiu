@@ -42,7 +42,16 @@ def _get_sync_state(user_id: int) -> dict:
         return {}
 
 
-_SYNC_STATE_COLUMNS = frozenset({"status", "last_error", "last_synced_at", "last_rules_version"})
+_SYNC_STATE_COLUMNS = frozenset(
+    {
+        "status",
+        "last_error",
+        "last_synced_at",
+        "last_rules_version",
+        "emails_processed",
+        "emails_total",
+    }
+)
 
 
 def _upsert_sync_state(user_id: int, **fields):
@@ -281,12 +290,29 @@ def _send_boarding_pass_notification(flight_id: str, user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _process_emails(emails: list, user_id: int) -> dict:
+def _process_emails(
+    emails: list,
+    user_id: int,
+    use_llm: bool = False,
+    progress_callback: object = None,
+) -> dict:
     """Parse a list of EmailMessage objects and persist flights to the DB.
+
+    Args:
+        use_llm: When True and Ollama is configured, try the LLM extractor
+                 immediately after rule-based + PDF parsing fail, instead of
+                 deferring to the failed-email queue.  Should be False for
+                 full re-scans (too many emails).
+        progress_callback: Optional callable(n) called after every 10 emails
+                           with the current processed count.
 
     Returns a summary dict including ``new_flight_ids`` so callers can
     trigger aircraft lookups for freshly inserted flights.
     """
+    from .llm_parser import llm_available, llm_extract_flights
+
+    _use_llm = use_llm and llm_available()
+
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
@@ -312,6 +338,17 @@ def _process_emails(emails: list, user_id: int) -> dict:
                 if rule
                 else try_generic_pdf_extraction(email_msg)
             )
+
+            # --- LLM fallback (incremental sync only, when Ollama is available) ---
+            if not flights_data and _use_llm:
+                flights_data = llm_extract_flights(email_msg)
+                if flights_data:
+                    logger.info(
+                        "User %d: LLM extracted %d flight(s) from %s",
+                        user_id,
+                        len(flights_data),
+                        email_msg.subject[:60],
+                    )
 
             if not flights_data:
                 # If the email had flight-like keywords but we couldn't parse it,
@@ -384,6 +421,14 @@ def _process_emails(emails: list, user_id: int) -> dict:
             err = f"User {user_id}: Error processing email {email_msg.message_id}: {e}"
             logger.error(err, exc_info=True)
             errors.append(err)
+        finally:
+            # Report progress every 10 emails to avoid excessive DB writes
+            total_seen = emails_processed + failed_emails_added + len(errors)
+            if progress_callback and total_seen % 10 == 0:
+                try:
+                    progress_callback(total_seen)  # type: ignore[operator]
+                except Exception:
+                    pass
 
     grouping_result = {}
     try:
@@ -433,8 +478,8 @@ def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_a
             body = (
                 f"{n} email{'s' if n > 1 else ''} couldn't be parsed and may contain flight info."
             )
-            create_notification(user_id, "failed_parse", title, body, "/#/notifications")
-            send_push(user_id, {"title": title, "body": body, "url": "/#/notifications"})
+            create_notification(user_id, "failed_parse", title, body, "/#/settings")
+            send_push(user_id, {"title": title, "body": body, "url": "/#/settings"})
     except Exception as e:
         logger.warning("User %d: Failed to send sync notifications: %s", user_id, e)
 
@@ -497,6 +542,9 @@ def run_email_sync_for_user(user: dict) -> dict:
             "User %d: Fetching emails since %s from %s", user_id, since_date, imap["gmail_address"]
         )
 
+        def _imap_progress(fetched: int, total: int) -> None:
+            _upsert_sync_state(user_id, emails_total=total, emails_processed=fetched)
+
         imap_result: ImapFetchResult = fetch_emails_imap(
             host=imap["imap_host"],
             port=imap["imap_port"],
@@ -505,7 +553,7 @@ def run_email_sync_for_user(user: dict) -> dict:
             use_ssl=True,
             sender_patterns=sender_patterns,
             since_date=since_date,
-            max_results=int(get_global_setting("max_emails_per_sync", "200")),
+            progress_callback=_imap_progress,
         )
 
         if not imap_result.success:
@@ -519,7 +567,14 @@ def run_email_sync_for_user(user: dict) -> dict:
         if emails:
             save_emails(emails)
 
-        result = _process_emails(emails, user_id)
+        # LLM fallback only on incremental syncs — full re-scans can touch
+        # hundreds of historical emails and would be too slow.
+        result = _process_emails(
+            emails,
+            user_id,
+            use_llm=not force_full,
+            progress_callback=lambda n: _upsert_sync_state(user_id, emails_processed=n),
+        )
 
         if result["new_flight_ids"]:
             try:
@@ -578,6 +633,11 @@ def run_email_sync() -> dict:
     results = {}
     for user_row in users:
         user = dict(user_row)
+        state = _get_sync_state(user["id"])
+        if state.get("status") == "running":
+            logger.info("User %d: Skipping scheduled sync — already running", user["id"])
+            results[user["id"]] = {"status": "skipped", "reason": "already running"}
+            continue
         if user.get("gmail_app_password"):
             user["gmail_app_password"] = decrypt(user["gmail_app_password"])
         try:
@@ -591,7 +651,9 @@ def run_email_sync() -> dict:
 
 
 def reset_auto_flights(user_id: int | None = None) -> dict:
-    """Delete all auto-synced flights and auto-generated trips for a user."""
+    """Delete all auto-synced flights and auto-generated trips for a user.
+    Also clears last_synced_at so the next sync uses the full first_sync_days window.
+    """
     with db_write() as conn:
         if user_id is not None:
             deleted_flights = conn.execute(
@@ -600,11 +662,15 @@ def reset_auto_flights(user_id: int | None = None) -> dict:
             deleted_trips = conn.execute(
                 "DELETE FROM trips WHERE is_auto_generated = 1 AND user_id = ?", (user_id,)
             ).rowcount
+            conn.execute(
+                "UPDATE email_sync_state SET last_synced_at = NULL WHERE user_id = ?", (user_id,)
+            )
         else:
             deleted_flights = conn.execute(
                 "DELETE FROM flights WHERE is_manually_added = 0"
             ).rowcount
             deleted_trips = conn.execute("DELETE FROM trips WHERE is_auto_generated = 1").rowcount
+            conn.execute("UPDATE email_sync_state SET last_synced_at = NULL")
     logger.info("Reset: deleted %d flights and %d trips", deleted_flights, deleted_trips)
     return {"deleted_flights": deleted_flights, "deleted_trips": deleted_trips}
 
@@ -621,7 +687,8 @@ def process_inbound_email(email_msg, user_id: int | None = None) -> dict:
         logger.warning("SMTP inbound: email rejected — no user_id, recipient address not matched")
         return {"status": "error", "error": "Recipient not matched to any user"}
 
-    result = _process_emails([email_msg], user_id)
+    # SMTP inbound: always try LLM — it's a single email, latency is fine.
+    result = _process_emails([email_msg], user_id, use_llm=True)
 
     new_flight_ids = []
     if result.get("flights_created", 0) > 0:

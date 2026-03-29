@@ -136,9 +136,47 @@ def auth_client(api_app):
         yield c
 
 
+def load_anonymized_fixture(json_filename: str):
+    """
+    Load an anonymized JSON fixture (produced by email_anonymizer.save_anonymized_fixture)
+    into an EmailMessage for parser pipeline tests.
+
+    Use this instead of load_eml_as_email_message() for fixtures that were created via
+    the automated anonymization pipeline — these contain no real PII.
+    """
+    import json
+    from datetime import timezone
+
+    from backend.parsers.email_connector import EmailMessage
+
+    data = json.loads((FIXTURES_DIR / json_filename).read_text(encoding="utf-8"))
+
+    date_str = data.get("date")
+    msg_date: datetime | None = None
+    if date_str:
+        try:
+            msg_date = datetime.fromisoformat(date_str).replace(tzinfo=UTC)
+        except ValueError:
+            msg_date = datetime.now(tz=UTC)
+
+    pdf_attachments: list[bytes] = [
+        bytes(b) if isinstance(b, list) else b for b in (data.get("pdf_attachments") or [])
+    ]
+
+    return EmailMessage(
+        message_id=data.get("message_id", f"test-{json_filename}"),
+        sender=data.get("sender", ""),
+        subject=data.get("subject", ""),
+        body=data.get("body") or "",
+        date=msg_date or datetime.now(tz=UTC),
+        html_body=data.get("html_body") or "",
+        pdf_attachments=pdf_attachments,
+    )
+
+
 def load_eml_as_email_message(eml_filename: str):
     """Parse a .eml fixture file into an EmailMessage for parser pipeline tests."""
-    from backend.parsers.email_connector import EmailMessage
+    from backend.parsers.email_connector import EmailMessage, decode_header_value
 
     raw = (FIXTURES_DIR / eml_filename).read_bytes()
     msg = stdlib_email.message_from_bytes(raw)
@@ -162,8 +200,8 @@ def load_eml_as_email_message(eml_filename: str):
 
     return EmailMessage(
         message_id=f"test-{eml_filename}",
-        sender=msg["From"] or "",
-        subject=msg["Subject"] or "",
+        sender=decode_header_value(msg.get("From") or ""),
+        subject=decode_header_value(msg.get("Subject") or ""),
         body=body,
         date=datetime.now(tz=UTC),
         html_body=html_body,

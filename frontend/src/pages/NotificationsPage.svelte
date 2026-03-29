@@ -107,9 +107,10 @@
         <div class="notif-card {notif.read ? '' : 'notif-unread'}">
           <div class="notif-icon">{notifIcon(notif.type)}</div>
           <div class="notif-body">
-            <div class="notif-title">{notif.title}</div>
+            <div class="notif-title">{$t(`notifications.type_${notif.type}`, { default: notif.title })}</div>
             {#if notif.body}
-              <div class="notif-desc">{notif.body}</div>
+              {@const bodyKey = `notifications.body_${notif.type}`}
+              <div class="notif-desc">{$t(bodyKey, { default: notif.body })}</div>
             {/if}
             <div class="notif-date">{formatDate(notif.created_at)}</div>
           </div>

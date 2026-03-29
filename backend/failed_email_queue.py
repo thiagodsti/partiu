@@ -14,8 +14,9 @@ from .utils import dt_to_iso, now_iso
 logger = logging.getLogger(__name__)
 
 _FLIGHT_KEYWORDS = re.compile(
-    r'\b(?:itinerar|e-?ticket|booking\s*confirm|flight\s*confirm|'
-    r'reserv|check-?in|boarding|[A-Z]{2}\d{3,4})\b',
+    r"\b(?:itinerary?|e-?ticket|booking\s*confirm\w*|flight\s*confirm\w*|"
+    r"reservat\w*|check-?in|boarding)\b"
+    r"|\b[A-Z]{2}\d{3,4}\b",
     re.IGNORECASE,
 )
 
@@ -30,35 +31,46 @@ def email_has_flight_keywords(email_msg) -> bool:
 
 def detect_airline_hint(email_msg) -> str:
     """Try to guess the airline from the sender domain."""
-    m = re.search(r'@([\w.-]+)', email_msg.sender or "")
+    m = re.search(r"@([\w.-]+)", email_msg.sender or "")
     return m.group(1).lower() if m else ""
 
 
 def save_failed_email(user_id: int, email_msg, reason: str) -> None:
     """Persist a failed-to-parse email to the DB and save the raw .eml to disk."""
-    failed_id = str(uuid.uuid4())
     airline_hint = detect_airline_hint(email_msg)
 
-    eml_path: str | None = None
+    # Check for duplicate BEFORE writing any files — otherwise a second sync
+    # would write an orphaned .eml that can never be deleted through the UI.
     try:
-        from .config import settings
-        eml_dir = Path(settings.DB_PATH).parent / "failed_emails"
-        eml_dir.mkdir(parents=True, exist_ok=True)
-        raw = getattr(email_msg, "raw_eml", None)
-        if raw:
-            eml_path = str(eml_dir / f"{failed_id}.eml")
-            Path(eml_path).write_bytes(raw)
-    except Exception as e:
-        logger.warning("Could not save raw EML for failed email: %s", e)
-
-    try:
-        with db_write() as conn:
+        with db_conn() as conn:
             existing = conn.execute(
                 "SELECT id FROM failed_emails WHERE user_id = ? AND sender = ? AND subject = ?",
                 (user_id, email_msg.sender or "", email_msg.subject or ""),
             ).fetchone()
             if existing:
                 return
+    except Exception as e:
+        logger.warning("Could not check for duplicate failed email: %s", e)
+        return
+
+    failed_id = str(uuid.uuid4())
+    eml_path: str | None = None
+    try:
+        from .config import settings
+        from .email_anonymizer import save_anonymized_fixture
+
+        eml_dir = Path(settings.DB_PATH).parent / "failed_emails"
+        eml_dir.mkdir(parents=True, exist_ok=True)
+        raw = getattr(email_msg, "raw_eml", None)
+        if raw:
+            eml_path = str(eml_dir / f"{failed_id}.eml")
+            Path(eml_path).write_bytes(raw)
+        save_anonymized_fixture(failed_id, eml_dir, email_msg)
+    except Exception as e:
+        logger.warning("Could not save raw EML for failed email: %s", e)
+
+    try:
+        with db_write() as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO failed_emails
                    (id, user_id, sender, subject, received_at, reason, airline_hint, eml_path, parser_version, created_at)
@@ -104,7 +116,7 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
     if not eml_path or not Path(eml_path).exists():
         with db_write() as conn:
             conn.execute(
-                "UPDATE failed_emails SET last_retried_at = ? WHERE id = ?",
+                "UPDATE failed_emails SET last_retried_at = ?, llm_verdict = 'no_eml' WHERE id = ?",
                 (now_iso(), row["id"]),
             )
         return False
@@ -159,11 +171,81 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
 
         with db_write() as conn:
             conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
-        try:
-            Path(eml_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        p = Path(eml_path)
+        for f in (p, p.with_name(p.stem + "_anonymized.json")):
+            try:
+                f.unlink(missing_ok=True)
+            except OSError:
+                pass
         return True
+
+    # --- Boarding-pass seat updater (no new flight, just patch seat) ---
+    if rule and rule.airline_code == "LA":
+        from .flight_store import update_flight_from_bcbp
+        from .parsers.airlines.latam import extract_seat_update
+
+        seat_upd = extract_seat_update(email_msg)
+        if seat_upd:
+            existing = find_existing_flight(
+                seat_upd["flight_number"], seat_upd["dep_date"], user_id
+            )
+            if existing:
+                if not existing.get("seat"):
+                    update_flight_from_bcbp(existing["id"], {"seat": seat_upd["seat"]})
+                    logger.info(
+                        "Boarding-pass seat updated: %s seat %s",
+                        seat_upd["flight_number"],
+                        seat_upd["seat"],
+                    )
+                with db_write() as conn:
+                    conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
+                p = Path(eml_path)
+                for f in (p, p.with_name(p.stem + "_anonymized.json")):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                return True
+
+    # --- LLM fallback (only if Ollama is configured) ---
+    from .llm_parser import llm_available, llm_extract_flights
+
+    if llm_available():
+        llm_flights = llm_extract_flights(email_msg)
+        if not llm_flights:
+            # LLM explicitly said no flight — mark so the user can bulk-delete
+            with db_write() as conn:
+                conn.execute(
+                    "UPDATE failed_emails SET llm_verdict = 'no_flight', last_retried_at = ? WHERE id = ?",
+                    (now_iso(), row["id"]),
+                )
+        if llm_flights:
+            llm_flights = [apply_airport_timezones(f) for f in llm_flights]
+            inserted = 0
+            for flight_data in llm_flights:
+                fn = flight_data.get("flight_number", "")
+                if not fn:
+                    continue
+                dep_dt = flight_data.get("departure_datetime")
+                dep_iso = dt_to_iso(dep_dt) if dep_dt else None
+                dep_date = dep_iso[:10] if dep_iso else None
+                if dep_date and find_existing_flight(fn, dep_date, user_id):
+                    continue
+                insert_flight(flight_data, email_msg, user_id)
+                inserted += 1
+            if inserted:
+                with db_write() as conn:
+                    conn.execute("DELETE FROM failed_emails WHERE id = ?", (row["id"],))
+                p = Path(eml_path)
+                for f in (p, p.with_name(p.stem + "_anonymized.json")):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                logger.info(
+                    "LLM fallback recovered %d flight(s) from failed email %s", inserted, row["id"]
+                )
+                return True
 
     with db_write() as conn:
         conn.execute(
@@ -184,9 +266,7 @@ def retry_failed_emails(user_id: int) -> dict:
     Returns a summary dict.
     """
     with db_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM failed_emails WHERE user_id = ?", (user_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM failed_emails WHERE user_id = ?", (user_id,)).fetchall()
 
     if not rows:
         return {"retried": 0, "recovered": 0}
@@ -217,8 +297,18 @@ def retry_failed_emails(user_id: int) -> dict:
                     (now_iso(), row["id"]),
                 )
 
+    if recovered:
+        try:
+            from .grouping import auto_group_flights
+
+            auto_group_flights(user_id=user_id)
+        except Exception as e:
+            logger.warning("Failed to group flights after retry for user %d: %s", user_id, e)
+
     logger.info(
         "User %d: Failed email retry: %d retried, %d recovered",
-        user_id, retried, recovered,
+        user_id,
+        retried,
+        recovered,
     )
     return {"retried": retried, "recovered": recovered}
