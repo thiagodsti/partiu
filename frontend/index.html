@@ -15,7 +15,14 @@
     <title>Partiu</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="initial-loader" style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" style="animation:spin 0.9s linear infinite;">
+          <circle cx="20" cy="20" r="16" fill="none" stroke="#6366f1" stroke-width="4" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round"/>
+        </svg>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

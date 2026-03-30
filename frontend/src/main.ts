@@ -15,6 +15,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+document.getElementById('initial-loader')?.remove();
 const app = mount(App, { target: document.getElementById('app')! });
 
 export default app;
