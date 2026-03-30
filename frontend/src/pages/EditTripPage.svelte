@@ -62,9 +62,6 @@
         booking_refs: refs,
       });
 
-      // Refresh the trip image after saving since destination may have changed
-      await tripsApi.refreshImage(params.id).catch(() => {});
-
       await push(`/trips/${params.id}`);
     } catch (err) {
       error = (err as Error).message;
