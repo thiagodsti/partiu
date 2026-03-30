@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import 'leaflet/dist/leaflet.css';
   import type { Map as LeafletMap } from 'leaflet';
   import type { Flight } from '../api/types';
   import { airportsApi } from '../api/client';

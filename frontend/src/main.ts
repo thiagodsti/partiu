@@ -1,5 +1,4 @@
 import './app.css';
-import 'leaflet/dist/leaflet.css';
 import './lib/themeStore'; // apply saved theme before first render
 import './lib/i18n';
 import App from './App.svelte';

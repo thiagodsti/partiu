@@ -1,21 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Router from 'svelte-spa-router';
+  import wrap from 'svelte-spa-router/wrap';
   import TabBar from './components/TabBar.svelte';
   import TripsListPage from './pages/TripsListPage.svelte';
   import TripDetailPage from './pages/TripDetailPage.svelte';
-  import FlightDetailPage from './pages/FlightDetailPage.svelte';
-  import SettingsPage from './pages/SettingsPage.svelte';
-  import HistoryPage from './pages/HistoryPage.svelte';
   import LoginPage from './pages/LoginPage.svelte';
   import SetupPage from './pages/SetupPage.svelte';
-  import UsersPage from './pages/UsersPage.svelte';
-  import AddFlightPage from './pages/AddFlightPage.svelte';
-  import AddTripPage from './pages/AddTripPage.svelte';
-  import EditTripPage from './pages/EditTripPage.svelte';
-  import StatsPage from './pages/StatsPage.svelte';
-  import WorldMapPage from './pages/WorldMapPage.svelte';
-  import NotificationsPage from './pages/NotificationsPage.svelte';
   import { authApi, notificationsApi } from './api/client';
   import { currentUser, authLoading } from './lib/authStore';
   import { refreshInvitationCount } from './lib/invitationStore';
@@ -25,20 +16,20 @@
   const routes = {
     '/': TripsListPage,
     '/trips': TripsListPage,
-    '/trips/new': AddTripPage,
-    '/trips/:id/edit': EditTripPage,
+    '/trips/new': wrap({ asyncComponent: () => import('./pages/AddTripPage.svelte') }),
+    '/trips/:id/edit': wrap({ asyncComponent: () => import('./pages/EditTripPage.svelte') }),
     '/trips/:id': TripDetailPage,
-    '/trips/:tripId/flights/:flightId': FlightDetailPage,
-    '/trips/:tripId/add-flight': AddFlightPage,
-    '/stats': StatsPage,
-    '/stats/map': WorldMapPage,
-    '/history': HistoryPage,
+    '/trips/:tripId/flights/:flightId': wrap({ asyncComponent: () => import('./pages/FlightDetailPage.svelte') }),
+    '/trips/:tripId/add-flight': wrap({ asyncComponent: () => import('./pages/AddFlightPage.svelte') }),
+    '/stats': wrap({ asyncComponent: () => import('./pages/StatsPage.svelte') }),
+    '/stats/map': wrap({ asyncComponent: () => import('./pages/WorldMapPage.svelte') }),
+    '/history': wrap({ asyncComponent: () => import('./pages/HistoryPage.svelte') }),
     '/history/:id': TripDetailPage,
-    '/history/:tripId/flights/:flightId': FlightDetailPage,
-    '/settings': SettingsPage,
-    '/admin/users': UsersPage,
-    '/notifications': NotificationsPage,
-    '/invitations': NotificationsPage,
+    '/history/:tripId/flights/:flightId': wrap({ asyncComponent: () => import('./pages/FlightDetailPage.svelte') }),
+    '/settings': wrap({ asyncComponent: () => import('./pages/SettingsPage.svelte') }),
+    '/admin/users': wrap({ asyncComponent: () => import('./pages/UsersPage.svelte') }),
+    '/notifications': wrap({ asyncComponent: () => import('./pages/NotificationsPage.svelte') }),
+    '/invitations': wrap({ asyncComponent: () => import('./pages/NotificationsPage.svelte') }),
     '/login': LoginPage,
     '/setup': SetupPage,
   };
