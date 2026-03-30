@@ -10,7 +10,7 @@ when a custom extractor returns empty results.
 Guardrails to prevent false positives:
   - Both IATA codes validated against the airports DB
   - dep ≠ arr
-  - Departure date within ±2 years of today
+  - Departure date not more than +2 years in the future (past flights are always allowed)
   - Flight number must match [A-Z]{2}\\d{3,5}
   - Both departure and arrival times must be present
 """
@@ -226,9 +226,9 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
             logger.debug("Generic HTML: no date for %s, skip", fn)
             continue
 
-        # Sanity: date within ±2 years
-        if abs((dep_date - today).days) > 730:
-            logger.debug("Generic HTML: date %s too far from today for %s", dep_date, fn)
+        # Sanity: reject dates more than 2 years in the future (past flights are fine)
+        if (dep_date - today).days > 730:
+            logger.debug("Generic HTML: date %s too far in future for %s", dep_date, fn)
             continue
 
         try:

@@ -155,9 +155,14 @@ class TestGuardrails:
         html = _html("SK533", "ARN", "ARN", "14 Jan 2026", "14:00", "16:00")
         assert extract_generic_html(_msg(html)) == []
 
-    def test_date_too_far_rejected(self, seeded_airports_db):
+    def test_date_too_far_in_future_rejected(self, seeded_airports_db):
         html = _html("SK533", "ARN", "OSL", "14 Jan 2030", "14:00", "16:05")
         assert extract_generic_html(_msg(html)) == []
+
+    def test_old_past_date_allowed(self, seeded_airports_db):
+        """Flights from years ago (e.g. 2010) should not be rejected."""
+        html = _html("SK533", "ARN", "OSL", "14 Jan 2010", "14:00", "16:05")
+        assert len(extract_generic_html(_msg(html))) == 1
 
     def test_missing_times_returns_empty(self, seeded_airports_db):
         """Without 2 times, no flight can be built."""
