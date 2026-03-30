@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
 # Also triggers auto-retry of all failed_emails for the user.
-PARSER_VERSION = "23"  # fix: SAS Berlin Brandenburg → BER (was resolving to Trollenhagen/FNB)
+PARSER_VERSION = "24"  # feat: TAP booking confirmation HTML + e-ticket receipt formats
 
 # ---------------------------------------------------------------------------
 # Flexible date sub-pattern (reusable)
@@ -224,13 +224,13 @@ BUILTIN_AIRLINE_RULES = [
         "priority": 10,
     },
     # =========================================================================
-    # TAP Air Portugal (TP) — check-in open and boarding pass emails
+    # TAP Air Portugal (TP) — check-in, boarding pass, booking confirmation, e-ticket receipt
     # =========================================================================
     {
         "airline_name": "TAP Air Portugal",
         "airline_code": "TP",
         "sender_pattern": r"(@flytap\.com|@info\.flytap)",
-        "subject_pattern": r"(boarding|check.?in|confirm|reservat|itinerar)",
+        "subject_pattern": r"(boarding|check.?in|confirm|reservat|itinerar|receipt|eticket|\d{2}[A-Z]{3})",
         "body_pattern": r"",
         "date_format": "%d/%m/%Y",
         "time_format": "%H:%M",

@@ -107,7 +107,7 @@ Think of it as a self-hosted TripIt, built for people who want full control over
 | Kiwi.com (multi-airline bookings) | — |
 | Ryanair | FR |
 | Austrian Airlines | OS |
-| TAP Air Portugal | TP |
+| TAP Air Portugal (check-in, boarding pass, booking confirmation, e-ticket receipt) | TP |
 | Finnair | AY |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).

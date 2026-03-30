@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from ..auth import get_current_user
+from ..crypto import decrypt
 from ..database import db_conn, db_write
 from ..shares import can_access_trip, is_trip_owner
 from ..trip_images import fetch_trip_image, trip_image_path
@@ -478,7 +479,7 @@ async def check_immich_album(trip_id: str, user: dict = Depends(get_current_user
             "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
         ).fetchone()
     immich_url = (u["immich_url"] or "").strip() if u else ""
-    immich_api_key = (u["immich_api_key"] or "").strip() if u else ""
+    immich_api_key = decrypt((u["immich_api_key"] or "").strip()) if u else ""
 
     if not immich_url or not immich_api_key:
         return {"album_id": album_id, "exists": True}  # can't check — assume it exists
@@ -512,7 +513,7 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
             "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
         ).fetchone()
     immich_url = (u["immich_url"] or "").strip() if u else ""
-    immich_api_key = (u["immich_api_key"] or "").strip() if u else ""
+    immich_api_key = decrypt((u["immich_api_key"] or "").strip()) if u else ""
 
     # If an album ID is stored, verify it still exists in Immich before returning the cached link
     if trip.get("immich_album_id") and immich_url and immich_api_key:

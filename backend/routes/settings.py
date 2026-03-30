@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_admin
-from ..crypto import encrypt
+from ..crypto import decrypt, encrypt
 from ..database import db_conn, db_write, get_global_setting, set_global_setting
 from ..limiter import limiter
 
@@ -244,7 +244,7 @@ def test_imap(request: Request, body: TestImapRequest, user: dict = Depends(get_
 async def test_immich(request: Request, user: dict = Depends(get_current_user)):
     """Test the configured Immich connection."""
     immich_url = (user.get("immich_url") or "").strip()
-    immich_api_key = (user.get("immich_api_key") or "").strip()
+    immich_api_key = decrypt((user.get("immich_api_key") or "").strip())
     if not immich_url:
         raise HTTPException(400, "Immich URL is not configured")
     if not immich_api_key:

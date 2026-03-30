@@ -75,7 +75,7 @@ docker compose up -d --build
 - **`scheduler.py`** — APScheduler runs email sync every 10 min and aircraft sync daily
 - **`sync_job.py`** — Main pipeline: fetch emails → parse → extract flights → group into trips; `use_llm` flag enables LLM fallback for incremental sync (disabled for full rescan)
 - **`parsers/engine.py`** — Extraction engine: tries BS4 HTML parsing first, then regex fallback, then PDF
-- **`parsers/builtin_rules.py`** — Airline rules keyed to `PARSER_VERSION = '23'`; supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY)
+- **`parsers/builtin_rules.py`** — Airline rules keyed to `PARSER_VERSION = '24'`; supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY)
 - **`llm_parser.py`** — Optional Ollama LLM fallback; `llm_extract_flights(email_msg)` returns validated flights or `[]` when disabled; validates IATA codes against airports DB before returning
 - **`grouping.py`** — Auto-groups flights into trips by booking reference, then 48h time proximity
 - **`auth.py`** — Session cookies (itsdangerous), bcrypt passwords, TOTP 2FA
@@ -124,7 +124,7 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 
 ### Email sync & parsing
 - IMAP sync (Gmail App Password or custom IMAP host/port) per user
-- Built-in airline rules — 11 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY); `PARSER_VERSION = '23'`
+- Built-in airline rules — 12 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY); `PARSER_VERSION = '24'`
 - PDF extraction fallback
 - **Ollama LLM fallback** (optional): set `OLLAMA_URL` + `OLLAMA_MODEL` in `.env`; used as last resort for incremental sync and failed-email retries; `run.sh` auto-starts Ollama if binary present; optional `ollama` service in `docker-compose.yml`
 - CLI eval tool: `uv run python -m backend.tools.eval_llm_parser` — tests LLM against failed email queue
