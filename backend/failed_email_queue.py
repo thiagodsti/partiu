@@ -317,6 +317,7 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
     from .parsers.engine import (
         extract_flights_from_email,
         match_rule_to_email,
+        try_generic_html_extraction,
         try_generic_pdf_extraction,
     )
     from .timezone_utils import apply_airport_timezones
@@ -359,11 +360,16 @@ def retry_one_failed_email_row(row: dict, user_id: int, sorted_rules: list) -> b
     )
 
     rule = match_rule_to_email(email_msg, sorted_rules)
-    flights_data = (
-        extract_flights_from_email(email_msg, rule)
-        if rule
-        else try_generic_pdf_extraction(email_msg)
-    )
+    if rule:
+        flights_data = extract_flights_from_email(email_msg, rule)
+    else:
+        flights_data = try_generic_html_extraction(email_msg) or try_generic_pdf_extraction(
+            email_msg
+        )
+
+    # Generic HTML fallback when rule matched but extractor returned nothing
+    if not flights_data and rule:
+        flights_data = try_generic_html_extraction(email_msg, rule)
 
     if flights_data:
         flights_data = [apply_airport_timezones(f) for f in flights_data]

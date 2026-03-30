@@ -192,6 +192,12 @@ def seeded_airports_db(tmp_path_factory):
     db_module.settings.DB_PATH = db_path
     cfg_module.settings.DB_PATH = db_path
 
+    # Clear resolve_iata (and _is_valid_iata) caches so any prior empty
+    # results cached without a DB don't bleed into this module's tests.
+    from backend.parsers.shared import resolve_iata
+
+    resolve_iata.cache_clear()
+
     from backend.database import db_write, init_database
 
     init_database()
@@ -221,6 +227,8 @@ def seeded_airports_db(tmp_path_factory):
 
     db_module.settings.DB_PATH = original_path
     cfg_module.settings.DB_PATH = original_path
+    # Clear again so stale "valid" results don't bleed into later modules.
+    resolve_iata.cache_clear()
 
 
 def load_eml_as_email_message(eml_filename: str):

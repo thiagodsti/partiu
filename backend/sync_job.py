@@ -24,6 +24,7 @@ from .parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from .parsers.engine import (
     extract_flights_from_email,
     match_rule_to_email,
+    try_generic_html_extraction,
     try_generic_pdf_extraction,
 )
 from .timezone_utils import apply_airport_timezones
@@ -338,11 +339,16 @@ def _process_emails(
 
             # --- HTML / rule-based or PDF parsing ---
             rule = match_rule_to_email(email_msg, sorted_rules)
-            flights_data = (
-                extract_flights_from_email(email_msg, rule)
-                if rule
-                else try_generic_pdf_extraction(email_msg)
-            )
+            if rule:
+                flights_data = extract_flights_from_email(email_msg, rule)
+            else:
+                flights_data = try_generic_html_extraction(email_msg) or try_generic_pdf_extraction(
+                    email_msg
+                )
+
+            # --- Generic HTML fallback when rule matched but extractor returned nothing ---
+            if not flights_data and rule:
+                flights_data = try_generic_html_extraction(email_msg, rule)
 
             # --- LLM fallback (incremental sync only, when Ollama is available) ---
             if not flights_data and _use_llm:

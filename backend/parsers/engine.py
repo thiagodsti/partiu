@@ -260,6 +260,20 @@ def _merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
     return primary
 
 
+def try_generic_html_extraction(email_msg: EmailMessage, rule=None) -> list[dict]:
+    """
+    Smart generic HTML fallback for emails with no matched rule (or failed extraction).
+
+    Runs BEFORE the LLM fallback. Anchors on flight number tokens and searches
+    a surrounding window for IATA codes, times, and dates.
+
+    Returns [] when nothing plausible is found.
+    """
+    from .generic_html import extract_generic_html
+
+    return extract_generic_html(email_msg, rule)
+
+
 def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:
     """
     Last-resort extraction for emails that matched no rule.
