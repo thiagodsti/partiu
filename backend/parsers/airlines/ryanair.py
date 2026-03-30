@@ -21,9 +21,11 @@ Email structure (after BS4 text extraction):
 
 import logging
 import re
-from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
+
+from ..engine import parse_flight_date
+from ..shared import _build_datetime, fix_overnight
 
 logger = logging.getLogger(__name__)
 
@@ -45,49 +47,6 @@ _IATA_PAIR_RE = re.compile(
     r"\(([A-Z]{3})\)\s*[-–]?\s*\n\s*\(([A-Z]{3})\)",
     re.IGNORECASE,
 )
-
-# Months for date parsing
-_MONTHS = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
-
-
-def _parse_date(date_str: str) -> datetime | None:
-    """Parse '23 Apr 25' or '23 Apr 2025' → UTC datetime (midnight)."""
-    parts = date_str.strip().split()
-    if len(parts) != 3:
-        return None
-    try:
-        day = int(parts[0])
-        month = _MONTHS.get(parts[1][:3].lower())
-        year = int(parts[2])
-        if year < 100:
-            year += 2000
-        if not month:
-            return None
-        return datetime(year, month, day, 0, 0, tzinfo=UTC)
-    except (ValueError, TypeError):
-        return None
-
-
-def _build_dt(base: datetime, time_str: str) -> datetime | None:
-    """Combine a date-only datetime with 'HH:MM' time string."""
-    try:
-        h, m = map(int, time_str.split(":"))
-        return base.replace(hour=h, minute=m)
-    except (ValueError, TypeError):
-        return None
 
 
 def _extract_text(email_msg) -> str:
@@ -135,18 +94,14 @@ def extract(email_msg, rule) -> list[dict]:
     n_legs = min(len(flight_numbers), len(dates), len(dep_times), len(arr_times), len(iata_pairs))
 
     for i in range(n_legs):
-        base_dt = _parse_date(dates[i])
+        base_dt = parse_flight_date(dates[i])
         if not base_dt:
             continue
-        dep_dt = _build_dt(base_dt, dep_times[i])
-        arr_dt = _build_dt(base_dt, arr_times[i])
+        dep_dt = _build_datetime(base_dt, dep_times[i])
+        arr_dt = _build_datetime(base_dt, arr_times[i])
         if not dep_dt or not arr_dt:
             continue
-        # Overnight flight: arrival before departure → add one day
-        if arr_dt < dep_dt:
-            from datetime import timedelta
-
-            arr_dt = arr_dt + timedelta(days=1)
+        arr_dt = fix_overnight(dep_dt, arr_dt)
 
         dep_iata, arr_iata = iata_pairs[i]
         flights.append(

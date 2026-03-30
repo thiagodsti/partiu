@@ -29,24 +29,10 @@ from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
 
-from ..shared import _get_text, _make_flight_dict
+from ..engine import MONTH_MAP
+from ..shared import _get_text, _make_flight_dict, resolve_iata
 
 logger = logging.getLogger(__name__)
-
-_MONTHS_SHORT = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
 
 
 def _parse_ddmon(s: str, year: int) -> datetime | None:
@@ -55,7 +41,7 @@ def _parse_ddmon(s: str, year: int) -> datetime | None:
     if not m:
         return None
     day = int(m.group(1))
-    mon = _MONTHS_SHORT.get(m.group(2).lower())
+    mon = MONTH_MAP.get(m.group(2).lower())
     if not mon:
         return None
     try:
@@ -70,37 +56,6 @@ def _build_dt(base: datetime, time_str: str) -> datetime | None:
         return base.replace(hour=h, minute=m)
     except (ValueError, TypeError):
         return None
-
-
-def _resolve_iata(name: str) -> str:
-    """Look up IATA code by airport/city name via DB."""
-    base = re.sub(r"\s*\(.*?\)\s*", "", name).strip()
-    terms: list[str] = []
-    if base:
-        terms.append(base)
-    for w in base.split():
-        if len(w) >= 3 and w not in terms:
-            terms.append(w)
-    try:
-        from ...database import db_conn
-
-        with db_conn() as conn:
-            for term in terms:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE city_name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-    except Exception as e:
-        logger.debug("Finnair: IATA lookup failed for %r: %s", name, e)
-    return ""
 
 
 def _extract_year(subject: str, email_date: datetime | None) -> int:
@@ -265,11 +220,11 @@ def _parse_itinerary_text(text: str, year: int, rule) -> list[dict]:
                 if re.match(r"^[A-Z]{3}$", dep_city):
                     dep_iata = dep_city
                 else:
-                    dep_iata = _resolve_iata(dep_city)
+                    dep_iata = resolve_iata(dep_city)
                 if re.match(r"^[A-Z]{3}$", arr_city):
                     arr_iata = arr_city
                 else:
-                    arr_iata = _resolve_iata(arr_city)
+                    arr_iata = resolve_iata(arr_city)
 
         if not dep_iata or not arr_iata:
             logger.debug("Finnair: could not resolve IATA for flight %s (leg %d)", fn, leg_idx)

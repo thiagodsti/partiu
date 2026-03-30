@@ -113,11 +113,11 @@ BUILTIN_AIRLINE_RULES = [
     {
         "airline_name": "Lufthansa",
         "airline_code": "LH",
-        "sender_pattern": r"(lufthansa\.com|@lh\.com|noreply@lufthansa)",
+        "sender_pattern": r"(lufthansa\.com|lufthansa-group\.com|@lh\.com|noreply@lufthansa)",
         "subject_pattern": (
             r"(booking\s*confirm|booking\s*details|booking\b|itinerary|e-?ticket|receipt|"
             r"buchungsbest[äa]tigung|flugbest[äa]tigung|reservation|"
-            r"Reise|trip|travel)"
+            r"Reise|trip|travel|check.?in|checked.?in|boarding)"
         ),
         "body_pattern": (
             r"(?:"
@@ -240,6 +240,22 @@ BUILTIN_AIRLINE_RULES = [
         "priority": 10,
     },
     # =========================================================================
+    # Qatar Airways (QR) — booking confirmation
+    # =========================================================================
+    {
+        "airline_name": "Qatar Airways",
+        "airline_code": "QR",
+        "sender_pattern": r"(qatarairways\.com)",
+        "subject_pattern": r"(booking\s*confirm|e-?ticket|itinerary|reservation|QR\s*\d)",
+        "body_pattern": r"",
+        "date_format": "%d %b %Y",
+        "time_format": "%H:%M",
+        "custom_extractor": "qatar",
+        "is_active": True,
+        "is_builtin": True,
+        "priority": 10,
+    },
+    # =========================================================================
     # Finnair (AY) — e-ticket receipt via Amadeus GDS or direct
     # =========================================================================
     {
@@ -321,8 +337,12 @@ def _resolve_extractor(name: str):
         from .airlines.latam import extract
 
         return extract
-    if name in ("sas", "norwegian"):
+    if name == "sas":
         from .airlines.sas import extract
+
+        return extract
+    if name == "norwegian":
+        from .airlines.norwegian import extract
 
         return extract
     if name == "lufthansa":
@@ -355,6 +375,10 @@ def _resolve_extractor(name: str):
         return extract
     if name == "tap":
         from .airlines.tap import extract
+
+        return extract
+    if name == "qatar":
+        from .airlines.qatar import extract
 
         return extract
     if name == "finnair":

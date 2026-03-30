@@ -67,24 +67,10 @@ from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
 
-from ..shared import _make_flight_dict
+from ..engine import MONTH_MAP
+from ..shared import _make_flight_dict, fix_overnight
 
 logger = logging.getLogger(__name__)
-
-_MONTHS_SHORT = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
 
 
 def _parse_date(s: str, default_year: int | None = None) -> datetime | None:
@@ -111,7 +97,7 @@ def _parse_date(s: str, default_year: int | None = None) -> datetime | None:
     m = re.match(r"^(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?$", s)
     if m:
         day = int(m.group(1))
-        mon = _MONTHS_SHORT.get(m.group(2).lower())
+        mon = MONTH_MAP.get(m.group(2).lower())
         year = int(m.group(3)) if m.group(3) else default_year
         if mon and year:
             try:
@@ -127,7 +113,7 @@ def _parse_date(s: str, default_year: int | None = None) -> datetime | None:
     )
     if m:
         mon_name = m.group(1)[:3].lower()
-        mon = _MONTHS_SHORT.get(mon_name)
+        mon = MONTH_MAP.get(mon_name)
         if mon:
             try:
                 return datetime(int(m.group(3)), mon, int(m.group(2)), tzinfo=UTC)
@@ -138,7 +124,7 @@ def _parse_date(s: str, default_year: int | None = None) -> datetime | None:
     m = re.match(r"^(\d{1,2})([A-Z]{3})(\d{4})?$", s, re.IGNORECASE)
     if m:
         day = int(m.group(1))
-        mon = _MONTHS_SHORT.get(m.group(2).lower())
+        mon = MONTH_MAP.get(m.group(2).lower())
         year = int(m.group(3)) if m.group(3) else default_year
         if mon and year:
             try:
@@ -506,8 +492,6 @@ def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list
       ...
       TP 783
     """
-    from datetime import timedelta
-
     # Booking reference
     booking_m = re.search(
         r"(?:Referência da reserva|Booking\s+[Rr]eference)[:\s]*\n\s*([A-Z0-9]{5,8})",
@@ -538,9 +522,7 @@ def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list
         if not dep_dt or not arr_dt:
             continue
 
-        # If arrival is before departure, the flight lands the next day
-        if arr_dt < dep_dt:
-            arr_dt = arr_dt + timedelta(days=1)
+        arr_dt = fix_overnight(dep_dt, arr_dt)
 
         flight = _make_flight_dict(
             rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref, passenger

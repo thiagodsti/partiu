@@ -17,7 +17,7 @@ import re
 from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, _get_text, _make_flight_dict
+from ..shared import _build_datetime, _get_text, _make_flight_dict, resolve_iata
 
 logger = logging.getLogger(__name__)
 
@@ -64,48 +64,6 @@ def _passenger(body: str) -> str:
     return ""
 
 
-def _resolve_iata(airport_name: str) -> str:
-    """Look up IATA code by airport name (text before parenthesis) or city name."""
-    # Strip city hint in parens: "Arlanda (Stockholm)" → base="Arlanda", city="Stockholm"
-    base = re.sub(r"\s*\(.*?\)", "", airport_name).strip()
-    city_m = re.search(r"\(([^)]+)\)", airport_name)
-    city_str = city_m.group(1).strip() if city_m else ""
-
-    # Build search terms — try the most specific first
-    search_terms = []
-    if base:
-        search_terms.append(base)
-    if city_str:
-        search_terms.append(city_str)
-    # Also try individual words (handles "Guarulhos Intl" → "Guarulhos")
-    for word in base.split():
-        if len(word) >= 5 and word not in search_terms:
-            search_terms.append(word)
-
-    try:
-        from ...database import db_conn
-
-        with db_conn() as conn:
-            for term in search_terms:
-                # Try airport name
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-                # Try city name
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE city_name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-    except Exception as e:
-        logger.debug("Airport lookup failed for %r: %s", airport_name, e)
-    return ""
-
-
 def extract(email_msg, rule) -> list[dict]:
     """Extract flights from a British Airways e-ticket email."""
     body = email_msg.body or ""
@@ -128,8 +86,8 @@ def extract(email_msg, rule) -> list[dict]:
         dep_dt = _build_datetime(dep_date, m.group("dep_time"))
         arr_dt = _build_datetime(arr_date, m.group("arr_time"))
 
-        dep_iata = _resolve_iata(m.group("dep_name").strip())
-        arr_iata = _resolve_iata(m.group("arr_name").strip())
+        dep_iata = resolve_iata(m.group("dep_name").strip())
+        arr_iata = resolve_iata(m.group("arr_name").strip())
 
         if not dep_iata or not arr_iata:
             logger.debug(

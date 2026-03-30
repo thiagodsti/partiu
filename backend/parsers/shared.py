@@ -5,10 +5,108 @@ Shared utilities for BS4-based flight email extractors.
 import logging
 import math
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_fn(fn: str) -> str:
+    """Strip spaces and non-breaking spaces from a flight number."""
+    return fn.replace(" ", "").replace("\xa0", "")
+
+
+def fix_overnight(dep_dt: datetime, arr_dt: datetime) -> datetime:
+    """If arrival is before departure (overnight crossing), add one day to arrival."""
+    if arr_dt < dep_dt:
+        return arr_dt + timedelta(days=1)
+    return arr_dt
+
+
+@lru_cache(maxsize=512)
+def resolve_iata(name: str) -> str:
+    """Resolve an airport/city name string to a 3-letter IATA code.
+
+    Search order:
+      1. Trailing 3-letter uppercase code (e.g. "Stockholm Arlanda ARN")
+      2. Exact match in airport_aliases after stripping parenthetical hints
+      3. Each word/token tried against airport_aliases (handles hyphenated names)
+      4. LIKE search on airports.name / exact on airports.city_name
+      5. Word-by-word LIKE on airports (handles partial names like "Guarulhos Intl")
+    """
+    # 1. Trailing IATA code already present
+    m = re.search(r"\b([A-Z]{3})$", name)
+    if m:
+        return m.group(1)
+
+    # Strip parenthetical city hints: "Arlanda (Stockholm)" → "Arlanda"
+    clean = re.sub(r"\s*\([^)]*\)", "", name).strip()
+    name_lower = clean.lower().strip()
+    orig_lower = name.lower().strip()
+
+    try:
+        from ..database import db_conn
+
+        with db_conn() as conn:
+            # 2. Exact alias match (try both cleaned and original)
+            for candidate in dict.fromkeys([name_lower, orig_lower]):
+                row = conn.execute(
+                    "SELECT iata_code FROM airport_aliases WHERE alias = ?",
+                    (candidate,),
+                ).fetchone()
+                if row:
+                    return row["iata_code"]
+
+            # 3. Word/token alias match — handles "Sicily-Catania", compound names
+            tokens = [t for t in re.split(r"[\s\-()+]", name_lower) if len(t) >= 3]
+            for tok in reversed(tokens):
+                row = conn.execute(
+                    "SELECT iata_code FROM airport_aliases WHERE alias = ?",
+                    (tok,),
+                ).fetchone()
+                if row:
+                    return row["iata_code"]
+
+            # 4. LIKE on airports.name, exact on airports.city_name
+            row = conn.execute(
+                "SELECT iata_code FROM airports "
+                "WHERE lower(name) LIKE ? OR lower(city_name) = ? LIMIT 1",
+                (f"%{name_lower}%", name_lower),
+            ).fetchone()
+            if row:
+                return row["iata_code"]
+
+            # 5. Word-by-word LIKE (handles "Guarulhos Intl", "Rome Fiumicino", etc.)
+            _SKIP = {"intl", "airport", "international", "intern", "city"}
+            sig_tokens = [t for t in tokens if t not in _SKIP and len(t) >= 4]
+            for tok in reversed(sig_tokens):
+                row = conn.execute(
+                    "SELECT iata_code FROM airports "
+                    "WHERE lower(name) LIKE ? OR lower(city_name) LIKE ? LIMIT 1",
+                    (f"%{tok}%", f"%{tok}%"),
+                ).fetchone()
+                if row:
+                    return row["iata_code"]
+    except Exception:
+        pass
+
+    return ""
+
+
+def _extract_booking_ref_text(text: str) -> str:
+    """Extract a booking / PNR reference from a plain-text string."""
+    m = re.search(
+        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
+        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|Reservierungscode|"
+        r"reservation\s*code|confirmation\s*(?:code|number))[:\s\[]+([A-Z0-9]{5,8})",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"Booking\s*:\s*([A-Z0-9]{5,8})", text, re.IGNORECASE)
+    return m.group(1).strip() if m else ""
 
 
 def _get_text(tag) -> str:
@@ -74,18 +172,7 @@ def _make_flight_dict(
 
 def _extract_booking_reference(soup, subject: str = "") -> str:
     """Extract a booking / PNR reference code from the email subject and body."""
-    full_text = subject + "\n" + _get_text(soup)
-    m = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|"
-        r"reservation\s*code|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        full_text,
-        re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip()
-    m = re.search(r"Booking\s*:\s*([A-Z0-9]{5,8})", full_text, re.IGNORECASE)
-    return m.group(1).strip() if m else ""
+    return _extract_booking_ref_text(subject + "\n" + _get_text(soup))
 
 
 def _extract_passenger_name(soup) -> str:
@@ -120,8 +207,7 @@ def _airport_distance(iata_a: str, iata_b: str) -> float:
             rows = {
                 r["iata_code"]: r
                 for r in conn.execute(
-                    "SELECT iata_code, latitude, longitude FROM airports"
-                    " WHERE iata_code IN (?, ?)",
+                    "SELECT iata_code, latitude, longitude FROM airports WHERE iata_code IN (?, ?)",
                     (iata_a.upper(), iata_b.upper()),
                 ).fetchall()
             }
@@ -133,10 +219,7 @@ def _airport_distance(iata_a: str, iata_b: str) -> float:
         lat2 = math.radians(b["latitude"])
         lon2 = math.radians(b["longitude"])
         dlat, dlon = lat2 - lat1, lon2 - lon1
-        h = (
-            math.sin(dlat / 2) ** 2
-            + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-        )
+        h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
         return 6371 * 2 * math.asin(math.sqrt(h))
     except Exception:
         return 1.0

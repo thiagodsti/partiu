@@ -12,22 +12,13 @@ Entry point: extract()
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ..engine import parse_flight_date
-from ..shared import _make_aware, _make_flight_dict
-from .sas import (
-    _resolve_airport,
-)
-from .sas import (
-    extract as _sas_extract,
-)
-from .sas import (
-    extract_bs4 as _sas_extract_bs4,
-)
-from .sas import (
-    extract_regex as _sas_extract_regex,
-)
+from ..shared import _make_aware, _make_flight_dict, fix_overnight, resolve_iata
+from .sas import extract as _sas_extract
+from .sas import extract_bs4 as _sas_extract_bs4
+from .sas import extract_regex as _sas_extract_regex
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +47,10 @@ _FLIGHT_BLOCK_RE = re.compile(
     r"(\d{1,2}\s+\w{3,}\s+\d{4})\n"  # date e.g. "14 Aug 2019"
     r"\n?"  # optional blank line
     r"(\d{2}:\d{2})\n"  # departure time
-    r"([A-Za-z][A-Za-z\s\-]+)\n"  # departure city/airport name
+    r"([A-Za-z][A-Za-z -]+)\n"  # departure city/airport name
     r"\n?"  # optional blank line
     r"(\d{2}:\d{2})\n"  # arrival time
-    r"([A-Za-z][A-Za-z\s\-]+)\n",  # arrival city/airport name
+    r"([A-Za-z][A-Za-z -]+)\n",  # arrival city/airport name
     re.MULTILINE,
 )
 
@@ -113,8 +104,8 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
             logger.debug("norwegian: could not parse date %r", date_raw)
             continue
 
-        dep_airport = _resolve_airport(dep_city)
-        arr_airport = _resolve_airport(arr_city)
+        dep_airport = resolve_iata(dep_city)
+        arr_airport = resolve_iata(arr_city)
         if not dep_airport or not arr_airport:
             logger.debug("norwegian: could not resolve airports for %r / %r", dep_city, arr_city)
             continue
@@ -125,13 +116,10 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
         dep_dt = _make_aware(
             datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m_val)
         )
-
-        arr_date = dep_date
-        if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
-            arr_date = dep_date + timedelta(days=1)
-        arr_dt = _make_aware(
-            datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m_val)
+        arr_raw = _make_aware(
+            datetime(dep_date.year, dep_date.month, dep_date.day, arr_h, arr_m_val)
         )
+        arr_dt = fix_overnight(dep_dt, arr_raw)
 
         flight = _make_flight_dict(
             rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref

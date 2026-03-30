@@ -132,7 +132,8 @@ def parse_flight_date(raw: str) -> date_type | None:
                 pass
 
     # Last resort: Python's strptime with locale month names
-    for fmt in ("%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y"):
+    # Includes compact no-space variants (24JAN2019, 24JAN19) and 2-digit years
+    for fmt in ("%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y", "%d%b%Y", "%d%b%y", "%d %b %y"):
         try:
             return datetime.strptime(raw, fmt).date()
         except ValueError:
@@ -291,7 +292,9 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
     body = email_msg.body
     flights_data = []
 
-    shared_booking = _extract_booking_ref(email_msg.subject + "\n" + body)
+    from .shared import _extract_booking_ref_text
+
+    shared_booking = _extract_booking_ref_text(email_msg.subject + "\n" + body)
     shared_passenger = _extract_passenger(body)
 
     _CABIN_MAP = {
@@ -398,17 +401,6 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
             logger.debug("Skipping incomplete flight match: %s", flight_data)
 
     return flights_data
-
-
-def _extract_booking_ref(text: str) -> str:
-    m = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|reservation\s*code|"
-        r"confirmation\s*code|Reservierungscode)[:\s\[]+([A-Z0-9]{5,8})",
-        text,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""
 
 
 def _extract_passenger(body: str) -> str:

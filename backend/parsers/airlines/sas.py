@@ -22,129 +22,15 @@ from ..shared import (
     _get_text,
     _make_aware,
     _make_flight_dict,
+    fix_overnight,
+    normalize_fn,
+    resolve_iata,
 )
 
 logger = logging.getLogger(__name__)
 
 # Flight number prefixes for SAS and its codeshare / Star Alliance partners
 _FLIGHT_NUM_CODES = r"(?:SK|DY|D8|VS|LH|LX|OS|TP|A3|SN|BA|AF)"
-
-# Well-known airport name → IATA code mappings used by SAS/Amadeus e-tickets.
-# The DB is queried as a final fallback when a name is not in this table.
-_KNOWN_AIRPORTS: dict[str, str] = {
-    "stockholm arlanda": "ARN",
-    "london heathrow": "LHR",
-    "london gatwick": "LGW",
-    "london city": "LCY",
-    "london stansted": "STN",
-    "london luton": "LTN",
-    "paris charles de gaulle": "CDG",
-    "paris orly": "ORY",
-    "copenhagen kastrup": "CPH",
-    "oslo gardermoen": "OSL",
-    "oslo airport": "OSL",
-    "oslo lufthavn": "OSL",
-    "gothenburg landvetter": "GOT",
-    "bergen flesland": "BGO",
-    "helsinki vantaa": "HEL",
-    "amsterdam schiphol": "AMS",
-    "frankfurt": "FRA",
-    "munich": "MUC",
-    "zurich": "ZRH",
-    "brussels": "BRU",
-    "vienna": "VIE",
-    "lisbon": "LIS",
-    "dublin": "DUB",
-    "madrid": "MAD",
-    "barcelona": "BCN",
-    "rome fiumicino": "FCO",
-    "milan malpensa": "MXP",
-    "milan linate": "LIN",
-    "milan bergamo": "BGY",
-    "bergamo": "BGY",
-    "orio al serio": "BGY",
-    "berlin brandenburg": "BER",
-    "berlin tegel": "TXL",
-    "berlin schonefeld": "SXF",
-    "berlin schoenefeld": "SXF",
-    "warsaw chopin": "WAW",
-    "warsaw modlin": "WMI",
-    "new york jfk": "JFK",
-    "new york newark": "EWR",
-    "los angeles": "LAX",
-    "chicago": "ORD",
-    "cape town": "CPT",
-    "johannesburg": "JNB",
-    "tokyo narita": "NRT",
-    "tokyo haneda": "HND",
-    "bangkok": "BKK",
-    "singapore": "SIN",
-    "hong kong": "HKG",
-    "shanghai pudong": "PVG",
-    "beijing": "PEK",
-    "dubai": "DXB",
-    "doha": "DOH",
-    "istanbul": "IST",
-    # Common short-names used in SAS e-tickets
-    "arlanda": "ARN",
-    "heathrow": "LHR",
-    "gatwick": "LGW",
-    "kastrup": "CPH",
-    "gardermoen": "OSL",
-    "landvetter": "GOT",
-    "schiphol": "AMS",
-    "fiumicino": "FCO",
-    "malpensa": "MXP",
-}
-
-
-def _resolve_airport(text: str) -> str:
-    """
-    Resolve an IATA code from a SAS PDF airport/city string.
-
-    Tries in order:
-      1. Trailing 3-letter uppercase code in the string
-      2. Exact match in the known-airports table
-      3. Last word match in the known-airports table
-      4. Database lookup by airport name / city name
-    """
-    # "Stockholm Arlanda ARN" → "ARN"
-    m = re.search(r"\b([A-Z]{3})$", text)
-    if m:
-        return m.group(1)
-
-    name_lower = text.lower().strip()
-    if name_lower in _KNOWN_AIRPORTS:
-        return _KNOWN_AIRPORTS[name_lower]
-
-    words = text.split()
-    if words and words[-1].lower() in _KNOWN_AIRPORTS:
-        return _KNOWN_AIRPORTS[words[-1].lower()]
-
-    try:
-        from ...database import db_conn
-
-        with db_conn() as conn:
-            # Full-name match first (most precise)
-            row = conn.execute(
-                "SELECT iata_code FROM airports WHERE lower(name) LIKE ? OR lower(city_name) LIKE ? LIMIT 1",
-                (f"%{name_lower}%", f"%{name_lower}%"),
-            ).fetchone()
-            if row:
-                return row["iata_code"]
-            # Last-word fallback — only use if last word is ≥6 chars to avoid
-            # false positives (e.g. "Brandenburg" matching "Neubrandenburg")
-            if len(words) > 1 and len(words[-1]) >= 6:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE lower(name) LIKE ? LIMIT 1",
-                    (f"{words[-1].lower()}%",),  # prefix match, not substring
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-    except Exception:
-        pass
-
-    return ""
 
 
 def _parse_route(route_text: str) -> tuple[str, str]:
@@ -155,7 +41,7 @@ def _parse_route(route_text: str) -> tuple[str, str]:
     parts = re.split(r"\s+-\s+", route_text, maxsplit=1)
     if len(parts) != 2:
         return ("", "")
-    return (_resolve_airport(parts[0].strip()), _resolve_airport(parts[1].strip()))
+    return (resolve_iata(parts[0].strip()), resolve_iata(parts[1].strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -206,13 +92,13 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
             arr_airport = route_m.group(2)
             dep_time = time_m.group(1)
             arr_time = time_m.group(2)
-            flight_number = fn_m.group(1).replace(" ", "")
+            flight_number = normalize_fn(fn_m.group(1))
 
             dep_dt = _build_datetime(dep_date, dep_time)
             arr_dt = _build_datetime(dep_date, arr_time)
 
-            if arr_dt and dep_dt and arr_dt < dep_dt:
-                arr_dt = _build_datetime(dep_date + timedelta(days=1), arr_time)
+            if arr_dt and dep_dt:
+                arr_dt = fix_overnight(dep_dt, arr_dt)
 
             flight = _make_flight_dict(
                 rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref
@@ -322,7 +208,7 @@ def _extract_pdf_tabular(body, email_msg, rule, booking_ref, passenger) -> list[
     flights = []
 
     for m in pdf_matches:
-        flight_number = m.group("flight_number").strip().replace(" ", "")
+        flight_number = normalize_fn(m.group("flight_number").strip())
         day = int(m.group("day"))
         month_num = MONTH_MAP.get(m.group("month").lower())
         if not month_num:
@@ -354,7 +240,6 @@ def _extract_pdf_tabular(body, email_msg, rule, booking_ref, passenger) -> list[
         dep_dt = _make_aware(
             datetime(flight_date.year, flight_date.month, flight_date.day, dep_h, dep_m_val)
         )
-
         arr_date = flight_date
         if arr_h < dep_h or (arr_h == dep_h and arr_m_val < dep_m_val):
             arr_date = flight_date + timedelta(days=1)
@@ -406,7 +291,7 @@ def _extract_block_style(body: str, rule, booking_ref: str) -> list[dict]:
             arr_airport = routes[j].group(2)
             dep_time_str = times[j].group(1)
             arr_time_str = times[j].group(2)
-            flight_number = fns[j].group(1).replace(" ", "")
+            flight_number = normalize_fn(fns[j].group(1))
 
             dep_h, dep_m_val = map(int, dep_time_str.split(":"))
             arr_h, arr_m_val = map(int, arr_time_str.split(":"))

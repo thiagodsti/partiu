@@ -28,7 +28,7 @@ Three email formats are supported:
 
    Actually the fixture shows VIE/ARN do NOT appear directly in the boarding-pass
    plain text — the city names "Vienna" and "Stockholm Arlanda" are present.
-   We use _resolve_iata() to convert them.
+   We use resolve_iata() to convert them.
 
 2. Travel confirmation (plain text, subject "travel" or "confirm"):
    Booking Code RHFNEJ
@@ -45,116 +45,13 @@ Cancellation emails (subject contains "cancellation") → return [].
 
 import logging
 import re
-from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
 
-from ..shared import _get_text, _make_flight_dict
+from ..engine import parse_flight_date
+from ..shared import _build_datetime, _get_text, _make_flight_dict, normalize_fn, resolve_iata
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Date / time helpers
-# ---------------------------------------------------------------------------
-_MONTHS_SHORT = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
-
-
-def _parse_ddmmmyy(s: str) -> datetime | None:
-    """Parse '03APR24' → date (assumes 20xx)."""
-    s = s.strip().upper()
-    m = re.match(r"^(\d{2})([A-Z]{3})(\d{2})$", s)
-    if not m:
-        return None
-    day = int(m.group(1))
-    mon = _MONTHS_SHORT.get(m.group(2).lower())
-    year = 2000 + int(m.group(3))
-    if not mon:
-        return None
-    try:
-        return datetime(year, mon, day, tzinfo=UTC)
-    except ValueError:
-        return None
-
-
-def _parse_dd_mon_yy(s: str) -> datetime | None:
-    """Parse '03 Apr 24' or '03 Apr 2024' → date."""
-    s = s.strip()
-    m = re.match(r"^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$", s)
-    if not m:
-        return None
-    day = int(m.group(1))
-    mon = _MONTHS_SHORT.get(m.group(2).lower())
-    year = int(m.group(3))
-    if year < 100:
-        year += 2000
-    if not mon:
-        return None
-    try:
-        return datetime(year, mon, day, tzinfo=UTC)
-    except ValueError:
-        return None
-
-
-def _build_dt(base: datetime, time_str: str) -> datetime | None:
-    try:
-        h, m = map(int, time_str.split(":"))
-        return base.replace(hour=h, minute=m)
-    except (ValueError, TypeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# IATA resolution
-# ---------------------------------------------------------------------------
-def _resolve_iata(name: str) -> str:
-    """Look up IATA code by airport/city name via DB."""
-    base = re.sub(r"\s*\(.*?\)\s*", "", name).strip()
-    words = [w for w in base.split() if len(w) >= 4]
-    # Try terms from most specific (longest) to least specific
-    terms: list[str] = []
-    if base:
-        terms.append(base)
-    # Try reversed words (last word tends to be most specific: "Arlanda" in "Stockholm Arlanda")
-    for w in reversed(words):
-        if w not in terms:
-            terms.append(w)
-    # Also try all words in order (as fallback)
-    for w in words:
-        if w not in terms:
-            terms.append(w)
-    try:
-        from ...database import db_conn
-
-        with db_conn() as conn:
-            for term in terms:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE city_name LIKE ? LIMIT 1",
-                    (f"%{term}%",),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
-    except Exception as e:
-        logger.debug("Austrian: IATA lookup failed for %r: %s", name, e)
-    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -178,11 +75,11 @@ def _extract_boarding_pass(text: str, rule) -> list[dict]:
     if not date_m or not fn_m:
         return []
 
-    base_dt = _parse_ddmmmyy(date_m.group(1))
+    base_dt = parse_flight_date(date_m.group(1))
     if not base_dt:
         return []
 
-    flight_number = fn_m.group(1).replace(" ", "")
+    flight_number = normalize_fn(fn_m.group(1))
 
     # After the flight number, look for two city names followed by two times
     # The block looks like: \nOS 317\nPASSENGER\nVienna\nStockholm Arlanda\n20:25\n22:35
@@ -219,12 +116,12 @@ def _extract_boarding_pass(text: str, rule) -> list[dict]:
     if re.match(r"^[A-Z]{3}$", dep_city):
         dep_iata = dep_city
     else:
-        dep_iata = _resolve_iata(dep_city)
+        dep_iata = resolve_iata(dep_city)
 
     if re.match(r"^[A-Z]{3}$", arr_city):
         arr_iata = arr_city
     else:
-        arr_iata = _resolve_iata(arr_city)
+        arr_iata = resolve_iata(arr_city)
 
     if not dep_iata or not arr_iata:
         logger.debug(
@@ -236,8 +133,8 @@ def _extract_boarding_pass(text: str, rule) -> list[dict]:
         logger.debug("Austrian boarding-pass: found only %d time values", len(time_lines))
         return []
 
-    dep_dt = _build_dt(base_dt, time_lines[0])
-    arr_dt = _build_dt(base_dt, time_lines[1])
+    dep_dt = _build_datetime(base_dt, time_lines[0])
+    arr_dt = _build_datetime(base_dt, time_lines[1])
     if not dep_dt or not arr_dt:
         return []
 
@@ -289,7 +186,7 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
     # First try check-in format (IATA codes present)
     m = _CHECKIN_RE.search(text)
     if m:
-        fn = m.group("fn").replace(" ", "")
+        fn = normalize_fn(m.group("fn"))
         dep_iata = m.group("dep")
         arr_iata = m.group("arr")
 
@@ -303,9 +200,9 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
         date_m = _CONFIRM_DATE_RE.search(text)
         if not date_m:
             return []
-        base_dt = _parse_dd_mon_yy(date_m.group(1))
+        base_dt = parse_flight_date(date_m.group(1))
         if not base_dt:
-            base_dt = _parse_ddmmmyy(date_m.group(1).replace(" ", ""))
+            base_dt = parse_flight_date(date_m.group(1).replace(" ", ""))
         if not base_dt:
             return []
 
@@ -315,8 +212,8 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
             return []
 
         # The first two times near the flight info
-        dep_dt = _build_dt(base_dt, all_times[0])
-        arr_dt = _build_dt(base_dt, all_times[1])
+        dep_dt = _build_datetime(base_dt, all_times[0])
+        arr_dt = _build_datetime(base_dt, all_times[1])
         if not dep_dt or not arr_dt:
             return []
 
@@ -338,7 +235,7 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
     # Try travel confirmation format
     confirm_m = _CONFIRM_LINE_RE.search(text)
     if confirm_m:
-        fn = confirm_m.group(1).replace(" ", "")
+        fn = normalize_fn(confirm_m.group(1))
         dep_time = confirm_m.group(2)
         arr_time = confirm_m.group(3)
 
@@ -346,7 +243,7 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
         date_m = _CONFIRM_DATE_RE.search(text)
         if not date_m:
             return []
-        base_dt = _parse_dd_mon_yy(date_m.group(1))
+        base_dt = parse_flight_date(date_m.group(1))
         if not base_dt:
             return []
 
@@ -366,8 +263,8 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
             if segs:
                 dep_city = segs[0]
 
-        dep_iata = _resolve_iata(dep_city) if dep_city else ""
-        arr_iata = _resolve_iata(arr_city) if arr_city else ""
+        dep_iata = resolve_iata(dep_city) if dep_city else ""
+        arr_iata = resolve_iata(arr_city) if arr_city else ""
 
         if not dep_iata or not arr_iata:
             logger.debug(
@@ -375,8 +272,8 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
             )
             return []
 
-        dep_dt = _build_dt(base_dt, dep_time)
-        arr_dt = _build_dt(base_dt, arr_time)
+        dep_dt = _build_datetime(base_dt, dep_time)
+        arr_dt = _build_datetime(base_dt, arr_time)
         if not dep_dt or not arr_dt:
             return []
 
