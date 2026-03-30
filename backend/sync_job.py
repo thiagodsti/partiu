@@ -13,13 +13,12 @@ from .email_cache import save_emails
 from .failed_email_queue import (
     email_has_flight_keywords,
     is_non_flight_domain,
-    retry_failed_emails,
     save_failed_email,
 )
 from .flight_store import find_existing_flight, insert_flight, update_flight
 from .grouping import auto_group_flights
 from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
-from .parsers.builtin_rules import PARSER_VERSION, get_builtin_rules
+from .parsers.builtin_rules import get_builtin_rules
 from .parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from .parsers.engine import (
     extract_flights_from_email,
@@ -53,7 +52,6 @@ _SYNC_STATE_COLUMNS = frozenset(
         "status",
         "last_error",
         "last_synced_at",
-        "last_rules_version",
         "emails_processed",
         "emails_total",
     }
@@ -93,7 +91,6 @@ def _set_sync_complete(user_id: int, last_synced_at: str):
     _upsert_sync_state(
         user_id,
         last_synced_at=last_synced_at,
-        last_rules_version=PARSER_VERSION,
         status="idle",
         last_error="",
     )
@@ -525,11 +522,9 @@ def run_email_sync_for_user(user: dict) -> dict:
 
     try:
         last_synced_at = sync_state.get("last_synced_at")
-        last_rules_version = sync_state.get("last_rules_version", "")
-        force_full = last_rules_version != PARSER_VERSION
 
         since_date = None
-        if last_synced_at and not force_full:
+        if last_synced_at:
             try:
                 since_date = datetime.fromisoformat(last_synced_at)
                 since_date = since_date - timedelta(days=1)
@@ -539,18 +534,6 @@ def run_email_sync_for_user(user: dict) -> dict:
         if since_date is None:
             first_sync_days = int(get_global_setting("first_sync_days", "90"))
             since_date = datetime.now(UTC) - timedelta(days=first_sync_days)
-
-        if force_full:
-            logger.info(
-                "User %d: PARSER_VERSION changed — performing full rescan since %s",
-                user_id,
-                since_date,
-            )
-            try:
-                retry_result = retry_failed_emails(user_id)
-                logger.info("User %d: Retry result: %s", user_id, retry_result)
-            except Exception as e:
-                logger.warning("User %d: Failed email retry error: %s", user_id, e)
 
         rules = get_builtin_rules()
         sender_patterns = [r.sender_pattern for r in rules if r.sender_pattern]
@@ -588,12 +571,10 @@ def run_email_sync_for_user(user: dict) -> dict:
         # the parse phase (separate from the IMAP fetch counter above).
         _upsert_sync_state(user_id, emails_processed=0, emails_total=len(emails))
 
-        # LLM fallback only on incremental syncs — full re-scans can touch
-        # hundreds of historical emails and would be too slow.
         result = _process_emails(
             emails,
             user_id,
-            use_llm=not force_full,
+            use_llm=True,
             progress_callback=lambda n: _upsert_sync_state(user_id, emails_processed=n),
         )
 

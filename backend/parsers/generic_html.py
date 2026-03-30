@@ -18,6 +18,7 @@ Guardrails to prevent false positives:
 import logging
 import re
 from datetime import UTC, datetime
+from datetime import date as date_type
 from functools import lru_cache
 
 from bs4 import BeautifulSoup
@@ -35,8 +36,23 @@ logger = logging.getLogger(__name__)
 
 # Flight number: two uppercase letters + optional space + 3-5 digits
 _FN_RE = re.compile(r"\b([A-Z]{2}[\s\xa0]*\d{3,5})\b")
+# Compact single-line format: "AF 871 / 12NOV Cape Town - Paris CDG 07:55 19:15"
+# Airline code + FN + "/" + DDMON[YYYY] + dep-city + "-" + arr-city + dep-time + arr-time
+_COMPACT_FLIGHT_RE = re.compile(
+    r"\b([A-Z]{2})\s+(\d{3,5})\s*/\s*"  # airline code + flight number + /
+    r"(\d{1,2}[A-Z]{3}(?:\d{2,4})?)"  # DDMON, DDMONYY, or DDMONYYYY
+    r"\s+(.+?)\s*-\s*(.+?)\s+"  # dep city - arr city
+    r"(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})",  # dep time + arr time
+    re.IGNORECASE,
+)
 # Exact HH:MM (may also have h suffix like Lufthansa "06:45 h")
-_TIME_RE = re.compile(r"^(\d{1,2}:\d{2})(?:\s*h)?$")
+_TIME_RE = re.compile(r"^(\d{1,2}:\d{2})(?:[\s\xa0]*h)?$")
+# Combined time+date like "21:00 - 13 Apr 2025" (ITA Airways format)
+_TIME_DATE_RE = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(.+)$")
+# Combined date+time like "03.04.2024 - 20:25" (Austrian format)
+_DATE_TIME_RE = re.compile(r"^(.+?)\s*[-–]\s*(\d{1,2}:\d{2})$")
+# Zero-width characters produced by some email clients (e.g. Lufthansa)
+_ZW_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
 # Lines to skip when looking for IATA codes (labels, not airports)
 _SKIP_IATA_RE = re.compile(
     r"(?:terminal|gate|seat|class|status|confirm|boarding|depart|arriv|"
@@ -131,6 +147,24 @@ def _scan_window(
             times.append(m.group(1))
             continue
 
+        # Combined time+date like "21:00 - 13 Apr 2025"?
+        m = _TIME_DATE_RE.match(line)
+        if m:
+            times.append(m.group(1))
+            d = parse_flight_date(m.group(2).strip())
+            if d is not None:
+                dates.append(d)
+            continue
+
+        # Combined date+time like "03.04.2024 - 20:25"?
+        m = _DATE_TIME_RE.match(line)
+        if m:
+            d = parse_flight_date(m.group(1).strip())
+            if d is not None:
+                dates.append(d)
+                times.append(m.group(2))
+                continue
+
         # Date?
         d = parse_flight_date(line)
         if d is not None:
@@ -154,31 +188,112 @@ class _SimpleRule:
         self.airline_name = airline_code
 
 
-def extract_generic_html(email_msg, rule=None) -> list[dict]:
-    """Extract flights from any HTML email using flight-number anchoring.
+def _parse_ddmon_year(token: str, ref_date) -> date_type | None:
+    """Parse a DDMON token (e.g. '12NOV') inferring year from *ref_date*.
 
-    Args:
-        email_msg: EmailMessage with html_body populated.
-        rule: Matched airline rule (if any). Used to fill airline_name/code.
-               When None, the airline code is inferred from the flight number.
-
-    Returns:
-        List of flight dicts (may be empty when nothing plausible is found).
+    Also handles DDMONYY and DDMONYYYY by delegating to parse_flight_date.
     """
-    if not email_msg.html_body:
-        return []
+    d = parse_flight_date(token)
+    if d:
+        return d
+    if not ref_date:
+        return None
+    if not re.match(r"^\d{1,2}[A-Za-z]{3}$", token):
+        return None
+    ref_year = (
+        ref_date.year if isinstance(ref_date, (date_type, datetime)) else ref_date.date().year
+    )
+    # Try current year then previous year
+    for year in (ref_year, ref_year - 1, ref_year + 1):
+        d = parse_flight_date(token + str(year))
+        if d:
+            return d
+    return None
 
-    soup = BeautifulSoup(email_msg.html_body, "lxml")
-    text_nl = soup.get_text(separator="\n", strip=True)
-    lines = [ln.strip() for ln in text_nl.split("\n") if ln.strip()]
 
-    if not lines:
-        return []
+def _extract_compact_flights(
+    lines: list[str],
+    booking_ref: str,
+    email_date,
+    rule,
+    today: date_type,
+) -> list[dict]:
+    """Extract flights from compact single-line format.
 
-    booking_ref = _extract_booking_ref_text((email_msg.subject or "") + "\n" + text_nl)
-    today = datetime.now(UTC).date()
+    Handles: ``AF 871 / 12NOV Cape Town - Paris CDG 07:55 19:15``
 
-    # --- Collect flight number positions (deduplicated) ---
+    Each line encodes the complete flight: airline, number, date, dep/arr
+    city names, and times.  City names are resolved to IATA codes via
+    resolve_iata().
+    """
+    flights: list[dict] = []
+    seen_keys: set[tuple] = set()
+
+    for line in lines:
+        m = _COMPACT_FLIGHT_RE.search(line)
+        if not m:
+            continue
+
+        airline_code = m.group(1).upper()
+        fn = normalize_fn(f"{airline_code}{m.group(2)}")
+        date_token = m.group(3)
+        dep_city = m.group(4).strip()
+        arr_city = m.group(5).strip()
+        dep_time_str = m.group(6)
+        arr_time_str = m.group(7)
+
+        dep_date = _parse_ddmon_year(date_token, email_date)
+        if dep_date is None:
+            continue
+
+        if (dep_date - today).days > 730:
+            continue
+
+        dep_iata = _iata_from_line(dep_city)
+        if not dep_iata:
+            dep_iata_raw = resolve_iata(dep_city)
+            dep_iata = dep_iata_raw if dep_iata_raw and _is_valid_iata(dep_iata_raw) else ""
+        arr_iata = _iata_from_line(arr_city)
+        if not arr_iata:
+            arr_iata_raw = resolve_iata(arr_city)
+            arr_iata = arr_iata_raw if arr_iata_raw and _is_valid_iata(arr_iata_raw) else ""
+
+        if not dep_iata or not arr_iata or dep_iata == arr_iata:
+            continue
+
+        try:
+            h, mv = map(int, dep_time_str.split(":"))
+            dep_dt = datetime(dep_date.year, dep_date.month, dep_date.day, h, mv, tzinfo=UTC)
+            h2, m2 = map(int, arr_time_str.split(":"))
+            arr_dt = datetime(dep_date.year, dep_date.month, dep_date.day, h2, m2, tzinfo=UTC)
+        except (ValueError, TypeError):
+            continue
+
+        arr_dt = fix_overnight(dep_dt, arr_dt)
+
+        key = (fn, dep_iata, arr_iata)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        effective_rule = rule if rule is not None else _SimpleRule(airline_code)
+        flight = _make_flight_dict(
+            effective_rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref
+        )
+        if flight:
+            flights.append(flight)
+
+    return flights
+
+
+def _extract_from_lines(
+    lines: list[str],
+    booking_ref: str,
+    email_date,
+    rule,
+    today,
+) -> list[dict]:
+    """Core extraction logic: scan *lines* for flight number anchors and build flight dicts."""
     fn_positions: list[tuple[int, str]] = []
     seen_fns: set[str] = set()
     for i, line in enumerate(lines):
@@ -196,7 +311,6 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
     seen_keys: set[tuple] = set()
 
     for leg_idx, (fn_line, fn) in enumerate(fn_positions):
-        # Window: bounded by adjacent flight numbers to avoid cross-leg bleed
         prev_fn_line = fn_positions[leg_idx - 1][0] if leg_idx > 0 else 0
         next_fn_line = (
             fn_positions[leg_idx + 1][0] if leg_idx + 1 < len(fn_positions) else len(lines)
@@ -207,10 +321,10 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
         iatas, times, dates = _scan_window(lines, fn_line, win_start, win_end)
 
         if len(iatas) < 2:
-            logger.debug("Generic HTML: fewer than 2 IATAs for %s, skip", fn)
+            logger.debug("Generic: fewer than 2 IATAs for %s, skip", fn)
             continue
         if len(times) < 2:
-            logger.debug("Generic HTML: fewer than 2 times for %s, skip", fn)
+            logger.debug("Generic: fewer than 2 times for %s, skip", fn)
             continue
 
         dep_iata, arr_iata = iatas[0], iatas[1]
@@ -219,16 +333,15 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
 
         dep_date = dates[0] if dates else None
         arr_date = dates[1] if len(dates) >= 2 else dep_date
-        if dep_date is None and email_msg.date:
-            dep_date = email_msg.date.date()
+        if dep_date is None and email_date:
+            dep_date = email_date.date()
             arr_date = dep_date
         if dep_date is None:
-            logger.debug("Generic HTML: no date for %s, skip", fn)
+            logger.debug("Generic: no date for %s, skip", fn)
             continue
 
-        # Sanity: reject dates more than 2 years in the future (past flights are fine)
         if (dep_date - today).days > 730:
-            logger.debug("Generic HTML: date %s too far in future for %s", dep_date, fn)
+            logger.debug("Generic: date %s too far in future for %s", dep_date, fn)
             continue
 
         try:
@@ -238,7 +351,7 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
             arr_d = arr_date or dep_date
             arr_dt = datetime(arr_d.year, arr_d.month, arr_d.day, h2, m2, tzinfo=UTC)
         except (ValueError, TypeError):
-            logger.debug("Generic HTML: bad time for %s", fn)
+            logger.debug("Generic: bad time for %s", fn)
             continue
 
         arr_dt = fix_overnight(dep_dt, arr_dt)
@@ -255,10 +368,69 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
         if flight:
             flights.append(flight)
 
-    if flights:
-        logger.info(
-            "Generic HTML: extracted %d flight(s) from '%s'",
-            len(flights),
-            (email_msg.subject or "")[:60],
-        )
+    # If window scan found nothing, try compact single-line format
+    if not flights:
+        flights = _extract_compact_flights(lines, booking_ref, email_date, rule, today)
+
     return flights
+
+
+def extract_generic_html(email_msg, rule=None) -> list[dict]:
+    """Extract flights from any HTML email using flight-number anchoring.
+
+    Tries the HTML body first; falls back to the plain-text body when the
+    HTML yields nothing (e.g. Norwegian/SAS plain-text confirmation emails).
+
+    Args:
+        email_msg: EmailMessage with html_body and/or body populated.
+        rule: Matched airline rule (if any). Used to fill airline_name/code.
+               When None, the airline code is inferred from the flight number.
+
+    Returns:
+        List of flight dicts (may be empty when nothing plausible is found).
+    """
+    today = datetime.now(UTC).date()
+    subject = email_msg.subject or ""
+
+    # --- Try HTML body ---
+    if email_msg.html_body:
+        soup = BeautifulSoup(email_msg.html_body, "lxml")
+        text_nl = soup.get_text(separator="\n", strip=True)
+        lines = [
+            _ZW_RE.sub("", ln).replace("\xa0", " ").strip()
+            for ln in text_nl.split("\n")
+            if ln.strip()
+        ]
+        lines = [ln for ln in lines if ln]
+        if lines:
+            booking_ref = _extract_booking_ref_text(subject + "\n" + text_nl)
+            flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
+            if flights:
+                logger.info(
+                    "Generic HTML: extracted %d flight(s) from '%s'",
+                    len(flights),
+                    subject[:60],
+                )
+                return flights
+
+    # --- Fallback: plain-text body ---
+    if email_msg.body:
+        text_plain = email_msg.body
+        lines = [
+            _ZW_RE.sub("", ln).replace("\xa0", " ").strip()
+            for ln in text_plain.split("\n")
+            if ln.strip()
+        ]
+        lines = [ln for ln in lines if ln]
+        if lines:
+            booking_ref = _extract_booking_ref_text(subject + "\n" + text_plain)
+            flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
+            if flights:
+                logger.info(
+                    "Generic text: extracted %d flight(s) from '%s'",
+                    len(flights),
+                    subject[:60],
+                )
+                return flights
+
+    return []

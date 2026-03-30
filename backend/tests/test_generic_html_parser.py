@@ -149,6 +149,86 @@ class TestFlightExtraction:
         assert len(flights) == 1
         assert flights[0]["airline_code"] == "DY"
 
+    def test_compound_time_date_line(self, seeded_airports_db):
+        """ITA-style '21:00 - 13 Apr 2025' lines yield both time and date."""
+        html = _html("GRU", "GIG", "21:00 - 13 Apr 2025", "AZ2058", "22:10 - 13 Apr 2025")
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["flight_number"] == "AZ2058"
+        assert f["departure_airport"] == "GRU"
+        assert f["arrival_airport"] == "GIG"
+        assert f["departure_datetime"].hour == 21
+        assert f["arrival_datetime"].hour == 22
+
+    def test_compound_date_time_line(self, seeded_airports_db):
+        """Austrian-style '03.04.2026 - 20:25' lines yield both date and time."""
+        html = _html("03.04.2026 - 20:25", "OS317", "VIE", "ARN", "03.04.2026 - 22:00")
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["flight_number"] == "OS317"
+        assert f["departure_airport"] == "VIE"
+        assert f["arrival_airport"] == "ARN"
+
+    def test_compact_line_format(self, seeded_airports_db):
+        """SAS-style compact single-line format: 'SK 533 / 14JAN2026 city - city time time'."""
+        from datetime import UTC, datetime
+
+        from backend.parsers.email_connector import EmailMessage
+
+        msg = EmailMessage(
+            message_id="test-compact",
+            sender="test@example.com",
+            subject="",
+            body="SK 533 / 14JAN2026 Stockholm Arlanda - Copenhagen 14:00 15:30",
+            html_body=None,
+            date=datetime(2026, 1, 14, tzinfo=UTC),
+            pdf_attachments=[],
+        )
+        flights = extract_generic_html(msg)
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["flight_number"] == "SK533"
+        assert f["departure_airport"] == "ARN"
+        assert f["arrival_airport"] == "CPH"
+
+    def test_zero_width_chars_stripped(self, seeded_airports_db):
+        """Times with zero-width spaces (Lufthansa style) are parsed correctly."""
+        html = _html(
+            "16\u200b:\u200b05",  # broken time with ZW spaces — stripped to 16:05
+            "LH803",
+            "ARN",
+            "LHR",
+            "18:10",
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+
+    def test_plain_text_body_fallback(self, seeded_airports_db):
+        """When html_body is None, the plain-text body is used as fallback."""
+        from datetime import UTC, datetime
+
+        from backend.parsers.email_connector import EmailMessage
+
+        msg = EmailMessage(
+            message_id="test-textfallback",
+            sender="test@example.com",
+            subject="",
+            body="\n".join(
+                ["DY4371", "-", "14 Jan 2026", "17:10", "Stockholm Arlanda", "18:25", "Helsinki"]
+            ),
+            html_body=None,
+            date=datetime(2026, 1, 14, tzinfo=UTC),
+            pdf_attachments=[],
+        )
+        flights = extract_generic_html(msg)
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["flight_number"] == "DY4371"
+        assert f["departure_airport"] == "ARN"
+        assert f["arrival_airport"] == "HEL"
+
 
 class TestGuardrails:
     def test_same_dep_arr_rejected(self, seeded_airports_db):
