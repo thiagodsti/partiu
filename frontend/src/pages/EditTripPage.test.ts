@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import EditTripPage from './EditTripPage.svelte';
 
-const { mockPush, mockGet, mockUpdate, mockRefreshImage } = vi.hoisted(() => ({
+const { mockPush, mockGet, mockUpdate } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockGet: vi.fn(),
   mockUpdate: vi.fn(),
-  mockRefreshImage: vi.fn(),
 }));
 
 vi.mock('svelte-spa-router', () => ({ push: mockPush }));
@@ -14,7 +13,6 @@ vi.mock('../api/client', () => ({
   tripsApi: {
     get: mockGet,
     update: mockUpdate,
-    refreshImage: mockRefreshImage,
   },
   airportsApi: { search: vi.fn().mockResolvedValue([]) },
 }));
@@ -42,7 +40,6 @@ describe('EditTripPage', () => {
     vi.clearAllMocks();
     mockGet.mockResolvedValue(TRIP);
     mockUpdate.mockResolvedValue({});
-    mockRefreshImage.mockResolvedValue({});
   });
 
   it('shows loading state before trip loads', () => {
@@ -110,14 +107,6 @@ describe('EditTripPage', () => {
         expect.objectContaining({ name: 'Tokyo 2025 Updated' }),
       );
     });
-  });
-
-  it('calls tripsApi.refreshImage after successful update', async () => {
-    const { container } = render(EditTripPage, { props: { params: { id: 'trip-99' } } });
-    await waitFor(() => expect(container.querySelector('form')).toBeInTheDocument());
-
-    await fireEvent.submit(container.querySelector('form')!);
-    await waitFor(() => expect(mockRefreshImage).toHaveBeenCalledWith('trip-99'));
   });
 
   it('navigates back to trip detail on success', async () => {
