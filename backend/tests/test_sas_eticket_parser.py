@@ -34,7 +34,7 @@ def sas_scandinavian_airlines_rule(sas_scandinavian_airlines_email):
 
 @pytest.fixture(scope="module")
 def sas_scandinavian_airlines_flights(
-    sas_scandinavian_airlines_email, sas_scandinavian_airlines_rule
+    sas_scandinavian_airlines_email, sas_scandinavian_airlines_rule, seeded_airports_db
 ):
     from backend.parsers.engine import extract_flights_from_email
 
