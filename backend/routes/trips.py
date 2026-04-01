@@ -369,6 +369,19 @@ def merge_trip(trip_id: str, body: MergeBody, user: dict = Depends(get_current_u
         )
         conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"]))
 
+        # Recalculate start/end dates from all flights now in the target trip
+        date_row = conn.execute(
+            """SELECT MIN(substr(departure_datetime, 1, 10)) AS min_date,
+                      MAX(substr(departure_datetime, 1, 10)) AS max_date
+               FROM flights WHERE trip_id = ?""",
+            (body.target_trip_id,),
+        ).fetchone()
+        if date_row and date_row["min_date"]:
+            conn.execute(
+                "UPDATE trips SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?",
+                (date_row["min_date"], date_row["max_date"], now, body.target_trip_id),
+            )
+
     trip_image_path(trip_id).unlink(missing_ok=True)
     return {"target_trip_id": body.target_trip_id}
 
