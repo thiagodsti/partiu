@@ -113,7 +113,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-md);
-    padding: var(--space-md);
+    padding: calc(var(--space-md) + env(safe-area-inset-top)) var(--space-md) var(--space-md);
     border-bottom: 1px solid var(--border);
   }
 
@@ -194,7 +194,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-xs);
-    padding: var(--space-sm) var(--space-md) var(--space-xl);
+    padding: var(--space-sm) var(--space-md) calc(var(--space-xl) + env(safe-area-inset-bottom));
   }
 
   .country-chip {
