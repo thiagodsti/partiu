@@ -5,7 +5,7 @@ Trip CRUD routes.
 import json
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -155,7 +155,7 @@ def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
         except (ValueError, TypeError):
             return now_utc
 
-    # Add a single all-day span event covering the full trip
+    # Add a single span event covering the full trip (timed, not all-day, for broad client support)
     dep_dates = [f["departure_datetime"] for f in flights if f["departure_datetime"]]
     arr_dates = [f["arrival_datetime"] for f in flights if f["arrival_datetime"]]
     all_dates = dep_dates + arr_dates
@@ -163,15 +163,21 @@ def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
         try:
             first_dt = min(datetime.fromisoformat(d) for d in all_dates)
             last_dt = max(datetime.fromisoformat(d) for d in all_dates)
-            span_start = first_dt.strftime("%Y%m%d")
-            # DTEND for all-day events is exclusive, so add 1 day
-            span_end = (last_dt.date() + timedelta(days=1)).strftime("%Y%m%d")
+            if first_dt.tzinfo is None:
+                first_dt = first_dt.replace(tzinfo=UTC)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            # Snap to midnight UTC: start of first day → end of last day
+            span_start = first_dt.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            span_end = last_dt.astimezone(UTC).replace(hour=23, minute=59, second=59, microsecond=0)
+            span_start_ical = span_start.strftime("%Y%m%dT%H%M%SZ")
+            span_end_ical = span_end.strftime("%Y%m%dT%H%M%SZ")
             lines += [
                 "BEGIN:VEVENT",
                 f"UID:{trip_id}-span@partiu",
                 f"DTSTAMP:{now_utc}",
-                f"DTSTART;VALUE=DATE:{span_start}",
-                f"DTEND;VALUE=DATE:{span_end}",
+                f"DTSTART:{span_start_ical}",
+                f"DTEND:{span_end_ical}",
                 f"SUMMARY:{trip_name}",
                 "TRANSP:TRANSPARENT",
                 "END:VEVENT",
