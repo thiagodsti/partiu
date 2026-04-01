@@ -5,7 +5,7 @@ Trip CRUD routes.
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -145,20 +145,43 @@ def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
         f"X-WR-CALNAME:{trip_name}",
     ]
 
+    def _to_ical_dt(dt_str: str) -> str:
+        """Convert ISO datetime string to iCal UTC format."""
+        try:
+            dt = datetime.fromisoformat(dt_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+        except (ValueError, TypeError):
+            return now_utc
+
+    # Add a single all-day span event covering the full trip
+    dep_dates = [f["departure_datetime"] for f in flights if f["departure_datetime"]]
+    arr_dates = [f["arrival_datetime"] for f in flights if f["arrival_datetime"]]
+    all_dates = dep_dates + arr_dates
+    if all_dates:
+        try:
+            first_dt = min(datetime.fromisoformat(d) for d in all_dates)
+            last_dt = max(datetime.fromisoformat(d) for d in all_dates)
+            span_start = first_dt.strftime("%Y%m%d")
+            # DTEND for all-day events is exclusive, so add 1 day
+            span_end = (last_dt.date() + timedelta(days=1)).strftime("%Y%m%d")
+            lines += [
+                "BEGIN:VEVENT",
+                f"UID:{trip_id}-span@partiu",
+                f"DTSTAMP:{now_utc}",
+                f"DTSTART;VALUE=DATE:{span_start}",
+                f"DTEND;VALUE=DATE:{span_end}",
+                f"SUMMARY:{trip_name}",
+                "TRANSP:TRANSPARENT",
+                "END:VEVENT",
+            ]
+        except (ValueError, TypeError):
+            pass
+
     for flight in flights:
         dep_str = flight["departure_datetime"]
         arr_str = flight["arrival_datetime"]
-
-        def _to_ical_dt(dt_str: str) -> str:
-            """Convert ISO datetime string to iCal UTC format."""
-            try:
-                dt = datetime.fromisoformat(dt_str)
-                if dt.tzinfo is None:
-                    # Treat naive datetimes as UTC
-                    dt = dt.replace(tzinfo=UTC)
-                return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-            except (ValueError, TypeError):
-                return now_utc
 
         dep_ical = _to_ical_dt(dep_str) if dep_str else now_utc
         arr_ical = _to_ical_dt(arr_str) if arr_str else now_utc
