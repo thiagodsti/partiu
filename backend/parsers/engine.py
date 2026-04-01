@@ -15,6 +15,7 @@ import re
 from datetime import UTC, datetime
 from datetime import date as date_type
 
+from ..utils import validate_flight_number
 from .email_connector import EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -410,6 +411,9 @@ def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
             and flight_data["departure_airport"]
             and flight_data["arrival_airport"]
         ):
+            if not validate_flight_number(flight_data["flight_number"]):
+                logger.debug("Skipping invalid flight number %r", flight_data["flight_number"])
+                continue
             flights_data.append(flight_data)
         else:
             logger.debug("Skipping incomplete flight match: %s", flight_data)
@@ -555,6 +559,9 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
         if arr_dt is None:
             continue
 
+        if not validate_flight_number(flight_num):
+            logger.debug("Skipping invalid flight number from PDF %r", flight_num)
+            continue
         airline_code = flight_num[:2]
         flights.append(
             {

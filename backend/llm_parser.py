@@ -120,8 +120,7 @@ Email body:
 """
 
 _IATA_RE = re.compile(r"^[A-Z]{3}$")
-# Allow: LA3045, FR2878, G3-2108, G32108 (IATA or ICAO airline code + optional dash + digits)
-_FN_RE = re.compile(r"^[A-Z][A-Z0-9]-?\d{3,5}$")
+from .utils import FLIGHT_NUMBER_RE as _FN_RE  # noqa: E402
 
 
 def llm_available() -> bool:

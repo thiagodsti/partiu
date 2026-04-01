@@ -2,8 +2,20 @@
 Shared utility functions used across the backend.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import overload
+
+# IATA/ICAO flight number: 2-char airline code (letter + letter-or-digit), optional dash, 3-5 digits
+# Examples: LA3045, FR2878, G3-2108, SK117
+# Rejects aircraft type codes like A380 or A830 (only 1 leading letter + short digit sequence)
+FLIGHT_NUMBER_RE = re.compile(r"^[A-Z][A-Z0-9]-?\d{3,5}$")
+
+
+def validate_flight_number(fn: str) -> bool:
+    """Return True if fn looks like a valid IATA/ICAO flight number."""
+    normalised = fn.upper().replace(" ", "").replace("\xa0", "")
+    return bool(FLIGHT_NUMBER_RE.match(normalised))
 
 
 def now_iso() -> str:

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from ..auth import get_current_user
 from ..database import db_conn, db_write
 from ..shares import can_access_flight, can_access_trip
-from ..utils import calc_duration_minutes, calc_flight_status, now_iso
+from ..utils import calc_duration_minutes, calc_flight_status, now_iso, validate_flight_number
 
 router = APIRouter(prefix="/api/flights", tags=["flights"])
 
@@ -211,6 +211,9 @@ def create_flight(
     body: FlightCreate, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)
 ):
     """Manually create a flight."""
+    if not validate_flight_number(body.flight_number):
+        raise HTTPException(status_code=422, detail="Invalid flight number format")
+
     from ..timezone_utils import apply_airport_timezones
 
     now = now_iso()
@@ -304,6 +307,9 @@ def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_c
             "SELECT id FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
         ).fetchone():
             raise HTTPException(status_code=404, detail="Flight not found")
+
+    if body.flight_number is not None and not validate_flight_number(body.flight_number):
+        raise HTTPException(status_code=422, detail="Invalid flight number format")
 
     updates = {}
     for field in (
