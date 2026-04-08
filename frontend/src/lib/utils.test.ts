@@ -175,6 +175,12 @@ describe('inferTripStatus', () => {
     expect(inferTripStatus({ end_date: '2020-01-01' })).toBe('completed');
   });
 
+  it('returns ongoing when end date is today (not completed until end of day)', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const past = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    expect(inferTripStatus({ start_date: past, end_date: today })).toBe('ongoing');
+  });
+
   it('returns ongoing when start is past and end is future', () => {
     const past = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const future = new Date(Date.now() + 86400000).toISOString().slice(0, 10);

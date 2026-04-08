@@ -111,24 +111,28 @@
 
 {#if $authLoading}
   <!-- Blank while checking auth to avoid flash -->
-  <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--text-muted);">
+  <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);">
     Loading...
   </div>
 {:else}
-  <svelte:boundary>
-    <Router {routes} on:routeEvent={routeNotFound} />
-    {#if showTabBar}
-      <TabBar />
-    {/if}
-    <ToastContainer />
-    {#snippet failed()}
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:1rem;padding:2rem;text-align:center;">
-        <p style="color:var(--text-muted);font-size:1.1rem;">Something went wrong.</p>
-        <button onclick={() => window.location.reload()}
-                style="padding:0.5rem 1.25rem;border-radius:6px;border:none;background:var(--accent,#6366f1);color:#fff;cursor:pointer;font-size:1rem;">
-          Reload
-        </button>
+  <div class="app-shell">
+    <svelte:boundary>
+      <div class="app-content">
+        <Router {routes} on:routeEvent={routeNotFound} />
       </div>
-    {/snippet}
-  </svelte:boundary>
+      {#if showTabBar}
+        <TabBar />
+      {/if}
+      <ToastContainer />
+      {#snippet failed()}
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;padding:2rem;text-align:center;">
+          <p style="color:var(--text-muted);font-size:1.1rem;">Something went wrong.</p>
+          <button onclick={() => window.location.reload()}
+                  style="padding:0.5rem 1.25rem;border-radius:6px;border:none;background:var(--accent,#6366f1);color:#fff;cursor:pointer;font-size:1rem;">
+            Reload
+          </button>
+        </div>
+      {/snippet}
+    </svelte:boundary>
+  </div>
 {/if}

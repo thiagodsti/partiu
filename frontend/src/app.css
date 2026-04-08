@@ -115,7 +115,7 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
+  height: 100%;
 }
 
 body {
@@ -123,9 +123,29 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
-  min-height: 100vh;
-  padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom));
-  overflow-x: clip;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+/* ---- App Shell (prevents fixed-position tab bar repaint bugs on mobile) ---- */
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  /* Smooth momentum scroll on iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 a {
@@ -227,18 +247,13 @@ img {
 
 /* ---- Bottom Tab Bar ---- */
 .tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+  flex-shrink: 0;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   height: calc(var(--tab-height) + env(safe-area-inset-bottom));
   display: flex;
   align-items: flex-start;
   padding-bottom: env(safe-area-inset-bottom);
-  transform: translateZ(0);
 }
 
 .tab-item {
@@ -1612,19 +1627,30 @@ img {
     print-color-adjust: exact;
   }
 
+  html, body, #app {
+    height: auto;
+    overflow: visible;
+  }
+
   body {
     background: white;
     color: #111827;
+  }
+
+  .app-shell {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-content {
+    overflow: visible;
   }
 
   .no-print { display: none !important; }
   .section-hidden { display: block !important; }
   .top-nav { display: none !important; }
   .tab-bar { display: none !important; }
-
-  .main-content {
-    padding-bottom: 0 !important;
-  }
 
   .trip-actions { display: none !important; }
   .section-toggle { cursor: default; }

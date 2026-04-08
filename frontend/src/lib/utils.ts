@@ -165,7 +165,12 @@ export function timeUntilTrip(startDate: string, now: number = Date.now(), t?: T
 
 export function inferTripStatus(trip: { start_date?: string | null; end_date?: string | null }): 'completed' | 'ongoing' | 'upcoming' {
   const now = new Date();
-  if (trip.end_date && new Date(trip.end_date) < now) return 'completed';
+  if (trip.end_date) {
+    // Treat end_date as end-of-day: trip is completed only after the full day has passed
+    const endOfDay = new Date(trip.end_date);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+    if (endOfDay < now) return 'completed';
+  }
   if (trip.start_date && new Date(trip.start_date) <= now) return 'ongoing';
   return 'upcoming';
 }
