@@ -6,8 +6,6 @@
 
 **Partiu** is a self-hosted personal flight tracker PWA. It automatically reads your airline confirmation emails, parses the flight details, and organises everything into trips — no third-party account needed, no data leaving your server.
 
-Think of it as a self-hosted TripIt, built for people who want full control over their travel data.
-
 ---
 
 ![demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
@@ -141,7 +139,7 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | Variable | Required | Description |
 |---|---|---|
 | `SECRET_KEY` | ✓ | Secret key for signing session cookies. Generate with `openssl rand -hex 32` |
-| `DB_PATH` | | Path to the SQLite database (default: `./data/tripit.db`) |
+| `DB_PATH` | | Path to the SQLite database (default: `./data/partiu.db`) |
 | `DISABLE_SCHEDULER` | | Set to `true` to disable background email sync (useful for dev) |
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lowercase all usernames in the DB.")
-    parser.add_argument("--db", default="data/tripit.db", help="Path to SQLite database")
+    parser.add_argument("--db", default="data/partiu.db", help="Path to SQLite database")
     parser.add_argument("--dry-run", action="store_true", help="Show changes without applying them")
     args = parser.parse_args()
 
