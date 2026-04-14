@@ -19,8 +19,6 @@ import type {
   BoardingPass,
   TripBoardingPass,
   TripDocument,
-  FailedEmail,
-  AdminFailedEmailGroup,
   User,
   UserListItem,
   LoginResponse,
@@ -292,32 +290,22 @@ export const notificationsApi = {
   deleteNotification: (id: number) => del<null>(`/api/notifications/inbox/${id}`),
 };
 
+export const dayNotesApi = {
+  list: (tripId: string) => get<TripDayNote[]>(`/api/trips/${tripId}/day-notes`),
+  upsert: (tripId: string, date: string, content: string) =>
+    _request<{ ok: boolean }>('PATCH', `/api/trips/${tripId}/day-notes/${date}`, { content }),
+};
+
 export interface NonFlightDomain {
   domain: string;
   note: string;
   created_at: string;
 }
 
-export const failedEmailsApi = {
-  list: () => get<FailedEmail[]>('/api/failed-emails'),
-  retry: (id: string) => post<{ status: string; record?: FailedEmail }>(`/api/failed-emails/${id}/retry`),
-  delete: (id: string) => del<null>(`/api/failed-emails/${id}`),
-  adminList: () => get<AdminFailedEmailGroup[]>('/api/admin/failed-emails'),
-  adminDeleteSender: (sender: string) =>
-    _request<null>('DELETE', '/api/admin/failed-emails/sender', { sender }),
-  adminRetryAll: () => post<{ results: Record<number, { retried: number; recovered: number }> }>('/api/admin/failed-emails/retry-all'),
-};
-
 export const nonFlightDomainsApi = {
-  list: () => get<NonFlightDomain[]>('/api/admin/non-flight-domains'),
-  add: (domain: string, note: string = '') => _request<{ domain: string }>('POST', '/api/admin/non-flight-domains', { domain, note }),
-  delete: (domain: string) => del<null>(`/api/admin/non-flight-domains/${encodeURIComponent(domain)}`),
-};
-
-export const dayNotesApi = {
-  list: (tripId: string) => get<TripDayNote[]>(`/api/trips/${tripId}/day-notes`),
-  upsert: (tripId: string, date: string, content: string) =>
-    _request<{ ok: boolean }>('PATCH', `/api/trips/${tripId}/day-notes/${date}`, { content }),
+  list: () => get<NonFlightDomain[]>('/api/settings/admin/non-flight-domains'),
+  add: (domain: string, note: string = '') => _request<{ domain: string }>('POST', '/api/settings/admin/non-flight-domains', { domain, note }),
+  delete: (domain: string) => del<null>(`/api/settings/admin/non-flight-domains/${encodeURIComponent(domain)}`),
 };
 
 export const settingsApi = {

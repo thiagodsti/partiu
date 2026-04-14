@@ -1,66 +1,47 @@
-"""Tests for the email parsing engine using real cached emails."""
+"""Tests for the email parsing engine using anonymized fixture emails."""
 
-from datetime import UTC, datetime, timezone
+from datetime import datetime
 
 import pytest
 
 from backend.parsers.builtin_rules import get_builtin_rules
 from backend.parsers.email_connector import EmailMessage
 from backend.parsers.engine import extract_flights_from_email, match_rule_to_email
+from backend.tests.conftest import FIXTURES_DIR, load_anonymized_fixture, load_eml_as_email_message
 
 
 def get_rules():
     return sorted(get_builtin_rules(), key=lambda r: r.priority, reverse=True)
 
 
-def _make_email(entry: dict) -> EmailMessage:
-    """Convert a cache entry dict to an EmailMessage."""
-    date_str = entry.get("date", "")
-    try:
-        date = datetime.fromisoformat(date_str)
-        if date.tzinfo is None:
-            date = date.replace(tzinfo=UTC)
-    except (ValueError, TypeError):
-        date = datetime.now(UTC)
-
-    return EmailMessage(
-        message_id=entry.get("message_id", ""),
-        sender=entry.get("sender", ""),
-        subject=entry.get("subject", ""),
-        body=entry.get("body", ""),
-        html_body=entry.get("html_body"),
-        date=date,
-        pdf_attachments=[],  # Skip PDF re-extraction for speed
-    )
+@pytest.fixture(scope="session")
+def fixture_emails() -> list[EmailMessage]:
+    """Load all anonymized fixture emails (.eml and .json) for parser tests."""
+    emails = []
+    for json_file in sorted(FIXTURES_DIR.glob("*_anonymized.json")):
+        emails.append(load_anonymized_fixture(json_file.name))
+    for eml_file in sorted(FIXTURES_DIR.glob("*_anonymized.eml")):
+        emails.append(load_eml_as_email_message(eml_file.name))
+    return emails
 
 
-def test_cache_loaded(email_cache):
-    """Email cache must be non-empty for meaningful tests."""
-    assert len(email_cache) > 0, "email_cache.json is empty or missing — run a sync first"
+def test_fixtures_loaded(fixture_emails):
+    assert len(fixture_emails) > 0, "No fixture emails found in tests/fixtures/"
 
 
-def test_all_flight_emails_match_a_rule(email_cache):
-    """Every email with a recognized sender should match at least one rule."""
+def test_all_fixture_emails_match_a_rule(fixture_emails):
+    """Every fixture email should match at least one airline rule."""
     rules = get_rules()
-    matched = 0
-    for entry in email_cache:
-        msg = _make_email(entry)
-        if match_rule_to_email(msg, rules) is not None:
-            matched += 1
-    assert matched > 0, "No emails matched any airline rule"
+    matched = sum(1 for msg in fixture_emails if match_rule_to_email(msg, rules) is not None)
+    assert matched > 0, "No fixture emails matched any airline rule"
 
 
-def test_matched_emails_extract_flights(email_cache):
-    """At least half of matched emails should produce flights.
-
-    Airlines send non-itinerary emails too (account activations, promotions, etc.)
-    so we don't require 100% — but most matched emails should yield real flights.
-    """
+def test_matched_emails_extract_flights(fixture_emails):
+    """Most matched fixture emails should produce flights."""
     rules = get_rules()
     matched_total = 0
     matched_with_flights = 0
-    for entry in email_cache:
-        msg = _make_email(entry)
+    for msg in fixture_emails:
         rule = match_rule_to_email(msg, rules)
         if rule is None:
             continue
@@ -68,18 +49,18 @@ def test_matched_emails_extract_flights(email_cache):
         if extract_flights_from_email(msg, rule):
             matched_with_flights += 1
 
-    assert matched_total > 0, "No emails matched any rule"
+    assert matched_total > 0, "No fixture emails matched any rule"
     ratio = matched_with_flights / matched_total
-    # PDF-only rules (e.g. Kiwi) match emails but yield 0 flights when the cache
-    # omits PDF bytes, so the realistic floor is lower than 50%.
+    # PDF-only rules (e.g. Kiwi) match emails but yield 0 flights when PDF bytes
+    # are not present in the fixture, so the realistic floor is lower than 50%.
     assert ratio >= 0.25, (
         f"Only {matched_with_flights}/{matched_total} matched emails yielded flights "
         f"({ratio:.0%}) — expected at least 25%"
     )
 
 
-def test_flights_have_required_fields(email_cache):
-    """All extracted flights must have the four core fields populated."""
+def test_flights_have_required_fields(fixture_emails, seeded_airports_db):
+    """All extracted flights must have the five core fields populated."""
     rules = get_rules()
     required = [
         "flight_number",
@@ -88,8 +69,7 @@ def test_flights_have_required_fields(email_cache):
         "departure_datetime",
         "arrival_datetime",
     ]
-    for entry in email_cache:
-        msg = _make_email(entry)
+    for msg in fixture_emails:
         rule = match_rule_to_email(msg, rules)
         if rule is None:
             continue
@@ -97,16 +77,15 @@ def test_flights_have_required_fields(email_cache):
             for field in required:
                 assert flight.get(field), (
                     f"Missing {field!r} in flight from "
-                    f"{rule.airline_name}: {entry.get('subject', '')[:60]}\n"
+                    f"{rule.airline_name}: {msg.subject[:60]}\n"
                     f"  Flight: {flight}"
                 )
 
 
-def test_flight_datetimes_are_datetime_objects(email_cache):
+def test_flight_datetimes_are_datetime_objects(fixture_emails):
     """Departure and arrival must be datetime instances (not strings)."""
     rules = get_rules()
-    for entry in email_cache:
-        msg = _make_email(entry)
+    for msg in fixture_emails:
         rule = match_rule_to_email(msg, rules)
         if rule is None:
             continue
@@ -115,19 +94,18 @@ def test_flight_datetimes_are_datetime_objects(email_cache):
             arr = flight.get("arrival_datetime")
             assert isinstance(dep, datetime), (
                 f"departure_datetime is {type(dep).__name__}, expected datetime — "
-                f"{flight.get('flight_number')} in {entry.get('subject', '')[:40]}"
+                f"{flight.get('flight_number')} in {msg.subject[:40]}"
             )
             assert isinstance(arr, datetime), (
                 f"arrival_datetime is {type(arr).__name__}, expected datetime — "
-                f"{flight.get('flight_number')} in {entry.get('subject', '')[:40]}"
+                f"{flight.get('flight_number')} in {msg.subject[:40]}"
             )
 
 
-def test_arrival_not_before_departure(email_cache):
+def test_arrival_not_before_departure(fixture_emails):
     """Arrival must be >= departure for every extracted flight."""
     rules = get_rules()
-    for entry in email_cache:
-        msg = _make_email(entry)
+    for msg in fixture_emails:
         rule = match_rule_to_email(msg, rules)
         if rule is None:
             continue
@@ -137,7 +115,7 @@ def test_arrival_not_before_departure(email_cache):
             if isinstance(dep, datetime) and isinstance(arr, datetime):
                 assert arr >= dep, (
                     f"Arrival {arr} is before departure {dep} — "
-                    f"{flight.get('flight_number')} in {entry.get('subject', '')[:40]}"
+                    f"{flight.get('flight_number')} in {msg.subject[:40]}"
                 )
 
 
@@ -150,21 +128,20 @@ def test_arrival_not_before_departure(email_cache):
     ],
 )
 def test_specific_airline_parses_flights(
-    email_cache, airline_code, sender_fragment, seeded_airports_db
+    fixture_emails, airline_code, sender_fragment, seeded_airports_db
 ):
-    """Each supported airline must have at least one email that yields flights."""
+    """Each supported airline must have at least one fixture that yields flights."""
     rules = get_rules()
     airline_emails = [
-        e for e in email_cache if sender_fragment.lower() in e.get("sender", "").lower()
+        msg for msg in fixture_emails if sender_fragment.lower() in msg.sender.lower()
     ]
     if not airline_emails:
-        pytest.skip(f"No {airline_code} emails found in cache")
+        pytest.skip(f"No {airline_code} fixture emails found — add one to tests/fixtures/")
 
-    for entry in airline_emails:
-        msg = _make_email(entry)
+    for msg in airline_emails:
         rule = match_rule_to_email(msg, rules)
         if rule and rule.airline_code == airline_code:
             if extract_flights_from_email(msg, rule):
                 return  # At least one parsed successfully
 
-    pytest.fail(f"No {airline_code} emails successfully extracted flights")
+    pytest.fail(f"No {airline_code} fixture emails successfully extracted flights")

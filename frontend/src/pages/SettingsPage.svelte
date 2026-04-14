@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, failedEmailsApi, sharesApi, nonFlightDomainsApi } from "../api/client";
-  import type { Settings, SyncStatus, NotifPreferences, FailedEmail, AdminFailedEmailGroup, TrustedUser } from "../api/types";
+  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi } from "../api/client";
   import type { NonFlightDomain } from "../api/client";
+  import type { Settings, SyncStatus, NotifPreferences, TrustedUser } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -76,7 +76,7 @@
 
   // Notifications — per-user
   let notifStatus = $state<"unsupported" | "denied" | "default" | "subscribed" | "unsubscribed">("default");
-  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true, boarding_pass: true, new_flight: true, failed_parse: true });
+  let notifPrefs = $state<NotifPreferences>({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true, boarding_pass: true, new_flight: true });
   let savingNotifPrefs = $state(false);
   let togglingNotif = $state(false);
   let testingPush = $state(false);
@@ -139,6 +139,7 @@
 
   // ---- Sync actions ----
   async function regroup() {
+    if (!confirm($t("settings.regroup_confirm"))) return;
     regrouping = true;
     try {
       await syncApi.regroup();
@@ -151,6 +152,7 @@
   }
 
   async function fullSync() {
+    if (!confirm($t("settings.full_sync_confirm"))) return;
     fullSyncing = true;
     try {
       await syncApi.fullSync();
@@ -536,108 +538,6 @@
     twoFaMsg = "";
   }
 
-  // ---- Failed emails ----
-  let failedEmails = $state<FailedEmail[]>([]);
-  let failedEmailsLoading = $state(false);
-  let retryingEmailId = $state<string | null>(null);
-  let failedEmailMsg = $state<Record<string, { text: string; ok: boolean }>>({});
-
-  let adminFailedGroups = $state<AdminFailedEmailGroup[]>([]);
-  let adminRetryingAll = $state(false);
-  let adminRetryResult = $state<{ retried: number; recovered: number } | null>(null);
-  let retryAllProgress = $state<{ current: number; total: number } | null>(null);
-
-  async function loadFailedEmails() {
-    failedEmailsLoading = true;
-    try {
-      failedEmails = await failedEmailsApi.list();
-      if ($currentUser?.is_admin) {
-        adminFailedGroups = await failedEmailsApi.adminList().catch(() => []);
-      }
-    } catch { /* ignore */ } finally {
-      failedEmailsLoading = false;
-    }
-  }
-
-  loadFailedEmails();
-
-  async function retryFailedEmail(id: string) {
-    retryingEmailId = id;
-    failedEmailMsg = { ...failedEmailMsg, [id]: { text: '', ok: false } };
-    try {
-      const result = await failedEmailsApi.retry(id);
-      if (result.status === 'recovered') {
-        failedEmails = failedEmails.filter(e => e.id !== id);
-        failedEmailMsg = { ...failedEmailMsg, [id]: { text: $t('settings.failed_email_recovered'), ok: true } };
-      } else {
-        const updated = result.record;
-        if (updated) failedEmails = failedEmails.map(e => e.id === id ? updated : e);
-        failedEmailMsg = { ...failedEmailMsg, [id]: { text: $t('settings.failed_email_still_failing'), ok: false } };
-      }
-    } catch (err) {
-      failedEmailMsg = { ...failedEmailMsg, [id]: { text: (err as Error).message, ok: false } };
-    } finally {
-      retryingEmailId = null;
-    }
-  }
-
-  async function dismissFailedEmail(id: string) {
-    try {
-      await failedEmailsApi.delete(id);
-      failedEmails = failedEmails.filter(e => e.id !== id);
-    } catch { /* ignore */ }
-  }
-
-  async function adminDeleteSender(sender: string) {
-    try {
-      await failedEmailsApi.adminDeleteSender(sender);
-      adminFailedGroups = adminFailedGroups.filter(g => g.sender_domain !== sender);
-      failedEmails = failedEmails.filter(e => e.airline_hint !== sender);
-    } catch { /* ignore */ }
-  }
-
-  async function adminBlockSender(sender: string) {
-    try {
-      await nonFlightDomainsApi.add(sender);
-      // Remove from failed groups (add_non_flight_domain deletes the emails server-side)
-      adminFailedGroups = adminFailedGroups.filter(g => g.sender_domain !== sender);
-      failedEmails = failedEmails.filter(e => e.airline_hint !== sender);
-      // Refresh blocked domains list
-      nonFlightDomains = await nonFlightDomainsApi.list();
-    } catch { /* ignore */ }
-  }
-
-  async function adminRetryAll() {
-    adminRetryingAll = true;
-    adminRetryResult = null;
-    retryAllProgress = null;
-    try {
-      // Retry one-by-one so we can show progress
-      const toRetry = [...failedEmails];
-      retryAllProgress = { current: 0, total: toRetry.length };
-      let recovered = 0;
-      for (const fe of toRetry) {
-        retryAllProgress = { current: retryAllProgress.current + 1, total: toRetry.length };
-        try {
-          const result = await failedEmailsApi.retry(fe.id);
-          if (result.status === 'recovered') {
-            recovered++;
-            failedEmails = failedEmails.filter(e => e.id !== fe.id);
-          } else if (result.record) {
-            failedEmails = failedEmails.map(e => e.id === fe.id ? result.record! : e);
-          }
-        } catch { /* continue with next */ }
-      }
-      adminRetryResult = { retried: toRetry.length, recovered };
-      await loadFailedEmails();
-    } catch {
-      adminRetryResult = null;
-    } finally {
-      adminRetryingAll = false;
-      retryAllProgress = null;
-    }
-  }
-
   // ---- Non-flight (blocked) domains ----
   let nonFlightDomains = $state<NonFlightDomain[]>([]);
   let nonFlightDomainsLoading = $state(false);
@@ -665,8 +565,6 @@
       await nonFlightDomainsApi.add(d);
       newBlockedDomain = '';
       nonFlightDomains = await nonFlightDomainsApi.list();
-      // Also refresh failed groups since emails may have been removed
-      adminFailedGroups = await failedEmailsApi.adminList().catch(() => []);
     } finally {
       addingBlockedDomain = false;
     }
@@ -1126,10 +1024,6 @@
               <input type="checkbox" bind:checked={notifPrefs.new_flight} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
               {$t("settings.notif_new_flight")}
             </label>
-            <label style="display:flex;align-items:center;gap:var(--space-sm);font-size:0.875rem;margin-bottom:var(--space-md);cursor:pointer">
-              <input type="checkbox" bind:checked={notifPrefs.failed_parse} style="flex-shrink:0;width:1rem;height:1rem;margin:0" />
-              {$t("settings.notif_failed_parse")}
-            </label>
             <div style="display:flex;gap:var(--space-sm)">
               <button class="btn btn-primary btn-full" type="submit" disabled={savingNotifPrefs}>
                 {savingNotifPrefs ? $t("settings.notif_saving") : $t("settings.notif_save")}
@@ -1241,115 +1135,6 @@
         >
           {$t("settings.manage_users")}
         </a>
-      </div>
-    {/if}
-
-    <!-- Failed emails: user view -->
-    <div class="settings-section">
-      <div class="settings-section-title">{$t("settings.failed_emails")}</div>
-      <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-        {$t("settings.failed_emails_desc")}
-      </p>
-      {#if failedEmailsLoading}
-        <p style="font-size:0.875rem;color:var(--text-secondary)">{$t("settings.failed_emails_loading")}</p>
-      {:else if failedEmails.length === 0}
-        <p style="font-size:0.875rem;color:var(--success)">{$t("settings.failed_emails_none")}</p>
-      {:else}
-        {#each failedEmails as fe (fe.id)}
-          <div style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px">
-            <div style="font-size:0.875rem;font-weight:600;margin-bottom:2px">{fe.subject || '(no subject)'}</div>
-            <div style="font-size:0.8rem;color:var(--text-secondary)">
-              {$t("settings.failed_email_hint", { values: { sender: fe.sender } })}
-              {#if fe.received_at} · {new Date(fe.received_at).toLocaleDateString()}{/if}
-            </div>
-            <div style="font-size:0.8rem;color:var(--danger);margin-top:2px;display:flex;align-items:center;gap:6px">
-              {$t(`settings.failed_email_reason.${fe.reason}`, { default: $t("settings.failed_email_reason", { values: { reason: fe.reason } }) })}
-              {#if fe.llm_verdict === 'no_flight'}
-                <span style="font-size:0.7rem;background:var(--text-muted);color:var(--bg-primary);padding:1px 6px;border-radius:999px;font-weight:600">LLM: no flight</span>
-              {:else if fe.llm_verdict === 'no_eml'}
-                <span style="font-size:0.7rem;background:var(--text-muted);color:var(--bg-primary);padding:1px 6px;border-radius:999px;font-weight:600">no raw email</span>
-              {/if}
-            </div>
-            {#if failedEmailMsg[fe.id]}
-              <div style="font-size:0.8rem;margin-top:4px;color:{failedEmailMsg[fe.id].ok ? 'var(--success)' : 'var(--danger)'}">
-                {failedEmailMsg[fe.id].text}
-              </div>
-            {/if}
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button
-                class="btn btn-secondary"
-                style="font-size:0.8rem;padding:4px 10px"
-                disabled={retryingEmailId === fe.id}
-                onclick={() => retryFailedEmail(fe.id)}
-              >
-                {retryingEmailId === fe.id ? $t("settings.failed_email_retrying") : $t("settings.failed_email_retry")}
-              </button>
-              <button
-                class="btn btn-secondary"
-                style="font-size:0.8rem;padding:4px 10px"
-                onclick={() => dismissFailedEmail(fe.id)}
-              >
-                {$t("settings.failed_email_dismiss")}
-              </button>
-            </div>
-          </div>
-        {/each}
-      {/if}
-    </div>
-
-    <!-- Admin: parse failures grouped by sender -->
-    {#if $currentUser?.is_admin}
-      <div class="settings-section">
-        <div class="settings-section-title">{$t("settings.admin_failed_emails")}</div>
-        <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          {$t("settings.admin_failed_emails_desc")}
-        </p>
-        {#if adminFailedGroups.length === 0}
-          <p style="font-size:0.875rem;color:var(--success)">{$t("settings.admin_failed_emails_none")}</p>
-        {:else}
-          {#each adminFailedGroups as grp (grp.sender_domain)}
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:0.875rem">
-                {$t("settings.admin_failed_emails_sender", { values: { sender: grp.sender_domain || '(unknown)', count: grp.count } })}
-              </span>
-              <div style="display:flex;gap:6px">
-                <button
-                  class="btn btn-secondary"
-                  style="font-size:0.8rem;padding:3px 10px"
-                  onclick={() => adminDeleteSender(grp.sender_domain)}
-                >
-                  {$t("settings.admin_failed_emails_delete")}
-                </button>
-                <button
-                  class="btn btn-secondary"
-                  style="font-size:0.8rem;padding:3px 10px"
-                  onclick={() => adminBlockSender(grp.sender_domain)}
-                >
-                  {$t("settings.admin_failed_emails_block")}
-                </button>
-              </div>
-            </div>
-          {/each}
-          <button
-            class="btn btn-secondary btn-full"
-            style="margin-top:var(--space-sm)"
-            disabled={adminRetryingAll}
-            onclick={adminRetryAll}
-          >
-            {#if adminRetryingAll && retryAllProgress}
-              {$t("settings.admin_failed_emails_retrying")} {retryAllProgress.current} / {retryAllProgress.total}
-            {:else if adminRetryingAll}
-              {$t("settings.admin_failed_emails_retrying")}
-            {:else}
-              {$t("settings.admin_failed_emails_retry_all")}
-            {/if}
-          </button>
-          {#if adminRetryResult}
-            <p style="font-size:0.8rem;margin-top:6px;color:{adminRetryResult.recovered > 0 ? 'var(--success)' : 'var(--text-secondary)'}">
-              {$t("settings.admin_failed_emails_retry_result", { values: { retried: adminRetryResult.retried, recovered: adminRetryResult.recovered } })}
-            </p>
-          {/if}
-        {/if}
       </div>
     {/if}
 

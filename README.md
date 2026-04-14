@@ -18,9 +18,9 @@
 - Generic PDF extraction fallback for attachments
 - Built-in parser rules for 12 airlines (see [Supported airlines](#supported-airlines))
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
-- LLM fallback is used only for incremental sync and failed-email retries, not full rescans
+- LLM fallback is used only for incremental sync, not full rescans
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
-- Failed email queue: stores unparseable emails for later retry; known non-flight sender domains are filtered out automatically
+- Blocked sender domains: admin-configurable list of domains (e.g. Airbnb, Booking.com) that are silently skipped during sync
 - Manual "sync now" trigger and configurable sync interval (admin)
 
 ### Trip & flight management
@@ -78,8 +78,6 @@
 - TOTP-based 2FA — enable/disable from Settings; QR code for any authenticator app
 - Login rate-limiting and TOTP lockout after repeated failures
 - Audit logging of auth events
-
-> **Privacy note:** When an email cannot be parsed, Partiu saves the raw `.eml` file to `data/failed_emails/` on disk for later retry. These files contain the original email content, including any personal information present in the confirmation email (passenger name, booking reference, etc.). Anyone with access to the server's filesystem can read them. Delete the files from Settings → Failed Emails once you no longer need them, or restrict filesystem access to the user running Partiu.
 
 ### Multi-user & admin
 - Multi-user support with per-user Gmail/IMAP credentials
@@ -274,26 +272,28 @@ uv run pytest frontend/tests/ -v
 
 Several developer tools live in `backend/tools/` for working with the parser pipeline and the LLM fallback.
 
-### eval_llm_parser — evaluate the LLM against the failed email queue
+### eval_eml_files — test models against .eml files
 
-Runs the configured Ollama model against every email in the failed queue and reports how many flights were extracted, rejected, or failed validation.
+Runs one or two Ollama models against a list of `.eml` files and prints a side-by-side comparison. Useful for evaluating LLM prompt changes against known flight emails.
 
 ```bash
-# Run against the default DB with default model
-uv run python -m backend.tools.eval_llm_parser
+# Single file
+uv run python -m backend.tools.eval_eml_files ~/Downloads/flight.eml
 
-# Use a specific model, save results as JSON, run 8 workers in parallel
-uv run python -m backend.tools.eval_llm_parser --model qwen2.5:0.5b --output data/eval_0.5b.json --workers 8
+# Glob of files
+uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml
 
-# Use an eval snapshot DB instead of the live DB
-uv run python -m backend.tools.eval_llm_parser --db-path data/eval.db --output data/eval_1.5b.json
+# Compare two models
+uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml \
+    --models qwen2.5:0.5b,qwen2.5:1.5b
+
+# Save full JSON report
+uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml --output data/eml_compare.json
 ```
-
-Options: `--limit N`, `--model NAME`, `--ollama-url URL`, `--output FILE`, `--user-id N`, `--db-path PATH`, `--workers N`
 
 ### compare_eval — compare two eval runs side by side
 
-Compares two JSON result files produced by `eval_llm_parser` and reports which emails one model extracted but the other didn't.
+Compares two JSON result files produced by `eval_eml_files` and reports which emails one model extracted but the other didn't.
 
 ```bash
 uv run python -m backend.tools.compare_eval \
@@ -302,39 +302,11 @@ uv run python -m backend.tools.compare_eval \
     --output data/eval_diff.json
 ```
 
-### eval_eml_files — test models against specific .eml files
-
-Runs two models against a list of `.eml` files and prints a side-by-side comparison. Useful for prompt development with known flight emails.
-
-```bash
-uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml --output data/eml_compare.json
-
-# Compare specific models
-uv run python -m backend.tools.eval_eml_files ~/Downloads/flight.eml \
-    --models qwen2.5:0.5b,qwen2.5:1.5b
-```
-
-### verify_flights_llm — audit imported flights against source emails
-
-Cross-checks flights already imported into the DB against what Ollama reads from the original source email. Flags mismatches where the stored flight number, airports, or dates differ from the LLM's reading.
-
-```bash
-uv run python -m backend.tools.verify_flights_llm
-```
-
-### backfill_eml — backfill .eml files for failed emails
-
-Fetches and saves raw `.eml` files for failed-email queue entries that are missing them (e.g. imported before EML saving was added).
-
-```bash
-uv run python -m backend.tools.backfill_eml
-```
-
 ---
 
 ## LLM fallback — findings & limitations
 
-The LLM fallback was evaluated against a queue of 114 failed emails using two small local models via [Ollama](https://ollama.com):
+The LLM fallback was evaluated against 114 real flight emails using two small local models via [Ollama](https://ollama.com):
 
 | Model | Extracted | Invalid data | Rejected |
 |---|---|---|---|
@@ -348,7 +320,7 @@ The LLM fallback was evaluated against a queue of 114 failed emails using two sm
 - The validation layer (IATA format checks, required fields, airport DB lookup) is the critical safety net — it prevents hallucinated data from being imported regardless of model quality.
 - For structured HTML airline emails (which is most of them), a dedicated rule-based parser will always outperform a small local LLM. The LLM is only useful for plain-text or unusual formats.
 
-**Conclusion:** the LLM fallback is not reliable enough to replace parser rules for known airlines. It may work better with a larger or more capable model (e.g. `llama3`, `mistral`, or a cloud API), but this has not been tested. Contributions to test larger models against `eval_llm_parser` are welcome.
+**Conclusion:** the LLM fallback is not reliable enough to replace parser rules for known airlines. It may work better with a larger or more capable model (e.g. `llama3`, `mistral`, or a cloud API), but this has not been tested.
 
 To improve results, edit the system prompt in `backend/llm_parser.py` (`_PROMPT_SYSTEM`) and re-run `eval_eml_files` against known flight emails to measure the impact.
 

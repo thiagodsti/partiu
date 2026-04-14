@@ -1,7 +1,6 @@
 """Shared pytest fixtures for backend tests."""
 
 import email as stdlib_email
-import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -26,19 +25,6 @@ _noop_limiter.limit = lambda *a, **kw: lambda f: f
 _limiter_mod.limiter = _noop_limiter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-
-CACHE_PATH = ROOT / "data" / "email_cache.json"
-FIXTURE_CACHE_PATH = FIXTURES_DIR / "email_cache.json"
-
-
-@pytest.fixture(scope="session")
-def email_cache():
-    """Load the email cache for parsing tests."""
-    path = CACHE_PATH if CACHE_PATH.exists() else FIXTURE_CACHE_PATH
-    if not path.exists():
-        return []
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
 
 
 @pytest.fixture
@@ -87,7 +73,6 @@ def api_app(test_db):
     from backend.routes import auth as auth_routes
     from backend.routes import boarding_passes as bp_routes
     from backend.routes import day_notes as day_notes_routes
-    from backend.routes import failed_emails as failed_emails_routes
     from backend.routes import flights as flights_routes
     from backend.routes import notifications as notifications_routes
     from backend.routes import settings as settings_routes
@@ -110,7 +95,6 @@ def api_app(test_db):
     app.include_router(airports_routes.router)
     app.include_router(notifications_routes.router)
     app.include_router(bp_routes.router)
-    app.include_router(failed_emails_routes.router)
     app.include_router(trip_documents_routes.router)
     app.include_router(day_notes_routes.router)
     return app

@@ -272,6 +272,34 @@ def get_airport_count(user: dict = Depends(get_current_user)):
     return {"count": count}
 
 
+@router.get("/admin/non-flight-domains")
+def list_blocked_domains(user: dict = Depends(require_admin)):
+    from ..non_flight_domains import list_non_flight_domains
+
+    return list_non_flight_domains()
+
+
+class _DomainBody(BaseModel):
+    domain: str
+    note: str = ""
+
+
+@router.post("/admin/non-flight-domains")
+def add_blocked_domain(body: _DomainBody, user: dict = Depends(require_admin)):
+    from ..non_flight_domains import add_non_flight_domain
+
+    add_non_flight_domain(body.domain, body.note)
+    return {"ok": True, "domain": body.domain.strip().lower()}
+
+
+@router.delete("/admin/non-flight-domains/{domain:path}")
+def delete_blocked_domain(domain: str, user: dict = Depends(require_admin)):
+    from ..non_flight_domains import remove_non_flight_domain
+
+    remove_non_flight_domain(domain)
+    return {"ok": True}
+
+
 @router.post("/airports/reload")
 def reload_airports(user: dict = Depends(require_admin)):
     """Re-load airports from data/airports.csv. Admin only."""

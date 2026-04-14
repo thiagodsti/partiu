@@ -139,7 +139,6 @@ export interface NotifPreferences {
   delay_alert: boolean;
   boarding_pass: boolean;
   new_flight: boolean;
-  failed_parse: boolean;
 }
 
 export interface InAppNotification {
@@ -209,24 +208,6 @@ export interface AirportCountResponse {
   count: number;
 }
 
-export interface FailedEmail {
-  id: string;
-  sender: string;
-  subject: string;
-  received_at: string | null;
-  reason: string;
-  airline_hint: string;
-  last_retried_at: string | null;
-  parser_version: string;
-  created_at: string;
-  llm_verdict: string | null;
-}
-
-export interface AdminFailedEmailGroup {
-  sender_domain: string;
-  count: number;
-  latest: string;
-}
 
 export interface TripDayNote {
   date: string;

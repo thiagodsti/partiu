@@ -139,7 +139,7 @@ async def get_current_user(request: Request) -> dict:
 
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT id, username, is_admin, smtp_recipient_address, smtp_allowed_senders, gmail_address, gmail_app_password, imap_host, imap_port, totp_enabled, sync_interval_minutes, immich_url, immich_api_key, notif_flight_reminder, notif_checkin_reminder, notif_trip_reminder, notif_delay_alert, notif_boarding_pass, notif_new_flight, notif_failed_parse FROM users WHERE id = ?",
+            "SELECT id, username, is_admin, smtp_recipient_address, smtp_allowed_senders, gmail_address, gmail_app_password, imap_host, imap_port, totp_enabled, sync_interval_minutes, immich_url, immich_api_key, notif_flight_reminder, notif_checkin_reminder, notif_trip_reminder, notif_delay_alert, notif_boarding_pass, notif_new_flight FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
     if row is None:

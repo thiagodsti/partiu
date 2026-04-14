@@ -118,7 +118,6 @@ async def get_preferences(user: dict = Depends(get_current_user)):
         "delay_alert": bool(user.get("notif_delay_alert", 1)),
         "boarding_pass": bool(user.get("notif_boarding_pass", 1)),
         "new_flight": bool(user.get("notif_new_flight", 1)),
-        "failed_parse": bool(user.get("notif_failed_parse", 1)),
     }
 
 
@@ -135,7 +134,6 @@ async def update_preferences(
         "delay_alert",
         "boarding_pass",
         "new_flight",
-        "failed_parse",
     }
     updates = {k: int(bool(v)) for k, v in body.items() if k in allowed}
     if not updates:
@@ -151,7 +149,6 @@ async def update_preferences(
         "delay_alert": "notif_delay_alert",
         "boarding_pass": "notif_boarding_pass",
         "new_flight": "notif_new_flight",
-        "failed_parse": "notif_failed_parse",
     }
     with db_write() as conn:
         for key, val in updates.items():

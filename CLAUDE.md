@@ -126,12 +126,10 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 - IMAP sync (Gmail App Password or custom IMAP host/port) per user
 - Built-in airline rules — 12 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY); `PARSER_VERSION = '24'`
 - PDF extraction fallback
-- **Ollama LLM fallback** (optional): set `OLLAMA_URL` + `OLLAMA_MODEL` in `.env`; used as last resort for incremental sync and failed-email retries; `run.sh` auto-starts Ollama if binary present; optional `ollama` service in `docker-compose.yml`
-- CLI eval tool: `uv run python -m backend.tools.eval_llm_parser` — tests LLM against failed email queue
-- CLI audit tool: `uv run python -m backend.tools.verify_flights_llm` — cross-checks imported flights vs Ollama's reading of source emails
-- Failed email queue — store, retry (per-email or all), delete by sender domain
+- **Ollama LLM fallback** (optional): set `OLLAMA_URL` + `OLLAMA_MODEL` in `.env`; used as last resort for incremental sync; `run.sh` auto-starts Ollama if binary present; optional `ollama` service in `docker-compose.yml`
+- CLI eval tool: `uv run python -m backend.tools.eval_eml_files` — tests LLM against `.eml` files (pass file or glob)
+- Blocked sender domains: admin-managed list of domains silently skipped during sync (e.g. Airbnb, Booking.com)
 - Manual sync trigger and configurable sync interval + email limit (admin)
-- Reset & re-sync: delete auto-synced flights and re-fetch from email
 - Inbound SMTP server (aiosmtpd, default port 2525) for email forwarding
 
 ### Flight enrichment

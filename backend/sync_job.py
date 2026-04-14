@@ -9,14 +9,9 @@ from datetime import UTC, datetime, timedelta
 
 from .boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
 from .database import db_conn, db_write, get_global_setting
-from .email_cache import save_emails
-from .failed_email_queue import (
-    email_has_flight_keywords,
-    is_non_flight_domain,
-    save_failed_email,
-)
 from .flight_store import find_existing_flight, insert_flight, update_flight
 from .grouping import auto_group_flights
+from .non_flight_domains import is_non_flight_domain
 from .parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from .parsers.builtin_rules import get_builtin_rules
 from .parsers.email_connector import ImapFetchResult, fetch_emails_imap
@@ -319,7 +314,6 @@ def _process_emails(
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
-    failed_emails_added = 0
     new_flight_ids: list[str] = []
     errors = []
 
@@ -327,6 +321,9 @@ def _process_emails(
     sorted_rules = sorted(rules, key=lambda r: (-r.priority, r.airline_name))
 
     for email_msg in emails:
+        if is_non_flight_domain(email_msg.sender or ""):
+            logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
+            continue
         try:
             # --- BCBP boarding pass scan (always attempted first) ---
             bcbp_legs, bcbp_updated = _process_bcbp_email(email_msg, user_id)
@@ -359,21 +356,6 @@ def _process_emails(
                     )
 
             if not flights_data:
-                # If the email had flight-like keywords but we couldn't parse it,
-                # save it to the failed queue for later reprocessing
-                if (
-                    email_has_flight_keywords(email_msg)
-                    and not bcbp_legs
-                    and not is_non_flight_domain(email_msg.sender or "")
-                ):
-                    if rule:
-                        reason = "rule matched but extraction empty"
-                    elif email_msg.pdf_attachments or email_msg.html_body:
-                        reason = "generic extractor failed"
-                    else:
-                        reason = "no rule matched"
-                    save_failed_email(user_id, email_msg, reason)
-                    failed_emails_added += 1
                 continue
 
             flights_data = [apply_airport_timezones(f) for f in flights_data]
@@ -437,7 +419,7 @@ def _process_emails(
             # Report progress every 10 emails to avoid excessive DB writes.
             # Skip total_seen == 0 to avoid resetting the counter to 0 at the
             # start of processing (which would look like a restart to the user).
-            total_seen = emails_processed + failed_emails_added + len(errors)
+            total_seen = emails_processed + len(errors)
             if progress_callback and total_seen > 0 and total_seen % 10 == 0:
                 try:
                     progress_callback(total_seen)  # type: ignore[operator]
@@ -454,7 +436,6 @@ def _process_emails(
         "emails_processed": emails_processed,
         "flights_created": flights_created,
         "flights_updated": flights_updated,
-        "failed_emails_added": failed_emails_added,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,
@@ -466,12 +447,12 @@ def _process_emails(
 # ---------------------------------------------------------------------------
 
 
-def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_added: int) -> None:
+def _send_sync_notifications(user_id: int, flights_created: int) -> None:
     """Create in-app notifications and optionally send push after a sync."""
     try:
         with db_conn() as conn:
             user = conn.execute(
-                "SELECT notif_new_flight, notif_failed_parse FROM users WHERE id = ?", (user_id,)
+                "SELECT notif_new_flight FROM users WHERE id = ?", (user_id,)
             ).fetchone()
         if not user:
             return
@@ -485,15 +466,6 @@ def _send_sync_notifications(user_id: int, flights_created: int, failed_emails_a
             body = f"{n} new flight{'s' if n > 1 else ''} added from your emails."
             create_notification(user_id, "new_flight", title, body, "/#/trips")
             send_push(user_id, {"title": title, "body": body, "url": "/#/trips"})
-
-        if failed_emails_added > 0 and user["notif_failed_parse"]:
-            n = failed_emails_added
-            title = "Emails need review"
-            body = (
-                f"{n} email{'s' if n > 1 else ''} couldn't be parsed and may contain flight info."
-            )
-            create_notification(user_id, "failed_parse", title, body, "/#/settings")
-            send_push(user_id, {"title": title, "body": body, "url": "/#/settings"})
     except Exception as e:
         logger.warning("User %d: Failed to send sync notifications: %s", user_id, e)
 
@@ -564,9 +536,6 @@ def run_email_sync_for_user(user: dict) -> dict:
 
         emails = imap_result.emails
         logger.info("User %d: Fetched %d matching emails", user_id, len(emails))
-        if emails:
-            save_emails(emails)
-
         # Reset processing counter so the UI shows a clean 0→N progress for
         # the parse phase (separate from the IMAP fetch counter above).
         _upsert_sync_state(user_id, emails_processed=0, emails_total=len(emails))
@@ -586,7 +555,7 @@ def run_email_sync_for_user(user: dict) -> dict:
             except Exception as e:
                 logger.warning("User %d: Aircraft sync for new flights failed: %s", user_id, e)
 
-        _send_sync_notifications(user_id, result["flights_created"], result["failed_emails_added"])
+        _send_sync_notifications(user_id, result["flights_created"])
 
         _set_sync_complete(user_id, now_iso())
 
