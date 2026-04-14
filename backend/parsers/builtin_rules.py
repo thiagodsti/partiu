@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-# Also triggers auto-retry of all failed_emails for the user.
 PARSER_VERSION = "24"  # feat: TAP booking confirmation HTML + e-ticket receipt formats
 
 # ---------------------------------------------------------------------------
