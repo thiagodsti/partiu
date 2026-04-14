@@ -534,12 +534,15 @@ def init_database():
 
 
 def _migrate_legacy_encryption() -> None:
-    """Re-encrypt any credentials still using the old SHA-256 key."""
+    """Re-encrypt any credentials still using the old SHA-256 key (runs once)."""
+    if get_global_setting("crypto_pbkdf2_migrated") == "1":
+        return
     from .crypto import migrate_legacy_encryption
 
     count = migrate_legacy_encryption()
     if count:
         logger.info("Re-encrypted %d credential(s) to PBKDF2 key", count)
+    set_global_setting("crypto_pbkdf2_migrated", "1")
 
 
 def _normalize_aircraft_types():
