@@ -229,9 +229,6 @@ export const syncApi = {
   now: () => post<null>('/api/sync/now'),
   regroup: () => post<null>('/api/sync/regroup'),
   fullSync: () => post<null>('/api/sync/full-sync'),
-  resetAndSync: () => post<null>('/api/sync/reset-and-sync'),
-  cacheInfo: () => get<{ exists: boolean; count: number; oldest: string | null; newest: string | null }>('/api/sync/cache-info'),
-  fromCache: () => post<null>('/api/sync/from-cache'),
 };
 
 // ---- Airports ----

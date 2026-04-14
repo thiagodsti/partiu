@@ -652,31 +652,6 @@ def run_email_sync() -> dict:
     return {"status": "success", "users": results}
 
 
-def reset_auto_flights(user_id: int | None = None) -> dict:
-    """Delete all auto-synced flights and auto-generated trips for a user.
-    Also clears last_synced_at so the next sync uses the full first_sync_days window.
-    """
-    with db_write() as conn:
-        if user_id is not None:
-            deleted_flights = conn.execute(
-                "DELETE FROM flights WHERE is_manually_added = 0 AND user_id = ?", (user_id,)
-            ).rowcount
-            deleted_trips = conn.execute(
-                "DELETE FROM trips WHERE is_auto_generated = 1 AND user_id = ?", (user_id,)
-            ).rowcount
-            conn.execute(
-                "UPDATE email_sync_state SET last_synced_at = NULL WHERE user_id = ?", (user_id,)
-            )
-        else:
-            deleted_flights = conn.execute(
-                "DELETE FROM flights WHERE is_manually_added = 0"
-            ).rowcount
-            deleted_trips = conn.execute("DELETE FROM trips WHERE is_auto_generated = 1").rowcount
-            conn.execute("UPDATE email_sync_state SET last_synced_at = NULL")
-    logger.info("Reset: deleted %d flights and %d trips", deleted_flights, deleted_trips)
-    return {"deleted_flights": deleted_flights, "deleted_trips": deleted_trips}
-
-
 def process_inbound_email(email_msg, user_id: int | None = None) -> dict:
     """
     Process a single inbound email (e.g. from the SMTP server).

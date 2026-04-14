@@ -41,6 +41,7 @@ class TestDtToIso:
         result = dt_to_iso(dt)
         assert "2025-06-01" in result
 
+
 class TestSyncState:
     def test_get_sync_state_empty(self, test_db):
         from backend.sync_job import _get_sync_state
@@ -297,67 +298,3 @@ class TestProcessBcbpEmail:
         legs, updated = _process_bcbp_email(email_msg, 1)
         assert legs == 0
         assert updated == 0
-
-
-class TestResetAutoFlights:
-    def test_reset_removes_auto_flights(self, test_db):
-        import uuid
-
-        from backend.database import db_conn, db_write
-        from backend.sync_job import reset_auto_flights
-
-        now = datetime.now(UTC).isoformat()
-        with db_write() as conn:
-            cur = conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES ('u', 'h', 1)"
-            )
-            user_id = cur.lastrowid
-            # Insert an auto-generated trip
-            tid = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO trips (id, name, is_auto_generated, user_id, created_at, updated_at) "
-                "VALUES (?, 'Auto Trip', 1, ?, ?, ?)",
-                (tid, user_id, now, now),
-            )
-            # Insert an auto-generated flight
-            fid = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO flights (id, flight_number, departure_airport, departure_datetime, "
-                "arrival_airport, arrival_datetime, is_manually_added, user_id, created_at, updated_at) "
-                "VALUES (?, 'LA1', 'GRU', '2025-06-01T10:00:00', 'LHR', '2025-06-01T22:00:00', 0, ?, ?, ?)",
-                (fid, user_id, now, now),
-            )
-
-        result = reset_auto_flights(user_id)
-        assert "deleted_flights" in result
-        assert result["deleted_flights"] >= 1
-
-        with db_conn() as conn:
-            count = conn.execute("SELECT COUNT(*) FROM flights WHERE id = ?", (fid,)).fetchone()[0]
-        assert count == 0
-
-    def test_reset_preserves_manual_flights(self, test_db):
-        import uuid
-
-        from backend.database import db_conn, db_write
-        from backend.sync_job import reset_auto_flights
-
-        now = datetime.now(UTC).isoformat()
-        with db_write() as conn:
-            cur = conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES ('u2', 'h', 1)"
-            )
-            user_id = cur.lastrowid
-            fid = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO flights (id, flight_number, departure_airport, departure_datetime, "
-                "arrival_airport, arrival_datetime, is_manually_added, user_id, created_at, updated_at) "
-                "VALUES (?, 'LA2', 'GRU', '2025-06-01T10:00:00', 'LHR', '2025-06-01T22:00:00', 1, ?, ?, ?)",
-                (fid, user_id, now, now),
-            )
-
-        reset_auto_flights(user_id)
-
-        with db_conn() as conn:
-            count = conn.execute("SELECT COUNT(*) FROM flights WHERE id = ?", (fid,)).fetchone()[0]
-        assert count == 1  # manual flight still exists

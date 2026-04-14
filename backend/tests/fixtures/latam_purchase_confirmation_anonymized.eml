@@ -701,7 +701,7 @@ div.preheader
                             <td style="margin: 0;padding: 0;">
                               <ul style="margin:0;padding-left:14px;color:#303030;font-family: Trebuchet MS;font-size: 16px;font-style: normal;font-weight: 400;line-height: 140%;">
                                 
-                                <li>Bob Diniz Da Silveira</li>
+                                <li>John Test</li>
                               
                               </ul>
                             </td>
@@ -721,13 +721,13 @@ div.preheader
                           <tr>
                             <td style="margin: 0;padding: 0;">
                               <p class="notranslate" translate="no" style="margin: 0;color:#5C5C5C;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 700;line-height: 140%;">
-                              Bob Diniz Da Silveira
+                              John Test
                               </p>
-                              <p class="notranslate" translate="no" data-address="T****@G****.COM" style="margin: 0;color:#858585;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 400;line-height: 140%;">
-                              T****@G****.COM
+                              <p class="notranslate" translate="no" data-address="T****@E****.COM" style="margin: 0;color:#858585;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 400;line-height: 140%;">
+                              T****@E****.COM
                               </p>
                               <p style="margin: 0;color:#858585;font-family: Trebuchet MS;font-size: 16px;font-style: italic;font-weight: 400;line-height: 140%;">
-                              +46 73*****19
+                              +00 00*****00
                               </p>
                               
                             </td>

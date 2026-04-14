@@ -69,18 +69,6 @@ class TestRegroup:
         assert r.status_code == 401
 
 
-class TestResetAndSync:
-    def test_reset_and_sync_starts(self, auth_client):
-        with patch(
-            "backend.sync_job.reset_auto_flights",
-            return_value={"flights_deleted": 0, "trips_deleted": 0},
-        ):
-            with patch("backend.sync_job.run_email_sync_for_user"):
-                r = auth_client.post("/api/sync/reset-and-sync")
-        assert r.status_code == 200
-        assert r.json()["status"] == "started"
-
-
 # ---------------------------------------------------------------------------
 # Settings routes
 # ---------------------------------------------------------------------------

@@ -54,6 +54,17 @@ _PASSENGER_LABEL_RE = re.compile(
     r"(?i)(passenger|passageiro|pasajero|nome|name|viaggiatore)[:\s]+([A-ZÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ][a-záàâãäéèêëíìîïóòôõöúùûüçñ]+(?:\s+[A-ZÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ][a-záàâãäéèêëíìîïóòôõöúùûüçñ]+)+)"
 )
 
+# ALL-CAPS names like "JOHN MICHAEL SMITH" (2+ words, 2+ chars each, letters only incl. accented)
+# Common in airline boarding pass sections and e-ticket PDFs
+_ALLCAPS_NAME_RE = re.compile(
+    r"\b([A-ZÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ]{2,}(?:[ \t]+[A-ZÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ]{2,}){1,5})\b"
+)
+
+# Partially-masked emails like "T****@G****.COM" or "jo**@gm***.com"
+_MASKED_EMAIL_RE = re.compile(
+    r"\b[A-Za-z0-9][*A-Za-z0-9]*\*+[*A-Za-z0-9]*@[A-Za-z0-9][*A-Za-z0-9]*\*+[*A-Za-z0-9]*\.[A-Za-z]{2,}\b"
+)
+
 
 def _extract_probable_names(text: str) -> list[str]:
     """Return a list of candidate real names found in the text."""
@@ -62,6 +73,46 @@ def _extract_probable_names(text: str) -> list[str]:
         names.append(m.group(2).strip())
     for m in _PASSENGER_LABEL_RE.finditer(text):
         names.append(m.group(2).strip())
+    for m in _ALLCAPS_NAME_RE.finditer(text):
+        candidate = m.group(1).strip()
+        # Skip obvious non-names: all-caps HTML tags, common airline/airport keywords
+        _SKIP_WORDS = {
+            "FROM",
+            "TO",
+            "DATE",
+            "TIME",
+            "FLIGHT",
+            "CLASS",
+            "SEAT",
+            "GATE",
+            "BOARDING",
+            "ARRIVAL",
+            "DEPARTURE",
+            "TERMINAL",
+            "STATUS",
+            "CABIN",
+            "ECONOMY",
+            "BUSINESS",
+            "FIRST",
+            "CHECK",
+            "IN",
+            "OUT",
+            "AM",
+            "PM",
+            "OK",
+            "PDF",
+            "HTML",
+            "UTF",
+            "MIME",
+            "IATA",
+            "PNR",
+            "HTTP",
+            "HTTPS",
+        }
+        words = candidate.split()
+        if any(w in _SKIP_WORDS for w in words):
+            continue
+        names.append(candidate)
     # deduplicate, longest first (so "John Michael Smith" is replaced before "John Smith")
     seen = set()
     result = []
@@ -92,6 +143,9 @@ def _anonymize_text(text: str, real_names: list[str], fake_name: str, fake_email
     # Replace phone numbers
     text = _PHONE_RE.sub(FAKE_PHONE, text)
 
+    # Replace partially-masked emails like "T****@G****.COM"
+    text = _MASKED_EMAIL_RE.sub(fake_email, text)
+
     return text
 
 
@@ -105,7 +159,7 @@ def anonymize(src: Path, fake_name: str, fake_email: str) -> bytes:
         ct = part.get_content_type()
         if ct in ("text/plain", "text/html"):
             payload = part.get_payload(decode=True)
-            if payload:
+            if payload and isinstance(payload, bytes):
                 all_text += payload.decode("utf-8", errors="replace") + "\n"
 
     real_names = _extract_probable_names(all_text)
@@ -142,7 +196,7 @@ def anonymize(src: Path, fake_name: str, fake_email: str) -> bytes:
         if ct not in ("text/plain", "text/html"):
             continue
         raw_payload = part.get_payload(decode=True)
-        if not raw_payload:
+        if not raw_payload or not isinstance(raw_payload, bytes):
             continue
         text = raw_payload.decode("utf-8", errors="replace")
         text = _anonymize_text(text, real_names, fake_name, fake_email)

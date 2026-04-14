@@ -94,11 +94,6 @@
 
   let regrouping = $state(false);
   let fullSyncing = $state(false);
-  let fromCacheSyncing = $state(false);
-  let cacheInfo = $state<{ exists: boolean; count: number; oldest: string | null; newest: string | null } | null>(null);
-  let resetting = $state(false);
-  let resetConfirmStep = $state(false);
-  let resetConfirmText = $state("");
   let reloadingAirports = $state(false);
 
   let syncPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -108,16 +103,14 @@
     loading = true;
     error = null;
     try {
-      const [s, status, airportData, cache] = await Promise.all([
+      const [s, status, airportData] = await Promise.all([
         settingsApi.get(),
         syncApi.status().catch(() => null),
         settingsApi.airportCount().catch(() => null),
-        syncApi.cacheInfo().catch(() => null),
       ]);
       currentSettings = s;
       syncStatus = status;
       airportCount = airportData?.count ?? 0;
-      cacheInfo = cache;
       if (status?.status === 'running') startSyncPoll();
       // Populate form
       gmailAddress = s.gmail_address ?? "";
@@ -168,40 +161,6 @@
     } finally {
       fullSyncing = false;
     }
-  }
-
-  async function fromCacheSync() {
-    fromCacheSyncing = true;
-    try {
-      await syncApi.fromCache();
-      if (syncStatus) syncStatus = { ...syncStatus, status: 'running' };
-      startSyncPoll();
-    } catch (err) {
-      showMsg(`Error: ${(err as Error).message}`, "error");
-    } finally {
-      fromCacheSyncing = false;
-    }
-  }
-
-  async function resetAndSync() {
-    if (resetConfirmText !== "RESET") return;
-    resetConfirmStep = false;
-    resetConfirmText = "";
-    resetting = true;
-    try {
-      await syncApi.resetAndSync();
-      showMsg("Reset done! Re-syncing from email...", "success");
-      startSyncPoll();
-    } catch (err) {
-      showMsg(`Reset failed: ${(err as Error).message}`, "error");
-    } finally {
-      resetting = false;
-    }
-  }
-
-  function cancelReset() {
-    resetConfirmStep = false;
-    resetConfirmText = "";
   }
 
   function startSyncPoll() {
@@ -792,72 +751,6 @@
         {fullSyncing ? $t("settings.full_syncing") : $t("settings.full_sync")}
       </button>
 
-      {#if cacheInfo?.exists}
-        <button
-          class="btn btn-secondary btn-full"
-          style="margin-top:var(--space-sm)"
-          onclick={fromCacheSync}
-          disabled={fromCacheSyncing}
-          title={cacheInfo.oldest ? `Oldest cached email: ${new Date(cacheInfo.oldest).toLocaleDateString()}` : ''}
-        >
-          {fromCacheSyncing
-            ? $t("settings.from_cache_syncing")
-            : `${$t("settings.from_cache_sync")} (${cacheInfo.count} emails${cacheInfo.oldest ? `, oldest: ${new Date(cacheInfo.oldest).toLocaleDateString()}` : ''})`}
-        </button>
-      {/if}
-
-      {#if !resetConfirmStep}
-        <button
-          class="btn btn-secondary btn-full"
-          disabled={resetting}
-          style="margin-top:var(--space-sm);border-color:var(--danger);color:var(--danger)"
-          onclick={() => (resetConfirmStep = true)}
-        >
-          {resetting ? $t("settings.resetting") : $t("settings.reset")}
-        </button>
-      {:else}
-        <div
-          style="margin-top:var(--space-sm);padding:var(--space-md);border:1px solid var(--danger);border-radius:var(--radius-sm);background:color-mix(in srgb, var(--danger) 8%, transparent)"
-        >
-          <p
-            style="margin:0 0 var(--space-sm);font-size:0.875rem;color:var(--danger);font-weight:600"
-          >
-            {$t("settings.reset_warning")}
-          </p>
-          <p
-            style="margin:0 0 var(--space-sm);font-size:0.875rem;color:var(--text-secondary)"
-          >
-            {$t("settings.reset_type")}
-          </p>
-          <input
-            class="form-input"
-            type="text"
-            bind:value={resetConfirmText}
-            placeholder={$t("settings.reset_placeholder")}
-            style="margin-bottom:var(--space-sm);font-family:monospace"
-            onkeydown={(e) => {
-              if (e.key === "Enter" && resetConfirmText === "RESET")
-                resetAndSync();
-              if (e.key === "Escape") cancelReset();
-            }}
-          />
-          <div style="display:flex;gap:var(--space-sm)">
-            <button
-              class="btn btn-full"
-              disabled={resetConfirmText !== "RESET" || resetting}
-              style="background:var(--danger);color:#fff;border-color:var(--danger)"
-              onclick={resetAndSync}
-            >
-              {resetting
-                ? $t("settings.resetting")
-                : $t("settings.reset_confirm")}
-            </button>
-            <button class="btn btn-secondary" onclick={cancelReset}
-              >{$t("settings.cancel")}</button
-            >
-          </div>
-        </div>
-      {/if}
     </div>
 
     <!-- Email Account Section -->
@@ -1730,7 +1623,7 @@
             type="password"
             bind:value={currentPw}
             placeholder={$t("settings.current_pw_placeholder")}
-            autocomplete="current-password"
+            autocomplete="off"
           />
         </div>
         <div class="form-group">
