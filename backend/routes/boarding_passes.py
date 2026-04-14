@@ -32,6 +32,15 @@ def _get_storage_dir() -> Path:
     return bp_dir
 
 
+def _safe_file_path(file_path: str) -> Path:
+    """Resolve path and verify it stays within the storage directory."""
+    storage_dir = _get_storage_dir().resolve()
+    resolved = Path(file_path).resolve()
+    if not str(resolved).startswith(str(storage_dir) + "/"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return resolved
+
+
 def _flight_belongs_to_user(flight_id: str, user_id: int) -> bool:
     """Read access: owner or accepted collaborator."""
     with db_conn() as conn:
@@ -189,13 +198,16 @@ def get_boarding_pass_image(bp_id: str, user: dict = Depends(get_current_user)):
     if not bp:
         raise HTTPException(status_code=404, detail="Boarding pass not found")
 
-    image_path = bp.get("image_path")
-    if not image_path or not Path(image_path).exists():
+    raw_path = bp.get("image_path")
+    if not raw_path:
+        raise HTTPException(status_code=404, detail="Image file not found")
+    image_path = _safe_file_path(raw_path)
+    if not image_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 
-    suffix = Path(image_path).suffix.lower()
+    suffix = image_path.suffix.lower()
     media_type = "image/jpeg" if suffix in (".jpg", ".jpeg") else "image/png"
-    return FileResponse(image_path, media_type=media_type)
+    return FileResponse(str(image_path), media_type=media_type)
 
 
 # ---------------------------------------------------------------------------
@@ -209,16 +221,16 @@ def delete_boarding_pass(bp_id: str, user: dict = Depends(get_current_user)):
     if not bp:
         raise HTTPException(status_code=404, detail="Boarding pass not found")
 
-    image_path = bp.get("image_path")
+    raw_path = bp.get("image_path")
 
     with db_write() as conn:
         conn.execute("DELETE FROM boarding_passes WHERE id = ?", (bp_id,))
 
     # Remove image file
-    if image_path:
+    if raw_path:
         try:
-            Path(image_path).unlink(missing_ok=True)
-        except OSError:
+            _safe_file_path(raw_path).unlink(missing_ok=True)
+        except (OSError, HTTPException):
             pass
 
 

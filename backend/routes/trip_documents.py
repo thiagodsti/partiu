@@ -45,6 +45,15 @@ def _get_storage_dir() -> Path:
     return doc_dir
 
 
+def _safe_file_path(file_path: str) -> Path:
+    """Resolve path and verify it stays within the storage directory."""
+    storage_dir = _get_storage_dir().resolve()
+    resolved = Path(file_path).resolve()
+    if not str(resolved).startswith(str(storage_dir) + "/"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return resolved
+
+
 def _trip_belongs_to_user(trip_id: str, user_id: int) -> bool:
     """Read access: owner or accepted collaborator."""
     with db_conn() as conn:
@@ -204,20 +213,20 @@ def view_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    file_path = doc["file_path"]
-    if not Path(file_path).exists():
+    file_path = _safe_file_path(doc["file_path"])
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     if doc["mime_type"] == "application/pdf":
-        image_bytes = _render_pdf_page(file_path, page)
+        image_bytes = _render_pdf_page(str(file_path), page)
         return Response(content=image_bytes, media_type="image/png")
 
     # For images, serve the file directly with the correct content type
-    suffix = Path(file_path).suffix.lower()
+    suffix = file_path.suffix.lower()
     media_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(
         suffix, "image/png"
     )
-    return Response(content=Path(file_path).read_bytes(), media_type=media_type)
+    return Response(content=file_path.read_bytes(), media_type=media_type)
 
 
 # ---------------------------------------------------------------------------
@@ -231,13 +240,13 @@ def delete_document(doc_id: str, user: dict = Depends(get_current_user)):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    file_path = doc.get("file_path")
+    raw_path = doc.get("file_path")
 
     with db_write() as conn:
         conn.execute("DELETE FROM trip_documents WHERE id = ?", (doc_id,))
 
-    if file_path:
+    if raw_path:
         try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError:
+            _safe_file_path(raw_path).unlink(missing_ok=True)
+        except (OSError, HTTPException):
             pass

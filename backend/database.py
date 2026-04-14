@@ -527,9 +527,19 @@ def init_database():
     logger.info("Initializing database at %s", get_db_path())
     _run_alembic_migrations()
     _encrypt_existing_credentials()
+    _migrate_legacy_encryption()
     _normalize_aircraft_types()
     load_aircraft_types_if_empty()
     logger.info("Database ready")
+
+
+def _migrate_legacy_encryption() -> None:
+    """Re-encrypt any credentials still using the old SHA-256 key."""
+    from .crypto import migrate_legacy_encryption
+
+    count = migrate_legacy_encryption()
+    if count:
+        logger.info("Re-encrypted %d credential(s) to PBKDF2 key", count)
 
 
 def _normalize_aircraft_types():
