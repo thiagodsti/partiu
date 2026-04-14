@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/github/thiagodsti/partiu/branch/main/graph/badge.svg?token=7UC9WJZP8J)](https://codecov.io/github/thiagodsti/partiu)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Partiu** is a self-hosted personal flight tracker PWA. It automatically reads your airline confirmation emails, parses the flight details, and organises everything into trips — no third-party account needed, no data leaving your server.
+**Partiu** is a self-hosted alternative to TripIt — a personal flight tracker PWA that automatically reads your airline confirmation emails, parses the flight details, and organises everything into trips. No third-party account needed, no data leaving your server.
 
 ---
 
