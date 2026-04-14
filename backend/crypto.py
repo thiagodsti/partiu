@@ -23,11 +23,9 @@ _KDF_SALT = b"partiu-at-rest-v1"
 _KDF_ITERATIONS = 480_000
 
 _fernet: Fernet | None = None
-_fernet_legacy: Fernet | None = None
 
 
 def _get_fernet() -> Fernet:
-    """Current key: PBKDF2-HMAC-SHA256 with 480k iterations."""
     global _fernet
     if _fernet is None:
         from .config import settings
@@ -44,14 +42,11 @@ def _get_fernet() -> Fernet:
 
 
 def _get_fernet_legacy() -> Fernet:
-    """Legacy key: raw SHA-256(SECRET_KEY) used before PBKDF2 was introduced."""
-    global _fernet_legacy
-    if _fernet_legacy is None:
-        from .config import settings
+    """Legacy key: raw SHA-256(SECRET_KEY) — used only by the startup migration."""
+    from .config import settings
 
-        key_bytes = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
-        _fernet_legacy = Fernet(base64.urlsafe_b64encode(key_bytes))
-    return _fernet_legacy
+    key_bytes = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
 
 
 def encrypt(value: str) -> str:
@@ -65,24 +60,14 @@ def decrypt(value: str) -> str:
     """
     Decrypt a Fernet-encrypted string.
 
-    Tries the current PBKDF2 key first. If that fails, falls back to the
-    legacy SHA-256 key (values encrypted before the PBKDF2 upgrade) and
-    re-encrypts transparently so the value migrates on next read.
-
-    If neither key works (value is legacy plaintext from before encryption
-    was introduced), return the value unchanged.
+    If the value is not a valid token (legacy plaintext from before
+    encryption was introduced), return it unchanged so old data still
+    works transparently until it is re-saved.
     """
     if not value:
         return value
     try:
         return _get_fernet().decrypt(value.encode()).decode()
-    except InvalidToken:
-        pass
-    # Try legacy key — migrates old installs transparently
-    try:
-        plaintext = _get_fernet_legacy().decrypt(value.encode()).decode()
-        # Re-encrypt with the new key so next read uses PBKDF2
-        return plaintext
     except (InvalidToken, Exception):
         return value  # unencrypted legacy plaintext — return as-is
 
