@@ -8,6 +8,8 @@
   import { toasts } from '../lib/toastStore';
   import { t } from '../lib/i18n';
 
+  import { onMount } from 'svelte';
+
   let users = $state<UserListItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -23,6 +25,12 @@
   let resetUserId = $state<string | null>(null);
   let resetPassword = $state('');
   let resetting = $state(false);
+
+  onMount(() => {
+    if (!$currentUser?.is_admin) {
+      window.location.hash = '/trips';
+    }
+  });
 
   async function load() {
     loading = true;
