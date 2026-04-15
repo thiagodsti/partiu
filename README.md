@@ -10,6 +10,21 @@
 
 ![demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
 
+## Live demo
+
+Want to try it before self-hosting? A public demo is available at:
+
+**[https://partiu-demo.teda.work](https://partiu-demo.teda.work)**
+
+| Field | Value |
+|---|---|
+| Username | `demo` |
+| Password | `demo1234` |
+
+> **Note:** The demo is reset every 6 hours with fresh sample data. Any changes you make will be wiped on the next reset.
+
+---
+
 ## Features
 
 ### Email sync & flight parsing
