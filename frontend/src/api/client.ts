@@ -27,6 +27,7 @@ import type {
   TrustedUser,
   TripDayNote,
   InAppNotification,
+  VersionInfo,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -316,6 +317,10 @@ export const nonFlightDomainsApi = {
   list: () => get<NonFlightDomain[]>('/api/settings/admin/non-flight-domains'),
   add: (domain: string, note: string = '') => _request<{ domain: string }>('POST', '/api/settings/admin/non-flight-domains', { domain, note }),
   delete: (domain: string) => del<null>(`/api/settings/admin/non-flight-domains/${encodeURIComponent(domain)}`),
+};
+
+export const versionApi = {
+  get: () => get<VersionInfo>('/api/version'),
 };
 
 export const settingsApi = {

@@ -29,6 +29,7 @@ from .routes import shares as shares_routes
 from .routes import stats as stats_routes
 from .routes import trip_documents as trip_documents_routes
 from .routes import users as users_routes
+from .routes import version as version_routes
 from .scheduler import start_scheduler, stop_scheduler
 from .smtp_server import start_smtp_server, stop_smtp_server
 
@@ -110,6 +111,7 @@ app.include_router(notifications_routes.router)
 app.include_router(boarding_passes_routes.router)
 app.include_router(day_notes_routes.router)
 app.include_router(trip_documents_routes.router)
+app.include_router(version_routes.router)
 
 
 # Serve frontend static files if directory exists

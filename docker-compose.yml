@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/thiagodsti/partiu:latest
+    image: ghcr.io/thiagodsti/partiu:${PARTIU_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "8000:8000"   # Web UI + API

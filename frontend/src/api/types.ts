@@ -216,3 +216,10 @@ export interface TripDayNote {
   updated_at: string;
   updated_by_username: string | null;
 }
+
+export interface VersionInfo {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+}
+

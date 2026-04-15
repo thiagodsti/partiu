@@ -247,6 +247,14 @@ def create_flight(
             ).fetchone():
                 raise HTTPException(403, "Trip not found or access denied")
 
+    arr_dt = None
+    if body.arrival_datetime:
+        try:
+            arr_dt = datetime.fromisoformat(body.arrival_datetime)
+        except ValueError:
+            pass
+    status = calc_flight_status(arr_dt)
+
     with db_write() as conn:
         conn.execute(
             """INSERT INTO flights (
@@ -261,7 +269,7 @@ def create_flight(
                 ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
-                ?, 'upcoming', ?, ?,
+                ?, ?, ?, ?,
                 1, ?, ?, ?, ?
             )""",
             (
@@ -283,6 +291,7 @@ def create_flight(
                 body.seat,
                 body.cabin_class,
                 duration_minutes,
+                status,
                 departure_timezone,
                 arrival_timezone,
                 body.notes,
@@ -291,6 +300,17 @@ def create_flight(
                 now,
             ),
         )
+        if body.trip_id:
+            conn.execute(
+                """UPDATE trips SET
+                    start_date = (SELECT MIN(DATE(departure_datetime)) FROM flights WHERE trip_id = ?),
+                    end_date   = (SELECT MAX(DATE(arrival_datetime))   FROM flights WHERE trip_id = ?),
+                    origin_airport      = (SELECT departure_airport FROM flights WHERE trip_id = ? ORDER BY departure_datetime ASC  LIMIT 1),
+                    destination_airport = (SELECT arrival_airport   FROM flights WHERE trip_id = ? ORDER BY departure_datetime DESC LIMIT 1),
+                    updated_at = ?
+                WHERE id = ?""",
+                (body.trip_id, body.trip_id, body.trip_id, body.trip_id, now, body.trip_id),
+            )
 
     from ..aircraft_sync import fetch_aircraft_for_new_flights
 

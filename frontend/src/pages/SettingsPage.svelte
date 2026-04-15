@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi } from "../api/client";
+  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, versionApi } from "../api/client";
   import type { NonFlightDomain } from "../api/client";
-  import type { Settings, SyncStatus, NotifPreferences, TrustedUser } from "../api/types";
+  import type { Settings, SyncStatus, NotifPreferences, TrustedUser, VersionInfo } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -73,6 +73,11 @@
   }
 
   if ($currentUser?.is_admin) loadVapidStatus();
+
+  let versionInfo = $state<VersionInfo | null>(null);
+  if ($currentUser?.is_admin) {
+    versionApi.get().then((v) => (versionInfo = v)).catch(() => {});
+  }
 
   // Notifications — per-user
   let notifStatus = $state<"unsupported" | "denied" | "default" | "subscribed" | "unsubscribed">("default");
@@ -1135,6 +1140,31 @@
         >
           {$t("settings.manage_users")}
         </a>
+      </div>
+    {/if}
+
+    <!-- Admin: Version info -->
+    {#if $currentUser?.is_admin && versionInfo}
+      <div class="settings-section">
+        <div class="settings-section-title">{$t("settings.version")}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-xs)">
+          <span style="font-size:0.875rem;color:var(--text-secondary)">
+            {$t("settings.running_version")}
+            <strong style="color:var(--text-primary);font-family:monospace">{versionInfo.current_version}</strong>
+          </span>
+          {#if versionInfo.update_available}
+            <a
+              href="https://github.com/thiagodsti/partiu/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-primary btn-sm"
+            >
+              ↑ {$t("settings.update_available")} {versionInfo.latest_version}
+            </a>
+          {:else if versionInfo.latest_version}
+            <span style="font-size:0.8rem;color:var(--success,#22c55e)">✓ {$t("settings.up_to_date")}</span>
+          {/if}
+        </div>
       </div>
     {/if}
 

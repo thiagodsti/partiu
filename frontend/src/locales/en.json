@@ -441,5 +441,9 @@
   "planner.add_item": "Add item",
   "planner.delete_item": "Delete item",
   "planner.check": "Mark as done",
-  "planner.uncheck": "Mark as undone"
+  "planner.uncheck": "Mark as undone",
+  "settings.version": "Version",
+  "settings.running_version": "Running version:",
+  "settings.update_available": "Update available —",
+  "settings.up_to_date": "Up to date"
 }

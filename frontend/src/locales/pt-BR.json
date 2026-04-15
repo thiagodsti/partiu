@@ -441,5 +441,9 @@
   "planner.add_item": "Adicionar item",
   "planner.delete_item": "Excluir item",
   "planner.check": "Marcar como feito",
-  "planner.uncheck": "Desmarcar"
+  "planner.uncheck": "Desmarcar",
+  "settings.version": "Versão",
+  "settings.running_version": "Versão em execução:",
+  "settings.update_available": "Atualização disponível —",
+  "settings.up_to_date": "Atualizado"
 }
