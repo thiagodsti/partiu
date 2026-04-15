@@ -96,9 +96,10 @@
 
   // ---- EML upload ----
   let emlUploading = $state(false);
-  let emlFileInput: HTMLInputElement;
+  let emlFileInput = $state<HTMLInputElement>();
 
   function openEmlPicker() {
+    if (!emlFileInput) return;
     emlFileInput.value = "";
     emlFileInput.click();
   }
@@ -115,14 +116,14 @@
         toasts.show($t("trips.eml_none_found"), "info");
       } else {
         toasts.show(
-          $t("trips.eml_result", { created: result.flights_created, updated: result.flights_updated }),
+          $t("trips.eml_result", { values: { created: result.flights_created, updated: result.flights_updated } }),
           "success",
         );
         const data = await tripsApi.list();
         tripsList = data?.trips ?? [];
       }
     } catch (err) {
-      toasts.show($t("trips.eml_error", { error: (err as Error).message }), "error");
+      toasts.show($t("trips.eml_error", { values: { error: (err as Error).message } }), "error");
     } finally {
       emlUploading = false;
     }
