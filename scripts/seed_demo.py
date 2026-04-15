@@ -25,7 +25,7 @@ from http.cookiejar import CookieJar
 BASE_URL = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://localhost:8000"
 
 DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "demo123"
+DEMO_PASSWORD = "demo1234"
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
