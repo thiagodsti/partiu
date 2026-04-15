@@ -253,7 +253,7 @@ def main():
     print("      - Credit card last 4 digits")
     print()
     print("  Next step:")
-    print(f"      python tools/parse_eml.py {out}")
+    print(f"      uv run python tools/parse_eml.py {out}")
     print()
 
 

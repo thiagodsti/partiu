@@ -133,7 +133,7 @@ Partiu is designed to run on your own server — a VPS, a Raspberry Pi, or anyth
 ### Requirements
 
 - Docker + Docker Compose
-- A domain with HTTPS (required — session cookies use `Secure` flag)
+- A domain with HTTPS (recommended for production — set `SECURE_COOKIES=false` to disable if needed)
 - A Gmail account with an **App Password** per user (or any IMAP-compatible mailbox)
 
 ### Deploy with Docker Compose
@@ -254,7 +254,7 @@ bash run.sh
 | Backend API | http://localhost:8000 |
 | Frontend dev server | http://localhost:5173 |
 
-> **Note:** Session cookies require HTTPS (`Secure` flag). For local development, access the app via a reverse proxy with a self-signed certificate or a tool like [mkcert](https://github.com/FiloSottile/mkcert).
+> **Note:** For local development, set `SECURE_COOKIES=false` in your `.env` — no HTTPS or certificate needed. Browsers also treat `localhost` as a secure context, so `secure` cookies work over plain HTTP on localhost even without this flag.
 
 ### Backend
 
@@ -369,14 +369,14 @@ The short version:
 
 ```bash
 # 1. Anonymize your .eml fixture
-python tools/anonymize_eml.py ~/Downloads/confirmation.eml \
+uv run python tools/anonymize_eml.py ~/Downloads/confirmation.eml \
     --out backend/tests/fixtures/myairline_anonymized.eml
 
 # 2. See what gets extracted (or what's missing)
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
 
 # 3. Add rule + extractor, then scaffold a test automatically
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
     --generate-test --out backend/tests/test_myairline_parser.py
 ```
 

@@ -256,7 +256,7 @@ def generate_test(eml_path: Path, rule, flights: list) -> str:
         ]
 
     if flights and flights[0].get("booking_reference"):
-        ref = flights[0]["booking_reference"]
+        ref = (flights[0]["booking_reference"] or "").strip()
         lines += [
             "",
             "# ---------------------------------------------------------------------------",

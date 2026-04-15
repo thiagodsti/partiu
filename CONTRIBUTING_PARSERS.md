@@ -8,9 +8,10 @@ The Kiwi.com parser is used as a worked example throughout.
 ## Prerequisites
 
 ```bash
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
+uv sync
 ```
+
+> This project uses [uv](https://docs.astral.sh/uv/) for dependency management. All Python commands should be run with `uv run` — no venv activation needed.
 
 ---
 
@@ -29,7 +30,7 @@ Forward or export a flight confirmation email as a `.eml` file from your mail cl
 Run the anonymizer to strip PII before committing the fixture:
 
 ```bash
-python tools/anonymize_eml.py ~/Downloads/myairline_confirmation.eml \
+uv run python tools/anonymize_eml.py ~/Downloads/myairline_confirmation.eml \
     --out backend/tests/fixtures/myairline_anonymized.eml
 ```
 
@@ -53,7 +54,7 @@ Open the output file and do a quick manual scan before continuing.
 ## Step 3 — See what the parser already extracts
 
 ```bash
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
 ```
 
 **Three possible outcomes:**
@@ -125,7 +126,7 @@ After adding the rule, bump `RULES_VERSION` by 1 (e.g. `'13'` → `'14'`). This 
 Re-run the parse script to check the rule matches:
 
 ```bash
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
 ```
 
 ---
@@ -201,7 +202,7 @@ _EXTRACTORS = {
 Iterate on the extractor until the parse script shows the correct output:
 
 ```bash
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
 ```
 
 ---
@@ -211,7 +212,7 @@ python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml
 Use `--generate-test` to scaffold a ready-to-run test file from the live output:
 
 ```bash
-python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
+uv run python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
     --generate-test \
     --out backend/tests/test_myairline_parser.py
 ```
@@ -219,7 +220,7 @@ python tools/parse_eml.py backend/tests/fixtures/myairline_anonymized.eml \
 This generates a complete pytest file with one class per leg and assertions for every field. Review the generated file, fix anything that looks wrong (the generator is a starting point, not gospel), then run it:
 
 ```bash
-pytest backend/tests/test_myairline_parser.py -v
+uv run pytest backend/tests/test_myairline_parser.py -v
 ```
 
 All tests should be green. If not, fix the extractor and re-run.
@@ -238,7 +239,7 @@ The [Kiwi test](backend/tests/test_kiwi_parser.py) is the reference. Key things 
 ## Step 7 — Run the full test suite
 
 ```bash
-pytest backend/tests/ -v --cov=backend --cov-fail-under=70
+uv run pytest backend/tests/ -v --cov=backend --cov-fail-under=70
 ```
 
 Make sure coverage stays above 70% and no existing tests are broken.
