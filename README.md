@@ -22,6 +22,7 @@
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
 - Blocked sender domains: admin-configurable list of domains (e.g. Airbnb, Booking.com) that are silently skipped during sync
 - Manual "sync now" trigger and configurable sync interval (admin)
+- **Upload .eml files directly** from the trips list — import flights from saved email files without needing IMAP
 
 ### Trip & flight management
 - Auto-groups flights into trips by booking reference, then 48h time proximity

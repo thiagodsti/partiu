@@ -29,6 +29,8 @@ class Settings:
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    # Optional announcement banner shown to all users (empty = no banner)
+    ANNOUNCEMENT: str = os.getenv("ANNOUNCEMENT", "")
 
 
 settings = Settings()

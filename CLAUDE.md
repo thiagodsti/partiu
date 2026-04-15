@@ -130,6 +130,7 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 - CLI eval tool: `uv run python -m backend.tools.eval_eml_files` — tests LLM against `.eml` files (pass file or glob)
 - Blocked sender domains: admin-managed list of domains silently skipped during sync (e.g. Airbnb, Booking.com)
 - Manual sync trigger and configurable sync interval + email limit (admin)
+- **Upload .eml files directly** from the trips list (`POST /api/sync/upload-eml`): parses uploaded `.eml` files through the same engine (rules → generic HTML/PDF → LLM) and imports flights
 - Inbound SMTP server (aiosmtpd, default port 2525) for email forwarding
 
 ### Flight enrichment

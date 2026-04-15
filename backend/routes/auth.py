@@ -370,6 +370,8 @@ def me(request: Request):
         ).fetchone()
     if row is None:
         raise HTTPException(401, "User not found")
+    from ..config import settings
+
     return {
         "id": row["id"],
         "username": row["username"],
@@ -377,6 +379,7 @@ def me(request: Request):
         "smtp_recipient_address": row["smtp_recipient_address"],
         "totp_enabled": bool(row["totp_enabled"]),
         "locale": row["locale"] or "en",
+        "announcement": settings.ANNOUNCEMENT,
     }
 
 

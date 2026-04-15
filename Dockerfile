@@ -30,6 +30,9 @@ COPY load_airports.py ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY frontend/sw.js ./frontend/
 
+# Scripts (seed, etc.)
+COPY scripts/ ./scripts/
+
 # Persistent data volume mount point
 RUN mkdir -p /app/data
 

@@ -12,6 +12,7 @@
   import { refreshInvitationCount } from './lib/invitationStore';
   import { applyUserLocale } from './lib/i18n';
   import ToastContainer from './components/ToastContainer.svelte';
+  import AnnouncementBanner from './components/AnnouncementBanner.svelte';
 
   const routes = {
     '/': TripsListPage,
@@ -116,6 +117,7 @@
   </div>
 {:else}
   <div class="app-shell">
+    <AnnouncementBanner />
     <svelte:boundary>
       <div class="app-content">
         <Router {routes} on:routeEvent={routeNotFound} />

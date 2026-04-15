@@ -94,6 +94,40 @@
   // ---- Image refresh ----
   const imgRefresh = new ImageRefreshManager();
 
+  // ---- EML upload ----
+  let emlUploading = $state(false);
+  let emlFileInput: HTMLInputElement;
+
+  function openEmlPicker() {
+    emlFileInput.value = "";
+    emlFileInput.click();
+  }
+
+  async function handleEmlFiles(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (!files.length) return;
+
+    emlUploading = true;
+    try {
+      const result = await syncApi.uploadEml(files);
+      if (result.flights_created === 0 && result.flights_updated === 0) {
+        toasts.show($t("trips.eml_none_found"), "info");
+      } else {
+        toasts.show(
+          $t("trips.eml_result", { created: result.flights_created, updated: result.flights_updated }),
+          "success",
+        );
+        const data = await tripsApi.list();
+        tripsList = data?.trips ?? [];
+      }
+    } catch (err) {
+      toasts.show($t("trips.eml_error", { error: (err as Error).message }), "error");
+    } finally {
+      emlUploading = false;
+    }
+  }
+
   // ---- Derived ----
   const syncRunning = $derived(syncStatus?.status === "running");
   const activeTrips = $derived(
@@ -113,11 +147,33 @@
       >
     </EmptyState>
   {:else}
+    <!-- Hidden .eml file input -->
+    <input
+      bind:this={emlFileInput}
+      type="file"
+      accept=".eml,message/rfc822"
+      multiple
+      style="display:none"
+      onchange={handleEmlFiles}
+    />
+
     <!-- Sync Status Bar -->
     <SyncStatusBar {syncStatus} id="sync-status-bar">
       <a href="#/trips/new" class="btn btn-primary text-sm" style="padding:4px 12px;margin-left:auto">
         + {$t("trips.btn_new_trip")}
       </a>
+      <button
+        class="btn btn-secondary text-sm"
+        style="padding:4px 12px"
+        disabled={emlUploading}
+        onclick={openEmlPicker}
+      >
+        {#if emlUploading}
+          <span class="spinner"></span>
+        {:else}
+          {$t("trips.btn_upload_eml")}
+        {/if}
+      </button>
       <button
         class="btn btn-secondary text-sm"
         style="padding:4px 12px"

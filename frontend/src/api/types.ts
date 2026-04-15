@@ -7,6 +7,7 @@ export interface User {
   smtp_recipient_address: string | null;
   totp_enabled?: boolean;
   locale?: string;
+  announcement?: string;
 }
 
 export interface LoginResponse {
