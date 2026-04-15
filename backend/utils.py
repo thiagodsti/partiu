@@ -6,10 +6,10 @@ import re
 from datetime import UTC, datetime
 from typing import overload
 
-# IATA/ICAO flight number: 2-char airline code (letter + letter-or-digit), optional dash, 3-5 digits
-# Examples: LA3045, FR2878, G3-2108, SK117
-# Rejects aircraft type codes like A380 or A830 (only 1 leading letter + short digit sequence)
-FLIGHT_NUMBER_RE = re.compile(r"^[A-Z][A-Z0-9]-?\d{3,5}$")
+# IATA flight number: 2-char airline code (letter + letter-or-digit), optional dash, 1-4 digits.
+# IATA standard allows 1–4 digit suffixes (range 1–9999); 5-digit numbers don't exist.
+# Examples: LA3045, FR2878, G3-2108, SK117, AY53, BA1
+FLIGHT_NUMBER_RE = re.compile(r"^[A-Z][A-Z0-9]-?\d{1,4}$")
 
 
 def validate_flight_number(fn: str) -> bool:

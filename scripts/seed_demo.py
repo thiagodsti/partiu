@@ -16,13 +16,17 @@ Usage:
 """
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
-from http.cookiejar import CookieJar
 
-BASE_URL = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://localhost:8000"
+BASE_URL = (
+    sys.argv[1].rstrip("/")
+    if len(sys.argv) > 1
+    else os.environ.get("SEED_BASE_URL", "http://localhost:8000").rstrip("/")
+)
 
 DEMO_USERNAME = "demo"
 DEMO_PASSWORD = "demo1234"
@@ -31,17 +35,28 @@ DEMO_PASSWORD = "demo1234"
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-_jar = CookieJar()
-_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_jar))
+# Manually track the session cookie so it works over plain HTTP even when the
+# server sets Secure cookies (Python's CookieJar drops Secure cookies on http://).
+_session_cookie: str | None = None
 
 
 def _req(method: str, path: str, body: dict | None = None) -> dict:
+    global _session_cookie
     url = BASE_URL + path
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    if _session_cookie:
+        req.add_header("Cookie", f"session={_session_cookie}")
     try:
-        with _opener.open(req) as resp:
+        with urllib.request.urlopen(req) as resp:
+            for header, value in resp.headers.items():
+                if header.lower() == "set-cookie" and "session=" in value:
+                    for part in value.split(";"):
+                        part = part.strip()
+                        if part.startswith("session="):
+                            _session_cookie = part[len("session=") :]
+                            break
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         text = e.read().decode()
@@ -58,6 +73,10 @@ def get(path: str) -> dict:
 
 def post(path: str, body: dict | None = None) -> dict:
     return _req("POST", path, body)
+
+
+def put(path: str, body: dict | None = None) -> dict:
+    return _req("PUT", path, body)
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +330,11 @@ def main() -> None:
     result = post("/api/auth/setup", {"username": DEMO_USERNAME, "password": DEMO_PASSWORD})
     if result.get("_status") == 409:
         print("  User already exists — logging in")
-        post("/api/auth/login", {"username": DEMO_USERNAME, "password": DEMO_PASSWORD})
     else:
         print(f"  Created user: {result.get('username')}")
+    # Always do an explicit login so we get a fresh session cookie.
+    # (The setup response sets a Secure cookie which urllib drops over plain HTTP.)
+    post("/api/auth/login", {"username": DEMO_USERNAME, "password": DEMO_PASSWORD})
 
     # 2. Check existing trips (idempotency — skip if already seeded)
     print("\n[2/3] Checking existing trips...")
@@ -348,7 +369,7 @@ def main() -> None:
 
         # Add note if present
         if trip_def.get("note"):
-            post(f"/api/trips/{trip_id}/note", {"note": trip_def["note"]})
+            put(f"/api/trips/{trip_id}/note", {"note": trip_def["note"]})
 
         created += 1
 
