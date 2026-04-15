@@ -1,17 +1,22 @@
 """Tests for /api/flights routes."""
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+
+def _future_dt(days: int = 30, hour: int = 10) -> str:
+    return (datetime.now(UTC) + timedelta(days=days)).strftime(f"%Y-%m-%dT{hour:02d}:00:00")
 
 
 def _create_flight(client, **kwargs):
     payload = {
         "flight_number": "LA8094",
         "departure_airport": "GRU",
-        "departure_datetime": "2025-06-01T10:00:00",
+        "departure_datetime": _future_dt(30, 10),
         "arrival_airport": "LHR",
-        "arrival_datetime": "2025-06-01T22:00:00",
+        "arrival_datetime": _future_dt(30, 22),
         **kwargs,
     }
     with patch("backend.aircraft_sync.fetch_aircraft_for_new_flights"):
