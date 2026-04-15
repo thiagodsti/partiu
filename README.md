@@ -8,7 +8,7 @@
 
 ---
 
-![demo](https://github.com/user-attachments/assets/1b772808-e56d-4580-84d9-361f6cec459a)
+![demo](docs/demo.gif)
 
 ## Live demo
 
