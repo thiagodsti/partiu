@@ -40,6 +40,9 @@ vi.mock('../api/client', () => ({
     testPush: vi.fn(),
     vapidPublicKey: vi.fn(),
   },
+  versionApi: {
+    get: vi.fn().mockResolvedValue({ current_version: '2.2.5', latest_version: null, update_available: false }),
+  },
 }));
 
 vi.mock('../lib/authStore', () => ({
