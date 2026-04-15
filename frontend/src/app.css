@@ -858,6 +858,7 @@ img {
 
 .sync-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   flex-shrink: 0;
 }
@@ -869,6 +870,11 @@ img {
   .sync-actions {
     width: 100%;
     padding-left: 20px; /* align with text, after the dot */
+  }
+  .sync-actions .btn {
+    flex: 1 1 auto;
+    text-align: center;
+    white-space: nowrap;
   }
 }
 
