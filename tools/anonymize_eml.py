@@ -123,7 +123,13 @@ def _extract_probable_names(text: str) -> list[str]:
     return result
 
 
-def _anonymize_text(text: str, real_names: list[str], fake_name: str, fake_email: str) -> str:
+def _anonymize_text(
+    text: str,
+    real_names: list[str],
+    fake_name: str,
+    fake_email: str,
+    personal_emails: set[str] | None = None,
+) -> str:
     # Replace real names first (longest first, already sorted)
     for name in real_names:
         text = text.replace(name, fake_name)
@@ -132,11 +138,18 @@ def _anonymize_text(text: str, real_names: list[str], fake_name: str, fake_email
         text = text.replace(name.lower(), fake_name.lower())
 
     # Replace email addresses (but skip example.com addresses we already inserted)
+    # Personal emails (collected from recipient headers) are replaced fully.
+    # Other addresses (airline senders) keep their domain so parser rules still match.
+    _personal = personal_emails or set()
+
     def _replace_email(m):
         addr = m.group(0)
         if "example.com" in addr or "test@" in addr:
             return addr
-        return fake_email
+        if addr.lower() in _personal:
+            return fake_email
+        local = fake_email.split("@")[0]
+        return f"{local}@{addr.split('@')[-1]}"
 
     text = _EMAIL_RE.sub(_replace_email, text)
 
@@ -169,18 +182,36 @@ def anonymize(src: Path, fake_name: str, fake_email: str) -> bytes:
         print("  No names auto-detected. If the email contains a passenger name,")
         print("  search for it manually and pass --name 'Real Name' to replace it.")
 
-    # Anonymize headers
-    for header in ("From", "To", "Cc", "Reply-To", "Delivered-To", "Return-Path"):
+    # Collect recipient addresses — these are the user's personal emails and must be fully replaced.
+    # Return-Path is the sender's bounce address (not the recipient's), so it's excluded.
+    personal_emails: set[str] = set()
+    for header in ("To", "Cc", "Delivered-To"):
         if msg[header]:
-            msg.replace_header(
-                header,
-                _EMAIL_RE.sub(
-                    lambda m: fake_email if "example.com" not in m.group(0) else m.group(0),
-                    msg[header],
-                ),
-            )
+            for m in _EMAIL_RE.finditer(msg[header]):
+                personal_emails.add(m.group(0).lower())
 
-    # Anonymize Received headers (leak IP / real email)
+    def _replace_header_email(is_recipient: bool):
+        def _replace(m):
+            addr = m.group(0)
+            if "example.com" in addr:
+                return addr
+            # Recipient headers (To/Cc/Delivered-To/Return-Path) — always replace fully
+            if is_recipient or addr.lower() in personal_emails:
+                return fake_email
+            # Sender headers (From/Reply-To) — keep domain so parser rules still match
+            local = fake_email.split("@")[0]
+            return f"{local}@{addr.split('@')[-1]}"
+
+        return _replace
+
+    for header in ("To", "Cc", "Delivered-To", "Return-Path"):
+        if msg[header]:
+            msg.replace_header(header, _EMAIL_RE.sub(_replace_header_email(True), msg[header]))
+    for header in ("From", "Reply-To"):
+        if msg[header]:
+            msg.replace_header(header, _EMAIL_RE.sub(_replace_header_email(False), msg[header]))
+
+    # Anonymize Received headers (leak IP / real email) — always fully replace
     received = msg.get_all("Received") or []
     while "Received" in msg:
         del msg["Received"]
@@ -199,7 +230,7 @@ def anonymize(src: Path, fake_name: str, fake_email: str) -> bytes:
         if not raw_payload or not isinstance(raw_payload, bytes):
             continue
         text = raw_payload.decode("utf-8", errors="replace")
-        text = _anonymize_text(text, real_names, fake_name, fake_email)
+        text = _anonymize_text(text, real_names, fake_name, fake_email, personal_emails)
         charset = part.get_content_charset() or "utf-8"
         cte = part.get("Content-Transfer-Encoding", "").lower()
         new_payload = text.encode(charset, errors="replace")
