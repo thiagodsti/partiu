@@ -36,6 +36,12 @@ _PASSENGER_LABEL_NAME = re.compile(
 # Email addresses
 _EMAIL_ADDR = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 
+# Local parts that are not PII (transactional senders)
+_NON_PII_LOCAL = re.compile(
+    r"^(?:no.?reply|donotreply|noreply|mailer.?daemon|postmaster|info|support|newsletter)$",
+    re.IGNORECASE,
+)
+
 # Phone numbers: various international formats (exclude dot-separated formats like CPF)
 _PHONE = re.compile(
     r"(?<!\d)"
@@ -124,7 +130,14 @@ def _anonymize_text(
     t = _CPF.sub("000.000.000-00", t)
     t = _RG.sub("00.000.000-0", t)
     t = _CARD.sub("XXXX XXXX XXXX XXXX", t)
-    t = _EMAIL_ADDR.sub("test@example.com", t)
+
+    def _email_sub(m: re.Match) -> str:
+        local = m.group(0).split("@")[0]
+        if _NON_PII_LOCAL.match(local):
+            return m.group(0)
+        return "test@example.com"
+
+    t = _EMAIL_ADDR.sub(_email_sub, t)
     t = _BOOKING_CONTEXT.sub(lambda m: m.group(0).replace(m.group(1), "TESTRF"), t)
 
     # Phones last — regex excludes dots so CPF placeholders are not re-matched
@@ -151,7 +164,13 @@ def _anonymize_html(
     for part in parts:
         if part.startswith("<"):
             # It's a tag — anonymize attribute values that look like PII
-            p = _EMAIL_ADDR.sub("test@example.com", part)
+            def _email_sub_tag(m: re.Match) -> str:
+                local = m.group(0).split("@")[0]
+                if _NON_PII_LOCAL.match(local):
+                    return m.group(0)
+                return "test@example.com"
+
+            p = _EMAIL_ADDR.sub(_email_sub_tag, part)
             p = _CPF.sub("000.000.000-00", p)
             result.append(p)
         else:

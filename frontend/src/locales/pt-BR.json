@@ -382,6 +382,8 @@
   "trip.delete_confirm": "Excluir esta viagem e todos os seus voos? Esta ação não pode ser desfeita.",
   "flight.delete": "Excluir Voo",
   "flight.delete_confirm": "Excluir este voo? Esta ação não pode ser desfeita.",
+  "flight.ungroup": "Mover para Nova Viagem",
+  "flight.ungroup_confirm": "Mover este voo para uma nova viagem separada?",
   "trip.share": "Compartilhar Viagem",
   "trip.share_username_placeholder": "Insira o nome de usuário",
   "trip.share_invite": "Convidar",

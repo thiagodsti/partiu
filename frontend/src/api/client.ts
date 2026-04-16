@@ -152,6 +152,7 @@ export const flightsApi = {
   update: (id: number | string, data: Partial<Flight>) =>
     patch<Flight>(`/api/flights/${id}`, data),
   delete: (id: number | string) => del<null>(`/api/flights/${id}`),
+  ungroup: (id: number | string) => post<{ trip_id: string }>(`/api/flights/${id}/ungroup`),
 };
 
 // ---- Trip Sharing ----

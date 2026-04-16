@@ -225,9 +225,8 @@ def create_flight(
         arr_obj = datetime.fromisoformat(body.arrival_datetime)
     except (ValueError, TypeError):
         pass
-    duration_minutes = calc_duration_minutes(dep_obj, arr_obj)
 
-    # Apply timezone lookup (same as auto-synced flights)
+    # Apply timezone lookup — converts local times to UTC (same as auto-synced flights)
     tz_info = apply_airport_timezones(
         {
             "departure_airport": body.departure_airport,
@@ -239,6 +238,17 @@ def create_flight(
     departure_timezone = tz_info.get("departure_timezone")
     arrival_timezone = tz_info.get("arrival_timezone")
 
+    # Use UTC-converted datetimes for storage so ORDER BY sorts correctly
+    # alongside email-synced flights (which always store UTC).
+    from ..utils import dt_to_iso
+
+    dep_utc = tz_info.get("departure_datetime")
+    arr_utc = tz_info.get("arrival_datetime")
+    dep_iso = dt_to_iso(dep_utc) if dep_utc is not None else body.departure_datetime
+    arr_iso = dt_to_iso(arr_utc) if arr_utc is not None else body.arrival_datetime
+
+    duration_minutes = calc_duration_minutes(dep_utc or dep_obj, arr_utc or arr_obj)
+
     if body.trip_id:
         with db_conn() as conn:
             if not conn.execute(
@@ -247,13 +257,7 @@ def create_flight(
             ).fetchone():
                 raise HTTPException(403, "Trip not found or access denied")
 
-    arr_dt = None
-    if body.arrival_datetime:
-        try:
-            arr_dt = datetime.fromisoformat(body.arrival_datetime)
-        except ValueError:
-            pass
-    status = calc_flight_status(arr_dt)
+    status = calc_flight_status(arr_utc or arr_obj)
 
     with db_write() as conn:
         conn.execute(
@@ -280,11 +284,11 @@ def create_flight(
                 body.flight_number,
                 body.booking_reference,
                 body.departure_airport,
-                body.departure_datetime,
+                dep_iso,
                 body.departure_terminal,
                 body.departure_gate,
                 body.arrival_airport,
-                body.arrival_datetime,
+                arr_iso,
                 body.arrival_terminal,
                 body.arrival_gate,
                 body.passenger_name,
@@ -303,10 +307,24 @@ def create_flight(
         if body.trip_id:
             conn.execute(
                 """UPDATE trips SET
-                    start_date = (SELECT MIN(DATE(departure_datetime)) FROM flights WHERE trip_id = ?),
-                    end_date   = (SELECT MAX(DATE(arrival_datetime))   FROM flights WHERE trip_id = ?),
-                    origin_airport      = (SELECT departure_airport FROM flights WHERE trip_id = ? ORDER BY departure_datetime ASC  LIMIT 1),
-                    destination_airport = (SELECT arrival_airport   FROM flights WHERE trip_id = ? ORDER BY departure_datetime DESC LIMIT 1),
+                    start_date = (
+                        SELECT DATE(departure_datetime)
+                        FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                    ),
+                    end_date = (
+                        SELECT DATE(arrival_datetime)
+                        FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                    ),
+                    origin_airport = (
+                        SELECT departure_airport FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                    ),
+                    destination_airport = (
+                        SELECT arrival_airport FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                    ),
                     updated_at = ?
                 WHERE id = ?""",
                 (body.trip_id, body.trip_id, body.trip_id, body.trip_id, now, body.trip_id),
@@ -322,24 +340,25 @@ def create_flight(
 @router.patch("/{flight_id}")
 def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_current_user)):
     """Update flight fields."""
+    from ..timezone_utils import apply_airport_timezones
+    from ..utils import dt_to_iso
+
     with db_conn() as conn:
-        if not conn.execute(
-            "SELECT id FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
-        ).fetchone():
-            raise HTTPException(status_code=404, detail="Flight not found")
+        existing = conn.execute(
+            "SELECT * FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
+        ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Flight not found")
+    existing = dict(existing)
 
     if body.flight_number is not None and not validate_flight_number(body.flight_number):
         raise HTTPException(status_code=422, detail="Invalid flight number format")
 
-    updates = {}
+    updates: dict = {}
     for field in (
         "flight_number",
         "airline_name",
         "airline_code",
-        "departure_airport",
-        "departure_datetime",
-        "arrival_airport",
-        "arrival_datetime",
         "booking_reference",
         "passenger_name",
         "seat",
@@ -356,15 +375,89 @@ def update_flight(flight_id: str, body: FlightUpdate, user: dict = Depends(get_c
         if val is not None:
             updates[field] = val
 
+    # When airports or datetimes change, re-run timezone conversion and recompute
+    # duration/status so the stored datetimes stay in UTC format.
+    times_changed = any(
+        v is not None
+        for v in (
+            body.departure_airport,
+            body.arrival_airport,
+            body.departure_datetime,
+            body.arrival_datetime,
+        )
+    )
+    if times_changed:
+        dep_airport = body.departure_airport or existing["departure_airport"]
+        arr_airport = body.arrival_airport or existing["arrival_airport"]
+        raw_dep = body.departure_datetime or existing["departure_datetime"]
+        raw_arr = body.arrival_datetime or existing["arrival_datetime"]
+
+        dep_obj = arr_obj = None
+        try:
+            dep_obj = datetime.fromisoformat(raw_dep)
+        except (ValueError, TypeError):
+            pass
+        try:
+            arr_obj = datetime.fromisoformat(raw_arr)
+        except (ValueError, TypeError):
+            pass
+
+        tz_info = apply_airport_timezones(
+            {
+                "departure_airport": dep_airport,
+                "arrival_airport": arr_airport,
+                "departure_datetime": dep_obj,
+                "arrival_datetime": arr_obj,
+            }
+        )
+        dep_utc = tz_info.get("departure_datetime")
+        arr_utc = tz_info.get("arrival_datetime")
+
+        updates["departure_airport"] = dep_airport
+        updates["arrival_airport"] = arr_airport
+        updates["departure_datetime"] = dt_to_iso(dep_utc) if dep_utc is not None else raw_dep
+        updates["arrival_datetime"] = dt_to_iso(arr_utc) if arr_utc is not None else raw_arr
+        updates["departure_timezone"] = tz_info.get("departure_timezone")
+        updates["arrival_timezone"] = tz_info.get("arrival_timezone")
+        updates["duration_minutes"] = calc_duration_minutes(dep_utc or dep_obj, arr_utc or arr_obj)
+        if body.status is None:
+            updates["status"] = calc_flight_status(arr_utc or arr_obj)
+
     if not updates:
         return {"id": flight_id}
 
-    updates["updated_at"] = now_iso()
+    now = now_iso()
+    updates["updated_at"] = now
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [flight_id, user["id"]]
 
+    trip_id = updates.get("trip_id") or existing.get("trip_id")
+
     with db_write() as conn:
         conn.execute(f"UPDATE flights SET {set_clause} WHERE id = ? AND user_id = ?", values)
+        if trip_id and times_changed:
+            conn.execute(
+                """UPDATE trips SET
+                    start_date = (
+                        SELECT DATE(departure_datetime) FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                    ),
+                    end_date = (
+                        SELECT DATE(arrival_datetime) FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                    ),
+                    origin_airport = (
+                        SELECT departure_airport FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                    ),
+                    destination_airport = (
+                        SELECT arrival_airport FROM flights WHERE trip_id = ?
+                        ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                    ),
+                    updated_at = ?
+                WHERE id = ?""",
+                (trip_id, trip_id, trip_id, trip_id, now, trip_id),
+            )
 
     return {"id": flight_id}
 
@@ -380,3 +473,67 @@ def delete_flight(flight_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Flight not found")
     with db_write() as conn:
         conn.execute("DELETE FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"]))
+
+
+@router.post("/{flight_id}/ungroup", status_code=201)
+def ungroup_flight(flight_id: str, user: dict = Depends(get_current_user)):
+    """Move a flight out of its current trip into a new solo trip."""
+    import json
+
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM flights WHERE id = ? AND user_id = ?", (flight_id, user["id"])
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Flight not found")
+
+    flight = dict(row)
+    if not flight.get("trip_id"):
+        raise HTTPException(status_code=400, detail="Flight is not part of a trip")
+
+    # Ensure the trip has more than one flight — no point ungrouping a solo flight
+    with db_conn() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM flights WHERE trip_id = ?", (flight["trip_id"],)
+        ).fetchone()[0]
+    if count <= 1:
+        raise HTTPException(status_code=400, detail="Trip only has one flight; nothing to ungroup")
+
+    dep = flight.get("departure_airport") or ""
+    arr = flight.get("arrival_airport") or ""
+    trip_name = f"{dep} → {arr}" if dep and arr else flight.get("flight_number") or "Flight"
+    booking_ref = flight.get("booking_reference") or ""
+    start_date = ""
+    end_date = ""
+    if flight.get("departure_datetime"):
+        start_date = str(flight["departure_datetime"])[:10]
+    if flight.get("arrival_datetime"):
+        end_date = str(flight["arrival_datetime"])[:10]
+
+    now = now_iso()
+    new_trip_id = str(uuid.uuid4())
+
+    with db_write() as conn:
+        conn.execute(
+            """INSERT INTO trips (id, name, booking_refs, start_date, end_date,
+               origin_airport, destination_airport, is_auto_generated, user_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+            (
+                new_trip_id,
+                trip_name,
+                json.dumps([booking_ref] if booking_ref else []),
+                start_date,
+                end_date,
+                dep,
+                arr,
+                user["id"],
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            "UPDATE flights SET trip_id = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (new_trip_id, now, flight_id, user["id"]),
+        )
+
+    return {"trip_id": new_trip_id}

@@ -167,6 +167,22 @@
     emailData = null;
   }
 
+  // ---- Ungroup flight ----
+  let ungrouping = $state(false);
+
+  async function ungroupFlight() {
+    if (!flight || !confirm($t('flight.ungroup_confirm'))) return;
+    ungrouping = true;
+    try {
+      const result = await flightsApi.ungroup(flight.id);
+      window.location.hash = `#/trips/${result.trip_id}`;
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      ungrouping = false;
+    }
+  }
+
   // ---- Delete flight ----
   let showDeleteFlightConfirm = $state(false);
   let deletingFlight = $state(false);
@@ -579,6 +595,16 @@
         {emailLoading ? $t("flight.btn_loading") : $t("flight.view_email")}
       </button>
       {#if String(flight.user_id) === String($currentUser?.id)}
+        {#if flight.trip_id}
+          <button
+            class="btn btn-secondary"
+            style="width:100%"
+            disabled={ungrouping}
+            onclick={ungroupFlight}
+          >
+            {ungrouping ? '…' : $t("flight.ungroup")}
+          </button>
+        {/if}
         <button
           class="btn btn-danger"
           style="width:100%"

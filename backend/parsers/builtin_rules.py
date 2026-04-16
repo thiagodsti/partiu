@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "24"  # feat: TAP booking confirmation HTML + e-ticket receipt formats
+PARSER_VERSION = "25"  # feat: Wizz Air (W6/W9) itinerary confirmation parser
 
 # ---------------------------------------------------------------------------
 # Flexible date sub-pattern (reusable)
@@ -271,6 +271,22 @@ BUILTIN_AIRLINE_RULES = [
         "priority": 10,
     },
     # =========================================================================
+    # Wizz Air (W6 / W9) — travel itinerary confirmation emails
+    # =========================================================================
+    {
+        "airline_name": "Wizz Air",
+        "airline_code": "W6",
+        "sender_pattern": r"(wizzair\.com|@wizz\.)",
+        "subject_pattern": r"(itinerary|travel|confirm|reservat|booking)",
+        "body_pattern": r"",  # custom_extractor handles everything
+        "date_format": "%d/%m/%Y",
+        "time_format": "%H:%M",
+        "custom_extractor": "wizz_air",
+        "is_active": True,
+        "is_builtin": True,
+        "priority": 10,
+    },
+    # =========================================================================
     # Azul Brazilian Airlines (AD)
     # =========================================================================
     {
@@ -382,6 +398,10 @@ def _resolve_extractor(name: str):
         return extract
     if name == "finnair":
         from .airlines.finnair import extract
+
+        return extract
+    if name == "wizz_air":
+        from .airlines.wizz_air import extract
 
         return extract
     return None

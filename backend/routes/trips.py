@@ -375,36 +375,37 @@ def merge_trip(trip_id: str, body: MergeBody, user: dict = Depends(get_current_u
         )
         conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"]))
 
-        # Recalculate start/end dates and airports from all flights now in the target trip
-        date_row = conn.execute(
-            """SELECT MIN(substr(departure_datetime, 1, 10)) AS min_date,
-                      MAX(substr(departure_datetime, 1, 10)) AS max_date
-               FROM flights WHERE trip_id = ?""",
-            (body.target_trip_id,),
-        ).fetchone()
-        if date_row and date_row["min_date"]:
-            first_flight = conn.execute(
-                """SELECT departure_airport FROM flights WHERE trip_id = ?
-                   ORDER BY departure_datetime ASC LIMIT 1""",
-                (body.target_trip_id,),
-            ).fetchone()
-            last_flight = conn.execute(
-                """SELECT arrival_airport FROM flights WHERE trip_id = ?
-                   ORDER BY departure_datetime DESC LIMIT 1""",
-                (body.target_trip_id,),
-            ).fetchone()
-            conn.execute(
-                """UPDATE trips SET start_date = ?, end_date = ?,
-                   origin_airport = ?, destination_airport = ?, updated_at = ? WHERE id = ?""",
-                (
-                    date_row["min_date"],
-                    date_row["max_date"],
-                    first_flight["departure_airport"] if first_flight else None,
-                    last_flight["arrival_airport"] if last_flight else None,
-                    now,
-                    body.target_trip_id,
+        # Recalculate start/end dates and airports from all flights now in the target trip.
+        # start_date = departure date of first flight; end_date = arrival date of last flight.
+        conn.execute(
+            """UPDATE trips SET
+                start_date = (
+                    SELECT DATE(departure_datetime) FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) ASC LIMIT 1
                 ),
-            )
+                end_date = (
+                    SELECT DATE(arrival_datetime) FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                ),
+                origin_airport = (
+                    SELECT departure_airport FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                ),
+                destination_airport = (
+                    SELECT arrival_airport FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                ),
+                updated_at = ?
+            WHERE id = ?""",
+            (
+                body.target_trip_id,
+                body.target_trip_id,
+                body.target_trip_id,
+                body.target_trip_id,
+                now,
+                body.target_trip_id,
+            ),
+        )
 
     trip_image_path(trip_id).unlink(missing_ok=True)
     return {"target_trip_id": body.target_trip_id}

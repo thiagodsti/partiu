@@ -14,6 +14,16 @@ class TestAnonymizeText:
     def test_email_replaced(self):
         assert _anonymize_text("contact john.doe@airline.com", set()) == "contact test@example.com"
 
+    def test_noreply_email_preserved(self):
+        text = "From noreply@airline.com"
+        result = _anonymize_text(text, set())
+        assert result is not None and "noreply@airline.com" in result
+
+    def test_no_reply_email_preserved(self):
+        text = "From no-reply@airline.com"
+        result = _anonymize_text(text, set())
+        assert result is not None and "no-reply@airline.com" in result
+
     def test_card_replaced(self):
         assert (
             _anonymize_text("Card 1234 5678 9012 3456 used", set())

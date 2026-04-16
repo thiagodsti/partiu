@@ -34,8 +34,12 @@ from .shared import (
 
 logger = logging.getLogger(__name__)
 
-# Flight number: two uppercase letters + optional space + 3-5 digits
-_FN_RE = re.compile(r"\b([A-Z]{2}[\s\xa0]*\d{3,5})\b")
+# Flight number: 2 alphanumeric chars (at least one letter) + optional space/NBSP + 3-5 digits.
+# Covers all IATA airline codes: AA, W6, W9, 4U, 9W, etc.
+# We don't maintain an airline-code DB, so we keep the regex permissive and rely on
+# downstream airport validation (both dep/arr must exist in the airports table) to
+# discard false positives.
+_FN_RE = re.compile(r"\b((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2}[\s\xa0]*\d{3,5})\b")
 # Compact single-line format: "AF 871 / 12NOV Cape Town - Paris CDG 07:55 19:15"
 # Airline code + FN + "/" + DDMON[YYYY] + dep-city + "-" + arr-city + dep-time + arr-time
 _COMPACT_FLIGHT_RE = re.compile(
@@ -51,6 +55,14 @@ _TIME_RE = re.compile(r"^(\d{1,2}:\d{2})(?:[\s\xa0]*h)?$")
 _TIME_DATE_RE = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(.+)$")
 # Combined date+time like "03.04.2024 - 20:25" (Austrian format)
 _DATE_TIME_RE = re.compile(r"^(.+?)\s*[-–]\s*(\d{1,2}:\d{2})$")
+# Combined date+time without separator: "14/05/2026 09:35" (Wizz Air, etc.)
+# Numeric date portion: DD/MM/YYYY, YYYY-MM-DD, DD.MM.YYYY
+_DATE_TIME_SPACE_RE = re.compile(
+    r"^(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2})"
+    r"\s+(\d{1,2}:\d{2})$"
+)
+# Route pair: "BCN-LTN" or "BCN–LTN" — two IATA codes separated by a dash
+_ROUTE_PAIR_RE = re.compile(r"^([A-Z]{3})\s*[-–]\s*([A-Z]{3})$")
 # Zero-width characters produced by some email clients (e.g. Lufthansa)
 _ZW_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
 # Lines to skip when looking for IATA codes (labels, not airports)
@@ -86,14 +98,24 @@ def _iata_from_line(line: str) -> str:
     """Try to extract a valid airport IATA code from a single text line.
 
     Checks, in order:
-      1. Standalone 3-letter uppercase token (validated against airports DB)
-      2. Code in parentheses: "(ARN)" or "(BGY)"
-      3. City-name resolution via resolve_iata()
+      1. Code in parentheses: "(ARN)" or "(BCN)" — always trusted, skip-list ignored
+      2. Standalone 3-letter uppercase token (validated against airports DB)
+      3. City-name resolution via resolve_iata() — only for short, clean lines
 
     Returns '' when nothing valid is found.
     """
     line = line.strip()
-    if not line or len(line) > 45:
+    if not line:
+        return ""
+
+    # 1. Code in parentheses — most reliable signal; bypass skip-list
+    m = re.search(r"\(([A-Z]{3})\)", line)
+    if m:
+        code = m.group(1)
+        return code if _is_valid_iata(code) else ""
+
+    # From here on apply the skip-list and other guards
+    if len(line) > 45:
         return ""
     if _SKIP_IATA_RE.search(line):
         return ""
@@ -101,22 +123,19 @@ def _iata_from_line(line: str) -> str:
     if re.match(r"^[\d:.\s]+$", line):
         return ""
 
-    # 1. Standalone 3-letter uppercase
+    # 2. Standalone 3-letter uppercase
     if re.match(r"^[A-Z]{3}$", line):
         return line if _is_valid_iata(line) else ""
 
-    # 2. Code in parentheses
-    m = re.search(r"\(([A-Z]{3})\)", line)
-    if m:
-        code = m.group(1)
-        return code if _is_valid_iata(code) else ""
-
-    # 3. City name resolution (skip lines that contain digits unless they look
-    #    like "Guarulhos Intl" or similar; exclude date-like strings)
-    if re.search(r"[A-Za-z]{3,}", line) and not re.search(r"\d{2}:\d{2}", line):
-        # Don't try resolve_iata on lines that are clearly not city names
-        if re.match(r"^\d{1,2}\s+\w+\s+\d{4}$", line):  # looks like a date
-            return ""
+    # 3. City name resolution — only for lines that look like proper city/airport names:
+    #    must contain at least one alphabetic word of 4+ chars, no time patterns,
+    #    no digits (avoids matching "salin", "Diego", random short strings)
+    if (
+        re.search(r"[A-Za-z]{4,}", line)
+        and not re.search(r"\d{2}:\d{2}", line)
+        and not re.match(r"^\d{1,2}\s+\w+\s+\d{4}$", line)  # date-like
+        and not re.match(r"^[A-Za-z]{1,6}$", line)  # single short word (first names, etc.)
+    ):
         code = resolve_iata(line)
         if code and _is_valid_iata(code):
             return code
@@ -165,10 +184,28 @@ def _scan_window(
                 times.append(m.group(2))
                 continue
 
+        # Combined date+time without separator: "14/05/2026 09:35"?
+        m = _DATE_TIME_SPACE_RE.match(line)
+        if m:
+            d = parse_flight_date(m.group(1).strip())
+            if d is not None:
+                dates.append(d)
+                times.append(m.group(2))
+                continue
+
         # Date?
         d = parse_flight_date(line)
         if d is not None:
             dates.append(d)
+            continue
+
+        # Route pair "BCN-LTN"? Extract both codes at once.
+        m = _ROUTE_PAIR_RE.match(line)
+        if m:
+            for code in (m.group(1), m.group(2)):
+                if _is_valid_iata(code) and code not in seen_iatas:
+                    iatas.append(code)
+                    seen_iatas.add(code)
             continue
 
         # IATA?

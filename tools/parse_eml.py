@@ -97,9 +97,40 @@ def run(eml_path: Path):
 
     if rule is None:
         print("  ❌  No rule matched.\n")
-        print("  → You need to add a new rule to backend/parsers/builtin_rules.py")
-        print("    and register an extractor in backend/parsers/airlines/__init__.py\n")
-        return None, []
+        print("  → Trying generic HTML / PDF fallback (no airline rule required) …\n")
+
+        from backend.parsers.engine import try_generic_html_extraction, try_generic_pdf_extraction
+
+        flights = try_generic_html_extraction(email_msg)
+        if not flights:
+            flights = try_generic_pdf_extraction(email_msg)
+
+        if not flights:
+            print("  ❌  Generic fallback also returned 0 flights.\n")
+            print("  → Next steps:")
+            print("    1. Add a rule to backend/parsers/builtin_rules.py")
+            print("    2. Add an extractor in backend/parsers/airlines/")
+            print("    3. Register it in backend/parsers/airlines/__init__.py\n")
+            return None, []
+
+        print(f"  ⚠️  Generic fallback extracted {len(flights)} flight(s) (no rule):\n")
+        for i, f in enumerate(flights):
+            print(
+                f"  [{i}] {f.get('flight_number', '?'):8}  "
+                f"{f.get('departure_airport', '?')} → {f.get('arrival_airport', '?')}  "
+                f"{str(f.get('departure_datetime', '?'))[:16]}  "
+                f"{f.get('airline_name', '?')}"
+            )
+        print()
+        print("  Full output (JSON):")
+        print(
+            "  "
+            + json.dumps([_serialize_flight(f) for f in flights], indent=2).replace("\n", "\n  ")
+        )
+        print()
+        print("  → To get a proper parser, add a rule to backend/parsers/builtin_rules.py")
+        print("    and an extractor in backend/parsers/airlines/\n")
+        return None, flights
 
     print(f"  ✅  Rule matched: {rule.airline_name!r} (extractor: {rule.custom_extractor!r})\n")
 

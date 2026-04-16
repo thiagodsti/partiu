@@ -382,6 +382,8 @@
   "trip.delete_confirm": "Delete this trip and all its flights? This cannot be undone.",
   "flight.delete": "Delete Flight",
   "flight.delete_confirm": "Delete this flight? This cannot be undone.",
+  "flight.ungroup": "Move to New Trip",
+  "flight.ungroup_confirm": "Move this flight to its own new trip?",
   "trip.share": "Share Trip",
   "trip.share_username_placeholder": "Enter username",
   "trip.share_invite": "Invite",
