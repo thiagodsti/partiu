@@ -190,6 +190,7 @@ def seeded_airports_db(tmp_path_factory):
     airports = [
         ("ARN", "Stockholm Arlanda Airport", "Stockholm", "SE"),
         ("LHR", "London Heathrow Airport", "London", "GB"),
+        ("LIS", "Lisbon Portela Airport", "Lisbon", "PT"),
         ("GRU", "Guarulhos International Airport", "Sao Paulo", "BR"),
         ("MAD", "Madrid-Barajas Airport", "Madrid", "ES"),
         ("VIE", "Vienna International Airport", "Vienna", "AT"),

@@ -268,7 +268,7 @@ def tap_eticket_rule(tap_eticket_email):
 
 
 @pytest.fixture(scope="module")
-def tap_eticket_flights(tap_eticket_email, tap_eticket_rule):
+def tap_eticket_flights(tap_eticket_email, tap_eticket_rule, seeded_airports_db):
     from backend.parsers.engine import extract_flights_from_email
 
     assert tap_eticket_rule is not None, "No rule matched the TAP e-ticket fixture"
