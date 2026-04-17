@@ -281,3 +281,154 @@ class TestGuardrails:
         """3-letter tokens that aren't valid airport codes must not be used."""
         html = _html("SK533", "EUR", "DNA", "14 Jan 2026", "14:00", "16:05")
         assert extract_generic_html(_msg(html)) == []
+
+
+class TestCompoundTimeDashTime:
+    """Tests for 'HH:MM - HH:MM' compound time lines (SAS format)."""
+
+    def test_time_dash_time_extracts_both_times(self, seeded_airports_db):
+        """A line like '18:10 - 19:55' should provide both dep and arr times."""
+        html = _html("SK533", "ARN", "LHR", "28 Oct 2025", "18:10 - 19:55")
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["departure_datetime"].hour == 18
+        assert f["departure_datetime"].minute == 10
+        assert f["arrival_datetime"].hour == 19
+        assert f["arrival_datetime"].minute == 55
+
+    def test_time_dash_time_with_duration_suffix(self, seeded_airports_db):
+        """'18:10 - 19:55 (02h 45min)' should still extract both times."""
+        html = _html("SK533", "ARN", "CPH", "28 Oct 2025", "18:10 - 19:55 (02h 45min)")
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        assert flights[0]["departure_datetime"].hour == 18
+        assert flights[0]["arrival_datetime"].hour == 19
+
+
+class TestSchemaOrgMicrodata:
+    """Tests for schema.org FlightReservation microdata extraction."""
+
+    def _microdata_html(self, *legs):
+        """Build HTML with schema.org meta tags for one or more flight legs.
+
+        Each leg is a dict with keys: ref, fn, airline, dep, arr, dep_time, arr_time.
+        Optional: passenger, seat.
+        """
+        parts = ["<html><body>"]
+        for leg in legs:
+            parts.append(
+                f'<meta itemprop="reservationNumber" content="{leg["ref"]}">'
+                f'<meta itemprop="name" content="{leg.get("passenger", "TEST")}">'
+                f'<meta itemprop="flightNumber" content="{leg["fn"]}">'
+                f'<meta itemprop="iataCode" content="{leg["airline"]}">'
+                f'<meta itemprop="iataCode" content="{leg["dep"]}">'
+                f'<meta itemprop="iataCode" content="{leg["arr"]}">'
+                f'<meta itemprop="departureTime" content="{leg["dep_time"]}">'
+                f'<meta itemprop="arrivalTime" content="{leg["arr_time"]}">'
+            )
+            if "seat" in leg:
+                parts.append(f'<meta itemprop="airplaneSeat" content="{leg["seat"]}">')
+        parts.append("</body></html>")
+        return "".join(parts)
+
+    def test_single_leg_extraction(self, seeded_airports_db):
+        html = self._microdata_html(
+            {
+                "ref": "ABC123",
+                "fn": "533",
+                "airline": "SK",
+                "dep": "ARN",
+                "arr": "LHR",
+                "dep_time": "2025-10-28T18:10:00+00:00",
+                "arr_time": "2025-10-28T19:55:00+00:00",
+            }
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        f = flights[0]
+        assert f["flight_number"] == "SK533"
+        assert f["departure_airport"] == "ARN"
+        assert f["arrival_airport"] == "LHR"
+        assert f["booking_reference"] == "ABC123"
+
+    def test_multi_leg_extraction(self, seeded_airports_db):
+        html = self._microdata_html(
+            {
+                "ref": "XYZ",
+                "fn": "533",
+                "airline": "SK",
+                "dep": "ARN",
+                "arr": "LHR",
+                "dep_time": "2025-10-28T18:10:00+00:00",
+                "arr_time": "2025-10-28T19:55:00+00:00",
+            },
+            {
+                "ref": "XYZ",
+                "fn": "534",
+                "airline": "SK",
+                "dep": "LHR",
+                "arr": "ARN",
+                "dep_time": "2025-11-01T09:00:00+00:00",
+                "arr_time": "2025-11-01T11:10:00+00:00",
+            },
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 2
+        assert flights[0]["flight_number"] == "SK533"
+        assert flights[1]["flight_number"] == "SK534"
+
+    def test_seat_extracted(self, seeded_airports_db):
+        html = self._microdata_html(
+            {
+                "ref": "ABC123",
+                "fn": "533",
+                "airline": "SK",
+                "dep": "ARN",
+                "arr": "LHR",
+                "dep_time": "2025-10-28T18:10:00+00:00",
+                "arr_time": "2025-10-28T19:55:00+00:00",
+                "seat": "14A",
+            }
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        assert flights[0]["seat"] == "14A"
+
+    def test_duplicate_microdata_deduplicated(self, seeded_airports_db):
+        """Same flight in microdata twice should yield only one result."""
+        leg = {
+            "ref": "ABC123",
+            "fn": "533",
+            "airline": "SK",
+            "dep": "ARN",
+            "arr": "LHR",
+            "dep_time": "2025-10-28T18:10:00+00:00",
+            "arr_time": "2025-10-28T19:55:00+00:00",
+        }
+        html = self._microdata_html(leg, leg)
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+
+    def test_passenger_extracted(self, seeded_airports_db):
+        html = self._microdata_html(
+            {
+                "ref": "ABC123",
+                "fn": "533",
+                "airline": "SK",
+                "dep": "ARN",
+                "arr": "LHR",
+                "dep_time": "2025-10-28T18:10:00+00:00",
+                "arr_time": "2025-10-28T19:55:00+00:00",
+                "passenger": "JOHN DOE",
+            }
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        assert flights[0]["passenger_name"] == "JOHN DOE"
+
+    def test_no_microdata_falls_through(self, seeded_airports_db):
+        """HTML without microdata should fall through to line-scanning."""
+        html = _html("SK533", "ARN", "LHR", "14 Jan 2026", "14:00", "16:05")
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1  # line scanner handles it

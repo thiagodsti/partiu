@@ -64,6 +64,9 @@ _date_time_space_re = re.compile(
 )
 # Route pair: "BCN-LTN" or "BCN–LTN" — two IATA codes separated by a dash
 _route_pair_re = re.compile(r"^([A-Z]{3})\s*[-–]\s*([A-Z]{3})$")
+# Compound time-time: "18:10 - 19:55" or "18:10 - 19:55 (02h 45min)"
+# Extracts both departure and arrival times from a single line.
+_time_dash_time_re = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})(?:\s*\(.*\))?$")
 # Zero-width characters produced by some email clients (e.g. Lufthansa)
 _zero_width_chars_re = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
 # Lines to skip when looking for IATA codes (labels, not airports)
@@ -146,6 +149,13 @@ def _scan_window(
         m = _time_re.match(line)
         if m:
             times.append(m.group(1))
+            continue
+
+        # Compound time-time: "18:10 - 19:55" or "18:10 - 19:55 (02h 45min)"
+        m = _time_dash_time_re.match(line)
+        if m:
+            times.append(m.group(1))
+            times.append(m.group(2))
             continue
 
         # Combined time+date like "21:00 - 13 Apr 2025"?
@@ -394,11 +404,172 @@ def _extract_from_lines(
     return flights
 
 
+def _extract_schema_org(html: str, rule, email_date) -> list[dict]:
+    """Extract flights from schema.org FlightReservation microdata.
+
+    Many airlines embed structured data in ``<meta itemprop="...">`` tags
+    following the schema.org FlightReservation vocabulary.  The typical
+    sequence for one flight leg is::
+
+        <meta itemprop="reservationNumber" content="ABC123">
+        <meta itemprop="name" content="JOHN DOE">
+        <meta itemprop="flightNumber" content="533">
+        <meta itemprop="iataCode" content="SK">    <!-- airline -->
+        <meta itemprop="iataCode" content="ARN">   <!-- departure -->
+        <meta itemprop="iataCode" content="LHR">   <!-- arrival -->
+        <meta itemprop="departureTime" content="2025-01-14">
+        <meta itemprop="arrivalTime" content="2025-01-14T16:05:00+00:00">
+
+    Returns a list of flight dicts or ``[]`` when no microdata is found.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    metas: list[tuple[str, str]] = [
+        (str(m.get("itemprop", "")), str(m.get("content", "")))
+        for m in soup.find_all("meta")
+        if m.get("itemprop") and m.get("content")
+    ]
+
+    if not any(prop == "flightNumber" for prop, _ in metas):
+        return []
+
+    # Collect departure datetimes from "From:" blocks in HTML (TAP pattern)
+    dep_datetime_re = re.compile(r"(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}:\d{2})")
+    dep_datetimes: list[datetime] = []
+    for dm in dep_datetime_re.finditer(html):
+        context = html[max(0, dm.start() - 400) : dm.start()]
+        if context.rfind("From:") >= context.rfind("To:"):
+            from .engine import parse_flight_date
+
+            dep_date = parse_flight_date(dm.group(1))
+            if dep_date:
+                full_dt = _build_dt_from_date_time(dep_date, dm.group(2))
+                if full_dt:
+                    dep_datetimes.append(full_dt)
+
+    flights = []
+    seen_keys: set[tuple] = set()
+    leg_idx = 0
+    i = 0
+    while i < len(metas):
+        prop, val = metas[i]
+        if prop == "reservationNumber":
+            booking_ref = val
+            j = i + 1
+            fn_digits = ""
+            airline_code = ""
+            iata_codes: list[str] = []
+            dep_time_raw = arr_time_raw = seat = passenger = ""
+
+            while j < len(metas):
+                p2, v2 = metas[j]
+                if p2 == "reservationNumber" and j > i:
+                    break
+                if p2 == "name" and not fn_digits and not passenger:
+                    passenger = v2
+                elif p2 == "flightNumber":
+                    fn_digits = v2
+                elif p2 == "iataCode":
+                    iata_codes.append(v2)
+                elif p2 == "departureTime":
+                    dep_time_raw = v2
+                elif p2 == "arrivalTime":
+                    arr_time_raw = v2
+                elif p2 == "airplaneSeat":
+                    seat = v2
+                j += 1
+
+            # iata_codes: [airline, departure, arrival]
+            if len(iata_codes) < 3 or not fn_digits:
+                i = j
+                continue
+
+            airline_code = iata_codes[0]
+            dep_iata, arr_iata = iata_codes[1], iata_codes[2]
+            if not is_valid_iata(dep_iata) or not is_valid_iata(arr_iata):
+                i = j
+                continue
+            if dep_iata == arr_iata:
+                i = j
+                continue
+
+            flight_number = normalize_fn(f"{airline_code}{fn_digits}")
+
+            # Parse arrival datetime
+            arr_dt: datetime | None = None
+            if arr_time_raw:
+                try:
+                    arr_dt = datetime.fromisoformat(arr_time_raw).replace(tzinfo=UTC)
+                except ValueError:
+                    from .engine import parse_flight_date
+
+                    arr_date = parse_flight_date(arr_time_raw)
+                    arr_dt = _build_dt_from_date_time(arr_date, "00:00") if arr_date else None
+            if not arr_dt:
+                i = j
+                continue
+
+            # Parse departure datetime (from span or ISO)
+            dep_dt: datetime | None = None
+            if leg_idx < len(dep_datetimes):
+                dep_dt = dep_datetimes[leg_idx]
+            elif dep_time_raw:
+                try:
+                    dep_dt = datetime.fromisoformat(dep_time_raw).replace(tzinfo=UTC)
+                except ValueError:
+                    from .engine import parse_flight_date
+
+                    dep_date = parse_flight_date(dep_time_raw)
+                    dep_dt = _build_dt_from_date_time(dep_date, "00:00") if dep_date else None
+            if not dep_dt:
+                i = j
+                continue
+
+            key = (flight_number, dep_iata, arr_iata)
+            if key in seen_keys:
+                i = j
+                continue
+            seen_keys.add(key)
+
+            effective_rule = rule if rule is not None else _SimpleRule(airline_code)
+            flight = make_flight_dict(
+                effective_rule,
+                flight_number,
+                dep_iata,
+                arr_iata,
+                dep_dt,
+                arr_dt,
+                booking_ref,
+                passenger,
+            )
+            if flight and seat:
+                flight["seat"] = seat
+            if flight:
+                flights.append(flight)
+
+            leg_idx += 1
+            i = j
+        else:
+            i += 1
+
+    return flights
+
+
+def _build_dt_from_date_time(d, time_str: str) -> datetime | None:
+    """Combine a date and 'HH:MM' string into a UTC datetime."""
+    if not d or not time_str:
+        return None
+    try:
+        h, m = map(int, time_str.split(":"))
+        return datetime(d.year, d.month, d.day, h, m, tzinfo=UTC)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def extract_generic_html(email_msg, rule=None) -> list[dict]:
     """Extract flights from any HTML email using flight-number anchoring.
 
-    Tries the HTML body first; falls back to the plain-text body when the
-    HTML yields nothing (e.g. Norwegian/SAS plain-text confirmation emails).
+    Tries schema.org microdata first, then line-scanning on HTML body,
+    then falls back to the plain-text body.
 
     Args:
         email_msg: EmailMessage with html_body and/or body populated.
@@ -411,7 +582,18 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
     today = datetime.now(UTC).date()
     subject = email_msg.subject or ""
 
-    # --- Try HTML body ---
+    # --- Try schema.org microdata (most structured, least ambiguous) ---
+    if email_msg.html_body:
+        flights = _extract_schema_org(email_msg.html_body, rule, email_msg.date)
+        if flights:
+            logger.info(
+                "Generic schema.org: extracted %d flight(s) from '%s'",
+                len(flights),
+                subject[:60],
+            )
+            return flights
+
+    # --- Try HTML body line-scanning ---
     if email_msg.html_body:
         soup = BeautifulSoup(email_msg.html_body, "lxml")
         text_nl = soup.get_text(separator="\n", strip=True)
