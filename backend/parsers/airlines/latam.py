@@ -40,7 +40,7 @@ _SEGMENT_RE = re.compile(
 _CONNECTION_RE = re.compile(
     r"Troca\s+de\s+avi[ãa]o\s+em:.*?\(([A-Z]{3})\)\s+"
     r"([A-Z0-9]{2}\s*\d{3,5}).*?"
-    r"Tempo\s+de\s+espera:\s*(\d+)\s*hr?\s*(\d+)\s*min",
+    r"(?:Tempo\s+de\s+espera|Layover):\s*(\d+)\s*hr?\s*(\d+)\s*min",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -98,7 +98,14 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     Splits the text into directional sections (outbound / return) and processes
     each one. Falls back to PDF attachment times when the HTML lacks per-segment
     departure/arrival info for connecting flights.
+
+    When no language-specific section headers are found (sections == 1), falls back
+    to the language-agnostic flight-number-anchoring approach from the generic parser.
     """
+    from datetime import UTC, datetime
+
+    from ..generic_html import _ZW_RE, _extract_from_lines
+
     soup = BeautifulSoup(html, "lxml")
     html_text = _get_text(soup)
 
@@ -119,10 +126,32 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
 
     sections = _split_into_sections(text)
 
-    flights = []
-    for section in sections:
-        flights.extend(_process_section(section, rule, booking_ref, passenger, pdf_segments))
-    return flights
+    if len(sections) > 1:
+        # Language-specific section headers found — use LATAM-specific extraction
+        # (handles connections, PDF times, proportional splitting).
+        flights = []
+        for section in sections:
+            flights.extend(_process_section(section, rule, booking_ref, passenger, pdf_segments))
+        return flights
+
+    # No language-specific headers matched. Fall back to the language-agnostic
+    # flight-number-anchor approach used by the generic HTML parser so that
+    # emails in any language are handled correctly.
+    today = datetime.now(UTC).date()
+    lines = [
+        _ZW_RE.sub("", ln).replace("\xa0", " ").strip() for ln in text.split("\n") if ln.strip()
+    ]
+    lines = [ln for ln in lines if ln]
+    flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
+    if flights:
+        # Carry passenger name across all extracted flights
+        if passenger:
+            for f in flights:
+                f.setdefault("passenger_name", passenger)
+        return flights
+
+    # Last resort: LATAM-specific extraction on the whole text
+    return _process_section(text, rule, booking_ref, passenger, pdf_segments)
 
 
 def _get_pdf_text(email_msg) -> str:
@@ -142,10 +171,16 @@ def _get_pdf_text(email_msg) -> str:
 
 
 def _split_into_sections(text: str) -> list[str]:
-    """Split itinerary text into one section per flight direction."""
-    # "Voo de ida / volta" or "Outbound / Return flight"
+    """Split itinerary text into one section per flight direction.
+
+    Recognises the Portuguese and English section markers present in LATAM emails.
+    When none are found, returns [text] so the caller can try the language-agnostic
+    flight-number-anchor fallback.
+    """
+    # PT: "Voo de ida/volta"  EN: "Outbound/Return/Inbound flight/journey"
     direction_splits = re.split(
-        r"(Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey))",
+        r"(Voo de (?:ida|volta)"
+        r"|(?:Outbound|Return|Inbound)\s+(?:flight|journey))",
         text,
         flags=re.IGNORECASE,
     )
@@ -158,7 +193,7 @@ def _split_into_sections(text: str) -> list[str]:
             i += 2
         return sections
 
-    # "Trecho 1 / Trecho 2 / …" style
+    # PT: "Trecho N" (leg number marker used in some LATAM formats)
     trecho_splits = re.split(r"Trecho\s+\d+", text, flags=re.IGNORECASE)
     if len(trecho_splits) > 1:
         return trecho_splits[1:]
@@ -404,16 +439,39 @@ def extract_regex(email_msg, rule) -> list[dict]:
     """
     Plain-text regex fallback for LATAM emails when HTML is unavailable.
     Mirrors the BS4 extractor logic but operates on email_msg.body.
+
+    When no language-specific section headers are found, falls back to the
+    language-agnostic flight-number-anchoring approach from the generic parser.
     """
+    from datetime import UTC, datetime
+
+    from ..generic_html import _ZW_RE, _extract_from_lines
+
     body = email_msg.body
     booking_ref = _booking_ref_from_text(email_msg.subject + "\n" + body)
     passenger = _passenger_from_text(body)
 
     sections = _split_text_sections(body)
-    flights = []
-    for section in sections:
-        flights.extend(_process_text_section(section, rule, booking_ref, passenger))
-    return flights
+    if len(sections) > 1:
+        flights = []
+        for section in sections:
+            flights.extend(_process_text_section(section, rule, booking_ref, passenger))
+        return flights
+
+    # No language-specific headers matched — fall back to generic extraction.
+    today = datetime.now(UTC).date()
+    lines = [
+        _ZW_RE.sub("", ln).replace("\xa0", " ").strip() for ln in body.split("\n") if ln.strip()
+    ]
+    lines = [ln for ln in lines if ln]
+    flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
+    if flights:
+        if passenger:
+            for f in flights:
+                f.setdefault("passenger_name", passenger)
+        return flights
+
+    return _process_text_section(body, rule, booking_ref, passenger)
 
 
 def _booking_ref_from_text(text: str) -> str:
@@ -444,10 +502,16 @@ def _passenger_from_text(text: str) -> str:
 
 
 def _split_text_sections(body: str) -> list[str]:
-    """Split plain-text body into per-direction sections (same logic as BS4)."""
+    """Split plain-text body into per-direction sections.
+
+    Recognises the Portuguese and English markers. Returns [body] when none are
+    found so the caller can try the language-agnostic flight-number-anchor fallback.
+    """
+    # PT: "Voo de ida/volta"  EN: "Outbound/Return/Inbound flight/journey"
     direction_starts = list(
         re.finditer(
-            r"Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
+            r"Voo de (?:ida|volta)"
+            r"|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
             body,
             re.IGNORECASE,
         )
@@ -462,6 +526,7 @@ def _split_text_sections(body: str) -> list[str]:
             for i, m in enumerate(direction_starts)
         ]
 
+    # PT: "Trecho N"
     trecho_starts = list(re.finditer(r"Trecho\s+\d+", body, re.IGNORECASE))
     if trecho_starts:
         return [
@@ -473,6 +538,7 @@ def _split_text_sections(body: str) -> list[str]:
             for i, m in enumerate(trecho_starts)
         ]
 
+    # PT: "Itinerário" — trim preamble when no direction markers present
     itin_match = re.search(r"Itiner[áa]rio", body, re.IGNORECASE)
     return [body[itin_match.start() :] if itin_match else body]
 

@@ -49,7 +49,14 @@ import re
 from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, _get_text, _make_flight_dict, normalize_fn, resolve_iata
+from ..shared import (
+    _build_datetime,
+    _extract_booking_ref_text,
+    _get_text,
+    _make_flight_dict,
+    normalize_fn,
+    resolve_iata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +69,6 @@ _BP_DATE_RE = re.compile(r"\b(\d{2}[A-Z]{3}\d{2})\b")
 _BP_FN_RE = re.compile(r"\b(OS\s*\d{3,4})\b")
 _TIME_RE = re.compile(r"\b(\d{2}:\d{2})\b")
 _SEAT_RE = re.compile(r"\bSeat\s*\n\s*(\w+)", re.IGNORECASE)
-_BOOKING_RE = re.compile(
-    r"(?:Booking\s+code|booking\s+ref(?:erence)?|PNR)[:\s\n]+([A-Z0-9]{5,8})",
-    re.IGNORECASE,
-)
 
 
 def _extract_boarding_pass(text: str, rule) -> list[dict]:
@@ -139,8 +142,7 @@ def _extract_boarding_pass(text: str, rule) -> list[dict]:
         return []
 
     # Booking reference
-    booking_m = _BOOKING_RE.search(text)
-    booking_ref = booking_m.group(1) if booking_m else ""
+    booking_ref = _extract_booking_ref_text(text)
 
     # Seat
     seat_m = _SEAT_RE.search(text)
@@ -217,8 +219,7 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
         if not dep_dt or not arr_dt:
             return []
 
-        booking_m = _BOOKING_RE.search(text)
-        booking_ref = booking_m.group(1) if booking_m else ""
+        booking_ref = _extract_booking_ref_text(text)
 
         flight = _make_flight_dict(
             rule,
@@ -277,8 +278,7 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
         if not dep_dt or not arr_dt:
             return []
 
-        booking_m = _BOOKING_RE.search(text)
-        booking_ref = booking_m.group(1) if booking_m else ""
+        booking_ref = _extract_booking_ref_text(text)
 
         flight = _make_flight_dict(
             rule,

@@ -25,14 +25,15 @@ import re
 from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, fix_overnight
+from ..shared import (
+    _build_datetime,
+    _extract_booking_ref_text,
+    _extract_passenger_text,
+    _extract_seat_text,
+    fix_overnight,
+)
 
 logger = logging.getLogger(__name__)
-
-_BOOKING_RE = re.compile(
-    r"Reserv\w*:\s*\n([A-Z0-9]{5,8})",
-    re.IGNORECASE,
-)
 # Ryanair flight numbers: FR + 3-5 digits (also Lauda/Malta Air on FR code)
 _FN_RE = re.compile(r"\b([A-Z]{2}\d{3,5})\b")
 # "Wed, 23 Apr 25" or "Wed, 23 Apr 2025"
@@ -59,8 +60,9 @@ def _extract_text(email_msg) -> str:
 def extract(email_msg, rule) -> list[dict]:
     text = _extract_text(email_msg)
 
-    booking_ref_m = _BOOKING_RE.search(text)
-    booking_ref = booking_ref_m.group(1) if booking_ref_m else ""
+    booking_ref = _extract_booking_ref_text(email_msg.subject + "\n" + text)
+    passenger = _extract_passenger_text(text)
+    seat = _extract_seat_text(text)
 
     # Collect all flight number matches (deduplicated, preserving order)
     seen_fns: set[str] = set()
@@ -114,8 +116,10 @@ def extract(email_msg, rule) -> list[dict]:
                 "arrival_airport": arr_iata,
                 "departure_datetime": dep_dt,
                 "arrival_datetime": arr_dt,
-                "passenger_name": "",
-                "seat": "",
+                "passenger_name": passenger,
+                # Seat is unambiguous only for single-leg emails; for multi-leg
+                # we can't tell which seat belongs to which flight — BCBP handles it.
+                "seat": seat if n_legs == 1 else "",
                 "cabin_class": "",
             }
         )

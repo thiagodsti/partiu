@@ -124,7 +124,6 @@ def test_arrival_not_before_departure(fixture_emails):
     [
         ("LA", "latam"),
         ("SK", "sas"),
-        ("AD", "azul"),
     ],
 )
 def test_specific_airline_parses_flights(

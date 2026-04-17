@@ -1,91 +1,155 @@
 """
-Azul Brazilian Airlines flight extractor (BS4 only).
+Azul Brazilian Airlines (AD) flight extractor.
+
+Two email layouts are supported (both produce ``VCP → FLN  AD4849`` style
+output — the difference is purely in how date/time and flight number appear):
+
+Layout A — newer format (azul_anonymized.eml):
+  VCP
+  São Paulo, Viracopos-Campinas     ← optional city name line
+  02/03/2026 - 13:20                ← date + time, full year, dash separator
+  Voo                               ← flight label on its own line
+  4849                              ← flight number on its own line
+  FLN
+  Florianopolis, Hercilio Luz International
+  02/03/2026 - 14:35
+
+Layout B — older format (azul2_anonymized.eml):
+  VCP
+  02/03 • 13:20                     ← date + time, no year, bullet separator
+  Voo 4849                          ← label + number on the same line
+  FLN
+  02/03 • 14:35
+
+The parser uses the shared ``extract_line_datetime`` and
+``extract_line_flight_number`` helpers so that new date/time formats
+discovered in any airline's email only need to be added once (in
+``shared.py``) to be covered here automatically.
 """
 
+import logging
 import re
-from datetime import date as date_type
 from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from ..shared import (
     _build_datetime,
-    _extract_booking_reference,
-    _get_text,
-    _make_flight_dict,
+    _extract_booking_ref_text,
+    extract_line_datetime,
+    extract_line_flight_number,
+    fix_overnight,
 )
 
+logger = logging.getLogger(__name__)
 
-def _parse_ddmm(date_str: str, ref_year: int, email_date=None) -> date_type | None:
+_IATA_RE = re.compile(r"^([A-Z]{3})$")
+
+
+def _extract_flights(text: str, booking_ref: str, rule, ref_year: int | None) -> list[dict]:
     """
-    Parse a DD/MM date string and infer the year from context.
-    If the resulting date is before the email date, bumps the year by 1.
+    Scan lines for Azul itinerary blocks using shared pattern libraries.
+
+    State machine:
+      0  → looking for departure IATA
+      1  → found dep IATA, looking for dep datetime (or restart on new IATA)
+      2  → found dep datetime, looking for flight number
+      3  → found flight number, looking for arrival IATA
+      4  → found arr IATA, looking for arr datetime → emit flight, reset to 0
     """
-    m = re.match(r"(\d{2})/(\d{2})", date_str)
-    if not m:
-        return None
-    try:
-        day, month = int(m.group(1)), int(m.group(2))
-        candidate = date_type(ref_year, month, day)
-        if email_date and candidate < email_date.date():
-            candidate = date_type(ref_year + 1, month, day)
-        return candidate
-    except ValueError:
-        return None
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
+    flights: list[dict] = []
+    state = 0
+    dep_iata = arr_iata = flight_number = dep_time_str = ""
+    dep_date = None
 
-def extract_bs4(html: str, rule, email_msg) -> list[dict]:
-    """Extract flights from an Azul HTML email."""
-    soup = BeautifulSoup(html, "lxml")
-    text = _get_text(soup)
-    booking_ref = _extract_booking_reference(soup, email_msg.subject)
-    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
+    for line in lines:
+        if state == 0:
+            m = _IATA_RE.match(line)
+            if m:
+                dep_iata = m.group(1)
+                state = 1
 
-    # Each flight block looks like:
-    #   GRU  DD/MM • HH:MM  ... Voo 1234 ...  CGH  DD/MM • HH:MM
-    block_re = re.compile(
-        r"(?:^|\s)([A-Z]{3})\s"
-        r".*?"
-        r"(\d{2}/\d{2})\s*[•·]\s*"
-        r"(\d{1,2}:\d{2})"
-        r".*?"
-        r"(?:Voo|Flight)\s+(\d{3,5})"
-        r".*?"
-        r"(?:^|\s)([A-Z]{3})\s"
-        r".*?"
-        r"(\d{2}/\d{2})\s*[•·]\s*"
-        r"(\d{1,2}:\d{2})",
-        re.DOTALL | re.MULTILINE,
-    )
+        elif state == 1:
+            # Check for datetime first
+            result = extract_line_datetime(line, ref_year)
+            if result:
+                dep_date, dep_time_str = result
+                state = 2
+                continue
+            # Check for a combined "Voo 4849" line (Layout B can skip state 2)
+            fn = extract_line_flight_number(line, rule.airline_code)
+            if fn:
+                # We have a flight number but no datetime yet — not expected,
+                # but guard against stale matches by resetting
+                pass
+            # Another standalone IATA restarts the departure search
+            if _IATA_RE.match(line):
+                dep_iata = _IATA_RE.match(line).group(1)  # type: ignore[union-attr]
 
-    flights = []
-    for m in block_re.finditer(text):
-        dep_airport = m.group(1)
-        dep_date = _parse_ddmm(m.group(2), ref_year, email_msg.date)
-        dep_time = m.group(3)
-        flight_number = f"{rule.airline_code}{m.group(4)}"
-        arr_airport = m.group(5)
-        arr_date = _parse_ddmm(m.group(6), ref_year, email_msg.date)
-        arr_time = m.group(7)
+        elif state == 2:
+            fn = extract_line_flight_number(line, rule.airline_code)
+            if fn:
+                flight_number = fn
+                state = 3
 
-        if not dep_date or not arr_date:
-            continue
+        elif state == 3:
+            m = _IATA_RE.match(line)
+            if m:
+                arr_iata = m.group(1)
+                state = 4
 
-        flight = _make_flight_dict(
-            rule, flight_number,
-            dep_airport, arr_airport,
-            _build_datetime(dep_date, dep_time),
-            _build_datetime(arr_date, arr_time),
-            booking_ref,
-        )
-        if flight:
-            flights.append(flight)
+        elif state == 4:
+            result = extract_line_datetime(line, ref_year)
+            if result:
+                arr_date, arr_time_str = result
+                if dep_date and dep_iata != arr_iata:
+                    dep_dt = _build_datetime(dep_date, dep_time_str)
+                    arr_dt = _build_datetime(arr_date, arr_time_str)
+                    if dep_dt and arr_dt:
+                        arr_dt = fix_overnight(dep_dt, arr_dt)
+                        flights.append(
+                            {
+                                "airline_name": rule.airline_name,
+                                "airline_code": rule.airline_code,
+                                "flight_number": flight_number,
+                                "departure_airport": dep_iata,
+                                "arrival_airport": arr_iata,
+                                "departure_datetime": dep_dt,
+                                "arrival_datetime": arr_dt,
+                                "booking_reference": booking_ref,
+                                "passenger_name": "",
+                                "seat": "",
+                                "cabin_class": "",
+                                "departure_terminal": "",
+                                "arrival_terminal": "",
+                                "departure_gate": "",
+                                "arrival_gate": "",
+                            }
+                        )
+                # Reset for next leg
+                state = 0
+                dep_iata = arr_iata = flight_number = dep_time_str = ""
+                dep_date = None
 
     return flights
 
 
 def extract(email_msg, rule) -> list[dict]:
-    """Unified entry point: try HTML (BS4) only."""
+    """Unified entry point: parse HTML body, fall back to plain text."""
+    subject = email_msg.subject or ""
+    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
+
     if email_msg.html_body:
-        return extract_bs4(email_msg.html_body, rule, email_msg)
-    return []
+        soup = BeautifulSoup(email_msg.html_body, "lxml")
+        text = soup.get_text(separator="\n", strip=True)
+    else:
+        text = email_msg.body or ""
+
+    booking_ref = _extract_booking_ref_text(subject + "\n" + text)
+    flights = _extract_flights(text, booking_ref, rule, ref_year)
+
+    if flights:
+        logger.debug("Azul: extracted %d flight(s)", len(flights))
+    return flights

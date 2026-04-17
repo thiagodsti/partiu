@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup
 from .engine import parse_flight_date
 from .shared import (
     _extract_booking_ref_text,
+    _extract_passenger_text,
     _make_flight_dict,
     fix_overnight,
     normalize_fn,
@@ -448,6 +449,7 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
                     len(flights),
                     subject[:60],
                 )
+                _enrich_metadata(flights, subject + "\n" + text_nl)
                 return flights
 
     # --- Fallback: plain-text body ---
@@ -468,6 +470,23 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
                     len(flights),
                     subject[:60],
                 )
+                _enrich_metadata(flights, subject + "\n" + text_plain)
                 return flights
 
     return []
+
+
+def _enrich_metadata(flights: list[dict], text: str) -> None:
+    """Fill in passenger_name on extracted flights using generic text patterns.
+
+    Called after the primary extraction so any field already set by the
+    airline-specific parser (or the compact-format path) is preserved.
+    Seat is intentionally not set here — for multi-leg itineraries we cannot
+    tell which seat belongs to which flight; BCBP boarding-pass parsing handles
+    that later.
+    """
+    passenger = _extract_passenger_text(text)
+    if passenger:
+        for f in flights:
+            if not f.get("passenger_name"):
+                f["passenger_name"] = passenger

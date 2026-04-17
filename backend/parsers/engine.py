@@ -4,9 +4,8 @@ Flight email parsing engine.
 Main entry point: extract_flights_from_email()
 
 Flow:
-  1. Try BS4 (HTML) extraction via the per-airline extractor.
-  2. Fall back to the airline's custom regex extractor (LATAM, SAS/Norwegian).
-  3. Fall back to generic body_pattern regex matching defined in the rule.
+  1. Try the per-airline extractor (HTML, regex, PDF — handled internally).
+  2. Also try the generic PDF extractor and merge any richer fields it finds.
 """
 
 import calendar
@@ -105,7 +104,7 @@ def parse_flight_date(raw: str) -> date_type | None:
     """
     raw = raw.strip()
 
-    # ISO and common numeric formats
+    # ISO and common numeric formats (with year)
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y"):
         try:
             return datetime.strptime(raw, fmt).date()
@@ -154,13 +153,14 @@ def match_rule_to_email(email_msg: EmailMessage, rules):
     senders = [email_msg.sender] + _extract_forwarded_senders(email_msg.body)
     subjects = [email_msg.subject] + _extract_forwarded_subjects(email_msg.body)
 
+    from .builtin_rules import SUBJECT_PATTERN
+
     for rule in rules:
         try:
             if not any(re.search(rule.sender_pattern, s, re.IGNORECASE) for s in senders):
                 continue
-            if rule.subject_pattern:
-                if not any(re.search(rule.subject_pattern, s, re.IGNORECASE) for s in subjects):
-                    continue
+            if not any(re.search(SUBJECT_PATTERN, s, re.IGNORECASE) for s in subjects):
+                continue
             return rule
         except re.error as e:
             logger.warning("Invalid regex in rule %s: %s", rule.airline_name, e)
@@ -181,43 +181,30 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     """
     Extract flight data from an email that has been matched to an airline rule.
 
-    Strategy:
-      1. Call ``rule.extractor(email_msg, rule)`` — the per-airline unified callable
-         set by ``get_builtin_rules()``.  It tries HTML first, then regex/PDF internally.
-      2. Also try the generic PDF extractor and merge any extra fields it finds.
-      3. Fall back to the generic body_pattern regex when no extractor is attached.
+    Calls ``rule.extractor(email_msg, rule)`` — the per-airline unified callable
+    set by ``get_builtin_rules()``.  Also runs the generic PDF extractor and
+    merges any richer fields it finds.
     """
     extractor = getattr(rule, "extractor", None)
-    if extractor is not None:
-        try:
-            results = extractor(email_msg, rule)
-        except Exception:
-            logger.debug(
-                "Extractor for '%s' raised an exception, trying generic fallback",
-                rule.airline_name,
-                exc_info=True,
-            )
-            results = []
-
-        # Always also attempt generic PDF extraction and merge any richer data
-        if email_msg.pdf_attachments:
-            pdf_results = _try_generic_pdf(email_msg)
-            results = _merge_flights(results, pdf_results)
-
-        if results:
-            return results
-
-    # Legacy / generic fallback — used when no extractor is attached (custom rules)
-    if email_msg.html_body:
-        from .airlines import extract_with_bs4
-
-        bs4_result = extract_with_bs4(email_msg.html_body, rule, email_msg)
-        if bs4_result:
-            return bs4_result
-
-    if not getattr(rule, "body_pattern", ""):
+    if extractor is None:
         return []
-    return _extract_generic(email_msg, rule)
+
+    try:
+        results = extractor(email_msg, rule)
+    except Exception:
+        logger.debug(
+            "Extractor for '%s' raised an exception",
+            rule.airline_name,
+            exc_info=True,
+        )
+        results = []
+
+    # Always also attempt generic PDF extraction and merge any richer data
+    if email_msg.pdf_attachments:
+        pdf_results = _try_generic_pdf(email_msg)
+        results = _merge_flights(results, pdf_results)
+
+    return results
 
 
 def _try_generic_pdf(email_msg: EmailMessage) -> list[dict]:
@@ -293,161 +280,6 @@ def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:
         return []
 
     return _extract_generic_pdf(pdf_text, email_msg)
-
-
-def _extract_generic(email_msg: EmailMessage, rule) -> list[dict]:
-    """
-    Generic regex-based extractor driven by rule.body_pattern named groups.
-
-    Expected named groups: flight_number, departure_airport, arrival_airport,
-    departure_date, departure_time, arrival_date, arrival_time, booking_reference,
-    passenger_name, seat, cabin_class, departure_terminal, arrival_terminal,
-    departure_gate, arrival_gate.
-    """
-    body = email_msg.body
-    flights_data = []
-
-    from .shared import _extract_booking_ref_text
-
-    shared_booking = _extract_booking_ref_text(email_msg.subject + "\n" + body)
-    shared_passenger = _extract_passenger(body)
-
-    _CABIN_MAP = {
-        "economy": "economy",
-        "eco": "economy",
-        "y": "economy",
-        "econômica": "economy",
-        "económica": "economy",
-        "premium economy": "premium_economy",
-        "premium": "premium_economy",
-        "w": "premium_economy",
-        "business": "business",
-        "j": "business",
-        "c": "business",
-        "ejecutiva": "business",
-        "first": "first",
-        "f": "first",
-    }
-
-    try:
-        matches = list(re.finditer(rule.body_pattern, body, re.IGNORECASE | re.DOTALL))
-    except re.error as e:
-        logger.error("Regex error in rule %s body_pattern: %s", rule.airline_name, e)
-        return flights_data
-
-    if not matches:
-        logger.debug(
-            "No body_pattern matches for rule '%s' in email %s",
-            rule.airline_name,
-            email_msg.message_id,
-        )
-        return flights_data
-
-    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
-
-    for match in matches:
-        g = match.groupdict()
-
-        raw_flight_num = g.get("flight_number", "").strip()
-        if raw_flight_num and raw_flight_num.isdigit() and rule.airline_code:
-            raw_flight_num = f"{rule.airline_code}{raw_flight_num}"
-
-        flight_data = {
-            "airline_name": rule.airline_name,
-            "airline_code": rule.airline_code,
-            "flight_number": raw_flight_num,
-            "departure_airport": g.get("departure_airport", "").strip().upper(),
-            "arrival_airport": g.get("arrival_airport", "").strip().upper(),
-            "booking_reference": g.get("booking_reference", "").strip() or shared_booking,
-            "passenger_name": g.get("passenger_name", "").strip() or shared_passenger,
-            "seat": g.get("seat", "").strip(),
-            "cabin_class": _CABIN_MAP.get(g.get("cabin_class", "").strip().lower(), ""),
-            "departure_terminal": g.get("departure_terminal", "").strip(),
-            "arrival_terminal": g.get("arrival_terminal", "").strip(),
-            "departure_gate": g.get("departure_gate", "").strip(),
-            "arrival_gate": g.get("arrival_gate", "").strip(),
-        }
-
-        dep_date_str = g.get("departure_date", "").strip()
-        dep_time_str = g.get("departure_time", "").strip()
-
-        # If no explicit date in the match, look for one in the preceding body text
-        if not dep_date_str:
-            ctx_dates = list(
-                re.finditer(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})", body[: match.start()])
-            )
-            if ctx_dates:
-                dep_date_str = ctx_dates[-1].group(1)
-
-        arr_date_str = g.get("arrival_date", "").strip() or dep_date_str
-        arr_time_str = g.get("arrival_time", "").strip()
-
-        dep_date = _parse_date_with_fallback(dep_date_str, rule, ref_year, email_msg)
-        if dep_date is None or not dep_time_str:
-            if dep_date_str or dep_time_str:
-                logger.warning("Cannot parse departure datetime: %r %r", dep_date_str, dep_time_str)
-            else:
-                logger.debug("Skipping match with no departure date/time captured")
-            continue
-
-        dep_dt = _parse_time_on_date(dep_date, dep_time_str)
-        if dep_dt is None:
-            logger.warning("Bad departure time %r", dep_time_str)
-            continue
-        flight_data["departure_datetime"] = dep_dt
-
-        arr_date = _parse_date_with_fallback(arr_date_str, rule, ref_year, email_msg) or dep_date
-        if not arr_time_str:
-            logger.warning("No arrival time found, skipping")
-            continue
-        arr_dt = _parse_time_on_date(arr_date, arr_time_str)
-        if arr_dt is None:
-            logger.warning("Bad arrival time %r", arr_time_str)
-            continue
-        flight_data["arrival_datetime"] = arr_dt
-
-        if (
-            flight_data["flight_number"]
-            and flight_data["departure_airport"]
-            and flight_data["arrival_airport"]
-        ):
-            if not validate_flight_number(flight_data["flight_number"]):
-                logger.debug("Skipping invalid flight number %r", flight_data["flight_number"])
-                continue
-            flights_data.append(flight_data)
-        else:
-            logger.debug("Skipping incomplete flight match: %s", flight_data)
-
-    return flights_data
-
-
-def _extract_passenger(body: str) -> str:
-    m = re.search(
-        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name)|"
-        r"Passagier|Reisender|passager|passasjer)"
-        r"[\s:]*\n\s*(?:[-•·]\s*)?"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ ]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
-        body,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""
-
-
-def _parse_date_with_fallback(date_str: str, rule, ref_year: int, email_msg) -> date_type | None:
-    """Parse a date string, trying the rule's date_format as a secondary format."""
-    d = parse_flight_date(date_str)
-    if d is None and date_str:
-        try:
-            d = datetime.strptime(date_str, rule.date_format).date()
-        except (ValueError, TypeError):
-            pass
-    # Year 1900 means strptime used a format without a year — inject ref_year
-    if d is not None and d.year == 1900:
-        candidate = d.replace(year=ref_year)
-        if email_msg.date and candidate < email_msg.date.date():
-            candidate = d.replace(year=ref_year + 1)
-        d = candidate
-    return d
 
 
 def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:

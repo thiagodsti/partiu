@@ -15,7 +15,14 @@ import re
 from datetime import datetime
 
 from ..engine import parse_flight_date
-from ..shared import _make_aware, _make_flight_dict, fix_overnight, resolve_iata
+from ..shared import (
+    _extract_booking_ref_text,
+    _extract_passenger_text,
+    _make_aware,
+    _make_flight_dict,
+    fix_overnight,
+    resolve_iata,
+)
 from .sas import extract as _sas_extract
 from .sas import extract_bs4 as _sas_extract_bs4
 from .sas import extract_regex as _sas_extract_regex
@@ -30,12 +37,6 @@ logger = logging.getLogger(__name__)
 #   YOUR BOOKING REFERENCE IS:\n<REF>
 _TRAVEL_DOCS_MARKER_RE = re.compile(
     r"YOUR BOOKING REFERENCE IS",
-    re.IGNORECASE,
-)
-
-# Booking reference extraction
-_BOOKING_REF_RE = re.compile(
-    r"(?:YOUR BOOKING REFERENCE IS[:\s]*|Booking reference[:\s]*)([A-Z0-9]{5,8})",
     re.IGNORECASE,
 )
 
@@ -86,9 +87,8 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
 
     collapsed = _collapse_body(body)
 
-    # Booking reference
-    ref_m = _BOOKING_REF_RE.search(collapsed)
-    booking_ref = ref_m.group(1).strip() if ref_m else ""
+    booking_ref = _extract_booking_ref_text((email_msg.subject or "") + "\n" + collapsed)
+    passenger = _extract_passenger_text(body)
 
     flights = []
     for m in _FLIGHT_BLOCK_RE.finditer(collapsed):
@@ -122,7 +122,7 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
         arr_dt = fix_overnight(dep_dt, arr_raw)
 
         flight = _make_flight_dict(
-            rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref
+            rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger
         )
         if flight:
             flights.append(flight)

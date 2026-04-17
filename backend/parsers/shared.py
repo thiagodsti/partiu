@@ -1,5 +1,13 @@
 """
 Shared utilities for BS4-based flight email extractors.
+
+Pattern libraries
+-----------------
+Rather than each airline parser hard-coding its own date/time/flight-number
+regexes, shared pattern lists are defined here and tried in sequence (most
+specific first, least specific last).  When a new airline email reveals a new
+format, add one entry here and every parser that calls the shared helpers
+benefits automatically.
 """
 
 import logging
@@ -10,6 +18,91 @@ from datetime import date as date_type
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Shared datetime patterns (date + time on the same line/token)
+# ---------------------------------------------------------------------------
+# Each pattern must capture group(1) = date string, group(2) = HH:MM time.
+# The date string is passed directly to parse_flight_date / parse_date_str.
+# Year-less patterns (marked with a comment) return just "DD/MM"; the helper
+# injects the reference year before parsing.
+
+_DATETIME_LINE_PATTERNS: list[re.Pattern] = [
+    # "02/03/2026 - 13:20"  or  "02/03/2026 – 13:20"  (en-dash)
+    re.compile(r"(\d{2}/\d{2}/\d{4})\s*[-–]\s*(\d{2}:\d{2})"),
+    # "02/03/2026 13:20"  (space-only separator)
+    re.compile(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})"),
+    # "2026-03-02 13:20"  (ISO date)
+    re.compile(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})"),
+    # "2 Mar 2026 13:20"  or  "02 Mar 2026, 13:20"  (month-name)
+    re.compile(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]+\.?\s+\d{4})[,\s]+(\d{2}:\d{2})"),
+    # "02/03 • 13:20"  or  "02/03 · 13:20"  (no year, bullet separator)
+    re.compile(r"(\d{2}/\d{2})\s*[•·]\s*(\d{2}:\d{2})"),
+    # "02/03 - 13:20"  or  "02/03 – 13:20"  (no year, dash separator)
+    re.compile(r"(\d{2}/\d{2})\s*[-–]\s*(\d{2}:\d{2})"),
+]
+
+# ---------------------------------------------------------------------------
+# Shared flight-number patterns (per-line)
+# ---------------------------------------------------------------------------
+# Tried in order. The first match wins.
+# Caller is responsible for prepending airline_code when only digits are found.
+
+_FLIGHT_NUM_LINE_PATTERNS: list[re.Pattern] = [
+    # "Voo 4849" / "Vôo 4849"  (Portuguese label + number, same line)
+    re.compile(r"(?:Voo|Vôo)\s+(\d{3,5})", re.IGNORECASE),
+    # "Flight 4849"  (English label + number, same line)
+    re.compile(r"Flight\s+(\d{3,5})", re.IGNORECASE),
+    # Full IATA flight number alone on a line: "AD4849", "W95362"
+    re.compile(r"^([A-Z]{1,3}\d{3,5})$"),
+    # Bare digit-only number alone on a line: "4849"
+    re.compile(r"^(\d{3,5})$"),
+]
+
+
+def extract_line_datetime(line: str, ref_year: int | None = None) -> tuple[date_type, str] | None:
+    """
+    Try all shared datetime patterns against a single line of text.
+
+    Returns ``(date, time_str)`` where *date* is a fully resolved
+    :class:`datetime.date` and *time_str* is ``"HH:MM"``.
+    For year-less patterns (``DD/MM``), *ref_year* (defaulting to the
+    current year) is injected before parsing.
+    Returns ``None`` when no pattern matches.
+    """
+    # Import here to avoid circular import (engine imports shared)
+    from .engine import parse_flight_date
+
+    for pat in _DATETIME_LINE_PATTERNS:
+        m = pat.search(line)
+        if m:
+            date_str, time_str = m.group(1), m.group(2)
+            # Year-less "DD/MM" — inject reference year
+            if re.match(r"^\d{2}/\d{2}$", date_str):
+                year = ref_year or datetime.now().year
+                date_str = f"{date_str}/{year}"
+            d = parse_flight_date(date_str)
+            if d:
+                return d, time_str
+    return None
+
+
+def extract_line_flight_number(line: str, airline_code: str = "") -> str:
+    """
+    Try all shared flight-number patterns against a single line of text.
+
+    Returns the flight number string (airline code already included), or
+    an empty string when nothing matched.  Digit-only matches are prefixed
+    with *airline_code* when one is provided.
+    """
+    for pat in _FLIGHT_NUM_LINE_PATTERNS:
+        m = pat.search(line)
+        if m:
+            raw = m.group(1).strip()
+            if raw.isdigit() and airline_code:
+                return f"{airline_code}{raw}"
+            return raw
+    return ""
 
 
 def normalize_fn(fn: str) -> str:
@@ -95,18 +188,129 @@ def resolve_iata(name: str) -> str:
 
 
 def _extract_booking_ref_text(text: str) -> str:
-    """Extract a booking / PNR reference from a plain-text string."""
+    """Extract a booking / PNR reference from a plain-text string.
+
+    Covers all major airline label formats across English, Portuguese, Spanish,
+    German, and Scandinavian.
+
+    Design decisions:
+    - Separator allows spaces, colons, brackets, hash, newlines, and an optional
+      connecting word like "IS" (Norwegian: "YOUR BOOKING REFERENCE IS:\\nQAJV6E").
+    - ``Reserv\\w{1,12}`` instead of just "Reservation" because test fixtures
+      anonymise the label to "ReservTESTRF" (real emails always have "Reservation").
+    - Sub-keywords for Ticket / Order / e-ticket are **required** (not optional)
+      to avoid matching "Ticket details", "Order summary", etc.
+    - The captured code uses ``(?-i:[A-Z0-9]{5,8})`` (inline no-IGNORECASE) so
+      lowercase English words like "details", "secure", "price" are never captured
+      — airline booking references are always uppercase alphanumeric.
+    """
     m = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|Buchungscode|Buchungsnummer|Reservierungscode|"
-        r"reservation\s*code|confirmation\s*(?:code|number))[:\s\[]+([A-Z0-9]{5,8})",
+        r"(?:"
+        r"C[óo]digo\s+de\s+reserva(?:\s*/\s*Booking\s+ref)?"  # PT/ES + bilingual
+        r"|Referência\s+da\s+reserva"  # PT (TAP)
+        r"|N[úu]mero\s+de\s+reserva"  # PT/ES (Kiwi)
+        r"|booking\s*(?:ref(?:erence)?|code|number)"  # EN: all variants
+        r"|Reserv\w{1,12}\b"  # Reservation, Reserva, ReservTESTRF…
+        r"|Bokning(?:snummer)?"  # SV
+        r"|PNR"  # Universal
+        r"|Buchungscode|Buchungsnummer|Reservierungscode|Buchungsreferenz"  # DE
+        r"|confirmation\s*(?:code|number)"  # EN
+        r"|Flight\s+confirmation\s+code"  # EN (Wizz Air)
+        r"|e-?ticket\s+(?:number|no\.?)"  # EN — sub-keyword required
+        r"|Ticket\s+(?:number|no\.?)"  # EN — sub-keyword required
+        r"|Order\s+(?:number|no\.?)"  # EN — sub-keyword required
+        r")"
+        r"[:\s\[\#\n]+"  # separator (colon / spaces / newlines)
+        r"(?:is\b[:\s\n]*)?"  # optional connecting word "IS" (Norwegian format)
+        r"(?-i:([A-Z0-9]{5,8}))\b",  # code must be uppercase — filters out common words
         text,
         re.IGNORECASE,
     )
     if m:
         return m.group(1).strip()
-    m = re.search(r"Booking\s*:\s*([A-Z0-9]{5,8})", text, re.IGNORECASE)
+    # BA subject format: "Your e-ticket receipt J9CRT8:"
+    m = re.search(r"\breceipt\s+(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    # Bare "Booking: XXXXX" without a sub-keyword
+    m = re.search(r"\bBooking\s*:\s*(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
     return m.group(1).strip() if m else ""
+
+
+def _extract_passenger_text(text: str) -> str:
+    """Extract passenger name from any airline email plain text.
+
+    Tries patterns in order of specificity — labeled references first (most
+    reliable), greeting patterns last (first name only).
+    """
+    # "Lista de passageiros: John Smith" / "Passenger list:\nJohn Smith"
+    m = re.search(
+        r"(?:Lista\s+de\s+passageiros|Passenger\s*(?:list|name))"
+        r"[\s:]*[-•·]?\s*"
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # "Passageiro / Passenger: John Smith (ADT)" (TAP e-ticket)
+    m = re.search(
+        r"Passageiro\s*/\s*Passenger[:\s]+"
+        r"([A-Za-zÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?:\s*\(ADT\)|\n)",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # "Passagier / Reisender / passager / passasjer: NAME" (DE/FR/NO/SV)
+    m = re.search(
+        r"(?:Passagier|Reisender|passager|passasjer)"
+        r"[\s:]*[-•·]?\s*"
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # "Mr / Mrs / Ms / Miss JOHN SMITH" — title guarantees this is a person
+    m = re.search(
+        r"(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+"
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # "Dear / Hello / Olá / Hola FIRSTNAME" — greeting (first name only)
+    m = re.search(
+        r"(?:Dear|Hello|Ol[áa]|Hola)\s+(?:<[^>]+>\s*)?([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]{2,})",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    return ""
+
+
+def _extract_seat_text(text: str) -> str:
+    """Extract a seat assignment from any airline email plain text.
+
+    Looks for a seat label (in multiple languages) followed by a seat code
+    like ``12A``.  Returns an empty string when nothing is found.
+    """
+    m = re.search(
+        r"(?:Seat|Asiento|Assento|Posto|Sitz|Si[eè]ge)"
+        r"[\s:/*\n]+"
+        r"(\d{1,3}[A-F])\b",
+        text,
+        re.IGNORECASE,
+    )
+    return m.group(1).strip().upper() if m else ""
 
 
 def _get_text(tag) -> str:

@@ -100,8 +100,7 @@ class TestLufthansaBookingSubjectFilter:
     def test_subject_pattern_matches_booking_details(self):
         import re
 
-        from backend.parsers.builtin_rules import BUILTIN_AIRLINE_RULES
+        from backend.parsers.builtin_rules import SUBJECT_PATTERN
 
-        lh = next(r for r in BUILTIN_AIRLINE_RULES if r["airline_code"] == "LH")
-        pat = re.compile(str(lh["subject_pattern"]), re.IGNORECASE)
+        pat = re.compile(SUBJECT_PATTERN, re.IGNORECASE)
         assert pat.search("Booking details | Departure: 29 March 2024 | ARN-MUC")
