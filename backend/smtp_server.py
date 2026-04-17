@@ -53,7 +53,7 @@ def _find_user_by_recipient(address: str) -> dict | None:
 class _FlightEmailHandler:
     """aiosmtpd handler: validates sender/recipient then routes through the parsing pipeline."""
 
-    async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
+    async def handle_RCPT(self, _server, _session, envelope, address, _rcpt_options):
         user = _find_user_by_recipient(address)
         if not user:
             logger.debug("SMTP: rejected mail to unknown recipient %s", address)
@@ -66,7 +66,7 @@ class _FlightEmailHandler:
             envelope.smtp_allowed_senders = user.get("smtp_allowed_senders") or ""
         return "250 OK"
 
-    async def handle_DATA(self, server, session, envelope):
+    async def handle_DATA(self, _server, _session, envelope):
         sender = (envelope.mail_from or "").lower().strip()
         allowed_raw = getattr(envelope, "smtp_allowed_senders", "").strip()
         if allowed_raw:

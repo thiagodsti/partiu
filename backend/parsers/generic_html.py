@@ -19,16 +19,16 @@ import logging
 import re
 from datetime import UTC, datetime
 from datetime import date as date_type
-from functools import lru_cache
 
 from bs4 import BeautifulSoup
 
 from .engine import parse_flight_date
 from .shared import (
-    _extract_booking_ref_text,
-    _extract_passenger_text,
-    _make_flight_dict,
+    extract_booking_reference,
+    extract_passenger,
     fix_overnight,
+    is_valid_iata,
+    make_flight_dict,
     normalize_fn,
     resolve_iata,
 )
@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 # We don't maintain an airline-code DB, so we keep the regex permissive and rely on
 # downstream airport validation (both dep/arr must exist in the airports table) to
 # discard false positives.
-_FN_RE = re.compile(r"\b((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2}[\s\xa0]*\d{3,5})\b")
+_flight_number_re = re.compile(r"\b((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2}[\s\xa0]*\d{3,5})\b")
 # Compact single-line format: "AF 871 / 12NOV Cape Town - Paris CDG 07:55 19:15"
 # Airline code + FN + "/" + DDMON[YYYY] + dep-city + "-" + arr-city + dep-time + arr-time
-_COMPACT_FLIGHT_RE = re.compile(
+_compact_flight_re = re.compile(
     r"\b([A-Z]{2})\s+(\d{3,5})\s*/\s*"  # airline code + flight number + /
     r"(\d{1,2}[A-Z]{3}(?:\d{2,4})?)"  # DDMON, DDMONYY, or DDMONYYYY
     r"\s+(.+?)\s*-\s*(.+?)\s+"  # dep city - arr city
@@ -51,48 +51,29 @@ _COMPACT_FLIGHT_RE = re.compile(
     re.IGNORECASE,
 )
 # Exact HH:MM (may also have h suffix like Lufthansa "06:45 h")
-_TIME_RE = re.compile(r"^(\d{1,2}:\d{2})(?:[\s\xa0]*h)?$")
+_time_re = re.compile(r"^(\d{1,2}:\d{2})(?:[\s\xa0]*h)?$")
 # Combined time+date like "21:00 - 13 Apr 2025" (ITA Airways format)
-_TIME_DATE_RE = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(.+)$")
+_time_then_date_re = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(.+)$")
 # Combined date+time like "03.04.2024 - 20:25" (Austrian format)
-_DATE_TIME_RE = re.compile(r"^(.+?)\s*[-–]\s*(\d{1,2}:\d{2})$")
+_date_then_time_re = re.compile(r"^(.+?)\s*[-–]\s*(\d{1,2}:\d{2})$")
 # Combined date+time without separator: "14/05/2026 09:35" (Wizz Air, etc.)
 # Numeric date portion: DD/MM/YYYY, YYYY-MM-DD, DD.MM.YYYY
-_DATE_TIME_SPACE_RE = re.compile(
+_date_time_space_re = re.compile(
     r"^(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2})"
     r"\s+(\d{1,2}:\d{2})$"
 )
 # Route pair: "BCN-LTN" or "BCN–LTN" — two IATA codes separated by a dash
-_ROUTE_PAIR_RE = re.compile(r"^([A-Z]{3})\s*[-–]\s*([A-Z]{3})$")
+_route_pair_re = re.compile(r"^([A-Z]{3})\s*[-–]\s*([A-Z]{3})$")
 # Zero-width characters produced by some email clients (e.g. Lufthansa)
-_ZW_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
+_zero_width_chars_re = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
 # Lines to skip when looking for IATA codes (labels, not airports)
-_SKIP_IATA_RE = re.compile(
+_label_words_re = re.compile(
     r"(?:terminal|gate|seat|class|status|confirm|boarding|depart|arriv|"
     r"economy|business|first|premium|check.?in|flight\s*(?:number|no\.?)|"
     r"passenger|baggage|booking|reserv|oper|marketed|codeshare|total|price|"
     r"duration|stopp?|layover|overnight|meal|snack|fare)",
     re.IGNORECASE,
 )
-
-
-@lru_cache(maxsize=2048)
-def _is_valid_iata(code: str) -> bool:
-    """Return True if *code* exists in the airports table.
-
-    Returns False (conservative) when the DB is unavailable so that the
-    generic parser doesn't emit noise in test environments without a DB.
-    """
-    try:
-        from ..database import db_conn
-
-        with db_conn() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM airports WHERE iata_code = ?", (code.upper(),)
-            ).fetchone()
-            return row is not None
-    except Exception:
-        return False
 
 
 def _iata_from_line(line: str) -> str:
@@ -113,12 +94,12 @@ def _iata_from_line(line: str) -> str:
     m = re.search(r"\(([A-Z]{3})\)", line)
     if m:
         code = m.group(1)
-        return code if _is_valid_iata(code) else ""
+        return code if is_valid_iata(code) else ""
 
     # From here on apply the skip-list and other guards
     if len(line) > 45:
         return ""
-    if _SKIP_IATA_RE.search(line):
+    if _label_words_re.search(line):
         return ""
     # Skip pure numbers or time-like values
     if re.match(r"^[\d:.\s]+$", line):
@@ -126,11 +107,11 @@ def _iata_from_line(line: str) -> str:
 
     # 2. Standalone 3-letter uppercase
     if re.match(r"^[A-Z]{3}$", line):
-        return line if _is_valid_iata(line) else ""
+        return line if is_valid_iata(line) else ""
 
     # 3. City name resolution — only for lines that look like proper city/airport names:
     #    must contain at least one alphabetic word of 4+ chars, no time patterns,
-    #    no digits (avoids matching "salin", "Diego", random short strings)
+    #    no digits (avoids matching "salin", "Batman", random short strings)
     if (
         re.search(r"[A-Za-z]{4,}", line)
         and not re.search(r"\d{2}:\d{2}", line)
@@ -138,7 +119,7 @@ def _iata_from_line(line: str) -> str:
         and not re.match(r"^[A-Za-z]{1,6}$", line)  # single short word (first names, etc.)
     ):
         code = resolve_iata(line)
-        if code and _is_valid_iata(code):
+        if code and is_valid_iata(code):
             return code
 
     return ""
@@ -162,13 +143,13 @@ def _scan_window(
         line = lines[i]
 
         # Time?
-        m = _TIME_RE.match(line)
+        m = _time_re.match(line)
         if m:
             times.append(m.group(1))
             continue
 
         # Combined time+date like "21:00 - 13 Apr 2025"?
-        m = _TIME_DATE_RE.match(line)
+        m = _time_then_date_re.match(line)
         if m:
             times.append(m.group(1))
             d = parse_flight_date(m.group(2).strip())
@@ -177,7 +158,7 @@ def _scan_window(
             continue
 
         # Combined date+time like "03.04.2024 - 20:25"?
-        m = _DATE_TIME_RE.match(line)
+        m = _date_then_time_re.match(line)
         if m:
             d = parse_flight_date(m.group(1).strip())
             if d is not None:
@@ -186,7 +167,7 @@ def _scan_window(
                 continue
 
         # Combined date+time without separator: "14/05/2026 09:35"?
-        m = _DATE_TIME_SPACE_RE.match(line)
+        m = _date_time_space_re.match(line)
         if m:
             d = parse_flight_date(m.group(1).strip())
             if d is not None:
@@ -201,10 +182,10 @@ def _scan_window(
             continue
 
         # Route pair "BCN-LTN"? Extract both codes at once.
-        m = _ROUTE_PAIR_RE.match(line)
+        m = _route_pair_re.match(line)
         if m:
             for code in (m.group(1), m.group(2)):
-                if _is_valid_iata(code) and code not in seen_iatas:
+                if is_valid_iata(code) and code not in seen_iatas:
                     iatas.append(code)
                     seen_iatas.add(code)
             continue
@@ -268,7 +249,7 @@ def _extract_compact_flights(
     seen_keys: set[tuple] = set()
 
     for line in lines:
-        m = _COMPACT_FLIGHT_RE.search(line)
+        m = _compact_flight_re.search(line)
         if not m:
             continue
 
@@ -290,11 +271,11 @@ def _extract_compact_flights(
         dep_iata = _iata_from_line(dep_city)
         if not dep_iata:
             dep_iata_raw = resolve_iata(dep_city)
-            dep_iata = dep_iata_raw if dep_iata_raw and _is_valid_iata(dep_iata_raw) else ""
+            dep_iata = dep_iata_raw if dep_iata_raw and is_valid_iata(dep_iata_raw) else ""
         arr_iata = _iata_from_line(arr_city)
         if not arr_iata:
             arr_iata_raw = resolve_iata(arr_city)
-            arr_iata = arr_iata_raw if arr_iata_raw and _is_valid_iata(arr_iata_raw) else ""
+            arr_iata = arr_iata_raw if arr_iata_raw and is_valid_iata(arr_iata_raw) else ""
 
         if not dep_iata or not arr_iata or dep_iata == arr_iata:
             continue
@@ -315,7 +296,7 @@ def _extract_compact_flights(
         seen_keys.add(key)
 
         effective_rule = rule if rule is not None else _SimpleRule(airline_code)
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             effective_rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref
         )
         if flight:
@@ -335,7 +316,7 @@ def _extract_from_lines(
     fn_positions: list[tuple[int, str]] = []
     seen_fns: set[str] = set()
     for i, line in enumerate(lines):
-        m = _FN_RE.search(line)
+        m = _flight_number_re.search(line)
         if m:
             fn = normalize_fn(m.group(1))
             if fn not in seen_fns:
@@ -400,7 +381,7 @@ def _extract_from_lines(
         seen_keys.add(key)
 
         effective_rule = rule if rule is not None else _SimpleRule(fn[:2])
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             effective_rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref
         )
         if flight:
@@ -435,13 +416,13 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
         soup = BeautifulSoup(email_msg.html_body, "lxml")
         text_nl = soup.get_text(separator="\n", strip=True)
         lines = [
-            _ZW_RE.sub("", ln).replace("\xa0", " ").strip()
+            _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
             for ln in text_nl.split("\n")
             if ln.strip()
         ]
         lines = [ln for ln in lines if ln]
         if lines:
-            booking_ref = _extract_booking_ref_text(subject + "\n" + text_nl)
+            booking_ref = extract_booking_reference(text_nl, subject)
             flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
             if flights:
                 logger.info(
@@ -456,13 +437,13 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
     if email_msg.body:
         text_plain = email_msg.body
         lines = [
-            _ZW_RE.sub("", ln).replace("\xa0", " ").strip()
+            _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
             for ln in text_plain.split("\n")
             if ln.strip()
         ]
         lines = [ln for ln in lines if ln]
         if lines:
-            booking_ref = _extract_booking_ref_text(subject + "\n" + text_plain)
+            booking_ref = extract_booking_reference(text_plain, subject)
             flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
             if flights:
                 logger.info(
@@ -485,7 +466,7 @@ def _enrich_metadata(flights: list[dict], text: str) -> None:
     tell which seat belongs to which flight; BCBP boarding-pass parsing handles
     that later.
     """
-    passenger = _extract_passenger_text(text)
+    passenger = extract_passenger(text)
     if passenger:
         for f in flights:
             if not f.get("passenger_name"):

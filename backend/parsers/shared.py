@@ -1,5 +1,49 @@
 """
-Shared utilities for BS4-based flight email extractors.
+Shared utilities for flight email extractors.
+
+Writing a new airline parser
+----------------------------
+1. Create ``backend/parsers/airlines/<airline>.py``
+2. Implement ``extract(email_msg, rule) -> list[dict]``
+3. Register in ``builtin_rules.py`` (add a dict entry — the extractor
+   is resolved automatically from the module name).
+
+Available helpers (import from ``backend.parsers.shared``):
+
+  **Text extraction**
+    get_email_text(email_msg)            → plain text (space-separated)
+    get_email_text_newline(email_msg)    → plain text (newline-separated)
+    get_ref_year(email_msg)              → reference year for date parsing
+
+  **Flight scanning** (for emails with line-by-line structure)
+    scan_flights(text, rule, ref_year)   → scans for flight blocks automatically
+
+  **Metadata extraction**
+    extract_booking_reference(text, subject)  → booking/PNR code
+    extract_passenger(text)                   → passenger name
+    extract_seat(text)                        → seat assignment
+    enrich_flights(flights, text, subject)    → fills all three on flight dicts
+
+  **Flight dict construction**
+    make_flight_dict(rule, fn, dep, arr, dep_dt, arr_dt, ...)  → validated dict
+
+  **Date/time helpers**
+    parse_date(s, default_year)          → date from various formats
+    _build_datetime(date, time_str)      → combine date + "HH:MM" → aware datetime
+    fix_overnight(dep_dt, arr_dt)        → adds a day if arr < dep
+
+  **Airport resolution**
+    resolve_iata(name)                   → city/airport name → IATA code
+    is_valid_iata(code)                  → check if code exists in airports DB
+
+Simplest parser example (Ryanair)::
+
+    from ..shared import enrich_flights, get_email_text, get_ref_year, scan_flights
+
+    def extract(email_msg, rule) -> list[dict]:
+        text = get_email_text(email_msg)
+        flights = scan_flights(text, rule, get_ref_year(email_msg))
+        return enrich_flights(flights, text, email_msg.subject)
 
 Pattern libraries
 -----------------
@@ -30,8 +74,8 @@ logger = logging.getLogger(__name__)
 _DATETIME_LINE_PATTERNS: list[re.Pattern] = [
     # "02/03/2026 - 13:20"  or  "02/03/2026 – 13:20"  (en-dash)
     re.compile(r"(\d{2}/\d{2}/\d{4})\s*[-–]\s*(\d{2}:\d{2})"),
-    # "02/03/2026 13:20"  (space-only separator)
-    re.compile(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})"),
+    # "02/03/2026 13:20"  (space or non-breaking space — common in HTML emails)
+    re.compile(r"(\d{2}/\d{2}/\d{4})[\s\xa0]+(\d{2}:\d{2})"),
     # "2026-03-02 13:20"  (ISO date)
     re.compile(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})"),
     # "2 Mar 2026 13:20"  or  "02 Mar 2026, 13:20"  (month-name)
@@ -49,15 +93,29 @@ _DATETIME_LINE_PATTERNS: list[re.Pattern] = [
 # Caller is responsible for prepending airline_code when only digits are found.
 
 _FLIGHT_NUM_LINE_PATTERNS: list[re.Pattern] = [
+    # "Flight Number: W9 5362"  (Wizz Air — space or NBSP inside the code)
+    re.compile(r"Flight\s+Number:\s*([A-Z0-9]{1,3}[\s\xa0]\d{3,5})", re.IGNORECASE),
     # "Voo 4849" / "Vôo 4849"  (Portuguese label + number, same line)
     re.compile(r"(?:Voo|Vôo)\s+(\d{3,5})", re.IGNORECASE),
     # "Flight 4849"  (English label + number, same line)
     re.compile(r"Flight\s+(\d{3,5})", re.IGNORECASE),
     # Full IATA flight number alone on a line: "AD4849", "W95362"
     re.compile(r"^([A-Z]{1,3}\d{3,5})$"),
+    # "QR 168" or "W9 5362" — code + space/NBSP + digits, alone on a line
+    re.compile(r"^([A-Z]{1,3}[\s\xa0]\d{2,5})$"),
     # Bare digit-only number alone on a line: "4849"
     re.compile(r"^(\d{3,5})$"),
 ]
+
+# IATA code in parentheses: "(BCN)", "Terminal 2 (BCN)"
+_iata_in_parens_re = re.compile(r"\(([A-Z]{3})\)")
+
+# Standalone IATA code on its own line: "BCN"
+_standalone_iata_re = re.compile(r"^([A-Z]{3})$")
+
+# Labeled departure/arrival times: "Departure time - 17:55" / "Arrival time – 20:35"
+_departure_labeled_time_re = re.compile(r"Departure\s+time\s*[-–]\s*(\d{1,2}:\d{2})", re.IGNORECASE)
+_arrival_labeled_time_re = re.compile(r"Arrival\s+time\s*[-–]\s*(\d{1,2}:\d{2})", re.IGNORECASE)
 
 
 def extract_line_datetime(line: str, ref_year: int | None = None) -> tuple[date_type, str] | None:
@@ -98,11 +156,43 @@ def extract_line_flight_number(line: str, airline_code: str = "") -> str:
     for pat in _FLIGHT_NUM_LINE_PATTERNS:
         m = pat.search(line)
         if m:
-            raw = m.group(1).strip()
+            # Normalize spaces and non-breaking spaces: "W9 5362" → "W95362"
+            raw = m.group(1).strip().replace(" ", "").replace("\xa0", "")
             if raw.isdigit() and airline_code:
                 return f"{airline_code}{raw}"
             return raw
     return ""
+
+
+def extract_line_date_only(line: str, ref_year: int | None = None) -> date_type | None:
+    """
+    Try to parse a line as a standalone date with no time component.
+
+    Returns ``None`` when the line already contains a time (handled by
+    ``extract_line_datetime``) or when it cannot be interpreted as a date.
+    Strips leading day-of-week prefixes ("Wed, 23 Apr 25" → "23 Apr 25").
+    """
+    from .engine import parse_flight_date
+
+    # Skip lines that contain a time component — those belong to Strategy A
+    if re.search(r"\b\d{1,2}:\d{2}\b", line):
+        return None
+
+    stripped = line.strip()
+    # Strip leading day-of-week: "Wed, 23 Apr 25" → "23 Apr 25"
+    stripped = re.sub(
+        r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*,?\s+", "", stripped, flags=re.IGNORECASE
+    )
+
+    d = parse_flight_date(stripped)
+    if d:
+        return d
+
+    # Year-less "DD Mon" — inject ref_year
+    if ref_year and re.match(r"^\d{1,2}\s+[A-Za-z]{3}\.?$", stripped):
+        return parse_flight_date(f"{stripped} {ref_year}")
+
+    return None
 
 
 def normalize_fn(fn: str) -> str:
@@ -187,6 +277,144 @@ def resolve_iata(name: str) -> str:
     return ""
 
 
+def scan_flights(text: str, rule, ref_year: int | None = None) -> list[dict]:
+    """
+    Generic flight scanner for emails where:
+    - Flight numbers appear on dedicated lines (any pattern from _FLIGHT_NUM_LINE_PATTERNS)
+    - Airport IATA codes appear in parentheses on nearby lines: "(BCN)"
+    - Datetimes appear on nearby lines (any format from _DATETIME_LINE_PATTERNS)
+
+    For each flight number found, scans a window of surrounding lines to collect
+    two IATA codes and two datetimes (departure + arrival). Returns a list of
+    flight dicts (booking_reference and passenger_name left empty for the caller
+    to fill in).
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    seen_fns: set[str] = set()
+    flights: list[dict] = []
+
+    for i, line in enumerate(lines):
+        fn = extract_line_flight_number(line, rule.airline_code)
+        if not fn or fn in seen_fns:
+            continue
+        seen_fns.add(fn)
+
+        # Build a window: 2 lines before + up to 15 after, stopping at the
+        # next flight-number line so multi-leg emails don't bleed into each other.
+        start = max(0, i - 2)
+        end = i + 1
+        while end < len(lines) and end - i <= 15:
+            if end > i and extract_line_flight_number(lines[end], rule.airline_code):
+                break
+            end += 1
+        window = lines[start:end]
+
+        # Strategy A-IATA: parenthesised codes "(BCN)"
+        iata_codes: list[str] = []
+        for wl in window:
+            iata_codes.extend(_iata_in_parens_re.findall(wl))
+
+        # Fallback IATA: standalone 3-letter lines "BCN" (skip the flight-number line)
+        if len(iata_codes) < 2:
+            for j, wl in enumerate(window):
+                m_iata = _standalone_iata_re.match(wl)
+                if m_iata:
+                    code = m_iata.group(1)
+                    if code not in iata_codes:
+                        iata_codes.append(code)
+
+        # Strategy A-DT: combined date+time lines "02/03/2026 13:20"
+        datetimes: list[tuple] = []
+        for wl in window:
+            result = extract_line_datetime(wl, ref_year)
+            if result:
+                datetimes.append(result)
+
+        # Strategy B-DT: date-only line + labeled departure/arrival times.
+        # Pre-collapse split-line formats ("Departure time -\n17:55") into one line
+        # so that _departure_labeled_time_re can match them.
+        if len(datetimes) < 2:
+            collapsed: list[str] = []
+            k = 0
+            while k < len(window):
+                wl = window[k]
+                if (
+                    k + 1 < len(window)
+                    and re.search(r"(?:Departure|Arrival)\s+time\s*[-–]?\s*$", wl, re.IGNORECASE)
+                    and re.match(r"^\d{1,2}:\d{2}$", window[k + 1])
+                ):
+                    collapsed.append(wl.rstrip() + " - " + window[k + 1])
+                    k += 2
+                else:
+                    collapsed.append(wl)
+                    k += 1
+
+            date_only_b = None
+            dep_time_b = None
+            arr_time_b = None
+            for wl in collapsed:
+                if date_only_b is None:
+                    d = extract_line_date_only(wl, ref_year)
+                    if d:
+                        date_only_b = d
+                        continue
+                if dep_time_b is None:
+                    m_dep = _departure_labeled_time_re.search(wl)
+                    if m_dep:
+                        dep_time_b = m_dep.group(1)
+                        continue
+                if arr_time_b is None:
+                    m_arr = _arrival_labeled_time_re.search(wl)
+                    if m_arr:
+                        arr_time_b = m_arr.group(1)
+                        continue
+            if date_only_b and dep_time_b and arr_time_b:
+                datetimes = [(date_only_b, dep_time_b), (date_only_b, arr_time_b)]
+
+        # Strategy C-DT: date-only line + first two standalone HH:MM lines after it.
+        # Catches formats where times appear alone on their own lines without labels.
+        if len(datetimes) < 2:
+            date_only_c: date_type | None = None
+            standalone_times: list[str] = []
+            for wl in window:
+                if date_only_c is None:
+                    d = extract_line_date_only(wl, ref_year)
+                    if d:
+                        date_only_c = d
+                    continue
+                m_t = re.match(r"^(\d{1,2}:\d{2})$", wl)
+                if m_t:
+                    standalone_times.append(m_t.group(1))
+                if len(standalone_times) == 2:
+                    break
+            if date_only_c and len(standalone_times) == 2:
+                datetimes = [
+                    (date_only_c, standalone_times[0]),
+                    (date_only_c, standalone_times[1]),
+                ]
+
+        if len(iata_codes) < 2 or len(datetimes) < 2:
+            continue
+
+        dep_iata, arr_iata = iata_codes[0], iata_codes[1]
+        if dep_iata == arr_iata:
+            continue
+
+        dep_dt = _build_datetime(datetimes[0][0], datetimes[0][1])
+        arr_dt = _build_datetime(datetimes[1][0], datetimes[1][1])
+        if not dep_dt or not arr_dt:
+            continue
+        arr_dt = fix_overnight(dep_dt, arr_dt)
+
+        flight = make_flight_dict(rule, fn, dep_iata, arr_iata, dep_dt, arr_dt)
+        if flight:
+            flights.append(flight)
+
+    if flights:
+        logger.debug("scan_flights: found %d flight(s) for %s", len(flights), rule.airline_name)
+    return flights
+
+
 def _extract_booking_ref_text(text: str) -> str:
     """Extract a booking / PNR reference from a plain-text string.
 
@@ -204,11 +432,14 @@ def _extract_booking_ref_text(text: str) -> str:
       lowercase English words like "details", "secure", "price" are never captured
       — airline booking references are always uppercase alphanumeric.
     """
+    # BA: "e-ticket receipt J9CRT8:" — check first so subject beats body fallback
+    m = re.search(r"\breceipt\s+(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
     m = re.search(
         r"(?:"
         r"C[óo]digo\s+de\s+reserva(?:\s*/\s*Booking\s+ref)?"  # PT/ES + bilingual
         r"|Referência\s+da\s+reserva"  # PT (TAP)
-        r"|N[úu]mero\s+de\s+reserva"  # PT/ES (Kiwi)
         r"|booking\s*(?:ref(?:erence)?|code|number)"  # EN: all variants
         r"|Reserv\w{1,12}\b"  # Reservation, Reserva, ReservTESTRF…
         r"|Bokning(?:snummer)?"  # SV
@@ -228,8 +459,22 @@ def _extract_booking_ref_text(text: str) -> str:
     )
     if m:
         return m.group(1).strip()
-    # BA subject format: "Your e-ticket receipt J9CRT8:"
-    m = re.search(r"\breceipt\s+(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
+    # Kiwi / generic: numeric booking numbers like "NÚMERO DE RESERVA 755 885 086"
+    # or "Booking number 123 456 789" — digits with optional spaces, 5–12 digits total.
+    m = re.search(
+        r"(?:N[UÚ]MERO\s+DE\s+RESERVA|N[úu]mero\s+de\s+reserva|Booking\s+number)"
+        r"[:\s]+([\d][\d ]{3,14}[\d])",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip().replace(" ", "")
+    # ITA: "Booking code\n\n...\nGate\n\nKKEZ2E" boarding-pass table layout
+    m = re.search(
+        r"Booking\s+code[\s\S]{0,80}?Gate[\s\S]{0,20}?(?-i:([A-Z0-9]{5,8}))\b",
+        text,
+        re.IGNORECASE,
+    )
     if m:
         return m.group(1).strip()
     # Bare "Booking: XXXXX" without a sub-keyword
@@ -339,7 +584,54 @@ def _build_datetime(date_obj: date_type | None, time_str: str) -> datetime | Non
         return None
 
 
-def _make_flight_dict(
+@lru_cache(maxsize=2048)
+def is_valid_iata(code: str) -> bool:
+    """Return True if *code* is a known airport IATA code in the DB.
+
+    Falls back to True when the DB is unavailable so that extraction is
+    never silently blocked in environments without a seeded database.
+    """
+    try:
+        from ..database import db_conn
+
+        with db_conn() as conn:
+            return (
+                conn.execute(
+                    "SELECT 1 FROM airports WHERE iata_code = ?", (code.upper(),)
+                ).fetchone()
+                is not None
+            )
+    except Exception:
+        return True  # conservative: let extraction proceed when DB is absent
+
+
+def parse_date(s: str, default_year: int | None = None) -> date_type | None:
+    """Parse a date string, injecting *default_year* when no year is present.
+
+    Delegates to ``parse_flight_date`` (ISO, DD/MM/YYYY, month-name variants,
+    compact DDMonYYYY, day-of-week prefixes, etc.).  When the string contains
+    no 4-digit year and *default_year* is provided, two injections are tried:
+    space-separated (``"10 Nov 2024"``) and compact (``"23FEB2024"``).
+    """
+    from .engine import parse_flight_date
+
+    s = s.strip()
+    d = parse_flight_date(s)
+    if d:
+        return d
+
+    if default_year and not re.search(r"\d{4}", s):
+        d = parse_flight_date(f"{s} {default_year}")
+        if d:
+            return d
+        d = parse_flight_date(f"{s}{default_year}")
+        if d:
+            return d
+
+    return None
+
+
+def make_flight_dict(
     rule,
     flight_number: str,
     dep_airport: str,
@@ -351,9 +643,18 @@ def _make_flight_dict(
 ) -> dict | None:
     """
     Build a flight data dict from extracted fields.
-    Returns None if any required field is missing.
+    Returns None if any required field is missing or either IATA code is
+    not found in the airports database.
     """
     if not all([flight_number, dep_airport, arr_airport, dep_dt, arr_dt]):
+        return None
+    if not is_valid_iata(dep_airport) or not is_valid_iata(arr_airport):
+        logger.debug(
+            "Skipping flight %s: unrecognised IATA %s / %s",
+            flight_number,
+            dep_airport,
+            arr_airport,
+        )
         return None
     return {
         "airline_name": rule.airline_name,
@@ -400,6 +701,89 @@ def _extract_passenger_name(soup) -> str:
         re.IGNORECASE,
     )
     return m.group(1).strip() if m else ""
+
+
+# ---------------------------------------------------------------------------
+# Public API — consistent names used by every parser
+# ---------------------------------------------------------------------------
+
+
+def get_email_text(email_msg) -> str:
+    """Extract plain text from an email (HTML preferred, falls back to plain body)."""
+    if email_msg.html_body:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(email_msg.html_body, "lxml")
+        return soup.get_text(separator="\n", strip=True)
+    return email_msg.body or ""
+
+
+def extract_booking_reference(text: str, subject: str = "") -> str:
+    """Extract a booking / PNR reference from email text and optional subject line."""
+    combined = f"{subject}\n{text}" if subject else text
+    return _extract_booking_ref_text(combined)
+
+
+def extract_passenger(text: str) -> str:
+    """Extract the passenger name from email text."""
+    return _extract_passenger_text(text)
+
+
+def extract_seat(text: str) -> str:
+    """Extract the seat assignment from email text."""
+    return _extract_seat_text(text)
+
+
+def get_email_text_newline(email_msg) -> str:
+    """Extract plain text from an email with newline separators.
+
+    Preferred over ``get_email_text`` when the parser needs to process
+    the text line-by-line (e.g. state machines, line-anchored regexes).
+    """
+    if email_msg.html_body:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(email_msg.html_body, "lxml")
+        return soup.get_text(separator="\n", strip=True)
+    return email_msg.body or ""
+
+
+def get_ref_year(email_msg) -> int:
+    """Return the reference year from the email date (current year as fallback).
+
+    Most airline emails use partial dates (``"14 May"`` without a year).
+    Use this to inject the missing year when calling ``parse_date``,
+    ``scan_flights``, or ``extract_line_datetime``.
+    """
+    return email_msg.date.year if email_msg.date else datetime.now().year
+
+
+def enrich_flights(flights: list[dict], text: str, subject: str = "") -> list[dict]:
+    """Fill booking reference, passenger name, and seat on all flights.
+
+    Extracts metadata from *text* (and optionally *subject*) and applies
+    it to every flight dict whose field is still empty.  Seat is only
+    set when there is exactly one flight (multi-leg seats are ambiguous
+    without per-leg boarding-pass data).
+
+    Returns *flights* unchanged (mutated in place) for easy chaining::
+
+        return enrich_flights(flights, text, email_msg.subject)
+    """
+    if not flights:
+        return flights
+    booking_ref = extract_booking_reference(text, subject)
+    passenger = extract_passenger(text)
+    seat = extract_seat(text)
+    single_leg = len(flights) == 1
+    for f in flights:
+        if not f.get("booking_reference"):
+            f["booking_reference"] = booking_ref
+        if not f.get("passenger_name"):
+            f["passenger_name"] = passenger
+        if single_leg and not f.get("seat"):
+            f["seat"] = seat
+    return flights
 
 
 def _airport_distance(iata_a: str, iata_b: str) -> float:

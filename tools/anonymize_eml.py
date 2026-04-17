@@ -149,7 +149,7 @@ def _extract_probable_names(text: str, extra_names: list[str] | None = None) -> 
     """Return a list of candidate real names found in the text.
 
     Also expands each name into all 2+ word sub-sequences so partial occurrences
-    like "Ramos da Silva" are caught even when the full name is "Diego Ramos da Silva".
+    like "da Sauro" are caught even when the full name is "Batman da Sauro".
     """
     raw: list[str] = list(extra_names or [])
     for m in _SALUTATION_RE.finditer(text):

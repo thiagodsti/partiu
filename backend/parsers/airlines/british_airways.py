@@ -17,12 +17,18 @@ import re
 from bs4 import BeautifulSoup
 
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, _get_text, _make_flight_dict, resolve_iata
+from ..shared import (
+    _build_datetime,
+    _get_text,
+    enrich_flights,
+    make_flight_dict,
+    resolve_iata,
+)
 
 logger = logging.getLogger(__name__)
 
 # Pattern for one flight leg in the plain-text body
-_LEG_RE = re.compile(
+_leg_re = re.compile(
     r"(?P<fn>[A-Z]{2}\d{3,5}):\s+[^\n]+\|\s*Confirmed\s*\n"
     r"[-]+\s*\n"
     r"Depart:\s+(?P<dep_date>\d{1,2}\s+\w+\s+\d{4})\s+(?P<dep_time>\d{2}:\d{2})"
@@ -32,36 +38,38 @@ _LEG_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Booking reference in BA subjects: "Your e-ticket receipt J9CRT8: ..."
-_BOOKING_RE = re.compile(
-    r"(?:booking\s*(?:ref|reference|code)|receipt|reference|PNR)"
-    r"[:\s]+([A-Z0-9]{5,8})",
-    re.IGNORECASE,
-)
 
-# Passenger list in plain text: "MR THIAGO DINIZDASILVEIRA"
-_PASSENGER_RE = re.compile(
-    r"Passenger\s+list\s*\n[-]+\s*\n([A-Z][A-Z\s]+)",
-)
+def _extract_legs(body: str, rule) -> list[dict]:
+    """Parse all flight legs from the plain-text body."""
+    flights = []
+    for m in _leg_re.finditer(body):
+        dep_date = parse_flight_date(m.group("dep_date"))
+        arr_date = parse_flight_date(m.group("arr_date"))
+        if not dep_date or not arr_date:
+            continue
 
+        dep_iata = resolve_iata(m.group("dep_name").strip())
+        arr_iata = resolve_iata(m.group("arr_name").strip())
+        if not dep_iata or not arr_iata:
+            logger.debug(
+                "BA: could not resolve IATA for %r / %r",
+                m.group("dep_name"),
+                m.group("arr_name"),
+            )
+            continue
 
-def _booking_ref(subject: str, body: str) -> str:
-    # BA subjects look like: "Your e-ticket receipt J9CRT8: 23 Dec 2024 17:55"
-    m = re.search(r"receipt\s+([A-Z0-9]{5,8})[:|\s]", subject, re.IGNORECASE)
-    if m:
-        return m.group(1).strip()
-    m = _BOOKING_RE.search(subject + "\n" + body)
-    return m.group(1).strip() if m else ""
+        flight = make_flight_dict(
+            rule,
+            m.group("fn").replace(" ", ""),
+            dep_iata,
+            arr_iata,
+            _build_datetime(dep_date, m.group("dep_time")),
+            _build_datetime(arr_date, m.group("arr_time")),
+        )
+        if flight:
+            flights.append(flight)
 
-
-def _passenger(body: str) -> str:
-    m = _PASSENGER_RE.search(body)
-    if m:
-        name = m.group(1).strip().split("\n")[0]
-        # Strip salutation prefix
-        name = re.sub(r"^(?:MR|MRS|MS|MISS|DR|PROF)\.?\s+", "", name, flags=re.IGNORECASE)
-        return name.title()
-    return ""
+    return flights
 
 
 def extract(email_msg, rule) -> list[dict]:
@@ -73,43 +81,5 @@ def extract(email_msg, rule) -> list[dict]:
         soup = BeautifulSoup(email_msg.html_body, "lxml")
         body = _get_text(soup)
 
-    booking_ref = _booking_ref(email_msg.subject or "", body)
-    passenger = _passenger(body)
-
-    flights = []
-    for m in _LEG_RE.finditer(body):
-        dep_date = parse_flight_date(m.group("dep_date"))
-        arr_date = parse_flight_date(m.group("arr_date"))
-        if not dep_date or not arr_date:
-            continue
-
-        dep_dt = _build_datetime(dep_date, m.group("dep_time"))
-        arr_dt = _build_datetime(arr_date, m.group("arr_time"))
-
-        dep_iata = resolve_iata(m.group("dep_name").strip())
-        arr_iata = resolve_iata(m.group("arr_name").strip())
-
-        if not dep_iata or not arr_iata:
-            logger.debug(
-                "BA: could not resolve IATA for %r / %r",
-                m.group("dep_name"),
-                m.group("arr_name"),
-            )
-            continue
-
-        flight = _make_flight_dict(
-            rule,
-            m.group("fn").replace(" ", ""),
-            dep_iata,
-            arr_iata,
-            dep_dt,
-            arr_dt,
-            booking_ref,
-            passenger,
-        )
-        if flight:
-            flights.append(flight)
-
-    if flights:
-        logger.debug("British Airways: extracted %d flight(s)", len(flights))
-    return flights
+    flights = _extract_legs(body, rule)
+    return enrich_flights(flights, body, email_msg.subject)

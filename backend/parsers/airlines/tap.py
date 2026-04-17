@@ -1,64 +1,14 @@
 """
 TAP Air Portugal (TP) flight extractor.
 
-Four email formats are supported:
+Five email formats are supported (tried in order):
 
-1. Check-in open email (@flytap.com, "Online check-in here"):
-   Plain text structure:
-     Booking reference
-     P6ANPW
-     ...
-     14:20 ARN
-     ( Estocolmo /)
-     Date  01 Feb
-     ...
-     17:45 LIS
-     ( Lisboa)
-     Date  01 Feb
-     ...
-     Flight
-     TP  781
-
-   The date is partial (DD Mon, no year). Year must be derived from
-   email_msg.date.year.
-
-2. Boarding pass email (@flytap.com, "Your Boarding Pass Confirmation"):
-   The plain-text body has airport names anonymized to "TEST PASSENGER".
-   The HTML body has rich microdata with iataCode, reservationNumber,
-   flightNumber, departureTime, arrivalTime, and airplaneSeat.
-
-   HTML microdata structure (meta tags with itemprop):
-     reservationNumber: P6ANPW
-     flightNumber: 82              ← no "TP" prefix
-     iataCode: TP                  ← airline
-     iataCode: GRU                 ← departure
-     departureTime: 23FEB
-     iataCode: LIS                 ← arrival
-     arrivalTime: 2024-02-24T05:15:00
-     airplaneSeat: 34F
-
-3. Booking confirmation HTML (@flytap.com, "Booking Confirmation E-mail"):
-   Stripped HTML text contains per-leg blocks:
-     Fri, 10 Nov
-     19:05
-     ARN
-     22:35
-     LIS
-     4h 30m
-     Direto
-     TP 783
-
-4. E-ticket receipt plain text (RECIBO DE BILHETE ELETRÓNICO):
-   Bilingual plain-text with city names (no IATA codes):
-     STOCKHOLM ARLANDA
-     Terminal / Terminal: 5
-     LISBON AIRPORT
-     Terminal / Terminal: 1
-     TP781
-     14:20
-     01Feb2024
-     17:50
-     01Feb2024
+1. HTML microdata (boarding pass) — schema.org meta tags with iataCode,
+   flightNumber, departureTime, arrivalTime, airplaneSeat.
+2. Check-in open — plain text with "HH:MM ARN" + "Date 01 Feb" blocks.
+3. E-ticket receipt (RECIBO DE BILHETE ELETRÓNICO) — city names + TP781 + times.
+4. Booking confirmation HTML — "Fri, 10 Nov\\n19:05\\nARN\\n22:35\\nLIS\\nTP 783".
+5. HTML From/To — "Flight:\\nTP 82\\n...From:\\n...DD/MM/YYYY - HH:MM\\nTo:\\n..."
 """
 
 import logging
@@ -67,119 +17,43 @@ from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
 
-from ..engine import MONTH_MAP
-from ..shared import _make_flight_dict, fix_overnight
+from ..shared import (
+    _build_datetime,
+    enrich_flights,
+    fix_overnight,
+    get_ref_year,
+    make_flight_dict,
+    parse_date,
+    resolve_iata,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _parse_date(s: str, default_year: int | None = None) -> datetime | None:
-    """Parse various date formats → UTC datetime (midnight)."""
-    s = s.strip()
-
-    # ISO: 2024-02-24
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
-    if m:
-        try:
-            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=UTC)
-        except ValueError:
-            return None
-
-    # DD/MM/YYYY
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
-    if m:
-        try:
-            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)), tzinfo=UTC)
-        except ValueError:
-            return None
-
-    # "01 Feb" with optional year
-    m = re.match(r"^(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?$", s)
-    if m:
-        day = int(m.group(1))
-        mon = MONTH_MAP.get(m.group(2).lower())
-        year = int(m.group(3)) if m.group(3) else default_year
-        if mon and year:
-            try:
-                return datetime(year, mon, day, tzinfo=UTC)
-            except ValueError:
-                return None
-
-    # "Thursday, February 1, 2024"
-    m = re.match(
-        r"(?:\w+,\s+)?(\w+)\s+(\d{1,2}),\s+(\d{4})",
-        s,
-        re.IGNORECASE,
-    )
-    if m:
-        mon_name = m.group(1)[:3].lower()
-        mon = MONTH_MAP.get(mon_name)
-        if mon:
-            try:
-                return datetime(int(m.group(3)), mon, int(m.group(2)), tzinfo=UTC)
-            except ValueError:
-                return None
-
-    # "23FEB" or "23FEB2024"
-    m = re.match(r"^(\d{1,2})([A-Z]{3})(\d{4})?$", s, re.IGNORECASE)
-    if m:
-        day = int(m.group(1))
-        mon = MONTH_MAP.get(m.group(2).lower())
-        year = int(m.group(3)) if m.group(3) else default_year
-        if mon and year:
-            try:
-                return datetime(year, mon, day, tzinfo=UTC)
-            except ValueError:
-                return None
-
-    return None
-
-
-def _build_dt(base: datetime, time_str: str) -> datetime | None:
-    try:
-        h, m = map(int, time_str.split(":"))
-        return base.replace(hour=h, minute=m)
-    except (ValueError, TypeError):
-        return None
-
-
 # ---------------------------------------------------------------------------
-# HTML microdata parser (boarding pass format)
+# Format 1: HTML microdata (boarding pass)
 # ---------------------------------------------------------------------------
 
 
 def _extract_html_microdata(html: str, rule, email_year: int) -> list[dict]:
-    """
-    Parse TAP boarding pass HTML using schema.org microdata.
-
-    The microdata has departure DATE (e.g. "23FEB") but not departure TIME.
-    Departure times appear in span tags as "DD/MM/YYYY - HH:MM".
-    Arrival times are ISO datetimes in arrivalTime meta content.
-    """
+    """Parse TAP boarding pass HTML using schema.org microdata."""
     soup = BeautifulSoup(html, "lxml")
 
-    # Collect all itemprop meta tags in order
     metas: list[tuple[str, str]] = [
         (str(m.get("itemprop", "")), str(m.get("content", "")))
         for m in soup.find_all("meta")
         if m.get("itemprop") and m.get("content")
     ]
 
-    # Extract "DD/MM/YYYY - HH:MM" departure date-time strings from HTML "From:" blocks.
-    # Each "From:" section contains the departure datetime; "To:" sections contain arrival.
-    # We look for "From:" within 400 chars before each datetime occurrence.
+    # Extract "DD/MM/YYYY - HH:MM" departure datetimes from "From:" blocks
     dep_datetime_re = re.compile(r"(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}:\d{2})")
     dep_datetimes: list[datetime] = []
     for m in dep_datetime_re.finditer(html):
-        # Check if this datetime is in a "From:" block
-        context_before = html[max(0, m.start() - 400) : m.start()]
-        # Find the last "From:" or "To:" label before this datetime
-        last_from = context_before.rfind("From:")
-        last_to = context_before.rfind("To:")
-        if last_from >= last_to:  # "From:" appears after "To:" → this is a departure time
-            dt_base = _parse_date(m.group(1), email_year)
-            if dt_base:
-                full_dt = _build_dt(dt_base, m.group(2))
+        context = html[max(0, m.start() - 400) : m.start()]
+        if context.rfind("From:") >= context.rfind("To:"):
+            dep_date = parse_date(m.group(1), email_year)
+            if dep_date:
+                full_dt = _build_datetime(dep_date, m.group(2))
                 if full_dt:
                     dep_datetimes.append(full_dt)
 
@@ -194,15 +68,12 @@ def _extract_html_microdata(html: str, rule, email_year: int) -> list[dict]:
             fn_digits = ""
             airline_code = "TP"
             iata_codes: list[str] = []
-            dep_time_raw = ""
-            arr_time_raw = ""
-            seat = ""
-            passenger = ""
+            dep_time_raw = arr_time_raw = seat = passenger = ""
 
             while j < len(metas):
                 p2, v2 = metas[j]
                 if p2 == "reservationNumber" and j > i:
-                    break  # Next reservation
+                    break
                 if p2 == "name" and not fn_digits and not passenger:
                     passenger = v2
                 elif p2 == "flightNumber":
@@ -217,47 +88,39 @@ def _extract_html_microdata(html: str, rule, email_year: int) -> list[dict]:
                     seat = v2
                 j += 1
 
-            # iata_codes[0] = airline, [1] = departure, [2] = arrival
-            if len(iata_codes) >= 3:
-                airline_code = iata_codes[0]
-                dep_iata = iata_codes[1]
-                arr_iata = iata_codes[2]
-            else:
+            # iata_codes: [airline, departure, arrival]
+            if len(iata_codes) < 3 or not fn_digits:
                 i = j
                 continue
 
-            if not fn_digits or not dep_iata or not arr_iata:
-                i = j
-                continue
-
+            airline_code = iata_codes[0]
+            dep_iata, arr_iata = iata_codes[1], iata_codes[2]
             flight_number = f"{airline_code}{fn_digits}"
 
-            # Arrival datetime from ISO string
+            # Arrival from ISO string
             arr_dt: datetime | None = None
             if arr_time_raw:
                 try:
                     arr_dt = datetime.fromisoformat(arr_time_raw).replace(tzinfo=UTC)
                 except ValueError:
-                    arr_dt = _parse_date(arr_time_raw, email_year)
-
+                    arr_date = parse_date(arr_time_raw, email_year)
+                    arr_dt = _build_datetime(arr_date, "00:00") if arr_date else None
             if not arr_dt:
                 i = j
                 continue
 
-            # Departure datetime: use the leg_idx-th span datetime
+            # Departure from span datetime
             dep_dt: datetime | None = None
             if leg_idx < len(dep_datetimes):
                 dep_dt = dep_datetimes[leg_idx]
             else:
-                # Fallback: parse departure date from "23FEB" + set time to 00:00
-                dep_date = _parse_date(dep_time_raw, email_year)
-                dep_dt = dep_date
-
+                dep_date = parse_date(dep_time_raw, email_year)
+                dep_dt = _build_datetime(dep_date, "00:00") if dep_date else None
             if not dep_dt:
                 i = j
                 continue
 
-            flight = _make_flight_dict(
+            flight = make_flight_dict(
                 rule,
                 flight_number,
                 dep_iata,
@@ -267,9 +130,9 @@ def _extract_html_microdata(html: str, rule, email_year: int) -> list[dict]:
                 booking_ref,
                 passenger,
             )
+            if flight and seat:
+                flight["seat"] = seat
             if flight:
-                if seat:
-                    flight["seat"] = seat
                 flights.append(flight)
 
             leg_idx += 1
@@ -281,128 +144,12 @@ def _extract_html_microdata(html: str, rule, email_year: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Plain text from HTML (boarding pass fallback using From:/To: labels)
-# ---------------------------------------------------------------------------
-
-
-def _extract_html_from_to(text: str, rule, email_year: int) -> list[dict]:
-    """
-    Parse multi-leg TAP boarding pass from BS4 text with From:/To: sections.
-
-    Expected pattern per leg:
-      Flight:\n{fn}\n...\nFrom:\n{city/airport}\n{terminal}\n{date} - {time}\nTo:\n{city/airport}\n{terminal}\n{date} - {time}
-    """
-    # Booking reference
-    booking_m = re.search(
-        r"(?:Booking\s+(?:Reference|TESTRF|[A-Z0-9]{5,8})[:  ]*\n\s*([A-Z0-9]{5,8})"
-        r"|(?:Booking)\s*\n+\s*(?:TESTRF|[A-Z0-9]{5,8})\s*\n+\s*(?:Passenger)"
-        r"|[Bb]ooking\s+(?:[Rr]eference)?[:\s]*\n\s*([A-Z0-9]{5,8}))",
-        text,
-    )
-    booking_ref = ""
-    if booking_m:
-        booking_ref = next((g for g in booking_m.groups() if g), "")
-
-    # Also try simpler pattern
-    if not booking_ref:
-        m = re.search(r"(?:Booking|PNR|Ref)[:\s\n]+([A-Z0-9]{5,8})", text, re.IGNORECASE)
-        if m:
-            booking_ref = m.group(1)
-
-    # Find each flight block
-    # Pattern: Flight:\n{fn}\n...\nFrom:\n...\n{date} - {time}\nTo:\n...\n{date} - {time}
-    leg_re = re.compile(
-        r"Flight:\s*\n\s*(TP\s*\d{2,4})\s*\n"
-        r"[\s\S]{0,100}?"
-        r"From:\s*\n"
-        r"[\s\S]{0,200}?"
-        r"(\d{2}/\d{2}/\d{4})\s+-\s+(\d{2}:\d{2})\s*\n"
-        r"To:\s*\n"
-        r"[\s\S]{0,200}?"
-        r"(\d{2}/\d{2}/\d{4})\s+-\s+(\d{2}:\d{2})",
-        re.IGNORECASE,
-    )
-
-    flights = []
-    for m in leg_re.finditer(text):
-        fn = m.group(1).replace(" ", "")
-        dep_date_str = m.group(2)
-        dep_time = m.group(3)
-        arr_date_str = m.group(4)
-        arr_time = m.group(5)
-
-        dep_date = _parse_date(dep_date_str, email_year)
-        arr_date = _parse_date(arr_date_str, email_year)
-        if not dep_date or not arr_date:
-            continue
-
-        dep_dt = _build_dt(dep_date, dep_time)
-        arr_dt = _build_dt(arr_date, arr_time)
-        if not dep_dt or not arr_dt:
-            continue
-
-        # Look for IATA codes in the chunk between this match and next
-        chunk = m.group(0)
-        chunk_iata = re.findall(r"\(([A-Z]{3})\)", chunk)
-
-        dep_iata = arr_iata = ""
-        if len(chunk_iata) >= 2:
-            dep_iata = chunk_iata[0]
-            arr_iata = chunk_iata[1]
-
-        if not dep_iata or not arr_iata:
-            logger.debug("TAP plain: no IATA codes found for flight %s", fn)
-            continue
-
-        flight = _make_flight_dict(
-            rule,
-            fn,
-            dep_iata,
-            arr_iata,
-            dep_dt,
-            arr_dt,
-            booking_ref,
-            "",
-        )
-        if flight:
-            flights.append(flight)
-
-    return flights
-
-
-# ---------------------------------------------------------------------------
-# Check-in email parser (plain text with IATA codes)
+# Format 2: Check-in open email
 # ---------------------------------------------------------------------------
 
 
 def _extract_checkin(text: str, rule, email_year: int) -> list[dict]:
-    """
-    Parse TAP check-in email plain text.
-
-    Structure:
-      Booking reference
-      P6ANPW
-      ...
-      14:20 ARN
-      ( Estocolmo /)
-      Date  01 Feb
-      ...
-      17:45 LIS
-      ( Lisboa)
-      Date  01 Feb
-      ...
-      Flight
-      TP  781
-    """
-    # Booking reference
-    booking_m = re.search(
-        r"Booking\s+reference\s*\n\s*([A-Z0-9]{5,8})",
-        text,
-        re.IGNORECASE,
-    )
-    booking_ref = booking_m.group(1).strip() if booking_m else ""
-
-    # Flight number
+    """Parse TAP check-in email: "14:20 ARN ... Date 01 Feb ... Flight TP 781"."""
     fn_m = re.search(r"Flight\s*\n\s*(TP\s*\d{3,4})", text, re.IGNORECASE)
     if not fn_m:
         fn_m = re.search(r"\b(TP\s*\d{3,4})\b", text)
@@ -410,134 +157,38 @@ def _extract_checkin(text: str, rule, email_year: int) -> list[dict]:
         return []
     flight_number = fn_m.group(1).replace(" ", "")
 
-    # Find departure block: HH:MM IATA\n...\nDate  DD Mon
     dep_m = re.search(
-        r"(\d{2}:\d{2})\s+([A-Z]{3})\s*\n"
-        r"[\s\S]{0,80}?"
-        r"Date\s+(\d{1,2}\s+[A-Za-z]{3})",
+        r"(\d{2}:\d{2})\s+([A-Z]{3})\s*\n[\s\S]{0,80}?Date\s+(\d{1,2}\s+[A-Za-z]{3})",
         text,
     )
     arr_m = re.search(
-        r"(\d{2}:\d{2})\s+([A-Z]{3})\s*\n"
-        r"[\s\S]{0,80}?"
-        r"Date\s+(\d{1,2}\s+[A-Za-z]{3})",
+        r"(\d{2}:\d{2})\s+([A-Z]{3})\s*\n[\s\S]{0,80}?Date\s+(\d{1,2}\s+[A-Za-z]{3})",
         text[dep_m.end() :] if dep_m else text,
     )
-
-    if not dep_m:
+    if not dep_m or not arr_m:
         return []
 
-    dep_time = dep_m.group(1)
-    dep_iata = dep_m.group(2)
-    dep_date_str = dep_m.group(3)
-
-    arr_time = arr_iata = arr_date_str = ""
-    if arr_m:
-        arr_time = arr_m.group(1)
-        arr_iata = arr_m.group(2)
-        arr_date_str = arr_m.group(3)
-
-    if not arr_iata:
-        return []
-
-    dep_date = _parse_date(dep_date_str, email_year)
-    arr_date = _parse_date(arr_date_str, email_year) if arr_date_str else dep_date
+    dep_date = parse_date(dep_m.group(3), email_year)
+    arr_date = parse_date(arr_m.group(3), email_year) if arr_m else dep_date
     if not dep_date or not arr_date:
         return []
 
-    dep_dt = _build_dt(dep_date, dep_time)
-    arr_dt = _build_dt(arr_date, arr_time)
-    if not dep_dt or not arr_dt:
-        return []
-
-    flight = _make_flight_dict(
+    flight = make_flight_dict(
         rule,
         flight_number,
-        dep_iata,
-        arr_iata,
-        dep_dt,
-        arr_dt,
-        booking_ref,
-        "",
+        dep_m.group(2),
+        arr_m.group(2),
+        _build_datetime(dep_date, dep_m.group(1)),
+        _build_datetime(arr_date, arr_m.group(1)),
     )
     return [flight] if flight else []
 
 
 # ---------------------------------------------------------------------------
-# Booking confirmation HTML parser (e.g. "Booking Confirmation E-mail")
+# Format 3: E-ticket receipt (RECIBO DE BILHETE ELETRÓNICO)
 # ---------------------------------------------------------------------------
 
-_WEEKDAY_RE = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+(\d{1,2}\s+\w{3})\n"
-    r"(\d{2}:\d{2})\n"
-    r"([A-Z]{3})\n"
-    r"(\d{2}:\d{2})\n"
-    r"([A-Z]{3})\n"
-    r"[\s\S]{0,300}?\n"
-    r"(TP\s*\d{3,4})\b",
-    re.IGNORECASE,
-)
-
-
-def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list[dict]:
-    """
-    Parse TAP booking confirmation (stripped HTML text).
-
-    Each flight leg appears as:
-      Fri, 10 Nov
-      19:05
-      ARN
-      22:35
-      LIS
-      ...
-      TP 783
-    """
-    # Booking reference
-    booking_m = re.search(
-        r"(?:Referência da reserva|Booking\s+[Rr]eference)[:\s]*\n\s*([A-Z0-9]{5,8})",
-        text,
-        re.IGNORECASE,
-    )
-    booking_ref = booking_m.group(1).strip() if booking_m else ""
-
-    # Passenger name from greeting "Olá\nNAME" or "Hello\nNAME"
-    passenger_m = re.search(r"(?:Ol[áa]|Hello)\n([A-Z][A-Z ]+)", text, re.IGNORECASE)
-    passenger = passenger_m.group(1).strip() if passenger_m else ""
-
-    flights = []
-    for m in _WEEKDAY_RE.finditer(text):
-        date_str = m.group(1)
-        dep_time = m.group(2)
-        dep_iata = m.group(3).upper()
-        arr_time = m.group(4)
-        arr_iata = m.group(5).upper()
-        fn = m.group(6).replace(" ", "").upper()
-
-        dep_date = _parse_date(date_str, email_year)
-        if not dep_date:
-            continue
-
-        dep_dt = _build_dt(dep_date, dep_time)
-        arr_dt = _build_dt(dep_date, arr_time)
-        if not dep_dt or not arr_dt:
-            continue
-
-        arr_dt = fix_overnight(dep_dt, arr_dt)
-
-        flight = _make_flight_dict(
-            rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref, passenger
-        )
-        if flight:
-            flights.append(flight)
-
-    return flights
-
-
-# ---------------------------------------------------------------------------
-# E-ticket receipt plain text parser (RECIBO DE BILHETE ELETRÓNICO)
-# ---------------------------------------------------------------------------
-
-_ETICKET_LEG_RE = re.compile(
+_eticket_leg_re = re.compile(
     r"([A-Z][A-Z ]{3,})\n"
     r"Terminal\s*/\s*Terminal:\s*\S+\n"
     r"\n"
@@ -553,135 +204,123 @@ _ETICKET_LEG_RE = re.compile(
     r"(\d{1,2}\w{3}\d{4})\n",
 )
 
-# Common airport name keywords → IATA (avoids a DB query for the most frequent cases)
-_NAME_TO_IATA: dict[str, str] = {
-    "ARLANDA": "ARN",
-    "GUARULHOS": "GRU",
-    "HEATHROW": "LHR",
-    "GATWICK": "LGW",
-    "STANSTED": "STN",
-    "SCHIPHOL": "AMS",
-    "CHARLES DE GAULLE": "CDG",
-    "ORLY": "ORY",
-    "FRANKFURT": "FRA",
-    "MUNICH": "MUC",
-    "FIUMICINO": "FCO",
-    "MALPENSA": "MXP",
-    "LINATE": "LIN",
-    "BARAJAS": "MAD",
-    "ADOLFO SUAREZ": "MAD",
-    "PONTA DELGADA": "PDL",
-    "FUNCHAL": "FNC",
-    "PORTO": "OPO",
-    "FARO": "FAO",
-    "ZURICH": "ZRH",
-    "COPENHAG": "CPH",
-    "OSLO": "OSL",
-    "HELSINKI": "HEL",
-    "BRUSSELS": "BRU",
-    "LISBON": "LIS",
-    "HUMBERTO DELGADO": "LIS",
-}
-
-
-def _city_name_to_iata(name: str) -> str:
-    """
-    Convert a city/airport name string (ALL CAPS) to an IATA code.
-    First tries the fast local lookup table; falls back to the airports DB.
-    """
-    upper = name.upper()
-    for keyword, iata in _NAME_TO_IATA.items():
-        if keyword in upper:
-            return iata
-
-    # DB fallback: try each significant word
-    words = [
-        w
-        for w in upper.split()
-        if len(w) > 3 and w not in ("INTL", "INTERNATIONAL", "AIRPORT", "TERMINAL")
-    ]
-    for word in reversed(words):
-        try:
-            from ...database import db_conn
-
-            with db_conn() as conn:
-                row = conn.execute(
-                    "SELECT iata_code FROM airports WHERE UPPER(name) LIKE ? LIMIT 1",
-                    (f"%{word}%",),
-                ).fetchone()
-            if row:
-                return row["iata_code"]
-        except Exception:
-            pass
-    return ""
-
 
 def _extract_eticket_receipt(text: str, rule, email_year: int) -> list[dict]:
-    """
-    Parse TAP e-ticket receipt plain text (RECIBO DE BILHETE ELETRÓNICO).
-
-    Each leg appears as:
-      STOCKHOLM ARLANDA
-      Terminal / Terminal: 5
-
-      LISBON AIRPORT
-      Terminal / Terminal: 1
-
-      TP781
-
-      14:20
-      01Feb2024
-
-      17:50
-      01Feb2024
-    """
+    """Parse TAP e-ticket receipt with city names + TP flight number + times."""
     if "RECIBO DE BILHETE" not in text.upper() and "ELECTRONIC TICKET RECEIPT" not in text.upper():
         return []
 
-    # Booking reference
-    booking_m = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva\s*/\s*Booking\s+ref|Booking\s+ref)[:\s]+([A-Z0-9]{5,8})",
-        text,
-        re.IGNORECASE,
-    )
-    booking_ref = booking_m.group(1).strip() if booking_m else ""
-
-    # Passenger name
-    passenger_m = re.search(
-        r"Passageiro\s*/\s*Passenger\s*:\s*([A-Za-z ]+?)(?:\s*\(ADT\)|\n)",
-        text,
-        re.IGNORECASE,
-    )
-    passenger = passenger_m.group(1).strip() if passenger_m else ""
-
     flights = []
-    for m in _ETICKET_LEG_RE.finditer(text):
-        from_name = m.group(1).strip()
-        to_name = m.group(2).strip()
-        fn = m.group(3).upper()
-        dep_time = m.group(4)
-        dep_date_raw = m.group(5)
-        arr_time = m.group(6)
-        arr_date_raw = m.group(7)
-
-        dep_iata = _city_name_to_iata(from_name)
-        arr_iata = _city_name_to_iata(to_name)
+    for m in _eticket_leg_re.finditer(text):
+        dep_iata = resolve_iata(m.group(1).strip())
+        arr_iata = resolve_iata(m.group(2).strip())
         if not dep_iata or not arr_iata:
-            logger.debug("TAP eticket: could not resolve IATA for '%s' or '%s'", from_name, to_name)
+            logger.debug(
+                "TAP eticket: could not resolve IATA for '%s' or '%s'",
+                m.group(1).strip(),
+                m.group(2).strip(),
+            )
             continue
 
-        dep_date = _parse_date(dep_date_raw, email_year)
-        arr_date = _parse_date(arr_date_raw, email_year)
+        dep_date = parse_date(m.group(5), email_year)
+        arr_date = parse_date(m.group(7), email_year)
         if not dep_date or not arr_date:
             continue
 
-        dep_dt = _build_dt(dep_date, dep_time)
-        arr_dt = _build_dt(arr_date, arr_time)
+        flight = make_flight_dict(
+            rule,
+            m.group(3).upper(),
+            dep_iata,
+            arr_iata,
+            _build_datetime(dep_date, m.group(4)),
+            _build_datetime(arr_date, m.group(6)),
+        )
+        if flight:
+            flights.append(flight)
+
+    return flights
+
+
+# ---------------------------------------------------------------------------
+# Format 4: Booking confirmation HTML
+# ---------------------------------------------------------------------------
+
+_weekday_prefixed_leg_re = re.compile(
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+(\d{1,2}\s+\w{3})\n"
+    r"(\d{2}:\d{2})\n"
+    r"([A-Z]{3})\n"
+    r"(\d{2}:\d{2})\n"
+    r"([A-Z]{3})\n"
+    r"[\s\S]{0,300}?\n"
+    r"(TP\s*\d{3,4})\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list[dict]:
+    """Parse TAP booking confirmation: "Fri, 10 Nov\\n19:05\\nARN\\n22:35\\nLIS\\n...TP 783"."""
+    flights = []
+    for m in _weekday_prefixed_leg_re.finditer(text):
+        dep_date = parse_date(m.group(1), email_year)
+        if not dep_date:
+            continue
+        dep_dt = _build_datetime(dep_date, m.group(2))
+        arr_dt = _build_datetime(dep_date, m.group(4))
         if not dep_dt or not arr_dt:
             continue
+        arr_dt = fix_overnight(dep_dt, arr_dt)
+        flight = make_flight_dict(
+            rule,
+            m.group(6).replace(" ", "").upper(),
+            m.group(3).upper(),
+            m.group(5).upper(),
+            dep_dt,
+            arr_dt,
+        )
+        if flight:
+            flights.append(flight)
+    return flights
 
-        flight = _make_flight_dict(
-            rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref, passenger
+
+# ---------------------------------------------------------------------------
+# Format 5: HTML From/To blocks
+# ---------------------------------------------------------------------------
+
+
+def _extract_html_from_to(text: str, rule, email_year: int) -> list[dict]:
+    """Parse multi-leg TAP boarding pass from BS4 text with From:/To: sections."""
+    leg_re = re.compile(
+        r"Flight:\s*\n\s*(TP\s*\d{2,4})\s*\n"
+        r"[\s\S]{0,100}?"
+        r"From:\s*\n"
+        r"[\s\S]{0,200}?"
+        r"(\d{2}/\d{2}/\d{4})\s+-\s+(\d{2}:\d{2})\s*\n"
+        r"To:\s*\n"
+        r"[\s\S]{0,200}?"
+        r"(\d{2}/\d{2}/\d{4})\s+-\s+(\d{2}:\d{2})",
+        re.IGNORECASE,
+    )
+
+    flights = []
+    for m in leg_re.finditer(text):
+        fn = m.group(1).replace(" ", "")
+        dep_date = parse_date(m.group(2), email_year)
+        arr_date = parse_date(m.group(4), email_year)
+        if not dep_date or not arr_date:
+            continue
+
+        # Look for IATA codes in parentheses within the match
+        chunk_iata = re.findall(r"\(([A-Z]{3})\)", m.group(0))
+        if len(chunk_iata) < 2:
+            continue
+
+        flight = make_flight_dict(
+            rule,
+            fn,
+            chunk_iata[0],
+            chunk_iata[1],
+            _build_datetime(dep_date, m.group(3)),
+            _build_datetime(arr_date, m.group(5)),
         )
         if flight:
             flights.append(flight)
@@ -695,44 +334,38 @@ def _extract_eticket_receipt(text: str, rule, email_year: int) -> list[dict]:
 
 
 def extract(email_msg, rule) -> list[dict]:
-    """Extract flights from a TAP Air Portugal email."""
+    """Extract flights from a TAP Air Portugal email (tries 5 formats in order)."""
     body = email_msg.body or ""
     html = email_msg.html_body or ""
+    email_year = get_ref_year(email_msg)
 
-    email_year = email_msg.date.year if email_msg.date else datetime.now(UTC).year
-
-    # Try HTML microdata first (boarding pass format)
+    # Format 1: HTML microdata
     if html:
         flights = _extract_html_microdata(html, rule, email_year)
         if flights:
-            logger.debug("TAP: extracted %d flight(s) via HTML microdata", len(flights))
             return flights
 
-    # Try check-in plain text format
+    # Format 2: check-in
     flights = _extract_checkin(body, rule, email_year)
     if flights:
-        logger.debug("TAP: extracted %d flight(s) via check-in format", len(flights))
-        return flights
+        return enrich_flights(flights, body, email_msg.subject)
 
-    # Try e-ticket receipt plain text (RECIBO DE BILHETE ELETRÓNICO)
+    # Format 3: e-ticket receipt
     flights = _extract_eticket_receipt(body, rule, email_year)
     if flights:
-        logger.debug("TAP: extracted %d flight(s) via e-ticket receipt", len(flights))
-        return flights
+        return enrich_flights(flights, body, email_msg.subject)
 
-    # For HTML emails, strip and try booking confirmation + From/To formats
+    # Formats 4 & 5: HTML-based
     if html:
         soup = BeautifulSoup(html, "lxml")
         html_text = soup.get_text(separator="\n", strip=True)
 
         flights = _extract_booking_confirmation_html(html_text, rule, email_year)
         if flights:
-            logger.debug("TAP: extracted %d flight(s) via booking confirmation HTML", len(flights))
-            return flights
+            return enrich_flights(flights, html_text, email_msg.subject)
 
         flights = _extract_html_from_to(html_text, rule, email_year)
         if flights:
-            logger.debug("TAP: extracted %d flight(s) via From/To format", len(flights))
-            return flights
+            return enrich_flights(flights, html_text, email_msg.subject)
 
     return []

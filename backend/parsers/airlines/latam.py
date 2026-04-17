@@ -5,6 +5,9 @@ Two extraction strategies:
   1. extract_bs4()   — HTML email body parsed with BeautifulSoup.
                        Also reads PDF attachments for per-segment times.
   2. extract_regex() — plain-text fallback when HTML is unavailable.
+
+Both strategies split the email into directional sections (outbound/return)
+and handle direct and connecting flights with layovers.
 """
 
 import logging
@@ -18,26 +21,26 @@ from ..engine import parse_flight_date
 from ..shared import (
     _airport_distance,
     _build_datetime,
-    _extract_booking_reference,
-    _extract_passenger_name,
     _get_text,
     _make_aware,
-    _make_flight_dict,
+    extract_booking_reference,
+    extract_passenger,
+    make_flight_dict,
 )
 
 logger = logging.getLogger(__name__)
 
-# Regex building blocks reused in both the BS4 and regex extractors
-_DATE_RE = r"(\d{1,2}\s+(?:de\s+)?[A-Za-zÀ-ÿ]+\.?\s+(?:de\s+)?\d{4})"
-_TIME_RE = r"(\d{1,2}:\d{2})"
-_AIRPORT_RE = r"\(([A-Z]{3})\)"
-_FLIGHT_NUM_RE = r"([A-Z0-9]{2}\s*\d{3,5})(?!\w)"
+# Regex building blocks reused across both extractors
+_date_fragment = r"(\d{1,2}\s+(?:de\s+)?[A-Za-zÀ-ÿ]+\.?\s+(?:de\s+)?\d{4})"
+_time_fragment = r"(\d{1,2}:\d{2})"
+_airport_fragment = r"\(([A-Z]{3})\)"
+_flight_number_fragment = r"([A-Z0-9]{2}\s*\d{3,5})(?!\w)"
 
-_SEGMENT_RE = re.compile(
-    _DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE,
+_segment_re = re.compile(
+    _date_fragment + r"\s+" + _time_fragment + r".*?" + _airport_fragment,
     re.DOTALL,
 )
-_CONNECTION_RE = re.compile(
+_connection_re = re.compile(
     r"Troca\s+de\s+avi[ãa]o\s+em:.*?\(([A-Z]{3})\)\s+"
     r"([A-Z0-9]{2}\s*\d{3,5}).*?"
     r"(?:Tempo\s+de\s+espera|Layover):\s*(\d+)\s*hr?\s*(\d+)\s*min",
@@ -63,14 +66,10 @@ def _parse_ddmmyy(s: str) -> date_type | None:
 
 
 def _parse_pdf_segments(pdf_text: str) -> dict[str, tuple]:
-    """
-    Parse the LATAM PDF itinerary table (format: DD/MM/YY HH:MM).
+    """Parse the LATAM PDF itinerary table (DD/MM/YY HH:MM format).
 
-    Returns a dict mapping normalised flight number (no spaces) to
+    Returns a dict mapping normalised flight number to
     (dep_date_str, dep_time_str, arr_date_str, arr_time_str).
-
-    Example PDF row:
-      LA8072 (Guarulhos) (Malpensa) 16/03/26 18:00 17/03/26 09:15 Economy Light
     """
     result = {}
     pattern = re.compile(
@@ -81,9 +80,39 @@ def _parse_pdf_segments(pdf_text: str) -> dict[str, tuple]:
     for m in pattern.finditer(pdf_text):
         fn = m.group(1).replace(" ", "")
         result[fn] = (m.group(2), m.group(3), m.group(4), m.group(5))
-    if result:
-        logger.debug("LATAM PDF segments parsed: %s", list(result.keys()))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Section splitting (shared by BS4 and regex extractors)
+# ---------------------------------------------------------------------------
+
+
+def _split_into_sections(text: str) -> list[str]:
+    """Split itinerary text into one section per flight direction.
+
+    Recognises PT ("Voo de ida/volta") and EN ("Outbound/Return flight")
+    section markers. Returns [text] when none are found.
+    """
+    direction_splits = re.split(
+        r"(Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if len(direction_splits) > 1:
+        sections = []
+        i = 1
+        while i < len(direction_splits):
+            content = direction_splits[i + 1] if i + 1 < len(direction_splits) else ""
+            sections.append(direction_splits[i] + content)
+            i += 2
+        return sections
+
+    trecho_splits = re.split(r"Trecho\s+\d+", text, flags=re.IGNORECASE)
+    if len(trecho_splits) > 1:
+        return trecho_splits[1:]
+
+    return [text]
 
 
 # ---------------------------------------------------------------------------
@@ -92,27 +121,19 @@ def _parse_pdf_segments(pdf_text: str) -> dict[str, tuple]:
 
 
 def extract_bs4(html: str, rule, email_msg) -> list[dict]:
-    """
-    Extract flights from a LATAM HTML email.
+    """Extract flights from a LATAM HTML email.
 
-    Splits the text into directional sections (outbound / return) and processes
-    each one. Falls back to PDF attachment times when the HTML lacks per-segment
-    departure/arrival info for connecting flights.
-
-    When no language-specific section headers are found (sections == 1), falls back
-    to the language-agnostic flight-number-anchoring approach from the generic parser.
+    When no language-specific section headers are found, falls back to the
+    generic flight-number-anchoring approach.
     """
     from datetime import UTC, datetime
 
-    from ..generic_html import _ZW_RE, _extract_from_lines
+    from ..generic_html import _extract_from_lines, _zero_width_chars_re
 
     soup = BeautifulSoup(html, "lxml")
     html_text = _get_text(soup)
-
-    # LATAM often attaches a full itinerary PDF with per-segment times
     pdf_text = _get_pdf_text(email_msg)
 
-    # Build the full text blob that will be split into sections
     if pdf_text:
         text = html_text + "\n\n--- PDF ---\n" + pdf_text
     elif email_msg.body and len(email_msg.body) > len(html_text):
@@ -121,36 +142,32 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
         text = html_text
 
     pdf_segments = _parse_pdf_segments(pdf_text) if pdf_text else {}
-    booking_ref = _extract_booking_reference(soup, email_msg.subject)
-    passenger = _extract_passenger_name(soup)
+    booking_ref = extract_booking_reference(html_text, email_msg.subject or "")
+    passenger = extract_passenger(html_text)
 
     sections = _split_into_sections(text)
 
     if len(sections) > 1:
-        # Language-specific section headers found — use LATAM-specific extraction
-        # (handles connections, PDF times, proportional splitting).
         flights = []
         for section in sections:
             flights.extend(_process_section(section, rule, booking_ref, passenger, pdf_segments))
         return flights
 
-    # No language-specific headers matched. Fall back to the language-agnostic
-    # flight-number-anchor approach used by the generic HTML parser so that
-    # emails in any language are handled correctly.
+    # No language-specific headers — fall back to generic extraction
     today = datetime.now(UTC).date()
     lines = [
-        _ZW_RE.sub("", ln).replace("\xa0", " ").strip() for ln in text.split("\n") if ln.strip()
+        _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
+        for ln in text.split("\n")
+        if ln.strip()
     ]
     lines = [ln for ln in lines if ln]
     flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
     if flights:
-        # Carry passenger name across all extracted flights
         if passenger:
             for f in flights:
                 f.setdefault("passenger_name", passenger)
         return flights
 
-    # Last resort: LATAM-specific extraction on the whole text
     return _process_section(text, rule, booking_ref, passenger, pdf_segments)
 
 
@@ -170,48 +187,26 @@ def _get_pdf_text(email_msg) -> str:
     return ""
 
 
-def _split_into_sections(text: str) -> list[str]:
-    """Split itinerary text into one section per flight direction.
-
-    Recognises the Portuguese and English section markers present in LATAM emails.
-    When none are found, returns [text] so the caller can try the language-agnostic
-    flight-number-anchor fallback.
-    """
-    # PT: "Voo de ida/volta"  EN: "Outbound/Return/Inbound flight/journey"
-    direction_splits = re.split(
-        r"(Voo de (?:ida|volta)"
-        r"|(?:Outbound|Return|Inbound)\s+(?:flight|journey))",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if len(direction_splits) > 1:
-        sections = []
-        i = 1
-        while i < len(direction_splits):
-            content = direction_splits[i + 1] if i + 1 < len(direction_splits) else ""
-            sections.append(direction_splits[i] + content)
-            i += 2
-        return sections
-
-    # PT: "Trecho N" (leg number marker used in some LATAM formats)
-    trecho_splits = re.split(r"Trecho\s+\d+", text, flags=re.IGNORECASE)
-    if len(trecho_splits) > 1:
-        return trecho_splits[1:]
-
-    return [text]
+# ---------------------------------------------------------------------------
+# Section processing (direct + connecting flights)
+# ---------------------------------------------------------------------------
 
 
 def _process_section(
-    section: str, rule, booking_ref: str, passenger: str, pdf_segments: dict
+    section: str,
+    rule,
+    booking_ref: str,
+    passenger: str,
+    pdf_segments: dict,
 ) -> list[dict]:
     """Extract flights from one directional section of a LATAM itinerary."""
-    segment_matches = list(_SEGMENT_RE.finditer(section))
-    flight_nums = re.findall(_FLIGHT_NUM_RE, section)
+    segment_matches = list(_segment_re.finditer(section))
+    flight_nums = re.findall(_flight_number_fragment, section)
 
     if len(segment_matches) < 2 or not flight_nums:
         return []
 
-    connections = list(_CONNECTION_RE.finditer(section))
+    connections = list(_connection_re.finditer(section))
 
     if connections:
         return _process_connecting(
@@ -224,22 +219,20 @@ def _process_section(
             flight_nums,
             connections,
         )
-    else:
-        return _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums)
+    return _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums)
 
 
 def _process_direct(rule, booking_ref, passenger, segment_matches, flight_nums) -> list[dict]:
     """Build one flight dict per direct (non-stop) leg."""
     flights = []
     for i in range(0, len(segment_matches) - 1, 2):
-        dep_m = segment_matches[i]
-        arr_m = segment_matches[i + 1]
+        dep_m, arr_m = segment_matches[i], segment_matches[i + 1]
         dep_date = parse_flight_date(dep_m.group(1))
         arr_date = parse_flight_date(arr_m.group(1))
         if not dep_date or not arr_date:
             continue
         fn = flight_nums[i // 2].strip() if (i // 2) < len(flight_nums) else ""
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             rule,
             fn,
             dep_m.group(3),
@@ -270,15 +263,18 @@ def _process_connecting(
     first_flight = flight_nums[0].strip() if flight_nums else ""
 
     segments = _build_segment_list(
-        dep_match.group(3), arr_match.group(3), first_flight, connections
+        dep_match.group(3),
+        arr_match.group(3),
+        first_flight,
+        connections,
     )
     n = len(segments)
 
-    # Strategy 1: email has explicit dep/arr for each individual leg
+    # Strategy 1: explicit dep/arr for each leg
     if len(segment_matches) >= 2 * n:
         return _flights_from_explicit_times(rule, booking_ref, passenger, segments, segment_matches)
 
-    # Strategy 2: per-segment times from the PDF attachment
+    # Strategy 2: per-segment times from PDF
     if pdf_segments:
         flights = _flights_from_pdf(rule, booking_ref, passenger, segments, pdf_segments)
         if flights:
@@ -289,7 +285,7 @@ def _process_connecting(
 
 
 def _build_segment_list(dep_airport, arr_airport, first_flight, connections) -> list[dict]:
-    """Turn a list of connection matches into an ordered list of leg dicts."""
+    """Turn connection matches into an ordered list of leg dicts."""
     segments = []
     prev_airport = dep_airport
     for conn in connections:
@@ -324,13 +320,12 @@ def _flights_from_explicit_times(
 ) -> list[dict]:
     flights = []
     for idx, seg in enumerate(segments):
-        dep_m = segment_matches[idx * 2]
-        arr_m = segment_matches[idx * 2 + 1]
+        dep_m, arr_m = segment_matches[idx * 2], segment_matches[idx * 2 + 1]
         dep_date = parse_flight_date(dep_m.group(1))
         arr_date = parse_flight_date(arr_m.group(1))
         if not dep_date or not arr_date:
             continue
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             rule,
             seg["flight_number"],
             seg["dep_airport"],
@@ -356,7 +351,7 @@ def _flights_from_pdf(rule, booking_ref, passenger, segments, pdf_segments) -> l
         arr_date = _parse_ddmmyy(arr_ds)
         if not dep_date or not arr_date:
             return []
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             rule,
             seg["flight_number"],
             seg["dep_airport"],
@@ -368,19 +363,13 @@ def _flights_from_pdf(rule, booking_ref, passenger, segments, pdf_segments) -> l
         )
         if flight:
             flights.append(flight)
-    if len(flights) == len(segments):
-        logger.debug("Used PDF segment times for %d LATAM flights", len(flights))
-        return flights
-    return []
+    return flights if len(flights) == len(segments) else []
 
 
 def _flights_proportional(
     rule, booking_ref, passenger, segments, dep_match, arr_match
 ) -> list[dict]:
-    """
-    Distribute total elapsed time across legs proportionally by great-circle distance.
-    Used when neither explicit per-leg times nor PDF data are available.
-    """
+    """Distribute total elapsed time across legs proportionally by great-circle distance."""
     dep_date = parse_flight_date(dep_match.group(1))
     arr_date = parse_flight_date(arr_match.group(1))
     if not dep_date or not arr_date:
@@ -413,7 +402,7 @@ def _flights_proportional(
     for seg, dist in zip(segments, distances):
         seg_dep_dt = current_dt
         seg_arr_dt = seg_dep_dt + timedelta(seconds=total_flight * (dist / total_dist))
-        flight = _make_flight_dict(
+        flight = make_flight_dict(
             rule,
             seg["flight_number"],
             seg["dep_airport"],
@@ -436,20 +425,14 @@ def _flights_proportional(
 
 
 def extract_regex(email_msg, rule) -> list[dict]:
-    """
-    Plain-text regex fallback for LATAM emails when HTML is unavailable.
-    Mirrors the BS4 extractor logic but operates on email_msg.body.
-
-    When no language-specific section headers are found, falls back to the
-    language-agnostic flight-number-anchoring approach from the generic parser.
-    """
+    """Plain-text regex fallback for LATAM emails when HTML is unavailable."""
     from datetime import UTC, datetime
 
-    from ..generic_html import _ZW_RE, _extract_from_lines
+    from ..generic_html import _extract_from_lines, _zero_width_chars_re
 
     body = email_msg.body
-    booking_ref = _booking_ref_from_text(email_msg.subject + "\n" + body)
-    passenger = _passenger_from_text(body)
+    booking_ref = extract_booking_reference(email_msg.subject + "\n" + body)
+    passenger = extract_passenger(body)
 
     sections = _split_text_sections(body)
     if len(sections) > 1:
@@ -458,10 +441,12 @@ def extract_regex(email_msg, rule) -> list[dict]:
             flights.extend(_process_text_section(section, rule, booking_ref, passenger))
         return flights
 
-    # No language-specific headers matched — fall back to generic extraction.
+    # No language-specific headers — fall back to generic extraction
     today = datetime.now(UTC).date()
     lines = [
-        _ZW_RE.sub("", ln).replace("\xa0", " ").strip() for ln in body.split("\n") if ln.strip()
+        _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
+        for ln in body.split("\n")
+        if ln.strip()
     ]
     lines = [ln for ln in lines if ln]
     flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
@@ -474,44 +459,11 @@ def extract_regex(email_msg, rule) -> list[dict]:
     return _process_text_section(body, rule, booking_ref, passenger)
 
 
-def _booking_ref_from_text(text: str) -> str:
-    m = re.search(
-        r"(?:C[óo]digo\s+de\s+reserva|booking\s*(?:ref|code|reference)|"
-        r"Bokning|Reserva|PNR|confirmation\s*code)[:\s\[]+([A-Z0-9]{5,8})",
-        text,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""
-
-
-def _passenger_from_text(text: str) -> str:
-    m = re.search(
-        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name))"
-        r"[\s:]*[-•·]?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
-        text,
-        re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip()
-    m = re.search(
-        r"(?:Ol[áa]|Hello|Hola)\s+(?:<b[^>]*>)?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)",
-        text,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""
-
-
 def _split_text_sections(body: str) -> list[str]:
-    """Split plain-text body into per-direction sections.
-
-    Recognises the Portuguese and English markers. Returns [body] when none are
-    found so the caller can try the language-agnostic flight-number-anchor fallback.
-    """
-    # PT: "Voo de ida/volta"  EN: "Outbound/Return/Inbound flight/journey"
+    """Split plain-text body into per-direction sections."""
     direction_starts = list(
         re.finditer(
-            r"Voo de (?:ida|volta)"
-            r"|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
+            r"Voo de (?:ida|volta)|(?:Outbound|Return|Inbound)\s+(?:flight|journey)",
             body,
             re.IGNORECASE,
         )
@@ -526,7 +478,6 @@ def _split_text_sections(body: str) -> list[str]:
             for i, m in enumerate(direction_starts)
         ]
 
-    # PT: "Trecho N"
     trecho_starts = list(re.finditer(r"Trecho\s+\d+", body, re.IGNORECASE))
     if trecho_starts:
         return [
@@ -538,14 +489,17 @@ def _split_text_sections(body: str) -> list[str]:
             for i, m in enumerate(trecho_starts)
         ]
 
-    # PT: "Itinerário" — trim preamble when no direction markers present
     itin_match = re.search(r"Itiner[áa]rio", body, re.IGNORECASE)
     return [body[itin_match.start() :] if itin_match else body]
 
 
 def _process_text_section(section: str, rule, booking_ref: str, passenger: str) -> list[dict]:
     """Extract flights from one text section."""
-    dep_match = re.search(_DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE, section, re.DOTALL)
+    dep_match = re.search(
+        _date_fragment + r"\s+" + _time_fragment + r".*?" + _airport_fragment,
+        section,
+        re.DOTALL,
+    )
     if not dep_match:
         return []
 
@@ -554,12 +508,20 @@ def _process_text_section(section: str, rule, booking_ref: str, passenger: str) 
     dep_airport = dep_match.group(3)
 
     all_seg_matches = list(
-        re.finditer(_DATE_RE + r"\s+" + _TIME_RE + r".*?" + _AIRPORT_RE, section, re.DOTALL)
+        re.finditer(
+            _date_fragment + r"\s+" + _time_fragment + r".*?" + _airport_fragment,
+            section,
+            re.DOTALL,
+        )
     )
     if len(all_seg_matches) < 2:
-        # Only one date/time/airport found — try simpler pattern
         fn_match = re.search(
-            r"\(" + re.escape(dep_airport) + r"\)\s+" + _FLIGHT_NUM_RE + r".*?" + _AIRPORT_RE,
+            r"\("
+            + re.escape(dep_airport)
+            + r"\)\s+"
+            + _flight_number_fragment
+            + r".*?"
+            + _airport_fragment,
             section,
         )
         if fn_match:
@@ -583,7 +545,10 @@ def _process_text_section(section: str, rule, booking_ref: str, passenger: str) 
     arr_time_str = arr_match.group(2)
     arr_airport = arr_match.group(3)
 
-    first_fn_match = re.search(r"\(" + re.escape(dep_airport) + r"\)\s+" + _FLIGHT_NUM_RE, section)
+    first_fn_match = re.search(
+        r"\(" + re.escape(dep_airport) + r"\)\s+" + _flight_number_fragment,
+        section,
+    )
     first_flight_num = first_fn_match.group(1).strip() if first_fn_match else ""
 
     connection_re = re.compile(
@@ -641,76 +606,17 @@ def _make_segment(
     arr_date = parse_flight_date(arr_date_str) or dep_date
     if not dep_date:
         return None
-    assert arr_date is not None  # arr_date falls back to dep_date which is non-None here
-    try:
-        dep_h, dep_m = map(int, dep_time_str.split(":"))
-        arr_h, arr_m = map(int, arr_time_str.split(":"))
-        dep_dt = _make_aware(datetime(dep_date.year, dep_date.month, dep_date.day, dep_h, dep_m))
-        arr_dt = _make_aware(datetime(arr_date.year, arr_date.month, arr_date.day, arr_h, arr_m))
-    except (ValueError, TypeError):
-        return None
-    return _make_flight_dict(
-        rule, flight_number, dep_airport, arr_airport, dep_dt, arr_dt, booking_ref, passenger
+    assert arr_date is not None
+    return make_flight_dict(
+        rule,
+        flight_number,
+        dep_airport,
+        arr_airport,
+        _build_datetime(dep_date, dep_time_str),
+        _build_datetime(arr_date, arr_time_str),
+        booking_ref,
+        passenger,
     )
-
-
-def extract(email_msg, rule) -> list[dict]:
-    """Unified entry point: try HTML+PDF (BS4), then plain-text regex."""
-    if email_msg.html_body:
-        result = extract_bs4(email_msg.html_body, rule, email_msg)
-        if result:
-            return result
-    return extract_regex(email_msg, rule)
-
-
-# ---------------------------------------------------------------------------
-# Boarding-pass seat updater (check-in confirmation emails)
-# ---------------------------------------------------------------------------
-
-_BP_KEYWORD_RE = re.compile(
-    r"cart[ãa]o\s+de\s+embarque|check.?in\s+feito|boarding\s+pass",
-    re.IGNORECASE,
-)
-_BP_FN_RE = re.compile(r"\b(LA\s*\d{3,5})\b")
-_BP_DATE_RE = re.compile(r"\b(\d{1,2}/\d{2}/\d{2})\b")
-# Seat comes right after "Check-in feito" section header, on its own short line
-_BP_SEAT_SECTION_RE = re.compile(
-    r"Check-in\s+feito[^<\n]*\n[\s\S]{0,200}?\n\s*(\d{1,3}[A-Z])\s*\n",
-    re.IGNORECASE,
-)
-
-
-def extract_seat_update(email_msg) -> dict | None:
-    """
-    Try to extract a seat assignment from a LATAM boarding-pass email.
-
-    Returns {"flight_number": str, "dep_date": str, "seat": str}
-    if this looks like a check-in confirmation with a seat, else None.
-    """
-    body = email_msg.body or ""
-    if not _BP_KEYWORD_RE.search(body):
-        return None
-
-    fn_m = _BP_FN_RE.search(body)
-    if not fn_m:
-        return None
-
-    date_m = _BP_DATE_RE.search(body)
-    if not date_m:
-        return None
-    dep_date = _parse_ddmmyy(date_m.group(1))
-    if not dep_date:
-        return None
-
-    seat_m = _BP_SEAT_SECTION_RE.search(body)
-    if not seat_m:
-        return None
-
-    return {
-        "flight_number": fn_m.group(1).replace(" ", ""),
-        "dep_date": dep_date.isoformat(),
-        "seat": seat_m.group(1),
-    }
 
 
 def _text_connecting_flights(
@@ -726,7 +632,7 @@ def _text_connecting_flights(
     booking_ref,
     passenger,
 ) -> list[dict]:
-    """Build individual legs for a connecting itinerary extracted from plain text."""
+    """Build individual legs for a connecting itinerary from plain text."""
     segments = []
     prev_airport = dep_airport
     for i, conn in enumerate(connections):
@@ -777,7 +683,7 @@ def _text_connecting_flights(
     for seg in segments:
         seg_dep_dt = current_dt
         seg_arr_dt = seg_dep_dt + timedelta(seconds=flight_per_leg)
-        fd = _make_flight_dict(
+        fd = make_flight_dict(
             rule,
             seg["flight_number"],
             seg["dep_airport"],
@@ -791,3 +697,65 @@ def _text_connecting_flights(
             flights.append(fd)
         current_dt = seg_arr_dt + timedelta(minutes=seg["layover_after_minutes"])
     return flights
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
+def extract(email_msg, rule) -> list[dict]:
+    """Unified entry point: try HTML+PDF (BS4), then plain-text regex."""
+    if email_msg.html_body:
+        result = extract_bs4(email_msg.html_body, rule, email_msg)
+        if result:
+            return result
+    return extract_regex(email_msg, rule)
+
+
+# ---------------------------------------------------------------------------
+# Boarding-pass seat updater (check-in confirmation emails)
+# ---------------------------------------------------------------------------
+
+_boarding_pass_keyword_re = re.compile(
+    r"cart[ãa]o\s+de\s+embarque|check.?in\s+feito|boarding\s+pass",
+    re.IGNORECASE,
+)
+_boarding_pass_flight_number_re = re.compile(r"\b(LA\s*\d{3,5})\b")
+_boarding_pass_date_re = re.compile(r"\b(\d{1,2}/\d{2}/\d{2})\b")
+_boarding_pass_seat_re = re.compile(
+    r"Check-in\s+feito[^<\n]*\n[\s\S]{0,200}?\n\s*(\d{1,3}[A-Z])\s*\n",
+    re.IGNORECASE,
+)
+
+
+def extract_seat_update(email_msg) -> dict | None:
+    """Try to extract a seat assignment from a LATAM boarding-pass email.
+
+    Returns {"flight_number": str, "dep_date": str, "seat": str}
+    if this looks like a check-in confirmation with a seat, else None.
+    """
+    body = email_msg.body or ""
+    if not _boarding_pass_keyword_re.search(body):
+        return None
+
+    fn_m = _boarding_pass_flight_number_re.search(body)
+    if not fn_m:
+        return None
+
+    date_m = _boarding_pass_date_re.search(body)
+    if not date_m:
+        return None
+    dep_date = _parse_ddmmyy(date_m.group(1))
+    if not dep_date:
+        return None
+
+    seat_m = _boarding_pass_seat_re.search(body)
+    if not seat_m:
+        return None
+
+    return {
+        "flight_number": fn_m.group(1).replace(" ", ""),
+        "dep_date": dep_date.isoformat(),
+        "seat": seat_m.group(1),
+    }

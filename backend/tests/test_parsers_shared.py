@@ -114,11 +114,11 @@ class TestMakeFlightDict:
         return rule
 
     def test_all_fields_present(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        result = _make_flight_dict(
+        result = make_flight_dict(
             self._rule(), "TA123", "GRU", "EZE", dep, arr, "ABC123", "John Doe"
         )
         assert result is not None
@@ -131,47 +131,47 @@ class TestMakeFlightDict:
         assert result["airline_code"] == "TA"
 
     def test_contains_optional_empty_fields(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        result = _make_flight_dict(self._rule(), "TA123", "GRU", "EZE", dep, arr)
+        result = make_flight_dict(self._rule(), "TA123", "GRU", "EZE", dep, arr)
         assert result is not None
         assert result["seat"] == ""
         assert result["cabin_class"] == ""
 
     def test_missing_flight_number_returns_none(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        assert _make_flight_dict(self._rule(), "", "GRU", "EZE", dep, arr) is None
+        assert make_flight_dict(self._rule(), "", "GRU", "EZE", dep, arr) is None
 
     def test_missing_departure_airport_returns_none(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        assert _make_flight_dict(self._rule(), "TA123", "", "EZE", dep, arr) is None
+        assert make_flight_dict(self._rule(), "TA123", "", "EZE", dep, arr) is None
 
     def test_missing_arrival_airport_returns_none(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        assert _make_flight_dict(self._rule(), "TA123", "GRU", "", dep, arr) is None
+        assert make_flight_dict(self._rule(), "TA123", "GRU", "", dep, arr) is None
 
     def test_missing_dep_dt_returns_none(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         arr = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        assert _make_flight_dict(self._rule(), "TA123", "GRU", "EZE", None, arr) is None
+        assert make_flight_dict(self._rule(), "TA123", "GRU", "EZE", None, arr) is None
 
     def test_missing_arr_dt_returns_none(self):
-        from backend.parsers.shared import _make_flight_dict
+        from backend.parsers.shared import make_flight_dict
 
         dep = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
-        assert _make_flight_dict(self._rule(), "TA123", "GRU", "EZE", dep, None) is None
+        assert make_flight_dict(self._rule(), "TA123", "GRU", "EZE", dep, None) is None
 
 
 class TestExtractBookingReference:

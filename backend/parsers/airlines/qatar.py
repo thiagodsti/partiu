@@ -14,24 +14,23 @@ Handles the Qatar Airways booking confirmation email format:
   Doha,Hamad International Airport
   Qatar
   QR 168
-  ...
 
 The IATA codes appear directly in the stripped HTML text.
-Booking reference: "Booking reference (PNR) -\n{REF}"
 """
 
-import logging
 import re
 
-from bs4 import BeautifulSoup
-
 from ..engine import parse_flight_date
-from ..shared import _build_datetime, _extract_booking_reference, _make_flight_dict, normalize_fn
-
-logger = logging.getLogger(__name__)
+from ..shared import (
+    _build_datetime,
+    enrich_flights,
+    get_email_text,
+    make_flight_dict,
+    normalize_fn,
+)
 
 # Per-flight-leg pattern in stripped HTML (newline-separated)
-_QR_LEG_RE = re.compile(
+_leg_re = re.compile(
     r"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+)?"
     r"(\d{1,2}\s+\w{3}\s+\d{4})\n"  # g1: dep date "14 Dec 2021"
     r"(\d{2}:\d{2})\n"  # g2: dep time
@@ -51,9 +50,10 @@ _QR_LEG_RE = re.compile(
 )
 
 
-def _extract(text: str, rule, booking_ref: str) -> list[dict]:
+def _extract_legs(text: str, rule) -> list[dict]:
+    """Parse all flight legs from the newline-separated body text."""
     flights = []
-    for m in _QR_LEG_RE.finditer(text):
+    for m in _leg_re.finditer(text):
         dep_date = parse_flight_date(m.group(1))
         arr_date = parse_flight_date(m.group(4))
         if not dep_date or not arr_date:
@@ -62,8 +62,14 @@ def _extract(text: str, rule, booking_ref: str) -> list[dict]:
         arr_dt = _build_datetime(arr_date, m.group(5))
         if not dep_dt or not arr_dt:
             continue
-        fn = normalize_fn(m.group(7))
-        flight = _make_flight_dict(rule, fn, m.group(3), m.group(6), dep_dt, arr_dt, booking_ref)
+        flight = make_flight_dict(
+            rule,
+            normalize_fn(m.group(7)),
+            m.group(3),
+            m.group(6),
+            dep_dt,
+            arr_dt,
+        )
         if flight:
             flights.append(flight)
     return flights
@@ -71,9 +77,6 @@ def _extract(text: str, rule, booking_ref: str) -> list[dict]:
 
 def extract(email_msg, rule) -> list[dict]:
     """Extract flights from a Qatar Airways booking confirmation email."""
-    if not email_msg.html_body:
-        return []
-    soup = BeautifulSoup(email_msg.html_body, "lxml")
-    text = soup.get_text(separator="\n", strip=True)
-    booking_ref = _extract_booking_reference(soup, email_msg.subject)
-    return _extract(text, rule, booking_ref)
+    text = get_email_text(email_msg)
+    flights = _extract_legs(text, rule)
+    return enrich_flights(flights, text, email_msg.subject)

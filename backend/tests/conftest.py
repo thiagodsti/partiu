@@ -176,13 +176,12 @@ def seeded_airports_db(tmp_path_factory):
     db_module.settings.DB_PATH = db_path
     cfg_module.settings.DB_PATH = db_path
 
-    # Clear resolve_iata and _is_valid_iata caches so any prior empty
+    # Clear resolve_iata and is_valid_iata caches so any prior empty
     # results cached without a DB don't bleed into this module's tests.
-    from backend.parsers.generic_html import _is_valid_iata
-    from backend.parsers.shared import resolve_iata
+    from backend.parsers.shared import is_valid_iata, resolve_iata
 
     resolve_iata.cache_clear()
-    _is_valid_iata.cache_clear()
+    is_valid_iata.cache_clear()
 
     from backend.database import db_write, init_database
 
@@ -200,7 +199,16 @@ def seeded_airports_db(tmp_path_factory):
         ("HEL", "Helsinki-Vantaa Airport", "Helsinki", "FI"),
         ("GIG", "Rio de Janeiro Galeao Airport", "Rio de Janeiro", "BR"),
         ("VCP", "Campinas Viracopos Airport", "Campinas", "BR"),
-        ("GRU", "Sao Paulo Guarulhos International Airport", "Sao Paulo", "BR"),
+        # Additional airports used by parser test fixtures
+        ("FLN", "Florianopolis International Airport", "Florianopolis", "BR"),
+        ("CDG", "Paris Charles de Gaulle Airport", "Paris", "FR"),
+        ("CPT", "Cape Town International Airport", "Cape Town", "ZA"),
+        ("LIN", "Milan Linate Airport", "Milan", "IT"),
+        ("GDN", "Gdansk Lech Walesa Airport", "Gdansk", "PL"),
+        ("STN", "London Stansted Airport", "London", "GB"),
+        ("MXP", "Milan Malpensa Airport", "Milan", "IT"),
+        ("SDU", "Rio de Janeiro Santos Dumont Airport", "Rio de Janeiro", "BR"),
+        ("BSB", "Brasilia International Airport", "Brasilia", "BR"),
     ]
     with db_write() as conn:
         conn.executemany(
@@ -214,8 +222,10 @@ def seeded_airports_db(tmp_path_factory):
     db_module.settings.DB_PATH = original_path
     cfg_module.settings.DB_PATH = original_path
     # Clear again so stale "valid" results don't bleed into later modules.
+    from backend.parsers.shared import is_valid_iata
+
     resolve_iata.cache_clear()
-    _is_valid_iata.cache_clear()
+    is_valid_iata.cache_clear()
 
 
 def load_eml_as_email_message(eml_filename: str):

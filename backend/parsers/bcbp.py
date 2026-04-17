@@ -28,14 +28,23 @@ _BCBP_MIN_LEN = 58
 
 # Cabin compartment code → cabin_class mapping
 _COMPARTMENT_MAP = {
-    'F': 'first', 'A': 'first', 'P': 'first',
-    'J': 'business', 'C': 'business', 'D': 'business', 'I': 'business', 'Z': 'business',
-    'W': 'premium_economy', 'R': 'premium_economy',
+    "F": "first",
+    "A": "first",
+    "P": "first",
+    "J": "business",
+    "C": "business",
+    "D": "business",
+    "I": "business",
+    "Z": "business",
+    "W": "premium_economy",
+    "R": "premium_economy",
 }
 
 # Boarding pass strings are often embedded in QR/barcode text blocks in emails.
 # They start with 'M' and have a digit for the leg count.
-_BCBP_RE = re.compile(r'M[1-9][A-Z /]{18}[EM ][A-Z0-9 ]{7}[A-Z]{3}[A-Z]{3}[A-Z0-9 ]{3}[0-9 ]{5}[0-9]{3}[A-Z][0-9A-Z ]{4}')
+_bcbp_re = re.compile(
+    r"M[1-9][A-Z /]{18}[EM ][A-Z0-9 ]{7}[A-Z]{3}[A-Z]{3}[A-Z0-9 ]{3}[0-9 ]{5}[0-9]{3}[A-Z][0-9A-Z ]{4}"
+)
 
 
 def _julian_to_date(julian: int, ref_year: int | None = None) -> date | None:
@@ -48,6 +57,7 @@ def _julian_to_date(julian: int, ref_year: int | None = None) -> date | None:
         return None
 
     from datetime import date as _date
+
     today = _date.today()
 
     for year in (today.year, today.year + 1, today.year - 1):
@@ -73,12 +83,12 @@ def _julian_to_date(julian: int, ref_year: int | None = None) -> date | None:
 def _parse_name(raw: str) -> tuple[str, str]:
     """Parse 'LASTNAME/FIRSTNAME' into (first_name, last_name). Returns full name if no slash."""
     raw = raw.strip()
-    if '/' in raw:
-        parts = raw.split('/', 1)
+    if "/" in raw:
+        parts = raw.split("/", 1)
         last = parts[0].strip().title()
         first = parts[1].strip().title()
         return first, last
-    return raw.title(), ''
+    return raw.title(), ""
 
 
 def _clean_field(s: str) -> str:
@@ -97,7 +107,7 @@ def parse_bcbp(bcbp: str) -> list[dict]:
     bcbp = bcbp.strip()
     if len(bcbp) < _BCBP_MIN_LEN:
         return []
-    if bcbp[0] != 'M':
+    if bcbp[0] != "M":
         return []
 
     try:
@@ -174,24 +184,24 @@ def parse_bcbp(bcbp: str) -> list[dict]:
             pass
 
         # Cabin class
-        cabin_class = _COMPARTMENT_MAP.get(compartment, 'economy')
+        cabin_class = _COMPARTMENT_MAP.get(compartment, "economy")
 
         # Seat: strip trailing letters sometimes mean "no seat assigned"
         seat = seat_raw.strip()
-        if seat in ('', '   ', '0000'):
-            seat = ''
+        if seat in ("", "   ", "0000"):
+            seat = ""
 
         leg = {
-            'flight_number': flight_number,
-            'airline_code': airline_code,
-            'departure_airport': dep_airport,
-            'arrival_airport': arr_airport,
-            'booking_reference': pnr,
-            'passenger_name': passenger_name,
-            'seat': seat,
-            'cabin_class': cabin_class,
-            'julian_date': julian_int,
-            'departure_date': departure_date,  # date object or None
+            "flight_number": flight_number,
+            "airline_code": airline_code,
+            "departure_airport": dep_airport,
+            "arrival_airport": arr_airport,
+            "booking_reference": pnr,
+            "passenger_name": passenger_name,
+            "seat": seat,
+            "cabin_class": cabin_class,
+            "julian_date": julian_int,
+            "departure_date": departure_date,  # date object or None
         }
         legs.append(leg)
 
@@ -209,26 +219,22 @@ def find_bcbp_in_text(text: str) -> list[str]:
     candidates = []
 
     # Strategy 1: regex match on the text
-    for m in _BCBP_RE.finditer(text):
+    for m in _bcbp_re.finditer(text):
         m.group(0)
         # Extend greedily: BCBP can be longer for conditional fields
         start = m.start()
         m.end()
         # Try to grab up to 300 chars from start (multi-leg boarding passes)
-        extended = text[start:start + 300].split('\n')[0].split('\r')[0]
+        extended = text[start : start + 300].split("\n")[0].split("\r")[0]
         candidates.append(extended)
 
     # Strategy 2: look for lines that start with 'M' and are long enough
     for line in text.splitlines():
         line = line.strip()
-        if (
-            len(line) >= _BCBP_MIN_LEN
-            and line[0] == 'M'
-            and line[1:2].isdigit()
-        ):
+        if len(line) >= _BCBP_MIN_LEN and line[0] == "M" and line[1:2].isdigit():
             # Quick sanity: next 20 chars should be mostly alpha/space (passenger name)
             name_part = line[2:22]
-            alpha_count = sum(1 for c in name_part if c.isalpha() or c == ' ' or c == '/')
+            alpha_count = sum(1 for c in name_part if c.isalpha() or c == " " or c == "/")
             if alpha_count >= 10:
                 candidates.append(line)
 

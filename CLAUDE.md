@@ -37,6 +37,9 @@ uv run ruff check backend/
 # Type check
 uv run ty check backend/
 
+# Dead code detection (manual, review output — expect false positives from FastAPI handlers)
+uv run vulture backend/ --exclude backend/tests/
+
 # Tests
 uv run pytest backend/tests/ -v
 uv run pytest backend/tests/test_api_auth.py::TestAuth::test_login -v  # single test

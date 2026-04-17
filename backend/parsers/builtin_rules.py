@@ -5,6 +5,7 @@ Adapted from AdventureLog — Django dependencies removed.
 Added Norwegian Air Shuttle (DY).
 """
 
+import importlib
 from dataclasses import dataclass, field
 
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
@@ -39,8 +40,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "LA",
         "sender_pattern": r"(latam\.com|latamairlines\.com|info\.latam\.|@latam\.)",
         "custom_extractor": "latam",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -51,8 +50,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "SK",
         "sender_pattern": r"(flysas\.com|sas\.se|sas\.dk|sas\.no|@sas\.)",
         "custom_extractor": "sas",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -63,8 +60,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "DY",
         "sender_pattern": r"(norwegian\.com|@norwegian\.no|noreply@norwegian)",
         "custom_extractor": "norwegian",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -75,8 +70,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "LH",
         "sender_pattern": r"(lufthansa\.com|lufthansa-group\.com|@lh\.com|noreply@lufthansa)",
         "custom_extractor": "lufthansa",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -87,8 +80,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "",
         "sender_pattern": r"(kiwi\.com|tickets@kiwi)",
         "custom_extractor": "kiwi",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 5,  # lower than direct airline emails
     },
     # =========================================================================
@@ -99,8 +90,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "BA",
         "sender_pattern": r"(@email\.ba\.com|@britishairways\.com|british.?airways)",
         "custom_extractor": "british_airways",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -111,8 +100,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "AZ",
         "sender_pattern": r"(ita-airways\.com|@enews\.ita-airways)",
         "custom_extractor": "ita_airways",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -123,8 +110,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "FR",
         "sender_pattern": r"(ryanair\.com|@ryanair\.)",
         "custom_extractor": "ryanair",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -135,8 +120,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "OS",
         "sender_pattern": r"(@austrian\.com|@notifications\.austrian|@information\.austrian)",
         "custom_extractor": "austrian",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -147,8 +130,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "TP",
         "sender_pattern": r"(@flytap\.com|@info\.flytap)",
         "custom_extractor": "tap",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -159,8 +140,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "QR",
         "sender_pattern": r"(qatarairways\.com)",
         "custom_extractor": "qatar",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -171,8 +150,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "AY",
         "sender_pattern": r"(@finnair\.com|@amadeus\.com)",
         "custom_extractor": "finnair",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -183,8 +160,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "W6",
         "sender_pattern": r"(wizzair\.com|@wizz\.)",
         "custom_extractor": "wizz_air",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
     # =========================================================================
@@ -195,8 +170,6 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "AD",
         "sender_pattern": r"(voeazul[\w-]*\.com\.br|azullinhasaereas\.com|@azul\.com)",
         "custom_extractor": "azul",
-        "is_active": True,
-        "is_builtin": True,
         "priority": 10,
     },
 ]
@@ -215,80 +188,31 @@ class BuiltinAirlineRule:
     airline_name: str
     airline_code: str
     sender_pattern: str
-    is_active: bool
-    is_builtin: bool
     priority: int
     custom_extractor: str = ""
     extractor: object = field(default=None, repr=False)
 
 
 def _resolve_extractor(name: str):
-    """Return the unified extract() callable for a given custom_extractor name."""
-    if name == "latam":
-        from .airlines.latam import extract
+    """Return the unified ``extract()`` callable for a custom_extractor name.
 
-        return extract
-    if name == "sas":
-        from .airlines.sas import extract
-
-        return extract
-    if name == "norwegian":
-        from .airlines.norwegian import extract
-
-        return extract
-    if name == "lufthansa":
-        from .airlines.lufthansa import extract
-
-        return extract
-    if name == "azul":
-        from .airlines.azul import extract
-
-        return extract
-    if name == "kiwi":
-        from .airlines.kiwi import extract
-
-        return extract
-    if name == "british_airways":
-        from .airlines.british_airways import extract
-
-        return extract
-    if name == "ita_airways":
-        from .airlines.ita_airways import extract
-
-        return extract
-    if name == "ryanair":
-        from .airlines.ryanair import extract
-
-        return extract
-    if name == "austrian":
-        from .airlines.austrian import extract
-
-        return extract
-    if name == "tap":
-        from .airlines.tap import extract
-
-        return extract
-    if name == "qatar":
-        from .airlines.qatar import extract
-
-        return extract
-    if name == "finnair":
-        from .airlines.finnair import extract
-
-        return extract
-    if name == "wizz_air":
-        from .airlines.wizz_air import extract
-
-        return extract
-    return None
+    Dynamically imports ``backend.parsers.airlines.<name>`` and returns its
+    ``extract`` function.  Adding a new airline only requires creating the
+    module — no changes needed here.
+    """
+    if not name:
+        return None
+    try:
+        module = importlib.import_module(f".airlines.{name}", package="backend.parsers")
+        return getattr(module, "extract", None)
+    except ImportError:
+        return None
 
 
 def get_builtin_rules() -> list[BuiltinAirlineRule]:
-    """Return all active built-in airline rules as in-memory objects (no DB query)."""
+    """Return all built-in airline rules as in-memory objects (no DB query)."""
     rules = []
     for rule_dict in BUILTIN_AIRLINE_RULES:
-        if not rule_dict.get("is_active", True):
-            continue
         rule = BuiltinAirlineRule(**rule_dict)  # type: ignore[arg-type]
         rule.extractor = _resolve_extractor(rule.custom_extractor)
         rules.append(rule)

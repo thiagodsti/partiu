@@ -100,9 +100,12 @@ MONTH_MAP = _build_month_map()
 def parse_flight_date(raw: str) -> date_type | None:
     """
     Parse a date string that may use multilingual month names.
-    Handles formats like "16 de mar. de 2026", "16 Mar 2026", "2026-03-16".
+    Handles formats like "16 de mar. de 2026", "16 Mar 2026", "2026-03-16",
+    and day-of-week prefixes like "Wed, 23 Apr 25".
     """
     raw = raw.strip()
+    # Strip leading day-of-week: "Wed, 23 Apr 25" → "23 Apr 25"
+    raw = re.sub(r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*,?\s+", "", raw, flags=re.IGNORECASE)
 
     # ISO and common numeric formats (with year)
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y"):
@@ -299,7 +302,7 @@ def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:
 # Pattern: HH:MM IATA  ...  date-line  ...  flight-number  ...  HH:MM IATA
 # Each section allows a few intervening lines so it survives extra content
 # (airport names, carrier info, etc.) without matching across unrelated blocks.
-_GENERIC_PDF_RE = re.compile(
+_pdf_itinerary_re = re.compile(
     r"^(\d{1,2}:\d{2})\s+([A-Z]{3})\b[^\n]*\n"  # dep time + dep IATA
     r"(?:[^\n]*\n){0,4}"  # up to 4 content lines
     r"([^\n]*\b\d{4}\b[^\n]*)\n"  # date line (contains a 4-digit year)
@@ -310,14 +313,14 @@ _GENERIC_PDF_RE = re.compile(
     re.MULTILINE,
 )
 
-_GENERIC_BOOKING_RE = re.compile(
+_booking_reference_re = re.compile(
     r"(?:booking\s*(?:ref|code|reference|number)|PNR|confirmation\s*(?:code|number)|"
     r"N[UÚ]MERO\s+DE\s+RESERVA|Buchungsnummer|Reservierungscode)"
     r"[:\s#]+([\w\s]{5,20})",
     re.IGNORECASE,
 )
 
-_GENERIC_PASSENGER_RE = re.compile(
+_passenger_name_re = re.compile(
     r"(?:Ms\.|Mr\.|Mrs\.|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?=\s+\d|\s*\n)",
 )
 
@@ -328,12 +331,12 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
     Used as a last resort when no airline rule matched the email.
     """
     booking_ref = ""
-    m = _GENERIC_BOOKING_RE.search(pdf_text)
+    m = _booking_reference_re.search(pdf_text)
     if m:
         booking_ref = m.group(1).strip().replace(" ", "")
 
     passenger = ""
-    m = _GENERIC_PASSENGER_RE.search(pdf_text)
+    m = _passenger_name_re.search(pdf_text)
     if m:
         passenger = m.group(1).strip()
 
@@ -341,7 +344,7 @@ def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
     flights = []
     seen = set()  # deduplicate by (flight_number, dep_airport, arr_airport)
 
-    for m in _GENERIC_PDF_RE.finditer(pdf_text):
+    for m in _pdf_itinerary_re.finditer(pdf_text):
         dep_time_str = m.group(1)
         dep_airport = m.group(2)
         date_line = m.group(3)
