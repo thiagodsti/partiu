@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "25"  # feat: Wizz Air (W6/W9) itinerary confirmation parser
+PARSER_VERSION = "26"  # feat: Brussels Airlines (SN) booking confirmation parser
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -170,6 +170,16 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "AD",
         "sender_pattern": r"(voeazul[\w-]*\.com\.br|azullinhasaereas\.com|@azul\.com)",
         "custom_extractor": "azul",
+        "priority": 10,
+    },
+    # =========================================================================
+    # Brussels Airlines (SN) — booking confirmation emails
+    # =========================================================================
+    {
+        "airline_name": "Brussels Airlines",
+        "airline_code": "SN",
+        "sender_pattern": r"(brusselsairlines\.com|@information\.brusselsairlines)",
+        "custom_extractor": "brussels_airlines",
         "priority": 10,
     },
 ]

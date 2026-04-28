@@ -31,7 +31,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
 - Generic PDF extraction fallback for attachments
-- Built-in parser rules for 13 airlines (see [Supported airlines](#supported-airlines))
+- Built-in parser rules for 14 airlines (see [Supported airlines](#supported-airlines))
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
 - LLM fallback is used only for incremental sync, not full rescans
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
@@ -122,6 +122,7 @@ Want to try it before self-hosting? A public demo is available at:
 | TAP Air Portugal (check-in, boarding pass, booking confirmation, e-ticket receipt) | TP |
 | Finnair | AY |
 | Wizz Air | W6 |
+| Brussels Airlines | SN |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
 
