@@ -214,9 +214,6 @@ async def _fetch_rows(rows) -> dict:
                            aircraft_fetched_at = ?,
                            aircraft_confirmed = ?,
                            aircraft_fetch_attempts = 0, aircraft_next_retry_at = NULL,
-                           live_status = ?, live_departure_delay = ?, live_arrival_delay = ?,
-                           live_departure_actual = ?, live_arrival_estimated = ?,
-                           live_status_fetched_at = ?,
                            updated_at = ?
                        WHERE id = ?""",
                     (
@@ -225,12 +222,6 @@ async def _fetch_rows(rows) -> dict:
                         info.get("registration") or "",
                         ts,
                         confirmed,
-                        info.get("flight_status") or None,
-                        info.get("departure_delay"),
-                        info.get("arrival_delay"),
-                        info.get("departure_actual") or None,
-                        info.get("arrival_estimated") or None,
-                        ts,
                         ts,
                         row["id"],
                     ),

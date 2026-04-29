@@ -488,9 +488,20 @@ def _extract_passenger_text(text: str) -> str:
     Tries patterns in order of specificity — labeled references first (most
     reliable), greeting patterns last (first name only).
     """
-    # "Lista de passageiros: John Smith" / "Passenger list:\nJohn Smith"
+    # "JOHN SMITH Booking reference ABC123" — Brussels Airlines / Lufthansa PDF header:
+    # all-caps name on same line as "Booking reference", before the reference code.
     m = re.search(
-        r"(?:Lista\s+de\s+passageiros|Passenger\s*(?:list|name))"
+        r"^([A-Z][A-Z ]{2,}?)\s+Booking reference\b",
+        text,
+        re.MULTILINE,
+    )
+    if m:
+        return m.group(1).strip().title()
+
+    # "Lista de passageiros: John Smith" / "Passenger list:\nJohn Smith"
+    # Negative lookahead prevents matching "passenger name record (PNR)" in legal text.
+    m = re.search(
+        r"(?:Lista\s+de\s+passageiros|Passenger\s*list|Passenger\s*name(?!\s+record))"
         r"[\s:]*[-•·]?\s*"
         r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
         text,
