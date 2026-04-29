@@ -78,6 +78,23 @@ def _upsert_sync_state(user_id: int, **fields):
             )
 
 
+def _is_email_processed(user_id: int, email_message_id: str) -> bool:
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM processed_emails WHERE user_id = ? AND email_message_id = ?",
+            (user_id, email_message_id),
+        ).fetchone()
+        return row is not None
+
+
+def _mark_email_processed(user_id: int, email_message_id: str) -> None:
+    with db_write() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO processed_emails (user_id, email_message_id) VALUES (?, ?)",
+            (user_id, email_message_id),
+        )
+
+
 def _set_sync_status(user_id: int, status: str, error: str = ""):
     _upsert_sync_state(user_id, status=status, last_error=error)
 
@@ -324,6 +341,11 @@ def _process_emails(
         if is_non_flight_domain(email_msg.sender or ""):
             logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
             continue
+        if email_msg.message_id and _is_email_processed(user_id, email_msg.message_id):
+            logger.debug(
+                "User %d: Skipping already-processed email %s", user_id, email_msg.message_id
+            )
+            continue
         try:
             # --- BCBP boarding pass scan (always attempted first) ---
             bcbp_legs, bcbp_updated = _process_bcbp_email(email_msg, user_id)
@@ -393,6 +415,8 @@ def _process_emails(
                 if new_id:
                     flights_created += 1
                     new_flight_ids.append(new_id)
+                    if email_msg.message_id:
+                        _mark_email_processed(user_id, email_msg.message_id)
                     logger.info(
                         "User %d: Created flight: %s %s→%s",
                         user_id,

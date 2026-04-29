@@ -282,6 +282,110 @@ class TestUpdateFlightFromBcbp:
         _update_flight_from_bcbp("nonexistent-id", {})
 
 
+class TestProcessedEmails:
+    def _insert_user(self, conn, username="pe_user"):
+        cur = conn.execute(
+            f"INSERT INTO users (username, password_hash, is_admin) VALUES ('{username}', 'h', 1)"
+        )
+        return cur.lastrowid
+
+    def test_not_processed_returns_false(self, test_db):
+        from backend.sync_job import _is_email_processed
+
+        assert _is_email_processed(999, "<never-seen@test.com>") is False
+
+    def test_mark_then_check(self, test_db):
+        from backend.database import db_write
+        from backend.sync_job import _is_email_processed, _mark_email_processed
+
+        with db_write() as conn:
+            user_id = self._insert_user(conn)
+
+        _mark_email_processed(user_id, "<msg1@test.com>")
+        assert _is_email_processed(user_id, "<msg1@test.com>") is True
+
+    def test_mark_twice_is_idempotent(self, test_db):
+        from backend.database import db_write
+        from backend.sync_job import _is_email_processed, _mark_email_processed
+
+        with db_write() as conn:
+            user_id = self._insert_user(conn, "pe_user2")
+
+        _mark_email_processed(user_id, "<dup@test.com>")
+        _mark_email_processed(user_id, "<dup@test.com>")  # should not raise
+        assert _is_email_processed(user_id, "<dup@test.com>") is True
+
+    def test_different_users_isolated(self, test_db):
+        from backend.database import db_write
+        from backend.sync_job import _is_email_processed, _mark_email_processed
+
+        with db_write() as conn:
+            uid1 = self._insert_user(conn, "pe_user3")
+            uid2 = self._insert_user(conn, "pe_user4")
+
+        _mark_email_processed(uid1, "<shared@test.com>")
+        assert _is_email_processed(uid1, "<shared@test.com>") is True
+        assert _is_email_processed(uid2, "<shared@test.com>") is False
+
+    def test_process_emails_skips_processed_email(self, test_db):
+
+        from backend.database import db_write
+        from backend.sync_job import _mark_email_processed, _process_emails
+
+        with db_write() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES ('pe_user5', 'h', 1)"
+            )
+            user_id = cur.lastrowid
+
+        msg_id = "<already-done@test.com>"
+        _mark_email_processed(user_id, msg_id)
+
+        email_msg = _make_email_msg(message_id=msg_id, subject="Flight confirmation")
+
+        with patch("backend.sync_job.match_rule_to_email") as mock_match:
+            result = _process_emails([email_msg], user_id)
+            mock_match.assert_not_called()
+
+        assert result["flights_created"] == 0
+
+    def test_process_emails_marks_email_after_flight_insert(self, test_db):
+        from datetime import UTC, datetime
+
+        from backend.database import db_write
+        from backend.sync_job import _is_email_processed, _process_emails
+
+        with db_write() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES ('pe_user6', 'h', 1)"
+            )
+            user_id = cur.lastrowid
+
+        msg_id = "<new-flight@test.com>"
+        email_msg = _make_email_msg(message_id=msg_id)
+
+        flight_data = {
+            "flight_number": "LA9999",
+            "departure_airport": "GRU",
+            "departure_datetime": datetime(2025, 8, 1, 10, 0, tzinfo=UTC),
+            "arrival_airport": "LHR",
+            "arrival_datetime": datetime(2025, 8, 1, 22, 0, tzinfo=UTC),
+        }
+
+        with (
+            patch("backend.sync_job.match_rule_to_email", return_value=MagicMock()),
+            patch("backend.sync_job.extract_flights_from_email", return_value=[flight_data]),
+            patch("backend.sync_job.apply_airport_timezones", side_effect=lambda x: x),
+            patch("backend.sync_job.auto_group_flights", return_value={}),
+            patch("backend.sync_job._process_boarding_pass_email", return_value=0),
+            patch("backend.sync_job._process_bcbp_email", return_value=(0, 0)),
+        ):
+            result = _process_emails([email_msg], user_id)
+
+        assert result["flights_created"] == 1
+        assert _is_email_processed(user_id, msg_id) is True
+
+
 class TestProcessBcbpEmail:
     def test_no_body_returns_zero(self, test_db):
         from backend.sync_job import _process_bcbp_email
