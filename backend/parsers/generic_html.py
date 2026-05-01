@@ -595,13 +595,10 @@ def extract_generic_html(email_msg, rule=None) -> list[dict]:
 
     # --- Try HTML body line-scanning ---
     if email_msg.html_body:
-        soup = BeautifulSoup(email_msg.html_body, "lxml")
-        text_nl = soup.get_text(separator="\n", strip=True)
-        lines = [
-            _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
-            for ln in text_nl.split("\n")
-            if ln.strip()
-        ]
+        from .shared import html_to_text
+
+        text_nl = html_to_text(email_msg.html_body)
+        lines = [ln for ln in text_nl.split("\n") if ln.strip()]
         lines = [ln for ln in lines if ln]
         if lines:
             booking_ref = extract_booking_reference(text_nl, subject)

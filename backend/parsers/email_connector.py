@@ -12,80 +12,15 @@ import imaplib
 import logging
 import re
 from datetime import datetime
-from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
 
-class _HTMLTextExtractor(HTMLParser):
-    """HTML-to-text converter that preserves structure via newlines after block elements."""
-
-    BLOCK_TAGS = frozenset(
-        [
-            "p",
-            "div",
-            "br",
-            "tr",
-            "td",
-            "th",
-            "li",
-            "h1",
-            "h2",
-            "h3",
-            "h4",
-            "h5",
-            "h6",
-            "table",
-            "blockquote",
-            "pre",
-            "section",
-            "article",
-            "header",
-            "footer",
-        ]
-    )
-
-    def __init__(self):
-        super().__init__()
-        self._pieces: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() in self.BLOCK_TAGS:
-            self._pieces.append("\n")
-
-    def handle_endtag(self, tag):
-        if tag.lower() in self.BLOCK_TAGS:
-            self._pieces.append("\n")
-
-    def handle_data(self, data):
-        self._pieces.append(data)
-
-    def get_text(self):
-        text = "".join(self._pieces)
-        # Collapse horizontal whitespace (preserve newlines)
-        text = re.sub(r"[^\S\n]+", " ", text)
-        # Collapse runs of blank lines into at most one blank line
-        text = re.sub(r"\n[ \t]*\n", "\n\n", text)
-        lines = [line.strip() for line in text.split("\n")]
-        # Deduplicate consecutive blank lines
-        result: list[str] = []
-        prev_empty = False
-        for line in lines:
-            if not line:
-                if not prev_empty:
-                    result.append("")
-                prev_empty = True
-            else:
-                result.append(line)
-                prev_empty = False
-        return "\n".join(result).strip()
-
-
 def html_to_text(html_content: str) -> str:
-    """Convert HTML to structured plain text, preserving block-level line breaks."""
-    extractor = _HTMLTextExtractor()
-    extractor.feed(html_content)
-    return extractor.get_text()
+    """Convert HTML to clean plain text. Delegates to parsers.shared.html_to_text."""
+    from .shared import html_to_text as _html_to_text
+
+    return _html_to_text(html_content)
 
 
 def decode_header_value(raw: str) -> str:
@@ -118,68 +53,89 @@ def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
         return ""
 
 
-def get_email_body_and_html(msg) -> tuple[str, str | None, list[bytes]]:
+def _parse_ics_text(ics: str) -> str:
+    """Convert an ICS calendar attachment to a one-line flight summary."""
+    summary = description = dtstart = dtend = ""
+    for line in ics.splitlines():
+        line = line.strip()
+        if line.startswith("SUMMARY:"):
+            summary = line[8:]
+        elif line.startswith("DESCRIPTION:"):
+            description = line[12:].replace("\\n", " ").replace("\\,", ",")
+        elif line.startswith("DTSTART:"):
+            dtstart = line[8:]
+        elif line.startswith("DTEND:"):
+            dtend = line[6:]
+    parts = []
+    if summary:
+        parts.append(f"Flight: {summary}")
+    if description:
+        parts.append(f"Details: {description.split('http')[0].strip()}")
+    if dtstart:
+        parts.append(f"Departure (UTC): {dtstart}")
+    if dtend:
+        parts.append(f"Arrival (UTC): {dtend}")
+    return "\n".join(parts)
+
+
+def get_email_body_and_html(msg) -> tuple[str, str | None, list[bytes], list[str]]:
     """
-    Extract text, raw HTML, and raw PDF bytes from an email message.
-    Returns (text_body, raw_html, pdf_bytes_list).
-    text_body combines plain-text, HTML-to-text, and PDF attachment text.
+    Extract text, raw HTML, PDF bytes, and ICS calendar texts from an email message.
+    Returns (text_body, raw_html, pdf_bytes_list, ics_texts).
+    text_body prefers HTML-derived text over plain text (plain text in airline emails
+    is often just tracking URLs). ICS attachments are always appended when present.
     raw_html is the original HTML content (for BS4 parsing), or None.
     pdf_bytes_list contains raw bytes of any PDF attachments found.
+    ics_texts contains parsed summaries of any ICS/calendar attachments.
     """
     plain_body = ""
     html_text = ""
     raw_html = None
     pdf_texts = []
     pdf_bytes_list: list[bytes] = []
+    ics_texts: list[str] = []
 
-    if msg.is_multipart():
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type == "text/plain" and not plain_body:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    plain_body = payload.decode(charset, errors="replace")
-            elif content_type == "text/html" and raw_html is None:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    raw_html = payload.decode(charset, errors="replace")
-                    html_text = html_to_text(raw_html)
-            elif content_type == "application/pdf":
-                payload = part.get_payload(decode=True)
-                if payload:
-                    pdf_bytes_list.append(payload)
-                    pdf_text = _extract_text_from_pdf(payload)
-                    if pdf_text:
-                        pdf_texts.append(pdf_text)
-                        logger.info("Extracted %d chars from PDF attachment", len(pdf_text))
-    else:
-        payload = msg.get_payload(decode=True)
-        if payload:
-            charset = msg.get_content_charset() or "utf-8"
-            if msg.get_content_type() == "text/html":
-                raw_html = payload.decode(charset, errors="replace")
-                html_text = html_to_text(raw_html)
-            else:
-                plain_body = payload.decode(charset, errors="replace")
+    for part in msg.walk():
+        content_type = part.get_content_type()
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        charset = part.get_content_charset() or "utf-8"
+        decoded = payload.decode(charset, errors="replace")
 
-    # Combine text parts for regex fallback (includes PDF text)
-    parts = []
-    if plain_body:
-        parts.append(plain_body.strip())
-    if html_text:
-        parts.append(html_text.strip())
+        if content_type in ("application/ics", "text/calendar"):
+            ics_texts.append(_parse_ics_text(decoded))
+        elif content_type == "text/html" and raw_html is None:
+            raw_html = decoded
+            html_text = html_to_text(raw_html)
+        elif content_type == "application/pdf":
+            pdf_bytes_list.append(payload)
+            pdf_text = _extract_text_from_pdf(payload)
+            if pdf_text:
+                pdf_texts.append(pdf_text)
+                logger.info("Extracted %d chars from PDF attachment", len(pdf_text))
+        elif content_type == "text/plain" and not plain_body:
+            # Some airlines mislabel HTML content as text/plain — detect and skip
+            if not decoded.lstrip().startswith(("<", "<!")):
+                plain_body = decoded
+
+    # Prefer HTML-derived text — airline plain text is often just tracking URLs.
+    # Fall back to plain text only when no HTML is available.
+    body_source = html_text.strip() if html_text else plain_body.strip()
+
+    parts = [body_source] if body_source else []
     if pdf_texts:
         parts.extend(pdf_texts)
-    text_body = "\n\n".join(parts) if parts else ""
+    if ics_texts:
+        parts.append("--- CALENDAR ATTACHMENTS ---\n" + "\n\n".join(ics_texts))
+    text_body = "\n\n".join(parts)
 
-    return text_body, raw_html, pdf_bytes_list
+    return text_body, raw_html, pdf_bytes_list, ics_texts
 
 
 def get_email_body(msg) -> str:
     """Extract text from an email message (backward-compatible wrapper)."""
-    text_body, _, _ = get_email_body_and_html(msg)
+    text_body, _, _, _ = get_email_body_and_html(msg)
     return text_body
 
 
@@ -196,6 +152,7 @@ class EmailMessage:
         html_body: str | None = None,
         pdf_attachments: list[bytes] | None = None,
         raw_eml: bytes | None = None,
+        ics_texts: list[str] | None = None,
     ):
         self.message_id = message_id
         self.sender = sender
@@ -205,6 +162,7 @@ class EmailMessage:
         self.html_body = html_body
         self.pdf_attachments: list[bytes] = pdf_attachments or []
         self.raw_eml: bytes | None = raw_eml
+        self.ics_texts: list[str] = ics_texts or []
 
     def get_pdf_text(self) -> str:
         """Extract text from any stored PDF attachments (requires pdfplumber)."""
@@ -364,7 +322,7 @@ def fetch_emails_imap(
                     if not _matches_flight_filter(sender, subject, sender_patterns):
                         continue
 
-                    body, raw_html, pdf_bytes_list = get_email_body_and_html(msg)
+                    body, raw_html, pdf_bytes_list, ics_texts = get_email_body_and_html(msg)
 
                     # Parse date
                     date_str = msg.get("Date", "")
@@ -385,6 +343,7 @@ def fetch_emails_imap(
                             html_body=raw_html,
                             pdf_attachments=pdf_bytes_list,
                             raw_eml=raw_email,
+                            ics_texts=ics_texts,
                         )
                     )
                 except Exception as e:

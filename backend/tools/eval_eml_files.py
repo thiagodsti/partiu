@@ -48,7 +48,7 @@ def _load_email(eml_path: str):
     sender = decode_header_value(msg.get("From", ""))
     subject = decode_header_value(msg.get("Subject", ""))
     message_id = msg.get("Message-ID", f"eval-{Path(eml_path).stem}")
-    body, raw_html, pdf_bytes_list = get_email_body_and_html(msg)
+    body, raw_html, pdf_bytes_list, ics_texts = get_email_body_and_html(msg)
     msg_date = None
     date_str = msg.get("Date", "")
     if date_str:
@@ -65,21 +65,20 @@ def _load_email(eml_path: str):
         html_body=raw_html,
         pdf_attachments=pdf_bytes_list,
         raw_eml=raw,
+        ics_texts=ics_texts,
     )
 
 
 def _run_model(email_msg, model: str, ollama_url: str) -> dict:
     from datetime import UTC, datetime
 
-    from bs4 import BeautifulSoup
-
     from backend.llm_parser import _PROMPT_USER_TEMPLATE, _call_ollama, _validate_flight
+    from backend.parsers.shared import html_to_text
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     body_text = email_msg.body or ""
     if not body_text and email_msg.html_body:
-        body_text = BeautifulSoup(email_msg.html_body, "lxml").get_text(separator="\n")
-    body_text = body_text[:4000]
+        body_text = html_to_text(email_msg.html_body)
     prompt = _PROMPT_USER_TEMPLATE.format(
         today=today,
         sender=email_msg.sender or "",

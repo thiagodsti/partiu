@@ -61,7 +61,66 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 from functools import lru_cache
 
+from bs4 import BeautifulSoup
+
 logger = logging.getLogger(__name__)
+
+_INVISIBLE = re.compile(r"[\u00ad\u200b\u200c\u200d\u2028\u2029\ufeff\u034f]+")
+_URL_LINE = re.compile(r"^\s*https?://\S+\s*$")
+_SYMBOL_ONLY = re.compile(r"^[^\w\u00c0-\u024f]+$")
+
+# Class/id substrings that indicate non-itinerary noise sections
+_NOISE_ATTRS = re.compile(
+    r"footer|legal|disclaimer|unsubscribe|privacy|copyright|terms|condition"
+    r"|promotion|promo|marketing|social|loyalty|reward|newsletter|advertis"
+    r"|gdpr|cookie|opt.?out|mailing"
+    r"|blue-button|btn-block|cta-button"  # call-to-action / nav buttons
+    r"|contentTD290|content-footer|email-footer",  # footer containers
+    re.IGNORECASE,
+)
+
+
+def _is_noise_element(tag) -> bool:
+    """Return True if a BS4 tag looks like a promo/legal/footer section."""
+    attrs = getattr(tag, "attrs", None)
+    if not attrs:
+        return False
+    for attr in ("class", "id"):
+        val = attrs.get(attr)
+        if not val:
+            continue
+        text = " ".join(val) if isinstance(val, list) else val
+        if _NOISE_ATTRS.search(text):
+            return True
+    return False
+
+
+def html_to_text(html_content: str) -> str:
+    """Convert HTML to clean plain text, stripping noise common in airline emails."""
+    soup = BeautifulSoup(html_content, "lxml")
+    for tag in soup(["style", "script", "head", "img", "footer", "aside"]):
+        tag.decompose()
+    for tag in soup.find_all(True):
+        if _is_noise_element(tag):
+            tag.decompose()
+    text = soup.get_text(separator="\n", strip=True)
+    text = _INVISIBLE.sub("", text)
+    text = re.sub(r"[^\S\n]+", " ", text)
+    lines = [line.strip() for line in text.split("\n")]
+    result: list[str] = []
+    prev_empty = False
+    for line in lines:
+        if _URL_LINE.match(line) or _SYMBOL_ONLY.match(line):
+            continue
+        if not line:
+            if not prev_empty:
+                result.append("")
+            prev_empty = True
+        else:
+            result.append(line)
+            prev_empty = False
+    return "\n".join(result).strip()
+
 
 # ---------------------------------------------------------------------------
 # Shared datetime patterns (date + time on the same line/token)
@@ -722,10 +781,7 @@ def _extract_passenger_name(soup) -> str:
 def get_email_text(email_msg) -> str:
     """Extract plain text from an email (HTML preferred, falls back to plain body)."""
     if email_msg.html_body:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(email_msg.html_body, "lxml")
-        return soup.get_text(separator="\n", strip=True)
+        return html_to_text(email_msg.html_body)
     return email_msg.body or ""
 
 
@@ -752,10 +808,7 @@ def get_email_text_newline(email_msg) -> str:
     the text line-by-line (e.g. state machines, line-anchored regexes).
     """
     if email_msg.html_body:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(email_msg.html_body, "lxml")
-        return soup.get_text(separator="\n", strip=True)
+        return html_to_text(email_msg.html_body)
     return email_msg.body or ""
 
 

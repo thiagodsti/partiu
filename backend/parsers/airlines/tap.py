@@ -357,8 +357,9 @@ def extract(email_msg, rule) -> list[dict]:
 
     # Formats 4 & 5: HTML-based
     if html:
-        soup = BeautifulSoup(html, "lxml")
-        html_text = soup.get_text(separator="\n", strip=True)
+        from ..shared import html_to_text
+
+        html_text = html_to_text(html)
 
         flights = _extract_booking_confirmation_html(html_text, rule, email_year)
         if flights:

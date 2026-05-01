@@ -164,7 +164,7 @@ async def upload_eml(
                 status_code=400, detail=f"Could not parse {upload.filename!r}: {exc}"
             ) from exc
 
-        body, html_body, pdf_attachments = get_email_body_and_html(msg)
+        body, html_body, pdf_attachments, ics_texts = get_email_body_and_html(msg)
 
         date_str = msg.get("Date", "")
         msg_date: datetime | None = None
@@ -190,6 +190,7 @@ async def upload_eml(
                 html_body=html_body,
                 pdf_attachments=pdf_attachments,
                 raw_eml=raw,
+                ics_texts=ics_texts,
             )
         )
 

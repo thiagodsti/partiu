@@ -320,6 +320,29 @@ uv run python -m backend.tools.compare_eval \
     --output data/eval_diff.json
 ```
 
+### inspect_eml — run one .eml through the full pipeline
+
+Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → generic HTML → PDF → LLM) and shows which step extracted data and what would be stored.
+
+```bash
+uv run python -m backend.tools.inspect_eml ~/Downloads/flight.eml
+uv run python -m backend.tools.inspect_eml ~/Downloads/*.eml
+```
+
+### inspect_eml_llm — debug the LLM parser in isolation
+
+Sends a `.eml` directly to Ollama (skipping built-in rules), prints the raw model response, per-field validation failures, and the final normalised output. Useful for iterating on prompt changes.
+
+```bash
+uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml
+
+# Also print the body text sent to the model
+uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-body
+
+# Also print all HTML tags with class/id (helps identify noise sections)
+uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-html
+```
+
 ---
 
 ## LLM fallback — findings & limitations

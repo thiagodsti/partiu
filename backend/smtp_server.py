@@ -194,7 +194,7 @@ def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = Non
         except Exception:
             pass
 
-    body, html_body, pdf_attachments = get_email_body_and_html(raw_msg)
+    body, html_body, pdf_attachments, ics_texts = get_email_body_and_html(raw_msg)
 
     email_msg = EmailMessage(
         message_id=message_id,
@@ -204,6 +204,7 @@ def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = Non
         date=date,
         html_body=html_body,
         pdf_attachments=pdf_attachments,
+        ics_texts=ics_texts,
     )
 
     process_inbound_email(email_msg, user_id=user_id)
