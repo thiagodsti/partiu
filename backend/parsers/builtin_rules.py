@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "26"  # feat: Brussels Airlines (SN) booking confirmation parser
+PARSER_VERSION = "27"  # feat: Iberia (IB) booking confirmation parser
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -180,6 +180,16 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "SN",
         "sender_pattern": r"(brusselsairlines\.com|@information\.brusselsairlines)",
         "custom_extractor": "brussels_airlines",
+        "priority": 10,
+    },
+    # =========================================================================
+    # Iberia (IB) — booking confirmation emails
+    # =========================================================================
+    {
+        "airline_name": "Iberia",
+        "airline_code": "IB",
+        "sender_pattern": r"(@iberia\.com|comunicaciones\.iberia\.com|@iberia\.es)",
+        "custom_extractor": "iberia",
         "priority": 10,
     },
 ]
