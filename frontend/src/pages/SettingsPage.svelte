@@ -59,7 +59,11 @@
 
   // Expenses
   let defaultCurrency = $state("EUR");
-  let savingCurrency = $state(false);
+  let lastPersistedCurrency = "EUR";
+  let currencyMsg = $state("");
+  let currencyMsgType = $state<"success" | "error">("success");
+  let currencyMsgTimer: ReturnType<typeof setTimeout> | null = null;
+  let currencySaveSeq = 0;
   const CURRENCIES = [
     'AED', 'ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP',
     'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS',
@@ -68,16 +72,22 @@
     'TRY', 'TWD', 'UAH', 'USD', 'ZAR',
   ];
 
-  async function saveCurrency() {
-    savingCurrency = true;
+  async function saveCurrency(value: string) {
+    const seq = ++currencySaveSeq;
+    if (currencyMsgTimer) { clearTimeout(currencyMsgTimer); currencyMsgTimer = null; }
     try {
-      await settingsApi.update({ default_currency: defaultCurrency });
-      showMsg($t("settings.saved"), "success");
+      await settingsApi.update({ default_currency: value });
+      if (seq !== currencySaveSeq) return;
+      lastPersistedCurrency = value;
+      currencyMsg = $t("settings.saved");
+      currencyMsgType = "success";
     } catch (err) {
-      showMsg((err as Error).message, "error");
-    } finally {
-      savingCurrency = false;
+      if (seq !== currencySaveSeq) return;
+      defaultCurrency = lastPersistedCurrency;
+      currencyMsg = (err as Error).message;
+      currencyMsgType = "error";
     }
+    currencyMsgTimer = setTimeout(() => { currencyMsg = ""; currencyMsgTimer = null; }, 2500);
   }
   let immichMsg = $state("");
   let immichMsgType = $state<"success" | "error">("success");
@@ -157,6 +167,7 @@
       smtpAllowedSenders = s.smtp_allowed_senders ?? "";
       immichUrl = s.immich_url ?? "";
       defaultCurrency = s.default_currency ?? "EUR";
+      lastPersistedCurrency = defaultCurrency;
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -1451,21 +1462,21 @@
           >{$t("settings.default_currency")}</label
         >
         <p class="form-hint">{$t("settings.default_currency_hint")}</p>
-        <div style="display:flex;gap:var(--space-sm);align-items:center">
-          <select
-            id="currency-select"
-            class="form-input"
-            bind:value={defaultCurrency}
-            style="width:auto;min-width:8rem"
-          >
-            {#each CURRENCIES as c}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
-          <button class="btn btn-primary btn-sm" disabled={savingCurrency} onclick={saveCurrency}>
-            {savingCurrency ? $t("settings.saving") : $t("settings.save")}
-          </button>
-        </div>
+        <select
+          id="currency-select"
+          class="form-input"
+          bind:value={defaultCurrency}
+          onchange={(e) => saveCurrency((e.target as HTMLSelectElement).value)}
+        >
+          {#each CURRENCIES as c}
+            <option value={c}>{c}</option>
+          {/each}
+        </select>
+        {#if currencyMsg}
+          <p style="font-size:0.875rem;margin-top:var(--space-xs);color:{currencyMsgType === 'success' ? 'var(--success)' : 'var(--danger)'}">
+            {currencyMsg}
+          </p>
+        {/if}
       </div>
     </div>
 
