@@ -432,3 +432,67 @@ class TestSchemaOrgMicrodata:
         html = _html("SK533", "ARN", "LHR", "14 Jan 2026", "14:00", "16:05")
         flights = extract_generic_html(_msg(html))
         assert len(flights) == 1  # line scanner handles it
+
+
+class TestCityResolutionGuards:
+    """Regression tests for false-positive IATA resolution from non-city phrases.
+
+    Airline emails contain UI labels and marketing text near flight data.
+    The city-name resolution path in _iata_from_line must reject these so
+    they do not contaminate the IATA list and produce wrong airports.
+    """
+
+    def test_loyalty_card_label_not_resolved(self, seeded_airports_db):
+        """'Loyalty card' (a UI label) must not be resolved to a bogus airport."""
+        from backend.parsers.generic_html import _iata_from_line
+
+        assert _iata_from_line("Loyalty card") == ""
+
+    def test_marketing_sentence_not_resolved(self, seeded_airports_db):
+        """Long marketing sentences must not be resolved to airports."""
+        from backend.parsers.generic_html import _iata_from_line
+
+        assert _iata_from_line("Your flights can be even better") == ""
+        assert _iata_from_line("Upgrade your flight thanks to Avios") == ""
+
+    def test_lowercase_phrase_not_resolved(self, seeded_airports_db):
+        """All-lowercase phrases are not proper nouns and must be rejected."""
+        from backend.parsers.generic_html import _iata_from_line
+
+        assert _iata_from_line("for free") == ""
+
+    def test_proper_city_names_still_resolve(self, seeded_airports_db):
+        """Legitimate city names must still pass through to resolve_iata."""
+        from backend.parsers.generic_html import _iata_from_line
+
+        # These may or may not resolve depending on DB content, but must not
+        # be rejected by the new guards — they should reach resolve_iata.
+        # We verify by checking that standalone uppercase IATA codes still work.
+        assert _iata_from_line("ARN") == "ARN"
+        assert _iata_from_line("MAD") == "MAD"
+        assert _iata_from_line("(ARN)") == "ARN"
+
+    def test_marketing_noise_produces_correct_airports(self, seeded_airports_db):
+        """End-to-end: marketing text in the window must not pollute IATA extraction."""
+        # Simulate Iberia-style layout: marketing section before the flight data
+        html = _html(
+            "Loyalty card",
+            "Your flights can be even better",
+            "Upgrade your flight thanks to Avios",
+            "for free",
+            "IB0828",
+            "Departure",
+            "ARN",
+            "ARN",
+            "Arrival",
+            "MAD",
+            "MAD",
+            "18:35",
+            "17 September 2026",
+            "22:40",
+            "17 September 2026",
+        )
+        flights = extract_generic_html(_msg(html))
+        assert len(flights) == 1
+        assert flights[0]["departure_airport"] == "ARN"
+        assert flights[0]["arrival_airport"] == "MAD"

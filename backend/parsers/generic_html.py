@@ -72,10 +72,40 @@ _zero_width_chars_re = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff]")
 # Lines to skip when looking for IATA codes (labels, not airports)
 _label_words_re = re.compile(
     r"(?:terminal|gate|seat|class|status|confirm|boarding|depart|arriv|"
-    r"economy|business|first|premium|check.?in|flight\s*(?:number|no\.?)|"
+    r"economy|business|first|premium|check.?in|flights?(?:\s*(?:number|no\.?))?|"
     r"passenger|baggage|booking|reserv|oper|marketed|codeshare|total|price|"
     r"duration|stopp?|layover|overnight|meal|snack|fare)",
     re.IGNORECASE,
+)
+# Prepositions/articles that legitimately appear inside multi-word city/airport names.
+# "Rio de Janeiro", "Pas-de-Calais", "Frankfurt am Main", "Den Haag", etc.
+_PLACE_PREPOSITIONS = frozenset(
+    {
+        "de",
+        "del",
+        "di",
+        "do",
+        "da",
+        "e",
+        "y",
+        "van",
+        "der",
+        "den",
+        "het",
+        "al",
+        "el",
+        "los",
+        "las",
+        "le",
+        "la",
+        "les",
+        "am",
+        "im",
+        "an",
+        "auf",
+        "of",
+        "the",
+    }
 )
 
 
@@ -112,18 +142,33 @@ def _iata_from_line(line: str) -> str:
     if re.match(r"^[A-Z]{3}$", line):
         return line if is_valid_iata(line) else ""
 
-    # 3. City name resolution — only for lines that look like proper city/airport names:
-    #    must contain at least one alphabetic word of 4+ chars, no time patterns,
-    #    no digits (avoids matching "salin", "Batman", random short strings)
+    # 3. City name resolution — only for lines that look like proper city/airport names.
+    #
+    # Guards (all must pass):
+    #   • At least one word of 4+ letters (avoids "ARN", "MAD" — already caught above)
+    #   • No time pattern (HH:MM)
+    #   • Not a date line like "17 September 2026" (including day-of-week prefix)
+    #   • Not a single short word (first names, English words ≤ 6 chars)
+    #   • At most 4 words (real city names: "Rio de Janeiro", "Cape Town", "New York")
+    #   • All alphabetic words are either proper nouns (start uppercase) or known
+    #     place-name prepositions ("de", "van", "al", "am", …).  This blocks phrases
+    #     like "Loyalty card", "for free", "Your flights can be even better".
     if (
         re.search(r"[A-Za-z]{4,}", line)
         and not re.search(r"\d{2}:\d{2}", line)
-        and not re.match(r"^\d{1,2}\s+\w+\s+\d{4}$", line)  # date-like
-        and not re.match(r"^[A-Za-z]{1,6}$", line)  # single short word (first names, etc.)
+        and not re.match(r"^\d{1,2}\s+\w+\s+\d{4}$", line)
+        and not re.match(
+            r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d{1,2}\s+\w+\s+\d{4}$", line, re.IGNORECASE
+        )
+        and not re.match(r"^[A-Za-z]{1,6}$", line)
     ):
-        code = resolve_iata(line)
-        if code and is_valid_iata(code):
-            return code
+        words = [w.strip(".,()") for w in line.split()]
+        if len(words) <= 4 and all(
+            not w.isalpha() or w[0].isupper() or w.lower() in _PLACE_PREPOSITIONS for w in words
+        ):
+            code = resolve_iata(line)
+            if code and is_valid_iata(code):
+                return code
 
     return ""
 
