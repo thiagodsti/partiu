@@ -59,8 +59,11 @@
 
   // Expenses
   let defaultCurrency = $state("EUR");
+  let lastPersistedCurrency = "EUR";
   let currencyMsg = $state("");
   let currencyMsgType = $state<"success" | "error">("success");
+  let currencyMsgTimer: ReturnType<typeof setTimeout> | null = null;
+  let currencySaveSeq = 0;
   const CURRENCIES = [
     'AED', 'ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP',
     'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS',
@@ -70,15 +73,21 @@
   ];
 
   async function saveCurrency(value: string) {
+    const seq = ++currencySaveSeq;
+    if (currencyMsgTimer) { clearTimeout(currencyMsgTimer); currencyMsgTimer = null; }
     try {
       await settingsApi.update({ default_currency: value });
+      if (seq !== currencySaveSeq) return;
+      lastPersistedCurrency = value;
       currencyMsg = $t("settings.saved");
       currencyMsgType = "success";
     } catch (err) {
+      if (seq !== currencySaveSeq) return;
+      defaultCurrency = lastPersistedCurrency;
       currencyMsg = (err as Error).message;
       currencyMsgType = "error";
     }
-    setTimeout(() => { currencyMsg = ""; }, 2500);
+    currencyMsgTimer = setTimeout(() => { currencyMsg = ""; currencyMsgTimer = null; }, 2500);
   }
   let immichMsg = $state("");
   let immichMsgType = $state<"success" | "error">("success");
@@ -158,6 +167,7 @@
       smtpAllowedSenders = s.smtp_allowed_senders ?? "";
       immichUrl = s.immich_url ?? "";
       defaultCurrency = s.default_currency ?? "EUR";
+      lastPersistedCurrency = defaultCurrency;
     } catch (err) {
       error = (err as Error).message;
     } finally {
