@@ -310,6 +310,7 @@ def _process_emails(
     user_id: int,
     use_llm: bool = False,
     progress_callback: object = None,
+    skip_dedup: bool = False,
 ) -> dict:
     """Parse a list of EmailMessage objects and persist flights to the DB.
 
@@ -341,7 +342,11 @@ def _process_emails(
         if is_non_flight_domain(email_msg.sender or ""):
             logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
             continue
-        if email_msg.message_id and _is_email_processed(user_id, email_msg.message_id):
+        if (
+            not skip_dedup
+            and email_msg.message_id
+            and _is_email_processed(user_id, email_msg.message_id)
+        ):
             logger.debug(
                 "User %d: Skipping already-processed email %s", user_id, email_msg.message_id
             )

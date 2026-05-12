@@ -194,7 +194,7 @@ async def upload_eml(
             )
         )
 
-    result = _process_emails(email_messages, user_id=user["id"], use_llm=True)
+    result = _process_emails(email_messages, user_id=user["id"], use_llm=True, skip_dedup=True)
     return {
         "emails_processed": result["emails_processed"],
         "flights_created": result["flights_created"],
