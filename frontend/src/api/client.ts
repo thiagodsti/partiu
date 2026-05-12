@@ -5,6 +5,7 @@
 
 import type {
   Trip,
+  TripExpense,
   Flight,
   PaginatedFlights,
   Airport,
@@ -278,6 +279,7 @@ export interface SettingsUpdatePayload {
   sync_interval_minutes?: number;
   immich_url?: string;
   immich_api_key?: string;
+  default_currency?: string;
 }
 
 // ---- Notifications ----
@@ -306,6 +308,16 @@ export const dayNotesApi = {
   list: (tripId: string) => get<TripDayNote[]>(`/api/trips/${tripId}/day-notes`),
   upsert: (tripId: string, date: string, content: string) =>
     _request<{ ok: boolean }>('PATCH', `/api/trips/${tripId}/day-notes/${date}`, { content }),
+};
+
+export const expensesApi = {
+  list: (tripId: string) => get<TripExpense[]>(`/api/trips/${tripId}/expenses`),
+  create: (tripId: string, data: { description: string; amount: number; currency: string }) =>
+    post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/expenses`, data),
+  update: (tripId: string, expenseId: string, data: { description?: string; amount?: number; currency?: string }) =>
+    patch<{ ok: boolean }>(`/api/trips/${tripId}/expenses/${expenseId}`, data),
+  delete: (tripId: string, expenseId: string) =>
+    del<null>(`/api/trips/${tripId}/expenses/${expenseId}`),
 };
 
 export interface NonFlightDomain {

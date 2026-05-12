@@ -56,6 +56,29 @@
   let immichUrl = $state("");
   let immichApiKey = $state("");
   let savingImmich = $state(false);
+
+  // Expenses
+  let defaultCurrency = $state("EUR");
+  let savingCurrency = $state(false);
+  const CURRENCIES = [
+    'AED', 'ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP',
+    'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS',
+    'INR', 'ISK', 'JPY', 'KRW', 'MAD', 'MXN', 'MYR', 'NOK', 'NZD',
+    'PEN', 'PHP', 'PLN', 'QAR', 'RON', 'SAR', 'SEK', 'SGD', 'THB',
+    'TRY', 'TWD', 'UAH', 'USD', 'ZAR',
+  ];
+
+  async function saveCurrency() {
+    savingCurrency = true;
+    try {
+      await settingsApi.update({ default_currency: defaultCurrency });
+      showMsg($t("settings.saved"), "success");
+    } catch (err) {
+      showMsg((err as Error).message, "error");
+    } finally {
+      savingCurrency = false;
+    }
+  }
   let immichMsg = $state("");
   let immichMsgType = $state<"success" | "error">("success");
   let testingImmich = $state(false);
@@ -133,6 +156,7 @@
           : "");
       smtpAllowedSenders = s.smtp_allowed_senders ?? "";
       immichUrl = s.immich_url ?? "";
+      defaultCurrency = s.default_currency ?? "EUR";
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -1421,6 +1445,27 @@
             <option value={loc.value}>{loc.label}</option>
           {/each}
         </select>
+      </div>
+      <div class="form-group" style="margin-top:var(--space-md)">
+        <label class="form-label" for="currency-select"
+          >{$t("settings.default_currency")}</label
+        >
+        <p class="form-hint">{$t("settings.default_currency_hint")}</p>
+        <div style="display:flex;gap:var(--space-sm);align-items:center">
+          <select
+            id="currency-select"
+            class="form-input"
+            bind:value={defaultCurrency}
+            style="width:auto;min-width:8rem"
+          >
+            {#each CURRENCIES as c}
+              <option value={c}>{c}</option>
+            {/each}
+          </select>
+          <button class="btn btn-primary btn-sm" disabled={savingCurrency} onclick={saveCurrency}>
+            {savingCurrency ? $t("settings.saving") : $t("settings.save")}
+          </button>
+        </div>
       </div>
     </div>
 

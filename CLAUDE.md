@@ -110,6 +110,7 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 - Export trips as iCalendar (.ics) files
 - Notes per flight (up to 10,000 chars); calendar-style day notes per trip
 - Trip rating (0.5–5 stars in 0.5 increments)
+- **Trip expenses**: add itemised expenses per trip (description, amount, currency); totals grouped by currency shown in trip detail and trip cards; 41 supported currencies; per-user default currency (set in Settings)
 
 ### Trip sharing & collaboration
 - Invite users to a trip by username; pending/accepted/rejected invitation states

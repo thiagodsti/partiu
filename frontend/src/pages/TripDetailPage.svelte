@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { location } from 'svelte-spa-router';
   import { tripsApi, settingsApi, tripDocumentsApi, sharesApi, boardingPassesApi } from '../api/client';
+  import TripExpenses from '../components/TripExpenses.svelte';
   import { tripImageBust } from '../lib/tripImageStore';
   import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass } from '../api/types';
   import {
@@ -34,6 +35,7 @@
   let trip = $state<Trip | null>(null);
   let immichConfigured = $state(false);
   let immichBaseUrl = $state('');
+  let defaultCurrency = $state('EUR');
 
   async function load() {
     loading = true;
@@ -46,6 +48,7 @@
       trip = t;
       immichConfigured = !!(s?.immich_url && s?.immich_api_key_set);
       immichBaseUrl = s?.immich_url?.replace(/\/$/, '') ?? '';
+      defaultCurrency = s?.default_currency ?? 'EUR';
       // If an album ID is stored, verify it still exists in Immich
       if (trip.immich_album_id && immichConfigured) {
         const status = await tripsApi.checkImmichAlbum(params.id).catch(() => null);
@@ -750,6 +753,14 @@
           {/each}
         </div>
       {/if}
+    </div>
+
+    <!-- Expenses -->
+    <div class="trip-section no-print">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('expenses.title')}</h3>
+      </div>
+      <TripExpenses tripId={params.id} {defaultCurrency} />
     </div>
   {/if}
 </div>

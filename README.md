@@ -47,6 +47,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Export any trip as an iCalendar (.ics) file
 - Add notes per flight (up to 10,000 chars)
 - Calendar-style day notes per trip
+- Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency
 
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)

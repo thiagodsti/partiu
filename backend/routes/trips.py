@@ -35,6 +35,7 @@ def _row_to_trip(row, owner_user_id: int | None = None) -> dict:
     # Ensure new columns are always present even on old rows
     d.setdefault("rating", None)
     d.setdefault("note", None)
+    d.setdefault("expenses_total", {})
     return d
 
 
@@ -85,6 +86,22 @@ def list_trips(user: dict = Depends(get_current_user)):
             else:
                 trip["owner_username"] = None
 
+        # Attach expense totals grouped by currency
+        trip_ids = [t["id"] for t in trips]
+        if trip_ids:
+            placeholders = ",".join("?" * len(trip_ids))
+            expense_rows = conn.execute(
+                f"SELECT trip_id, currency, SUM(amount) AS total"
+                f" FROM trip_expenses WHERE trip_id IN ({placeholders})"
+                f" GROUP BY trip_id, currency",
+                trip_ids,
+            ).fetchall()
+            expense_map: dict[str, dict[str, float]] = {}
+            for er in expense_rows:
+                expense_map.setdefault(er["trip_id"], {})[er["currency"]] = er["total"]
+            for trip in trips:
+                trip["expenses_total"] = expense_map.get(trip["id"], {})
+
     return {"trips": trips}
 
 
@@ -112,6 +129,13 @@ def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
             trip["owner_username"] = owner_row["username"] if owner_row else None
         else:
             trip["owner_username"] = None
+
+        expense_rows = conn.execute(
+            "SELECT currency, SUM(amount) AS total FROM trip_expenses"
+            " WHERE trip_id = ? GROUP BY currency",
+            (trip_id,),
+        ).fetchall()
+        trip["expenses_total"] = {r["currency"]: r["total"] for r in expense_rows}
 
     return trip
 

@@ -114,6 +114,13 @@ def build_trips(now: datetime) -> list[dict]:
         {
             "name": "Rio Weekend",
             "note": "Quick escape to Rio — samba, sun, and caipirinhas.",
+            "expenses": [
+                {"description": "Flights (LATAM + Azul)", "amount": 680.00, "currency": "BRL"},
+                {"description": "Hotel (2 nights)", "amount": 950.00, "currency": "BRL"},
+                {"description": "Food & drinks", "amount": 420.00, "currency": "BRL"},
+                {"description": "Uber / transport", "amount": 180.00, "currency": "BRL"},
+                {"description": "Lapa nightlife", "amount": 210.00, "currency": "BRL"},
+            ],
             "flights": [
                 {
                     "flight_number": "LA3456",
@@ -149,6 +156,18 @@ def build_trips(now: datetime) -> list[dict]:
         {
             "name": "European Tour",
             "note": "São Paulo → London → Paris → Stockholm → Helsinki → home.",
+            "expenses": [
+                {"description": "Intercontinental flights", "amount": 4850.00, "currency": "BRL"},
+                {"description": "London hotel (3 nights)", "amount": 480.00, "currency": "GBP"},
+                {"description": "Food & pubs London", "amount": 195.00, "currency": "GBP"},
+                {"description": "Paris hotel (3 nights)", "amount": 420.00, "currency": "EUR"},
+                {"description": "Food & bistros Paris", "amount": 230.00, "currency": "EUR"},
+                {"description": "Louvre + Eiffel Tower", "amount": 65.00, "currency": "EUR"},
+                {"description": "Stockholm hotel (3 nights)", "amount": 4200.00, "currency": "SEK"},
+                {"description": "Metro & tunnelbana", "amount": 680.00, "currency": "SEK"},
+                {"description": "Helsinki hotel (2 nights)", "amount": 280.00, "currency": "EUR"},
+                {"description": "Food & sauna evening", "amount": 110.00, "currency": "EUR"},
+            ],
             "flights": [
                 {
                     "flight_number": "LA8084",
@@ -223,6 +242,10 @@ def build_trips(now: datetime) -> list[dict]:
         {
             "name": "Rio de Janeiro",
             "note": "Long weekend in Rio — beach, sunset at Arpoador.",
+            "expenses": [
+                {"description": "Flights (Azul + LATAM)", "amount": 720.00, "currency": "BRL"},
+                {"description": "Hotel (3 nights)", "amount": 1200.00, "currency": "BRL"},
+            ],
             "flights": [
                 {
                     "flight_number": "AD2231",
@@ -257,6 +280,19 @@ def build_trips(now: datetime) -> list[dict]:
         {
             "name": "Lisbon & Oslo",
             "note": "TAP to Lisbon, then up to Oslo — fjords and bacalhau.",
+            "expenses": [
+                {
+                    "description": "Flights (TAP + Norwegian + LATAM)",
+                    "amount": 5200.00,
+                    "currency": "BRL",
+                },
+                {"description": "Lisbon hotel (3 nights)", "amount": 390.00, "currency": "EUR"},
+                {"description": "Food & wine Lisbon", "amount": 280.00, "currency": "EUR"},
+                {"description": "Sintra day trip", "amount": 75.00, "currency": "EUR"},
+                {"description": "Oslo hotel (5 nights)", "amount": 8500.00, "currency": "NOK"},
+                {"description": "Food & restaurants Oslo", "amount": 2200.00, "currency": "NOK"},
+                {"description": "Fjord cruise", "amount": 1100.00, "currency": "NOK"},
+            ],
             "flights": [
                 {
                     "flight_number": "TP042",
@@ -370,6 +406,13 @@ def main() -> None:
         # Add note if present
         if trip_def.get("note"):
             put(f"/api/trips/{trip_id}/note", {"note": trip_def["note"]})
+
+        # Add expenses if present
+        for expense in trip_def.get("expenses", []):
+            post(f"/api/trips/{trip_id}/expenses", expense)
+            print(
+                f"    💰 {expense['description']}  {expense['amount']:,.2f} {expense['currency']}"
+            )
 
         created += 1
 

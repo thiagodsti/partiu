@@ -447,5 +447,22 @@
   "settings.version": "Versão",
   "settings.running_version": "Versão em execução:",
   "settings.update_available": "Atualização disponível —",
-  "settings.up_to_date": "Atualizado"
+  "settings.up_to_date": "Atualizado",
+  "settings.default_currency": "Moeda padrão",
+  "settings.default_currency_hint": "Pré-selecionada ao adicionar despesas a uma viagem",
+  "expenses.title": "Despesas",
+  "expenses.empty": "Nenhuma despesa ainda. Adicione a primeira abaixo.",
+  "expenses.add": "Adicionar despesa",
+  "expenses.add_placeholder_desc": "Descrição (ex: Hotel, Carro…)",
+  "expenses.add_placeholder_amount": "Valor",
+  "expenses.save": "Adicionar",
+  "expenses.saving": "Adicionando…",
+  "expenses.cancel": "Cancelar",
+  "expenses.edit": "Editar",
+  "expenses.delete": "Excluir",
+  "expenses.delete_confirm": "Excluir esta despesa?",
+  "expenses.total": "Total",
+  "expenses.edit_save": "Salvar",
+  "expenses.edit_saving": "Salvando…",
+  "expenses.edit_cancel": "Cancelar"
 }

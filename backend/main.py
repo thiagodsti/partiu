@@ -24,6 +24,7 @@ from .routes import airports, flights, settings, sync, trips
 from .routes import auth as auth_routes
 from .routes import boarding_passes as boarding_passes_routes
 from .routes import day_notes as day_notes_routes
+from .routes import expenses as expenses_routes
 from .routes import notifications as notifications_routes
 from .routes import shares as shares_routes
 from .routes import stats as stats_routes
@@ -110,6 +111,7 @@ app.include_router(stats_routes.router)
 app.include_router(notifications_routes.router)
 app.include_router(boarding_passes_routes.router)
 app.include_router(day_notes_routes.router)
+app.include_router(expenses_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 

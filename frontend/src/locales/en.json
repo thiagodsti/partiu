@@ -447,5 +447,22 @@
   "settings.version": "Version",
   "settings.running_version": "Running version:",
   "settings.update_available": "Update available —",
-  "settings.up_to_date": "Up to date"
+  "settings.up_to_date": "Up to date",
+  "settings.default_currency": "Default currency",
+  "settings.default_currency_hint": "Pre-filled when adding expenses to a trip",
+  "expenses.title": "Expenses",
+  "expenses.empty": "No expenses yet. Add your first one below.",
+  "expenses.add": "Add expense",
+  "expenses.add_placeholder_desc": "Description (e.g. Hotel, Car…)",
+  "expenses.add_placeholder_amount": "Amount",
+  "expenses.save": "Add",
+  "expenses.saving": "Adding…",
+  "expenses.cancel": "Cancel",
+  "expenses.edit": "Edit",
+  "expenses.delete": "Delete",
+  "expenses.delete_confirm": "Delete this expense?",
+  "expenses.total": "Total",
+  "expenses.edit_save": "Save",
+  "expenses.edit_saving": "Saving…",
+  "expenses.edit_cancel": "Cancel"
 }

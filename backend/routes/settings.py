@@ -88,6 +88,8 @@ def get_settings(user: dict = Depends(get_current_user)):
         # Immich integration
         "immich_url": user.get("immich_url") or "",
         "immich_api_key_set": bool(user.get("immich_api_key")),
+        # Expense preferences
+        "default_currency": user.get("default_currency") or "EUR",
     }
 
     # Admin-only server config
@@ -108,6 +110,8 @@ class SettingsUpdate(BaseModel):
     # Immich integration
     immich_url: str | None = None
     immich_api_key: str | None = None
+    # Expense preferences
+    default_currency: str | None = None
     # Global settings (admin only)
     sync_interval_minutes: int | None = None
     first_sync_days: int | None = None
@@ -160,6 +164,13 @@ def update_settings(request: Request, body: SettingsUpdate, user: dict = Depends
         user_updates["immich_url"] = _validate_external_url(body.immich_url, "Immich URL")
     if body.immich_api_key is not None:
         user_updates["immich_api_key"] = encrypt(body.immich_api_key)
+    if body.default_currency is not None:
+        from .expenses import SUPPORTED_CURRENCIES
+
+        currency = body.default_currency.upper()
+        if currency not in SUPPORTED_CURRENCIES:
+            raise HTTPException(400, f"Unsupported currency: {body.default_currency}")
+        user_updates["default_currency"] = currency
 
     if user_updates:
         set_clause = ", ".join(f"{k} = ?" for k in user_updates)

@@ -39,6 +39,19 @@ export interface Trip {
   owner_username?: string | null;
   rating?: number | null;
   note?: string | null;
+  expenses_total?: Record<string, number>;
+}
+
+export interface TripExpense {
+  id: string;
+  trip_id: string;
+  description: string;
+  amount: number;
+  currency: string;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TripShare {
@@ -131,6 +144,7 @@ export interface Settings {
   smtp_allowed_senders: string;     // per-user
   immich_url: string;
   immich_api_key_set: boolean;
+  default_currency: string;
 }
 
 export interface NotifPreferences {

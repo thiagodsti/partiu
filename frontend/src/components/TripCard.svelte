@@ -24,6 +24,17 @@
   const refs = $derived((trip.booking_refs ?? []).join(', '));
   const showStarRow = $derived(showStars || !!trip.rating);
 
+  const expenseTotals = $derived(
+    Object.entries(trip.expenses_total ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([currency, total]) => {
+        const s = total % 1 === 0
+          ? total.toLocaleString()
+          : total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `${currency} ${s}`;
+      })
+  );
+
   function starFill(star: number, rating: number | null | undefined): '100%' | '50%' | '0%' {
     const r = rating ?? 0;
     if (r >= star) return '100%';
@@ -76,6 +87,13 @@
             <span class="star-display" style="--fill: {starFill(star, trip.rating)}"></span>
           {/each}
         </span>
+      {/if}
+      {#if expenseTotals.length > 0}
+        <div class="trip-card-expenses">
+          {#each expenseTotals as label}
+            <span class="trip-card-expense-pill">{label}</span>
+          {/each}
+        </div>
       {/if}
       {#if footer}{@render footer()}{/if}
     </div>
