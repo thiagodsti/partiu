@@ -100,9 +100,10 @@ def _check_user(
                     )
                     url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
                     create_notification(user_id, "flight_reminder", title, body, url)
-                    send_push(user_id, {"title": title, "body": body, "url": url})
-                    log_sent(user_id, fid, "flight_reminder")
-                    logger.info("Sent flight_reminder to user %d for flight %s", user_id, fid)
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        log_sent(user_id, fid, "flight_reminder")
+                        logger.info("Sent flight_reminder to user %d for flight %s", user_id, fid)
 
             if notif_checkin and _CHECKIN_WINDOW[0] <= time_until <= _CHECKIN_WINDOW[1]:
                 fid = str(row["id"])
@@ -115,9 +116,10 @@ def _check_user(
                     )
                     url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
                     create_notification(user_id, "checkin_reminder", title, body, url)
-                    send_push(user_id, {"title": title, "body": body, "url": url})
-                    log_sent(user_id, fid, "checkin_reminder")
-                    logger.info("Sent checkin_reminder to user %d for flight %s", user_id, fid)
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        log_sent(user_id, fid, "checkin_reminder")
+                        logger.info("Sent checkin_reminder to user %d for flight %s", user_id, fid)
 
     # ---- Trip reminder (1 day before trip start) ----
     if notif_trip:
@@ -143,6 +145,7 @@ def _check_user(
                     body = t("notif.trip_reminder_body", locale)
                     url = f"/#/trips/{tid}"
                     create_notification(user_id, "trip_reminder", title, body, url)
-                    send_push(user_id, {"title": title, "body": body, "url": url})
-                    log_sent(user_id, tid, "trip_reminder")
-                    logger.info("Sent trip_reminder to user %d for trip %s", user_id, tid)
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        log_sent(user_id, tid, "trip_reminder")
+                        logger.info("Sent trip_reminder to user %d for trip %s", user_id, tid)

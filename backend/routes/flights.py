@@ -31,6 +31,13 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _sanitize_csv_cell(value: str) -> str:
+    """Prefix formula-trigger characters to prevent spreadsheet injection."""
+    if value and value[0] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
 @router.get("/export.csv")
 def export_flights_csv(user: dict = Depends(get_current_user)):
     """Download all completed flights as a CSV file."""
@@ -51,7 +58,7 @@ def export_flights_csv(user: dict = Depends(get_current_user)):
             LEFT JOIN airports dep ON dep.iata_code = f.departure_airport
             LEFT JOIN airports arr ON arr.iata_code = f.arrival_airport
             LEFT JOIN trips t ON t.id = f.trip_id
-            WHERE f.user_id = ?
+            WHERE f.user_id = ? AND f.status = 'completed'
             ORDER BY f.departure_datetime
             """,
             (user["id"],),
@@ -90,21 +97,21 @@ def export_flights_csv(user: dict = Depends(get_current_user)):
         writer.writerow(
             [
                 date,
-                r["flight_number"] or "",
-                r["airline_name"] or r["airline_code"] or "",
-                r["departure_airport"] or "",
-                r["dep_city"] or "",
-                r["dep_country"] or "",
-                r["arrival_airport"] or "",
-                r["arr_city"] or "",
-                r["arr_country"] or "",
+                _sanitize_csv_cell(r["flight_number"] or ""),
+                _sanitize_csv_cell(r["airline_name"] or r["airline_code"] or ""),
+                _sanitize_csv_cell(r["departure_airport"] or ""),
+                _sanitize_csv_cell(r["dep_city"] or ""),
+                _sanitize_csv_cell(r["dep_country"] or ""),
+                _sanitize_csv_cell(r["arrival_airport"] or ""),
+                _sanitize_csv_cell(r["arr_city"] or ""),
+                _sanitize_csv_cell(r["arr_country"] or ""),
                 km or "",
                 co2 or "",
                 r["duration_minutes"] or "",
-                r["seat"] or "",
-                r["aircraft_type"] or "",
-                r["booking_reference"] or "",
-                r["trip_name"] or "",
+                _sanitize_csv_cell(r["seat"] or ""),
+                _sanitize_csv_cell(r["aircraft_type"] or ""),
+                _sanitize_csv_cell(r["booking_reference"] or ""),
+                _sanitize_csv_cell(r["trip_name"] or ""),
             ]
         )
 

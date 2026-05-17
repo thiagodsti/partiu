@@ -143,8 +143,21 @@ class TestStatsWithFlights:
         # Each flight breakdown entry also carries co2_kg
         assert data["flight_breakdown"][0]["co2_kg"] > 0
 
-    def test_co2_short_haul_higher_factor(self, auth_client):
-        # CGH→GIG is a very short domestic hop; both airports in conftest fixtures
+    def test_co2_short_haul_higher_factor(self, auth_client, test_db):
+        from backend.database import db_write
+
+        # Seed real coordinates — CGH and GIG are ~360 km apart (short haul)
+        with db_write() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, country_code, latitude, longitude)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                ("CGH", "Sao Paulo Congonhas", "Sao Paulo", "BR", -23.6261, -46.6563),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, country_code, latitude, longitude)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                ("GIG", "Rio Galeao", "Rio de Janeiro", "BR", -22.8099, -43.2506),
+            )
         _create_flight(
             auth_client,
             departure_airport="CGH",
@@ -153,8 +166,8 @@ class TestStatsWithFlights:
         )
         r = auth_client.get("/api/stats")
         data = r.json()
-        # Short haul uses 0.255 factor; result should be much less than long-haul
-        assert data["total_co2_kg"] < 200
+        # Short haul uses 0.255 factor; ~360 km × 0.255 ≈ 92 kg
+        assert 0 < data["total_co2_kg"] < 200
 
     def test_flights_by_period_year_view_has_12_buckets(self, auth_client):
         year = datetime.now(UTC).year

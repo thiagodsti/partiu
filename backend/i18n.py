@@ -24,14 +24,17 @@ def _strings(locale: str) -> dict:
             _cache[locale] = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             logger.warning("Could not load locale %s: %s", locale, exc)
-            _cache[locale] = {}
+            return {}
     return _cache[locale]
 
 
 def t(key: str, locale: str = "en", **values: object) -> str:
     """Return the translated string for key in locale, falling back to English."""
     locale = locale if locale in _SUPPORTED else "en"
-    template = _strings(locale).get(key) or _strings("en").get(key) or key
+    value = _strings(locale).get(key)
+    if value is None:
+        value = _strings("en").get(key)
+    template = value if value is not None else key
     if values:
         try:
             # svelte-i18n uses {name} placeholders — same as str.format_map
