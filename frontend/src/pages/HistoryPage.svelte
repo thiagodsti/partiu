@@ -77,13 +77,13 @@
 
   function matchesSearch(trip: Trip, q: string): boolean {
     const needle = norm(q.trim());
-    const cc = COUNTRY_CODES[needle];
     const index = trip.search_index ?? norm(trip.name);
-    if (cc !== undefined) {
-      const tokens = index.split(/\s+/);
-      if (tokens.includes(cc)) return true;
+    if (index.includes(needle)) return true;
+    const tokens = index.split(/\s+/);
+    for (const [name, code] of Object.entries(COUNTRY_CODES)) {
+      if (name.startsWith(needle) && tokens.includes(code)) return true;
     }
-    return index.includes(needle);
+    return false;
   }
 
   const completedTrips = $derived(

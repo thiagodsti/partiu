@@ -210,6 +210,14 @@ describe('HistoryPage', () => {
     expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
   });
 
+  it('partial country name prefix — "ital" matches Italy trips', async () => {
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'ital');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+    expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
+  });
+
   it('trims whitespace from query before matching', async () => {
     mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
     const { container, findByText, queryByText } = render(HistoryPage);
@@ -230,6 +238,29 @@ describe('HistoryPage', () => {
     // Both trips depart from GRU (Brazil), so both should match
     expect(await findByText('Rome 2024')).toBeInTheDocument();
     expect(await findByText('Tokyo 2023')).toBeInTheDocument();
+  });
+
+  it('diacritic in query matches normalized search_index', async () => {
+    const SAO_TRIP = {
+      ...COMPLETED_TRIP,
+      id: 'trip-3',
+      name: 'Sao Paulo 2022',
+      search_index: 'sao paulo 2022 gru cgb sao paulo br',
+    };
+    // LONDON_TRIP has no "sao" token — it must not match the accented query "São"
+    const LONDON_TRIP = {
+      ...COMPLETED_TRIP,
+      id: 'trip-4',
+      name: 'Dublin 2022',
+      origin_airport: 'LHR',
+      destination_airport: 'DUB',
+      search_index: 'dublin 2022 lhr dub london dublin gb ie',
+    };
+    mockList.mockResolvedValue({ trips: [SAO_TRIP, LONDON_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'São');
+    expect(await findByText('Sao Paulo 2022')).toBeInTheDocument();
+    expect(queryByText('Dublin 2022')).not.toBeInTheDocument();
   });
 
   it('shows no-results state when search_index has no match', async () => {
