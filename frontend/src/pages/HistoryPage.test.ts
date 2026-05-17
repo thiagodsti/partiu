@@ -50,6 +50,8 @@ const COMPLETED_TRIP = {
   booking_refs: ['RM001'],
   flight_count: 2,
   immich_album_id: null,
+  // pre-built by the backend: trip name + airports + cities + country codes + airlines
+  search_index: 'rome 2024 rm001 gru fco sao paulo rome br it',
 };
 
 const SETTINGS_NO_IMMICH = {
@@ -148,5 +150,78 @@ describe('HistoryPage', () => {
     await waitFor(() => expect(container.querySelector('.card-link')).toBeInTheDocument());
     const link = container.querySelector('a.card-link') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('#/history/trip-1');
+  });
+
+  async function getSearchInput(container: HTMLElement): Promise<HTMLInputElement> {
+    return waitFor(() => {
+      const el = container.querySelector('.search-input') as HTMLInputElement | null;
+      expect(el).not.toBeNull();
+      return el!;
+    });
+  }
+
+  async function typeInSearch(input: HTMLInputElement, value: string) {
+    input.value = value;
+    await fireEvent.input(input);
+  }
+
+  it('renders search input when trips are loaded', async () => {
+    const { container } = render(HistoryPage);
+    await waitFor(() => expect(container.querySelector('.search-input')).toBeInTheDocument());
+  });
+
+  const TOKYO_TRIP = {
+    ...COMPLETED_TRIP,
+    id: 'trip-2',
+    name: 'Tokyo 2023',
+    origin_airport: 'GRU',
+    destination_airport: 'NRT',
+    booking_refs: [],
+    search_index: 'tokyo 2023 gru nrt sao paulo tokyo br jp',
+  };
+
+  it('filters trips by name using search_index', async () => {
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'Rome');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+    expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
+  });
+
+  it('filters trips by destination airport using search_index', async () => {
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'NRT');
+    expect(await findByText('Tokyo 2023')).toBeInTheDocument();
+    expect(queryByText('Rome 2024')).not.toBeInTheDocument();
+  });
+
+  it('filters trips by booking reference using search_index', async () => {
+    const { container, findByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'RM001');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+  });
+
+  it('filters by country name — "italy" matches country code "it" in search_index', async () => {
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'italy');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+    expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
+  });
+
+  it('shows no-results state when search_index has no match', async () => {
+    const { container } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'ZZZNOMATCH');
+    await waitFor(() => expect(container.querySelector('.empty-state')).toBeInTheDocument());
+  });
+
+  it('shows all trips when query is cleared', async () => {
+    const { container, findByText } = render(HistoryPage);
+    const input = await getSearchInput(container);
+    await typeInSearch(input, 'ZZZNOMATCH');
+    await waitFor(() => expect(container.querySelector('.empty-state')).toBeInTheDocument());
+    await typeInSearch(input, '');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
   });
 });
