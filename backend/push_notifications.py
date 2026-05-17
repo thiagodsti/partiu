@@ -99,9 +99,9 @@ def _check_user(
                         **{"from": row["departure_airport"], "to": row["arrival_airport"]},
                     )
                     url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
-                    create_notification(user_id, "flight_reminder", title, body, url)
                     sent = send_push(user_id, {"title": title, "body": body, "url": url})
                     if sent:
+                        create_notification(user_id, "flight_reminder", title, body, url)
                         log_sent(user_id, fid, "flight_reminder")
                         logger.info("Sent flight_reminder to user %d for flight %s", user_id, fid)
 
@@ -115,9 +115,9 @@ def _check_user(
                         **{"from": row["departure_airport"], "to": row["arrival_airport"]},
                     )
                     url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
-                    create_notification(user_id, "checkin_reminder", title, body, url)
                     sent = send_push(user_id, {"title": title, "body": body, "url": url})
                     if sent:
+                        create_notification(user_id, "checkin_reminder", title, body, url)
                         log_sent(user_id, fid, "checkin_reminder")
                         logger.info("Sent checkin_reminder to user %d for flight %s", user_id, fid)
 
@@ -144,8 +144,8 @@ def _check_user(
                     title = t("notif.trip_reminder_title", locale, name=row["name"])
                     body = t("notif.trip_reminder_body", locale)
                     url = f"/#/trips/{tid}"
-                    create_notification(user_id, "trip_reminder", title, body, url)
                     sent = send_push(user_id, {"title": title, "body": body, "url": url})
                     if sent:
+                        create_notification(user_id, "trip_reminder", title, body, url)
                         log_sent(user_id, tid, "trip_reminder")
                         logger.info("Sent trip_reminder to user %d for trip %s", user_id, tid)
