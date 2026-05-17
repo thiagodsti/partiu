@@ -15,7 +15,7 @@ from ..auth import get_current_user
 from ..crypto import decrypt
 from ..database import db_conn, db_write
 from ..shares import can_access_trip, is_trip_owner
-from ..trip_images import fetch_trip_image, trip_image_path
+from ..trip_images import fetch_trip_image, find_trip_image, trip_image_path
 from ..utils import now_iso
 
 logger = logging.getLogger(__name__)
@@ -371,8 +371,10 @@ def delete_trip(trip_id: str, user: dict = Depends(get_current_user)):
         )
         conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"]))
 
-    # Delete the cached destination image from disk
-    trip_image_path(trip_id).unlink(missing_ok=True)
+    # Delete the cached destination image from disk (both webp and legacy jpg)
+    webp = trip_image_path(trip_id)
+    webp.unlink(missing_ok=True)
+    webp.with_suffix(".jpg").unlink(missing_ok=True)
 
 
 class MergeBody(BaseModel):
@@ -431,7 +433,9 @@ def merge_trip(trip_id: str, body: MergeBody, user: dict = Depends(get_current_u
             ),
         )
 
-    trip_image_path(trip_id).unlink(missing_ok=True)
+    webp = trip_image_path(trip_id)
+    webp.unlink(missing_ok=True)
+    webp.with_suffix(".jpg").unlink(missing_ok=True)
     return {"target_trip_id": body.target_trip_id}
 
 
@@ -514,10 +518,13 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
     if not row:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    cached = trip_image_path(trip_id)
-    if cached.exists():
+    existing = find_trip_image(trip_id)
+    if existing:
+        media_type = "image/webp" if existing.suffix == ".webp" else "image/jpeg"
         return FileResponse(
-            str(cached), media_type="image/jpeg", headers={"Cache-Control": "no-cache"}
+            str(existing),
+            media_type=media_type,
+            headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
         )
 
     # Already attempted and failed — don't hammer Wikipedia on every request
@@ -536,9 +543,13 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
             (now_iso(), trip_id),
         )
 
-    if success and cached.exists():
+    existing = find_trip_image(trip_id)
+    if success and existing:
+        media_type = "image/webp" if existing.suffix == ".webp" else "image/jpeg"
         return FileResponse(
-            str(cached), media_type="image/jpeg", headers={"Cache-Control": "no-cache"}
+            str(existing),
+            media_type=media_type,
+            headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
         )
 
     raise HTTPException(status_code=404, detail="No image available")
@@ -675,7 +686,7 @@ async def refresh_trip_image(trip_id: str, user: dict = Depends(get_current_user
             (now_iso(), trip_id),
         )
 
-    if success and trip_image_path(trip_id).exists():
+    if success and find_trip_image(trip_id):
         return {"ok": True}
 
     raise HTTPException(status_code=404, detail="No image available")

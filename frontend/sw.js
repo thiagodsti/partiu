@@ -1,13 +1,15 @@
 /**
  * Service Worker for Partiu PWA.
- * Implements a cache-first strategy for static assets,
- * network-first for API calls.
  *
- * Note: Vite outputs hashed filenames (e.g. index-Bo8Xdg-k.js) so we
- * cannot pre-cache a fixed list. Instead we cache assets on first fetch.
+ * Strategies:
+ *   - GET /api/auth/*      → network-first (session state must always be fresh)
+ *   - GET /api/*           → stale-while-revalidate (serve cache instantly, update in background)
+ *   - non-GET /api/*       → pass-through (mutations never cached)
+ *   - /assets/*            → cache-first (content-hashed filenames)
+ *   - everything else      → network-first (app shell, always get latest deploy)
  */
 
-const CACHE_VERSION = 'v14';
+const CACHE_VERSION = 'v15';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
@@ -33,9 +35,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API requests: network-first, fall back to cache
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirst(event.request, API_CACHE));
+    // Only cache GET requests; mutations pass through unchanged
+    if (event.request.method !== 'GET') return;
+
+    // Auth endpoints are always network-first so session state is never stale
+    if (url.pathname.startsWith('/api/auth/')) {
+      event.respondWith(networkFirst(event.request, API_CACHE));
+      return;
+    }
+
+    // All other GET API calls: serve stale immediately, revalidate in background
+    event.respondWith(staleWhileRevalidate(event.request, API_CACHE));
     return;
   }
 
@@ -45,10 +56,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML / navigation (index.html, sw.js, manifest.json, icons…): network-first
-  // so the app shell is always fresh after a deploy and chunk hashes stay in sync
+  // HTML / navigation: network-first so the app shell is always fresh after a deploy
   event.respondWith(networkFirst(event.request, STATIC_CACHE));
 });
+
+// ---- Strategies ----
 
 async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request);
@@ -66,6 +78,48 @@ async function cacheFirst(request, cacheName) {
       headers: { 'Content-Type': 'text/html' },
     });
   }
+}
+
+async function networkFirst(request, cacheName) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    return new Response(JSON.stringify({ error: 'Offline' }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 503,
+    });
+  }
+}
+
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+
+  // Always kick off a background network fetch to keep the cache warm
+  const networkFetch = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+
+  // Return stale immediately if available; background fetch will update the cache
+  if (cached) return cached;
+
+  // No cached copy — must wait for the network
+  const response = await networkFetch;
+  if (response) return response;
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    headers: { 'Content-Type': 'application/json' },
+    status: 503,
+  });
 }
 
 // ---- Push notifications ----
@@ -114,21 +168,3 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
-
-async function networkFirst(request, cacheName) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    return new Response(JSON.stringify({ error: 'Offline' }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 503,
-    });
-  }
-}

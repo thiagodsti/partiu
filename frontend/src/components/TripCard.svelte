@@ -53,6 +53,8 @@
           src={imageUrl}
           alt=""
           class="trip-card-cover-img"
+          loading="lazy"
+          decoding="async"
           onerror={onImageError}
         />
       {/if}

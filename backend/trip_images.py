@@ -1,20 +1,26 @@
 """
 Fetch and cache destination images for trips from Wikipedia.
 
-Images are stored as data/images/trips/{trip_id}.jpg.
+Images are stored as data/images/trips/{trip_id}.webp (800px wide, WebP).
+Legacy .jpg files are still served if present; new fetches always produce .webp.
 Uses a single Wikipedia API call (generator=images) to get image URLs,
 falling back to the pageimages thumbnail if that returns nothing.
 """
 
+import io
 import logging
 import random
 from pathlib import Path
 
 import httpx
+from PIL import Image
 
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+_MAX_WIDTH = 800
+_WEBP_QUALITY = 82
 
 # Wikimedia requires a descriptive User-Agent with contact info
 _HEADERS = {
@@ -48,7 +54,19 @@ def _images_dir() -> Path:
 
 
 def trip_image_path(trip_id: str) -> Path:
-    return _images_dir() / f"{trip_id}.jpg"
+    """Canonical path for a trip image (WebP). New images are always saved here."""
+    return _images_dir() / f"{trip_id}.webp"
+
+
+def find_trip_image(trip_id: str) -> Path | None:
+    """Return the path to an existing trip image, preferring .webp over legacy .jpg."""
+    webp = trip_image_path(trip_id)
+    if webp.exists():
+        return webp
+    jpg = _images_dir() / f"{trip_id}.jpg"
+    if jpg.exists():
+        return jpg
+    return None
 
 
 def _parse_json_safe(r: httpx.Response) -> dict:
@@ -61,6 +79,17 @@ def _parse_json_safe(r: httpx.Response) -> dict:
     except Exception as e:
         logger.warning("Wikipedia API non-JSON response (%d): %s", r.status_code, e)
         return {}
+
+
+def _resize_and_encode_webp(raw: bytes) -> bytes:
+    """Resize to at most _MAX_WIDTH wide and encode as WebP."""
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    if img.width > _MAX_WIDTH:
+        ratio = _MAX_WIDTH / img.width
+        img = img.resize((_MAX_WIDTH, int(img.height * ratio)), Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="WEBP", quality=_WEBP_QUALITY, method=4)
+    return out.getvalue()
 
 
 async def _get_photo_urls(city_name: str) -> list[str]:
@@ -135,15 +164,17 @@ async def _get_photo_urls(city_name: str) -> list[str]:
 
 async def fetch_trip_image(trip_id: str, city_name: str, force_refresh: bool = False) -> bool:
     """
-    Fetch a destination photo for a trip and save it to disk.
+    Fetch a destination photo for a trip and save it to disk as WebP.
 
     On force_refresh the existing file is deleted so a different random photo is picked.
     Returns True if an image was saved successfully.
     """
-    dest = trip_image_path(trip_id)
+    dest = trip_image_path(trip_id)  # .webp canonical path
 
-    if force_refresh and dest.exists():
-        dest.unlink()
+    if force_refresh:
+        dest.unlink(missing_ok=True)
+        # Also remove legacy jpg so find_trip_image won't return the old one
+        (dest.with_suffix(".jpg")).unlink(missing_ok=True)
 
     if dest.exists():
         return True
@@ -162,8 +193,13 @@ async def fetch_trip_image(trip_id: str, city_name: str, force_refresh: bool = F
             try:
                 r = await client.get(url, headers=_HEADERS)
                 if r.status_code == 200 and r.content:
-                    dest.write_bytes(r.content)
-                    logger.info("Saved trip image: %s", dest)
+                    try:
+                        webp_bytes = _resize_and_encode_webp(r.content)
+                    except Exception as e:
+                        logger.warning("Image processing failed for %s: %s", url, e)
+                        continue
+                    dest.write_bytes(webp_bytes)
+                    logger.info("Saved trip image (WebP): %s", dest)
                     return True
             except Exception as e:
                 logger.warning("Download failed for %s: %s", url, e)

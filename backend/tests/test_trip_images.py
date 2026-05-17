@@ -12,7 +12,7 @@ class TestTripImagePath:
         from backend.trip_images import trip_image_path
 
         p = trip_image_path("my-trip-123")
-        assert p.name == "my-trip-123.jpg"
+        assert p.name == "my-trip-123.webp"
         assert "trips" in str(p)
 
     def test_images_dir_created(self, test_db):
@@ -241,11 +241,12 @@ class TestFetchTripImage:
     def test_downloads_and_saves_image(self, test_db):
         from backend.trip_images import fetch_trip_image, trip_image_path
 
-        fake_content = b"\xff\xd8\xff fake jpeg"
+        fake_raw = b"\xff\xd8\xff fake jpeg"
+        fake_webp = b"RIFF fake webp"
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.content = fake_content
+        mock_resp.content = fake_raw
 
         mock_dl_client = AsyncMock()
         mock_dl_client.get = AsyncMock(return_value=mock_resp)
@@ -257,12 +258,13 @@ class TestFetchTripImage:
             AsyncMock(return_value=["https://example.com/img.jpg"]),
         ):
             with patch("httpx.AsyncClient", return_value=mock_dl_client):
-                result = asyncio.run(fetch_trip_image("download-trip", "London"))
+                with patch("backend.trip_images._resize_and_encode_webp", return_value=fake_webp):
+                    result = asyncio.run(fetch_trip_image("download-trip", "London"))
 
         assert result is True
         p = trip_image_path("download-trip")
         assert p.exists()
-        assert p.read_bytes() == fake_content
+        assert p.read_bytes() == fake_webp
 
     def test_download_exception_tries_next_url(self, test_db):
         from backend.trip_images import fetch_trip_image
@@ -286,6 +288,9 @@ class TestFetchTripImage:
             AsyncMock(return_value=["https://bad.com/img.jpg", "https://good.com/img.jpg"]),
         ):
             with patch("httpx.AsyncClient", return_value=mock_client):
-                result = asyncio.run(fetch_trip_image("multi-url-trip", "London"))
+                with patch(
+                    "backend.trip_images._resize_and_encode_webp", return_value=b"RIFF fake webp"
+                ):
+                    result = asyncio.run(fetch_trip_image("multi-url-trip", "London"))
 
         assert result is True

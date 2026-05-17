@@ -13,6 +13,7 @@
   import { applyUserLocale } from './lib/i18n';
   import ToastContainer from './components/ToastContainer.svelte';
   import AnnouncementBanner from './components/AnnouncementBanner.svelte';
+  import OfflineBanner from './components/OfflineBanner.svelte';
 
   const routes = {
     '/': TripsListPage,
@@ -117,6 +118,7 @@
   </div>
 {:else}
   <div class="app-shell">
+    <OfflineBanner />
     <AnnouncementBanner />
     <svelte:boundary>
       <div class="app-content">
