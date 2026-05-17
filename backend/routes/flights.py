@@ -2,10 +2,14 @@
 Flight CRUD routes.
 """
 
+import csv
+import io
+import math
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
@@ -14,6 +18,109 @@ from ..shares import can_access_flight, can_access_trip
 from ..utils import calc_duration_minutes, calc_flight_status, now_iso, validate_flight_number
 
 router = APIRouter(prefix="/api/flights", tags=["flights"])
+
+_CO2_FACTOR_SHORT = 0.255
+_CO2_FACTOR_LONG = 0.195
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6_371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi, dlam = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _sanitize_csv_cell(value: str) -> str:
+    """Prefix formula-trigger characters to prevent spreadsheet injection."""
+    if value and value[0] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
+@router.get("/export.csv")
+def export_flights_csv(user: dict = Depends(get_current_user)):
+    """Download all completed flights as a CSV file."""
+    with db_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                f.flight_number, f.airline_code, f.airline_name,
+                f.departure_airport, f.arrival_airport,
+                f.departure_datetime, f.arrival_datetime, f.duration_minutes,
+                f.seat, f.aircraft_type, f.booking_reference,
+                dep.city_name AS dep_city, dep.country_code AS dep_country,
+                dep.latitude AS dep_lat, dep.longitude AS dep_lon,
+                arr.city_name AS arr_city, arr.country_code AS arr_country,
+                arr.latitude AS arr_lat, arr.longitude AS arr_lon,
+                t.name AS trip_name
+            FROM flights f
+            LEFT JOIN airports dep ON dep.iata_code = f.departure_airport
+            LEFT JOIN airports arr ON arr.iata_code = f.arrival_airport
+            LEFT JOIN trips t ON t.id = f.trip_id
+            WHERE f.user_id = ? AND f.status = 'completed'
+            ORDER BY f.departure_datetime
+            """,
+            (user["id"],),
+        ).fetchall()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "Date",
+            "Flight",
+            "Airline",
+            "From (IATA)",
+            "From City",
+            "From Country",
+            "To (IATA)",
+            "To City",
+            "To Country",
+            "Distance (km)",
+            "CO2 (kg)",
+            "Duration (min)",
+            "Seat",
+            "Aircraft",
+            "Booking Ref",
+            "Trip",
+        ]
+    )
+    for r in rows:
+        km = 0
+        co2 = 0.0
+        if all(r[k] is not None for k in ("dep_lat", "dep_lon", "arr_lat", "arr_lon")):
+            km = round(_haversine(r["dep_lat"], r["dep_lon"], r["arr_lat"], r["arr_lon"]))
+            factor = _CO2_FACTOR_SHORT if km <= 3000 else _CO2_FACTOR_LONG
+            co2 = round(km * factor, 1)
+        date = (r["departure_datetime"] or "")[:10]
+        writer.writerow(
+            [
+                date,
+                _sanitize_csv_cell(r["flight_number"] or ""),
+                _sanitize_csv_cell(r["airline_name"] or r["airline_code"] or ""),
+                _sanitize_csv_cell(r["departure_airport"] or ""),
+                _sanitize_csv_cell(r["dep_city"] or ""),
+                _sanitize_csv_cell(r["dep_country"] or ""),
+                _sanitize_csv_cell(r["arrival_airport"] or ""),
+                _sanitize_csv_cell(r["arr_city"] or ""),
+                _sanitize_csv_cell(r["arr_country"] or ""),
+                km or "",
+                co2 or "",
+                r["duration_minutes"] or "",
+                _sanitize_csv_cell(r["seat"] or ""),
+                _sanitize_csv_cell(r["aircraft_type"] or ""),
+                _sanitize_csv_cell(r["booking_reference"] or ""),
+                _sanitize_csv_cell(r["trip_name"] or ""),
+            ]
+        )
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=flights.csv"},
+    )
 
 
 @router.get("")

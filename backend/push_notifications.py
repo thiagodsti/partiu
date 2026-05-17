@@ -26,7 +26,7 @@ def run_push_notifications() -> None:
 
         with db_conn() as conn:
             users = conn.execute(
-                "SELECT id, notif_flight_reminder, notif_checkin_reminder, notif_trip_reminder FROM users"
+                "SELECT id, locale, notif_flight_reminder, notif_checkin_reminder, notif_trip_reminder FROM users"
             ).fetchall()
 
         for user in users:
@@ -34,6 +34,7 @@ def run_push_notifications() -> None:
             try:
                 _check_user(
                     user_id=user_id,
+                    locale=user["locale"] or "en",
                     notif_flight=bool(user["notif_flight_reminder"]),
                     notif_checkin=bool(user["notif_checkin_reminder"]),
                     notif_trip=bool(user["notif_trip_reminder"]),
@@ -46,11 +47,14 @@ def run_push_notifications() -> None:
 
 def _check_user(
     user_id: int,
+    locale: str,
     notif_flight: bool,
     notif_checkin: bool,
     notif_trip: bool,
 ) -> None:
     from .database import db_conn
+    from .i18n import t
+    from .notifications_store import create_notification
     from .push import already_sent, log_sent, send_push
 
     now = datetime.now(UTC)
@@ -83,24 +87,37 @@ def _check_user(
                 fid = str(row["id"])
                 if not already_sent(user_id, fid, "flight_reminder"):
                     mins = int(time_until.total_seconds() / 60)
-                    payload = {
-                        "title": f"Flight {row['flight_number']} in ~{mins} min",
-                        "body": f"{row['departure_airport']} → {row['arrival_airport']}",
-                        "url": f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/",
-                    }
-                    if send_push(user_id, payload):
+                    title = t(
+                        "notif.flight_reminder_title",
+                        locale,
+                        flight=row["flight_number"],
+                        mins=mins,
+                    )
+                    body = t(
+                        "notif.flight_reminder_body",
+                        locale,
+                        **{"from": row["departure_airport"], "to": row["arrival_airport"]},
+                    )
+                    url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        create_notification(user_id, "flight_reminder", title, body, url)
                         log_sent(user_id, fid, "flight_reminder")
                         logger.info("Sent flight_reminder to user %d for flight %s", user_id, fid)
 
             if notif_checkin and _CHECKIN_WINDOW[0] <= time_until <= _CHECKIN_WINDOW[1]:
                 fid = str(row["id"])
                 if not already_sent(user_id, fid, "checkin_reminder"):
-                    payload = {
-                        "title": f"Check-in open: {row['flight_number']}",
-                        "body": f"{row['departure_airport']} → {row['arrival_airport']} — departs tomorrow",
-                        "url": f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/",
-                    }
-                    if send_push(user_id, payload):
+                    title = t("notif.checkin_title", locale, flight=row["flight_number"])
+                    body = t(
+                        "notif.checkin_body",
+                        locale,
+                        **{"from": row["departure_airport"], "to": row["arrival_airport"]},
+                    )
+                    url = f"/#/trips/{row['trip_id']}" if row["trip_id"] else "/#/"
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        create_notification(user_id, "checkin_reminder", title, body, url)
                         log_sent(user_id, fid, "checkin_reminder")
                         logger.info("Sent checkin_reminder to user %d for flight %s", user_id, fid)
 
@@ -119,17 +136,16 @@ def _check_user(
             except (ValueError, TypeError):
                 continue
 
-            # Treat start_date as midnight UTC — time_until is to start of trip day
             time_until = start_dt - now
 
             if _TRIP_WINDOW[0] <= time_until <= _TRIP_WINDOW[1]:
                 tid = str(row["id"])
                 if not already_sent(user_id, tid, "trip_reminder"):
-                    payload = {
-                        "title": f"Trip tomorrow: {row['name']}",
-                        "body": "Your trip starts tomorrow. Have a great journey!",
-                        "url": f"/#/trips/{tid}",
-                    }
-                    if send_push(user_id, payload):
+                    title = t("notif.trip_reminder_title", locale, name=row["name"])
+                    body = t("notif.trip_reminder_body", locale)
+                    url = f"/#/trips/{tid}"
+                    sent = send_push(user_id, {"title": title, "body": body, "url": url})
+                    if sent:
+                        create_notification(user_id, "trip_reminder", title, body, url)
                         log_sent(user_id, tid, "trip_reminder")
                         logger.info("Sent trip_reminder to user %d for trip %s", user_id, tid)

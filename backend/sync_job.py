@@ -481,18 +481,21 @@ def _send_sync_notifications(user_id: int, flights_created: int) -> None:
     try:
         with db_conn() as conn:
             user = conn.execute(
-                "SELECT notif_new_flight FROM users WHERE id = ?", (user_id,)
+                "SELECT notif_new_flight, locale FROM users WHERE id = ?", (user_id,)
             ).fetchone()
         if not user:
             return
 
+        from .i18n import t
         from .notifications_store import create_notification
         from .push import send_push
 
         if flights_created > 0 and user["notif_new_flight"]:
             n = flights_created
-            title = "New flights added ✈"
-            body = f"{n} new flight{'s' if n > 1 else ''} added from your emails."
+            locale = user["locale"] or "en"
+            title = t("notif.new_flights_title", locale)
+            body_key = "notif.new_flights_body_plural" if n > 1 else "notif.new_flights_body"
+            body = t(body_key, locale, n=n)
             create_notification(user_id, "new_flight", title, body, "/#/trips")
             send_push(user_id, {"title": title, "body": body, "url": "/#/trips"})
     except Exception as e:

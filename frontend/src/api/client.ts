@@ -250,6 +250,7 @@ export const statsApi = {
   get: (year?: number) =>
     get<{
       total_km: number;
+      total_co2_kg: number;
       total_flights: number;
       total_hours: number;
       unique_airports: number;
@@ -262,7 +263,8 @@ export const statsApi = {
       top_airlines: { key: string; count: number }[];
       years: string[];
       visited_countries: string[];
-      flight_breakdown: { route: string; flight: string; km: number; trip_name: string }[];
+      flights_by_period: { label: string; count: number }[];
+      flight_breakdown: { route: string; flight: string; km: number; co2_kg: number; trip_name: string }[];
     }>(`/api/stats${year ? `?year=${year}` : ''}`),
 };
 
