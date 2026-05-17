@@ -49,9 +49,19 @@ if not _FRONTEND_DIR.exists():
     _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
+def _convert_and_cleanup(jpg_path: Path, webp_path: Path) -> None:
+    """Read jpg, encode as WebP, write result, delete original — runs in a thread."""
+    from .trip_images import _resize_and_encode_webp
+
+    raw = jpg_path.read_bytes()
+    webp_bytes = _resize_and_encode_webp(raw)
+    webp_path.write_bytes(webp_bytes)
+    jpg_path.unlink(missing_ok=True)
+
+
 async def _migrate_images_to_webp() -> None:
     """Convert any legacy .jpg trip images to WebP in the background at startup."""
-    from .trip_images import _images_dir, _resize_and_encode_webp
+    from .trip_images import _images_dir
 
     images_dir = _images_dir()
     jpg_files = list(images_dir.glob("*.jpg"))
@@ -62,18 +72,13 @@ async def _migrate_images_to_webp() -> None:
     for jpg_path in jpg_files:
         webp_path = jpg_path.with_suffix(".webp")
         if webp_path.exists():
-            jpg_path.unlink(missing_ok=True)
+            await asyncio.to_thread(jpg_path.unlink, missing_ok=True)
             continue
         try:
-            raw = jpg_path.read_bytes()
-            webp_bytes = _resize_and_encode_webp(raw)
-            webp_path.write_bytes(webp_bytes)
-            jpg_path.unlink(missing_ok=True)
+            await asyncio.to_thread(_convert_and_cleanup, jpg_path, webp_path)
             converted += 1
         except Exception as exc:
             logger.warning("Could not convert %s: %s", jpg_path.name, exc)
-        # Yield control so we don't block the event loop for a batch of images
-        await asyncio.sleep(0)
     logger.info("WebP migration complete (%d converted)", converted)
 
 

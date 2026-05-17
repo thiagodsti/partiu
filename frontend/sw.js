@@ -16,6 +16,8 @@ const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 const API_CACHE_MAX = 150;   // max cached GET /api/* responses
 const STATIC_CACHE_MAX = 80; // max cached static assets
 
+const trimInProgress = new Set();
+
 // ---- Install: skip waiting immediately ----
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -74,7 +76,7 @@ async function cacheFirst(request, cacheName) {
     if (response.ok) {
       const cache = await caches.open(cacheName);
       await cache.put(request, response.clone());
-      trimCache(cache, STATIC_CACHE_MAX);
+      try { await trimCache(cache, STATIC_CACHE_MAX); } catch (e) { console.warn('[SW] trimCache error', e); }
     }
     return response;
   } catch {
@@ -90,7 +92,7 @@ async function networkFirst(request, cacheName) {
     if (response.ok) {
       const cache = await caches.open(cacheName);
       await cache.put(request, response.clone());
-      trimCache(cache, API_CACHE_MAX);
+      try { await trimCache(cache, API_CACHE_MAX); } catch (e) { console.warn('[SW] trimCache error', e); }
     }
     return response;
   } catch {
@@ -109,10 +111,10 @@ async function staleWhileRevalidate(request, cacheName) {
 
   // Always kick off a background network fetch to keep the cache warm
   const networkFetch = fetch(request)
-    .then((response) => {
+    .then(async (response) => {
       if (response.ok) {
-        cache.put(request, response.clone());
-        trimCache(cache, API_CACHE_MAX);
+        await cache.put(request, response.clone());
+        try { await trimCache(cache, API_CACHE_MAX); } catch (e) { console.warn('[SW] trimCache error', e); }
       }
       return response;
     })
@@ -133,11 +135,19 @@ async function staleWhileRevalidate(request, cacheName) {
 // ---- Cache size management ----
 
 async function trimCache(cache, maxEntries) {
-  const keys = await cache.keys();
-  if (keys.length > maxEntries) {
-    // Cache API returns keys in insertion order; delete the oldest excess
-    const toDelete = keys.slice(0, keys.length - maxEntries);
-    await Promise.all(toDelete.map((k) => cache.delete(k)));
+  if (trimInProgress.has(cache)) return;
+  trimInProgress.add(cache);
+  try {
+    const keys = await cache.keys();
+    if (keys.length > maxEntries) {
+      // Cache API returns keys in insertion order; delete the oldest excess
+      const toDelete = keys.slice(0, keys.length - maxEntries);
+      await Promise.all(toDelete.map((k) => cache.delete(k)));
+    }
+  } catch (e) {
+    console.warn('[SW] trimCache failed', e);
+  } finally {
+    trimInProgress.delete(cache);
   }
 }
 

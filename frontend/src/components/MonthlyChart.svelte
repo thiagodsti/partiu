@@ -18,7 +18,7 @@
   const SVG_H = COUNT_H + CHART_H + LABEL_H;
 
   const maxCount = $derived(Math.max(...data.map((d) => d.count), 1));
-  const svgW = $derived(data.length * (BAR_W + GAP) - GAP);
+  const svgW = $derived(Math.max(0, data.length * (BAR_W + GAP) - GAP));
 
   function barHeight(count: number): number {
     return (count / maxCount) * CHART_H;
