@@ -2,6 +2,7 @@
   import { statsApi } from '../api/client';
   import TopNav from '../components/TopNav.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
+  import MonthlyChart from '../components/MonthlyChart.svelte';
   import { t } from '../lib/i18n';
 
   type Stats = Awaited<ReturnType<typeof statsApi.get>>;
@@ -54,6 +55,11 @@
 
   function airlineName(code: string) {
     return airlineNames[code] ?? code;
+  }
+
+  function fmtCo2(kg: number): string {
+    if (kg >= 1000) return $t('stats.co2_tonnes', { values: { n: (kg / 1000).toFixed(1) } });
+    return $t('stats.co2_kg', { values: { n: Math.round(kg) } });
   }
 </script>
 
@@ -124,7 +130,21 @@
           <div class="stat-value">{stats.unique_countries}</div>
           <div class="stat-label">{$t('stats.countries')} →</div>
         </a>
+        {#if stats.total_co2_kg > 0}
+          <div class="stat-card stat-card-co2">
+            <div class="stat-value">{fmtCo2(stats.total_co2_kg)}</div>
+            <div class="stat-label">{$t('stats.co2')}</div>
+          </div>
+        {/if}
       </div>
+
+      <!-- Flights over time chart -->
+      {#if stats.flights_by_period && stats.flights_by_period.some((p) => p.count > 0)}
+        <div class="stat-section">
+          <div class="stat-section-title">{$t('stats.flights_over_time')}</div>
+          <MonthlyChart data={stats.flights_by_period} />
+        </div>
+      {/if}
 
       <!-- Longest flight -->
       {#if stats.longest_flight_km > 0}
@@ -188,13 +208,19 @@
                     {#if f.trip_name}<span class="breakdown-trip">{f.trip_name}</span>{/if}
                   </div>
                   {#if f.flight}<span class="breakdown-flight">{f.flight}</span>{/if}
-                  <span class="stat-list-count">{f.km > 0 ? f.km.toLocaleString() + ' km' : '—'}</span>
+                  <div class="breakdown-numbers">
+                    <span class="stat-list-count">{f.km > 0 ? f.km.toLocaleString() + ' km' : '—'}</span>
+                    {#if f.co2_kg > 0}<span class="breakdown-co2">{fmtCo2(f.co2_kg)}</span>{/if}
+                  </div>
                 </div>
               {/each}
             </div>
             <div class="stat-list-item breakdown-total">
               <span class="stat-list-label">{$t('stats.total')}</span>
-              <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
+              <div class="breakdown-numbers">
+                <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
+                {#if stats.total_co2_kg > 0}<span class="breakdown-co2">{fmtCo2(stats.total_co2_kg)}</span>{/if}
+              </div>
             </div>
           </div>
         </div>
@@ -287,12 +313,16 @@
     opacity: 0.75;
   }
 
-  /* ---- 4-up grid ---- */
+  /* ---- stat grid ---- */
   .stat-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-sm);
     padding: 0 var(--space-md);
+  }
+
+  .stat-card-co2 {
+    grid-column: 1 / -1;
   }
 
   .stat-card {
@@ -502,6 +532,20 @@
     color: var(--text-muted);
     font-family: monospace;
     flex-shrink: 0;
+  }
+
+  .breakdown-numbers {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    flex-shrink: 0;
+  }
+
+  .breakdown-co2 {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   .breakdown-total {

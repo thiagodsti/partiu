@@ -5,6 +5,7 @@ Mounts the frontend as static files at / and all API routes under /api.
 On startup: initializes database, loads airports, starts the scheduler.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -48,6 +49,34 @@ if not _FRONTEND_DIR.exists():
     _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
+async def _migrate_images_to_webp() -> None:
+    """Convert any legacy .jpg trip images to WebP in the background at startup."""
+    from .trip_images import _images_dir, _resize_and_encode_webp
+
+    images_dir = _images_dir()
+    jpg_files = list(images_dir.glob("*.jpg"))
+    if not jpg_files:
+        return
+    logger.info("Migrating %d legacy trip image(s) to WebP…", len(jpg_files))
+    converted = 0
+    for jpg_path in jpg_files:
+        webp_path = jpg_path.with_suffix(".webp")
+        if webp_path.exists():
+            jpg_path.unlink(missing_ok=True)
+            continue
+        try:
+            raw = jpg_path.read_bytes()
+            webp_bytes = _resize_and_encode_webp(raw)
+            webp_path.write_bytes(webp_bytes)
+            jpg_path.unlink(missing_ok=True)
+            converted += 1
+        except Exception as exc:
+            logger.warning("Could not convert %s: %s", jpg_path.name, exc)
+        # Yield control so we don't block the event loop for a batch of images
+        await asyncio.sleep(0)
+    logger.info("WebP migration complete (%d converted)", converted)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -69,6 +98,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Reset %d stale 'running' sync state(s) from previous crash", stale)
     start_scheduler()
     start_smtp_server()
+    asyncio.create_task(_migrate_images_to_webp())
     logger.info("Startup complete")
     yield
     # Shutdown

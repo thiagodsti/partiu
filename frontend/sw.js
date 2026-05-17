@@ -9,9 +9,12 @@
  *   - everything else      → network-first (app shell, always get latest deploy)
  */
 
-const CACHE_VERSION = 'v15';
+const CACHE_VERSION = 'v16';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
+
+const API_CACHE_MAX = 150;   // max cached GET /api/* responses
+const STATIC_CACHE_MAX = 80; // max cached static assets
 
 // ---- Install: skip waiting immediately ----
 self.addEventListener('install', () => {
@@ -70,7 +73,8 @@ async function cacheFirst(request, cacheName) {
     const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
+      await cache.put(request, response.clone());
+      trimCache(cache, STATIC_CACHE_MAX);
     }
     return response;
   } catch {
@@ -85,7 +89,8 @@ async function networkFirst(request, cacheName) {
     const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
+      await cache.put(request, response.clone());
+      trimCache(cache, API_CACHE_MAX);
     }
     return response;
   } catch {
@@ -105,7 +110,10 @@ async function staleWhileRevalidate(request, cacheName) {
   // Always kick off a background network fetch to keep the cache warm
   const networkFetch = fetch(request)
     .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
+      if (response.ok) {
+        cache.put(request, response.clone());
+        trimCache(cache, API_CACHE_MAX);
+      }
       return response;
     })
     .catch(() => null);
@@ -120,6 +128,17 @@ async function staleWhileRevalidate(request, cacheName) {
     headers: { 'Content-Type': 'application/json' },
     status: 503,
   });
+}
+
+// ---- Cache size management ----
+
+async function trimCache(cache, maxEntries) {
+  const keys = await cache.keys();
+  if (keys.length > maxEntries) {
+    // Cache API returns keys in insertion order; delete the oldest excess
+    const toDelete = keys.slice(0, keys.length - maxEntries);
+    await Promise.all(toDelete.map((k) => cache.delete(k)));
+  }
 }
 
 // ---- Push notifications ----
