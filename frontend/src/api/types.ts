@@ -40,6 +40,7 @@ export interface Trip {
   rating?: number | null;
   note?: string | null;
   expenses_total?: Record<string, number>;
+  search_index?: string;
 }
 
 export interface TripExpense {

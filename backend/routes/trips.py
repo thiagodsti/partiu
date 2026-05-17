@@ -4,6 +4,7 @@ Trip CRUD routes.
 
 import json
 import logging
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 
@@ -21,6 +22,11 @@ from ..utils import now_iso
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
+
+
+def _norm(s: str) -> str:
+    """Strip diacritics and lowercase for accent-insensitive search."""
+    return unicodedata.normalize("NFD", s or "").encode("ascii", "ignore").decode("ascii").lower()
 
 
 def _row_to_trip(row, owner_user_id: int | None = None) -> dict:
@@ -68,41 +74,100 @@ def list_trips(user: dict = Depends(get_current_user)):
 
         trips.sort(key=lambda t: t.get("start_date") or "")
 
-        # Attach flight counts
-        for trip in trips:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM flights WHERE trip_id = ?",
-                (trip["id"],),
-            ).fetchone()[0]
-            trip["flight_count"] = count
-
-        # Attach owner username for shared trips
-        for trip in trips:
-            if not trip.get("is_owner"):
-                owner_row = conn.execute(
-                    "SELECT username FROM users WHERE id = ?", (trip.get("user_id"),)
-                ).fetchone()
-                trip["owner_username"] = owner_row["username"] if owner_row else None
-            else:
-                trip["owner_username"] = None
-
-        # Attach expense totals grouped by currency
-        trip_ids = [t["id"] for t in trips]
-        if trip_ids:
-            placeholders = ",".join("?" * len(trip_ids))
-            expense_rows = conn.execute(
-                f"SELECT trip_id, currency, SUM(amount) AS total"
-                f" FROM trip_expenses WHERE trip_id IN ({placeholders})"
-                f" GROUP BY trip_id, currency",
-                trip_ids,
-            ).fetchall()
-            expense_map: dict[str, dict[str, float]] = {}
-            for er in expense_rows:
-                expense_map.setdefault(er["trip_id"], {})[er["currency"]] = er["total"]
-            for trip in trips:
-                trip["expenses_total"] = expense_map.get(trip["id"], {})
+        _attach_extras(trips, user["id"], conn)
 
     return {"trips": trips}
+
+
+def _attach_extras(trips: list[dict], user_id: int, conn) -> None:
+    """Mutate trip dicts to add flight_count, owner_username, expenses_total, search_index."""
+    trip_ids = [t["id"] for t in trips]
+    if not trip_ids:
+        for trip in trips:
+            trip["flight_count"] = 0
+            trip["owner_username"] = None
+        return
+
+    placeholders = ",".join("?" * len(trip_ids))
+
+    count_rows = conn.execute(
+        f"SELECT trip_id, COUNT(*) AS cnt FROM flights WHERE trip_id IN ({placeholders}) GROUP BY trip_id",
+        trip_ids,
+    ).fetchall()
+    count_map = {r["trip_id"]: r["cnt"] for r in count_rows}
+    for trip in trips:
+        trip["flight_count"] = count_map.get(trip["id"], 0)
+
+    owner_ids = list(
+        {t["user_id"] for t in trips if not t.get("is_owner") and t.get("user_id") is not None}
+    )
+    if owner_ids:
+        owner_ph = ",".join("?" * len(owner_ids))
+        user_rows = conn.execute(
+            f"SELECT id, username FROM users WHERE id IN ({owner_ph})", owner_ids
+        ).fetchall()
+        user_map = {r["id"]: r["username"] for r in user_rows}
+    else:
+        user_map = {}
+    for trip in trips:
+        if not trip.get("is_owner"):
+            trip["owner_username"] = user_map.get(trip.get("user_id"))
+        else:
+            trip["owner_username"] = None
+
+    expense_rows = conn.execute(
+        f"SELECT trip_id, currency, SUM(amount) AS total"
+        f" FROM trip_expenses WHERE trip_id IN ({placeholders})"
+        f" GROUP BY trip_id, currency",
+        trip_ids,
+    ).fetchall()
+    expense_map: dict[str, dict[str, float]] = {}
+    for er in expense_rows:
+        expense_map.setdefault(er["trip_id"], {})[er["currency"]] = er["total"]
+    for trip in trips:
+        trip["expenses_total"] = expense_map.get(trip["id"], {})
+
+    # Build a pre-normalised search index: trip name + booking refs + all flight
+    # cities, country codes, IATA codes, airline names, and flight numbers.
+    flight_rows = conn.execute(
+        f"""
+        SELECT
+            f.trip_id,
+            GROUP_CONCAT(COALESCE(f.departure_airport, ''), ' ') AS dep_iatas,
+            GROUP_CONCAT(COALESCE(f.arrival_airport,   ''), ' ') AS arr_iatas,
+            GROUP_CONCAT(COALESCE(dep.city_name,       ''), ' ') AS dep_cities,
+            GROUP_CONCAT(COALESCE(arr.city_name,       ''), ' ') AS arr_cities,
+            GROUP_CONCAT(COALESCE(dep.country_code,    ''), ' ') AS dep_countries,
+            GROUP_CONCAT(COALESCE(arr.country_code,    ''), ' ') AS arr_countries,
+            GROUP_CONCAT(COALESCE(f.airline_name,      ''), ' ') AS airlines,
+            GROUP_CONCAT(COALESCE(f.flight_number,     ''), ' ') AS flight_nums
+        FROM flights f
+        LEFT JOIN airports dep ON dep.iata_code = f.departure_airport
+        LEFT JOIN airports arr ON arr.iata_code = f.arrival_airport
+        WHERE f.trip_id IN ({placeholders})
+        GROUP BY f.trip_id
+        """,
+        trip_ids,
+    ).fetchall()
+    fi_map = {r["trip_id"]: r for r in flight_rows}
+    for trip in trips:
+        fi = fi_map.get(trip["id"])
+        parts = [trip.get("name", ""), " ".join(trip.get("booking_refs", []))]
+        if fi:
+            parts += [
+                fi[c] or ""
+                for c in (
+                    "dep_iatas",
+                    "arr_iatas",
+                    "dep_cities",
+                    "arr_cities",
+                    "dep_countries",
+                    "arr_countries",
+                    "airlines",
+                    "flight_nums",
+                )
+            ]
+        trip["search_index"] = _norm(" ".join(filter(None, parts)))
 
 
 @router.get("/{trip_id}")
