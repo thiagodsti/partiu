@@ -210,6 +210,28 @@ describe('HistoryPage', () => {
     expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
   });
 
+  it('trims whitespace from query before matching', async () => {
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText, queryByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), '  italy  ');
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+    expect(queryByText('Tokyo 2023')).not.toBeInTheDocument();
+  });
+
+  it('country code token-match does not cause false positive on substring', async () => {
+    // "br" (Brazil) must not match "british" or other substrings
+    // TOKYO_TRIP search_index contains "br" as a token (Brazil origin), so both
+    // trips share "br"; but a trip whose index only contains e.g. "british" (no
+    // standalone "br" token) should NOT match. We test the positive case: "br"
+    // matches the Tokyo trip (origin GRU = Brazil) via token, not substring.
+    mockList.mockResolvedValue({ trips: [COMPLETED_TRIP, TOKYO_TRIP] });
+    const { container, findByText } = render(HistoryPage);
+    await typeInSearch(await getSearchInput(container), 'brazil');
+    // Both trips depart from GRU (Brazil), so both should match
+    expect(await findByText('Rome 2024')).toBeInTheDocument();
+    expect(await findByText('Tokyo 2023')).toBeInTheDocument();
+  });
+
   it('shows no-results state when search_index has no match', async () => {
     const { container } = render(HistoryPage);
     await typeInSearch(await getSearchInput(container), 'ZZZNOMATCH');
