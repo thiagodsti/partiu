@@ -242,6 +242,13 @@
         </div>
       {/if}
 
+      <!-- Export -->
+      <div class="stat-section export-section">
+        <a class="export-link" href="/api/flights/export.csv" download="flights.csv">
+          ↓ {$t('stats.export_csv')}
+        </a>
+      </div>
+
     {/if}
   {/if}
 </div>
@@ -550,6 +557,26 @@
 
   .breakdown-total {
     font-weight: 600;
+  }
+
+  .export-section {
+    padding-bottom: var(--space-md);
+  }
+
+  .export-link {
+    display: inline-block;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .export-link:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
   }
 
   .breakdown-total .stat-list-label {
