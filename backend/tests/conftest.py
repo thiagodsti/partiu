@@ -76,6 +76,7 @@ def api_app(test_db):
     from backend.routes import expenses as expenses_routes
     from backend.routes import flights as flights_routes
     from backend.routes import notifications as notifications_routes
+    from backend.routes import packing as packing_routes
     from backend.routes import settings as settings_routes
     from backend.routes import shares as shares_routes
     from backend.routes import stats as stats_routes
@@ -100,6 +101,7 @@ def api_app(test_db):
     app.include_router(trip_documents_routes.router)
     app.include_router(day_notes_routes.router)
     app.include_router(expenses_routes.router)
+    app.include_router(packing_routes.router)
     app.include_router(stats_routes.router)
     return app
 

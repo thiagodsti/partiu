@@ -43,6 +43,16 @@ export interface Trip {
   search_index?: string;
 }
 
+export interface PackingItem {
+  id: string;
+  trip_id: string;
+  text: string;
+  checked: number;
+  sort_order: number;
+  created_by: number | null;
+  created_at: string;
+}
+
 export interface TripExpense {
   id: string;
   trip_id: string;

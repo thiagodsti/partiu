@@ -3,6 +3,7 @@
   import { location } from 'svelte-spa-router';
   import { tripsApi, settingsApi, tripDocumentsApi, sharesApi, boardingPassesApi } from '../api/client';
   import TripExpenses from '../components/TripExpenses.svelte';
+  import TripPackingList from '../components/TripPackingList.svelte';
   import { tripImageBust } from '../lib/tripImageStore';
   import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass } from '../api/types';
   import {
@@ -304,6 +305,7 @@
   // ---- Collapsible sections ----
   let flightsCollapsed = $state(false);
   let plannerCollapsed = $state(false);
+  let packingCollapsed = $state(false);
   let printing = $state(false);
 
   async function exportPdf() {
@@ -653,68 +655,21 @@
       </div>
     {/if}
 
-    <!-- Rating -->
+    <!-- Packing List -->
     <div class="trip-section no-print">
-      <div class="trip-section-header">
-        <h3 class="trip-section-title">{$t('trips.rating_label')}</h3>
-        {#if trip.rating}
-          <button class="btn btn-secondary btn-sm" onclick={() => setRating(null)}>
-            {$t('trips.rating_clear')}
-          </button>
-        {/if}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="trip-section-header section-toggle" onclick={() => (packingCollapsed = !packingCollapsed)}>
+        <div class="section-header-inner">
+          <div class="section-title-row">
+            <h3 class="trip-section-title">{$t('packing.title')}</h3>
+            <span class="section-chevron">{packingCollapsed ? '▼' : '▲'}</span>
+          </div>
+        </div>
       </div>
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        class="trip-rating-stars"
-        role="group"
-        ontouchstart={onRatingTouchStart}
-        ontouchmove={onRatingTouchMove}
-        ontouchend={onRatingTouchEnd}
-        onpointerleave={(e) => { if (e.pointerType === 'mouse') hoverRating = null; }}
-      >
-        {#each [1,2,3,4,5] as star}
-          {@const displayRating = hoverRating ?? trip.rating ?? 0}
-          <span class="rating-star-wrap">
-            <!-- left half = star - 0.5, right half = star -->
-            <button
-              class="rating-half left"
-              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star - 0.5; }}
-              onclick={() => setRating(star - 0.5)}
-              aria-label="Rate {star - 0.5} out of 5"
-            ></button>
-            <button
-              class="rating-half right"
-              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star; }}
-              onclick={() => setRating(star)}
-              aria-label="Rate {star} out of 5"
-            ></button>
-            <span
-              class="rating-star-glyph"
-              style="--fill: {displayRating >= star ? '100%' : displayRating >= star - 0.5 ? '50%' : '0%'}"
-              aria-hidden="true"
-            ></span>
-          </span>
-        {/each}
+      <div class:section-hidden={packingCollapsed}>
+        <TripPackingList tripId={params.id} />
       </div>
-    </div>
-
-    <!-- Shared note -->
-    <div class="trip-section no-print">
-      <div class="trip-section-header">
-        <h3 class="trip-section-title">{$t('trips.note_label')}</h3>
-        {#if noteSaving}
-          <span class="note-status">…</span>
-        {:else if noteSaved}
-          <span class="note-status note-status-ok">✓ {$t('trips.note_saved')}</span>
-        {/if}
-      </div>
-      <textarea
-        class="trip-note-textarea"
-        placeholder={$t('trips.note_placeholder')}
-        value={trip.note ?? ''}
-        oninput={(e) => scheduleNoteSave((e.currentTarget as HTMLTextAreaElement).value)}
-        rows={4}
-      ></textarea>
     </div>
 
     <!-- Documents -->
@@ -762,6 +717,71 @@
       </div>
       <TripExpenses tripId={params.id} {defaultCurrency} />
     </div>
+
+    <!-- Shared note -->
+    <div class="trip-section no-print">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('trips.note_label')}</h3>
+        {#if noteSaving}
+          <span class="note-status">…</span>
+        {:else if noteSaved}
+          <span class="note-status note-status-ok">✓ {$t('trips.note_saved')}</span>
+        {/if}
+      </div>
+      <textarea
+        class="trip-note-textarea"
+        placeholder={$t('trips.note_placeholder')}
+        value={trip.note ?? ''}
+        oninput={(e) => scheduleNoteSave((e.currentTarget as HTMLTextAreaElement).value)}
+        rows={4}
+      ></textarea>
+    </div>
+
+    <!-- Rating -->
+    <div class="trip-section no-print">
+      <div class="trip-section-header">
+        <h3 class="trip-section-title">{$t('trips.rating_label')}</h3>
+        {#if trip.rating}
+          <button class="btn btn-secondary btn-sm" onclick={() => setRating(null)}>
+            {$t('trips.rating_clear')}
+          </button>
+        {/if}
+      </div>
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="trip-rating-stars"
+        role="group"
+        ontouchstart={onRatingTouchStart}
+        ontouchmove={onRatingTouchMove}
+        ontouchend={onRatingTouchEnd}
+        onpointerleave={(e) => { if (e.pointerType === 'mouse') hoverRating = null; }}
+      >
+        {#each [1,2,3,4,5] as star}
+          {@const displayRating = hoverRating ?? trip.rating ?? 0}
+          <span class="rating-star-wrap">
+            <!-- left half = star - 0.5, right half = star -->
+            <button
+              class="rating-half left"
+              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star - 0.5; }}
+              onclick={() => setRating(star - 0.5)}
+              aria-label="Rate {star - 0.5} out of 5"
+            ></button>
+            <button
+              class="rating-half right"
+              onpointerenter={(e) => { if (e.pointerType === 'mouse') hoverRating = star; }}
+              onclick={() => setRating(star)}
+              aria-label="Rate {star} out of 5"
+            ></button>
+            <span
+              class="rating-star-glyph"
+              style="--fill: {displayRating >= star ? '100%' : displayRating >= star - 0.5 ? '50%' : '0%'}"
+              aria-hidden="true"
+            ></span>
+          </span>
+        {/each}
+      </div>
+    </div>
+
   {/if}
 </div>
 

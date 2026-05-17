@@ -481,5 +481,11 @@
   "expenses.total": "Total",
   "expenses.edit_save": "Salvar",
   "expenses.edit_saving": "Salvando…",
-  "expenses.edit_cancel": "Cancelar"
+  "expenses.edit_cancel": "Cancelar",
+  "packing.title": "Lista de Malas",
+  "packing.empty": "Sua lista de malas está vazia. Adicione o primeiro item abaixo.",
+  "packing.add_placeholder": "Adicionar item…",
+  "packing.add": "Adicionar",
+  "packing.clear_checked": "Remover marcados",
+  "packing.progress": "{done} de {total} embalados"
 }

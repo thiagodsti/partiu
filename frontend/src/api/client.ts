@@ -5,6 +5,7 @@
 
 import type {
   Trip,
+  PackingItem,
   TripExpense,
   Flight,
   PaginatedFlights,
@@ -327,6 +328,18 @@ export interface NonFlightDomain {
   note: string;
   created_at: string;
 }
+
+export const packingApi = {
+  list: (tripId: string) => get<PackingItem[]>(`/api/trips/${tripId}/packing`),
+  create: (tripId: string, text: string) =>
+    post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/packing`, { text }),
+  update: (tripId: string, itemId: string, data: { text?: string; checked?: boolean }) =>
+    patch<{ ok: boolean }>(`/api/trips/${tripId}/packing/${itemId}`, data),
+  delete: (tripId: string, itemId: string) =>
+    del<null>(`/api/trips/${tripId}/packing/${itemId}`),
+  clearChecked: (tripId: string) =>
+    post<null>(`/api/trips/${tripId}/packing/clear-checked`),
+};
 
 export const nonFlightDomainsApi = {
   list: () => get<NonFlightDomain[]>('/api/settings/admin/non-flight-domains'),
