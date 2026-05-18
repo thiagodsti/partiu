@@ -96,7 +96,7 @@
   }
 
   async function deleteItem(item: PackingItem) {
-    if (!confirm(`Delete "${item.text}"?`)) return;
+    if (!confirm($t('packing.delete_confirm', { values: { name: item.text } }))) return;
     try {
       await packingApi.delete(tripId, item.id);
       items = items.filter((i) => i.id !== item.id);
@@ -141,7 +141,7 @@
         <li class="packing-item" class:is-checked={item.checked}>
           <button
             class="packing-checkbox"
-            aria-label={item.checked ? 'Uncheck' : 'Check'}
+            aria-label={item.checked ? $t('packing.uncheck') : $t('packing.check')}
             onclick={() => toggleChecked(item)}
           >
             {#if item.checked}
@@ -180,7 +180,7 @@
             >{item.text}</span>
             <button
               class="packing-delete btn-icon"
-              aria-label="Delete item"
+              aria-label={$t('packing.delete_item')}
               onclick={() => deleteItem(item)}
             >
               <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

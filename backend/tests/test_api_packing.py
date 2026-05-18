@@ -79,6 +79,19 @@ class TestCreatePackingItem:
         orders = [i["sort_order"] for i in items]
         assert orders == sorted(orders)
 
+    def test_unauthenticated_returns_401(self, client, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip E2"})
+        trip_id = r.json()["id"]
+        r2 = client.post(f"/api/trips/{trip_id}/packing", json={"text": "Item"})
+        assert r2.status_code == 401
+
+    def test_other_users_trip_returns_404(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip E3"})
+        trip_id = r.json()["id"]
+        other = _make_user(api_app, "pack_create_other")
+        r2 = other.post(f"/api/trips/{trip_id}/packing", json={"text": "Item"})
+        assert r2.status_code == 404
+
 
 class TestUpdatePackingItem:
     def test_toggle_checked(self, auth_client):
@@ -123,6 +136,23 @@ class TestUpdatePackingItem:
         )
         assert r2.status_code == 404
 
+    def test_unauthenticated_returns_401(self, client, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip I2"})
+        trip_id = r.json()["id"]
+        r2 = auth_client.post(f"/api/trips/{trip_id}/packing", json={"text": "Shoes"})
+        item_id = r2.json()["id"]
+        r3 = client.patch(f"/api/trips/{trip_id}/packing/{item_id}", json={"checked": True})
+        assert r3.status_code == 401
+
+    def test_other_users_trip_returns_404(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip I3"})
+        trip_id = r.json()["id"]
+        r2 = auth_client.post(f"/api/trips/{trip_id}/packing", json={"text": "Shoes"})
+        item_id = r2.json()["id"]
+        other = _make_user(api_app, "pack_update_other")
+        r3 = other.patch(f"/api/trips/{trip_id}/packing/{item_id}", json={"checked": True})
+        assert r3.status_code == 404
+
 
 class TestDeletePackingItem:
     def test_delete_item(self, auth_client):
@@ -140,6 +170,23 @@ class TestDeletePackingItem:
         trip_id = r.json()["id"]
         r2 = auth_client.delete(f"/api/trips/{trip_id}/packing/nonexistent-id")
         assert r2.status_code == 404
+
+    def test_unauthenticated_returns_401(self, client, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip K2"})
+        trip_id = r.json()["id"]
+        r2 = auth_client.post(f"/api/trips/{trip_id}/packing", json={"text": "Camera"})
+        item_id = r2.json()["id"]
+        r3 = client.delete(f"/api/trips/{trip_id}/packing/{item_id}")
+        assert r3.status_code == 401
+
+    def test_other_users_trip_returns_404(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip K3"})
+        trip_id = r.json()["id"]
+        r2 = auth_client.post(f"/api/trips/{trip_id}/packing", json={"text": "Camera"})
+        item_id = r2.json()["id"]
+        other = _make_user(api_app, "pack_delete_other")
+        r3 = other.delete(f"/api/trips/{trip_id}/packing/{item_id}")
+        assert r3.status_code == 404
 
 
 class TestClearChecked:
@@ -167,3 +214,16 @@ class TestClearChecked:
         r2 = auth_client.post(f"/api/trips/{trip_id}/packing/clear-checked")
         assert r2.status_code == 204
         assert len(auth_client.get(f"/api/trips/{trip_id}/packing").json()) == 1
+
+    def test_unauthenticated_returns_401(self, client, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip M2"})
+        trip_id = r.json()["id"]
+        r2 = client.post(f"/api/trips/{trip_id}/packing/clear-checked")
+        assert r2.status_code == 401
+
+    def test_other_users_trip_returns_404(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip M3"})
+        trip_id = r.json()["id"]
+        other = _make_user(api_app, "pack_clear_other")
+        r2 = other.post(f"/api/trips/{trip_id}/packing/clear-checked")
+        assert r2.status_code == 404

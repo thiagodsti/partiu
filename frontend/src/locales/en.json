@@ -487,5 +487,9 @@
   "packing.add_placeholder": "Add an item…",
   "packing.add": "Add",
   "packing.clear_checked": "Remove checked",
-  "packing.progress": "{done} of {total} packed"
+  "packing.progress": "{done} of {total} packed",
+  "packing.check": "Mark as packed",
+  "packing.uncheck": "Mark as unpacked",
+  "packing.delete_item": "Delete item",
+  "packing.delete_confirm": "Delete \"{name}\"?"
 }

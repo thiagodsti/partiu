@@ -487,5 +487,9 @@
   "packing.add_placeholder": "Adicionar item…",
   "packing.add": "Adicionar",
   "packing.clear_checked": "Remover marcados",
-  "packing.progress": "{done} de {total} embalados"
+  "packing.progress": "{done} de {total} embalados",
+  "packing.check": "Marcar como embalado",
+  "packing.uncheck": "Marcar como não embalado",
+  "packing.delete_item": "Excluir item",
+  "packing.delete_confirm": "Excluir \"{name}\"?"
 }

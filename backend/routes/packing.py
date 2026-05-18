@@ -50,16 +50,14 @@ def create_item(trip_id: str, body: PackingItemBody, user: dict = Depends(get_cu
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="Item text cannot be empty")
 
-    with db_conn() as conn:
+    item_id = str(uuid.uuid4())
+    with db_write() as conn:
         if not can_access_trip(trip_id, user["id"], conn):
             raise HTTPException(status_code=404, detail="Trip not found")
         max_order = conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) FROM packing_items WHERE trip_id = ?",
             (trip_id,),
         ).fetchone()[0]
-
-    item_id = str(uuid.uuid4())
-    with db_write() as conn:
         conn.execute(
             """INSERT INTO packing_items (id, trip_id, text, checked, sort_order, created_by, created_at)
                VALUES (?, ?, ?, 0, ?, ?, ?)""",
