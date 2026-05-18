@@ -481,5 +481,15 @@
   "expenses.total": "Total",
   "expenses.edit_save": "Save",
   "expenses.edit_saving": "Saving…",
-  "expenses.edit_cancel": "Cancel"
+  "expenses.edit_cancel": "Cancel",
+  "packing.title": "Packing List",
+  "packing.empty": "Your packing list is empty. Add your first item below.",
+  "packing.add_placeholder": "Add an item…",
+  "packing.add": "Add",
+  "packing.clear_checked": "Remove checked",
+  "packing.progress": "{done} of {total} packed",
+  "packing.check": "Mark as packed",
+  "packing.uncheck": "Mark as unpacked",
+  "packing.delete_item": "Delete item",
+  "packing.delete_confirm": "Delete \"{name}\"?"
 }
