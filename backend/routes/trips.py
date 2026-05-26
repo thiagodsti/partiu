@@ -127,6 +127,15 @@ def _attach_extras(trips: list[dict], user_id: int, conn) -> None:
     for trip in trips:
         trip["expenses_total"] = expense_map.get(trip["id"], {})
 
+    album_rows = conn.execute(
+        f"SELECT trip_id, album_id FROM trip_immich_albums"
+        f" WHERE trip_id IN ({placeholders}) AND user_id = ?",
+        [*trip_ids, user_id],
+    ).fetchall()
+    album_map = {r["trip_id"]: r["album_id"] for r in album_rows}
+    for trip in trips:
+        trip["immich_album_id"] = album_map.get(trip["id"])
+
     # Build a pre-normalised search index: trip name + booking refs + all flight
     # cities, country codes, IATA codes, airline names, and flight numbers.
     flight_rows = conn.execute(
@@ -201,6 +210,12 @@ def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
             (trip_id,),
         ).fetchall()
         trip["expenses_total"] = {r["currency"]: r["total"] for r in expense_rows}
+
+        album_row = conn.execute(
+            "SELECT album_id FROM trip_immich_albums WHERE trip_id = ? AND user_id = ?",
+            (trip_id, user["id"]),
+        ).fetchone()
+        trip["immich_album_id"] = album_row["album_id"] if album_row else None
 
     return trip
 
@@ -624,14 +639,14 @@ async def get_trip_image(trip_id: str, user: dict = Depends(get_current_user)):
 async def check_immich_album(trip_id: str, user: dict = Depends(get_current_user)):
     """Check whether the stored Immich album still exists. Clears the DB entry if it was deleted."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+        album_row = conn.execute(
+            "SELECT album_id FROM trip_immich_albums WHERE trip_id = ? AND user_id = ?",
+            (trip_id, user["id"]),
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Trip not found")
-    trip = _row_to_trip(row)
 
-    album_id = trip.get("immich_album_id")
+    album_id = album_row["album_id"] if album_row else None
     if not album_id:
         return {"album_id": None, "exists": False}
 
@@ -657,34 +672,37 @@ async def check_immich_album(trip_id: str, user: dict = Depends(get_current_user
 async def create_immich_album(trip_id: str, user: dict = Depends(get_current_user)):
     """Create an Immich album with photos from this trip's date range, or return the existing one."""
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM trips WHERE id = ? AND user_id = ?", (trip_id, user["id"])
+        if not can_access_trip(trip_id, user["id"], conn):
+            raise HTTPException(status_code=404, detail="Trip not found")
+        row = conn.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        u = conn.execute(
+            "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        existing_album = conn.execute(
+            "SELECT album_id FROM trip_immich_albums WHERE trip_id = ? AND user_id = ?",
+            (trip_id, user["id"]),
+        ).fetchone()
     trip = _row_to_trip(row)
+    immich_url = (u["immich_url"] or "").strip() if u else ""
+    immich_api_key = decrypt((u["immich_api_key"] or "").strip()) if u else ""
+    stored_album_id = existing_album["album_id"] if existing_album else None
 
     if not trip.get("start_date") or not trip.get("end_date"):
         raise HTTPException(
             status_code=400, detail="Trip must have start and end dates to create an album"
         )
 
-    with db_conn() as conn:
-        u = conn.execute(
-            "SELECT immich_url, immich_api_key FROM users WHERE id = ?", (user["id"],)
-        ).fetchone()
-    immich_url = (u["immich_url"] or "").strip() if u else ""
-    immich_api_key = decrypt((u["immich_api_key"] or "").strip()) if u else ""
-
     # If an album ID is stored, verify it still exists in Immich before returning the cached link
-    if trip.get("immich_album_id") and immich_url and immich_api_key:
+    if stored_album_id and immich_url and immich_api_key:
         from ..immich import album_exists
 
-        if await album_exists(immich_url, immich_api_key, trip["immich_album_id"]):
+        if await album_exists(immich_url, immich_api_key, stored_album_id):
             base = immich_url.rstrip("/")
-            album_url = f"{base}/albums/{trip['immich_album_id']}"
+            album_url = f"{base}/albums/{stored_album_id}"
             return {
-                "album_id": trip["immich_album_id"],
+                "album_id": stored_album_id,
                 "album_url": album_url,
                 "asset_count": None,
                 "already_exists": True,
@@ -692,8 +710,8 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
         # Album was deleted in Immich — clear the stored ID and recreate below
         with db_write() as conn:
             conn.execute(
-                "UPDATE trips SET immich_album_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?",
-                (now_iso(), trip_id, user["id"]),
+                "DELETE FROM trip_immich_albums WHERE trip_id = ? AND user_id = ?",
+                (trip_id, user["id"]),
             )
 
     if not immich_url or not immich_api_key:
@@ -720,8 +738,8 @@ async def create_immich_album(trip_id: str, user: dict = Depends(get_current_use
 
     with db_write() as conn:
         conn.execute(
-            "UPDATE trips SET immich_album_id = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-            (result["album_id"], now_iso(), trip_id, user["id"]),
+            "INSERT OR REPLACE INTO trip_immich_albums (trip_id, user_id, album_id) VALUES (?, ?, ?)",
+            (trip_id, user["id"], result["album_id"]),
         )
 
     return {
