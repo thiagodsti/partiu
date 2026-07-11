@@ -225,6 +225,7 @@ async def test_push(request: Request, user: dict = Depends(get_current_user)):
             status_code=503, detail="Push notifications not configured on this server"
         )
 
+    from ..i18n import t as i18n_t
     from ..push import get_subscriptions, send_push
 
     subs = get_subscriptions(user["id"])
@@ -234,11 +235,12 @@ async def test_push(request: Request, user: dict = Depends(get_current_user)):
             detail="No push subscriptions found for your account. Enable notifications in your browser first.",
         )
 
+    locale = user.get("locale") or "en"
     sent = send_push(
         user["id"],
         {
-            "title": "Partiu — test notification",
-            "body": "Push notifications are working!",
+            "title": i18n_t("notif.test_title", locale),
+            "body": i18n_t("notif.test_body", locale),
             "url": "/#/",
         },
     )

@@ -37,6 +37,8 @@
   "notif.new_flights_title": "Novos voos adicionados ✈",
   "notif.new_flights_body": "{n} voo adicionado dos seus e-mails.",
   "notif.new_flights_body_plural": "{n} voos adicionados dos seus e-mails.",
+  "notif.test_title": "Partiu — notificação de teste",
+  "notif.test_body": "As notificações push estão funcionando!",
   "login.title": "Partiu",
   "login.subtitle": "Entre na sua conta",
   "login.username": "Usuário",

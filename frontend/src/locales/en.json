@@ -37,6 +37,8 @@
   "notif.new_flights_title": "New flights added ✈",
   "notif.new_flights_body": "{n} new flight added from your emails.",
   "notif.new_flights_body_plural": "{n} new flights added from your emails.",
+  "notif.test_title": "Partiu — test notification",
+  "notif.test_body": "Push notifications are working!",
   "login.title": "Partiu",
   "login.subtitle": "Sign in to your account",
   "login.username": "Username",

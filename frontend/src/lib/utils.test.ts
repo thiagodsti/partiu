@@ -170,26 +170,27 @@ describe('flightStatus', () => {
 
 // ---- inferTripStatus ----
 
+function localDateStr(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 describe('inferTripStatus', () => {
   it('returns completed when end date is in the past', () => {
     expect(inferTripStatus({ end_date: '2020-01-01' })).toBe('completed');
   });
 
   it('returns ongoing when end date is today (not completed until end of day)', () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const past = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    expect(inferTripStatus({ start_date: past, end_date: today })).toBe('ongoing');
+    expect(inferTripStatus({ start_date: localDateStr(-1), end_date: localDateStr(0) })).toBe('ongoing');
   });
 
   it('returns ongoing when start is past and end is future', () => {
-    const past = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const future = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    expect(inferTripStatus({ start_date: past, end_date: future })).toBe('ongoing');
+    expect(inferTripStatus({ start_date: localDateStr(-1), end_date: localDateStr(1) })).toBe('ongoing');
   });
 
   it('returns upcoming when start date is in the future', () => {
-    const future = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    expect(inferTripStatus({ start_date: future })).toBe('upcoming');
+    expect(inferTripStatus({ start_date: localDateStr(1) })).toBe('upcoming');
   });
 
   it('returns upcoming when no dates', () => {

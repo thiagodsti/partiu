@@ -73,17 +73,25 @@
     if (!newDesc.trim() || !newAmount || isNaN(amount) || amount <= 0) return;
     adding = true;
     addError = null;
+    const desc = newDesc.trim();
+    const currency = newCurrency;
     try {
-      await expensesApi.create(tripId, {
-        description: newDesc.trim(),
+      const { id } = await expensesApi.create(tripId, { description: desc, amount, currency });
+      expenses = [...expenses, {
+        id,
+        trip_id: tripId,
+        description: desc,
         amount,
-        currency: newCurrency,
-      });
+        currency,
+        created_by: null,
+        created_by_username: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }];
       newDesc = '';
       newAmount = '';
       newCurrency = defaultCurrency;
       showAddForm = false;
-      await load();
     } catch (err) {
       addError = (err as Error).message;
     } finally {
@@ -107,14 +115,15 @@
     const amount = Number(editAmount);
     if (!editDesc.trim() || !editAmount || isNaN(amount) || amount <= 0) return;
     editSaving = true;
+    const id = editingId;
+    const desc = editDesc.trim();
+    const currency = editCurrency;
     try {
-      await expensesApi.update(tripId, editingId, {
-        description: editDesc.trim(),
-        amount,
-        currency: editCurrency,
-      });
+      await expensesApi.update(tripId, id, { description: desc, amount, currency });
+      expenses = expenses.map((e) =>
+        e.id === id ? { ...e, description: desc, amount, currency } : e
+      );
       editingId = null;
-      await load();
     } catch (err) {
       alert((err as Error).message);
     } finally {

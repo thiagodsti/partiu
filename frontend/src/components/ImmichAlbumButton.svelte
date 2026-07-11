@@ -41,15 +41,7 @@
     window.location.href = deepLink;
   }
 
-  async function handleClick(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (immichAlbumId) {
-      openAlbum(immichAlbumId);
-      return;
-    }
-
+  async function createAndOpenAlbum() {
     creating = true;
     error = null;
     try {
@@ -61,6 +53,27 @@
     } finally {
       creating = false;
     }
+  }
+
+  async function handleClick(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (immichAlbumId) {
+      creating = true;
+      error = null;
+      // The album may have been deleted directly in Immich since we last checked —
+      // verify it still exists before opening a possibly-dead link.
+      const status = await tripsApi.checkImmichAlbum(tripId).catch(() => ({ exists: true }));
+      creating = false;
+      if (status.exists) {
+        openAlbum(immichAlbumId);
+        return;
+      }
+      // Album was deleted in Immich — fall through and create a new one.
+    }
+
+    await createAndOpenAlbum();
   }
 </script>
 

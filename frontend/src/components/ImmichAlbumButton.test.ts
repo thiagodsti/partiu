@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import ImmichAlbumButton from './ImmichAlbumButton.svelte';
 
-const { mockCreateImmichAlbum } = vi.hoisted(() => ({
+const { mockCreateImmichAlbum, mockCheckImmichAlbum } = vi.hoisted(() => ({
   mockCreateImmichAlbum: vi.fn(),
+  mockCheckImmichAlbum: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
-  tripsApi: { createImmichAlbum: mockCreateImmichAlbum },
+  tripsApi: { createImmichAlbum: mockCreateImmichAlbum, checkImmichAlbum: mockCheckImmichAlbum },
 }));
 
 vi.mock('../lib/i18n', () => ({
@@ -28,6 +29,7 @@ const BASE_PROPS = {
 describe('ImmichAlbumButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCheckImmichAlbum.mockResolvedValue({ album_id: 'album-xyz', exists: true });
     vi.useFakeTimers();
     vi.stubGlobal('open', vi.fn());
     vi.stubGlobal('location', { href: '' });
@@ -50,14 +52,40 @@ describe('ImmichAlbumButton', () => {
     expect(getByText('immich.open_album')).toBeInTheDocument();
   });
 
-  it('tries Immich deep link when opening existing album', async () => {
+  it('checks the album still exists before opening it', async () => {
     const { getByText } = render(ImmichAlbumButton, {
       props: { ...BASE_PROPS, immichAlbumId: 'album-xyz' },
     });
 
     await fireEvent.click(getByText('immich.open_album'));
+    await waitFor(() => expect(window.location.href).toBe('immich://album?id=album-xyz'));
 
-    expect(window.location.href).toBe('immich://album?id=album-xyz');
+    expect(mockCheckImmichAlbum).toHaveBeenCalledWith('trip-1');
+    expect(mockCreateImmichAlbum).not.toHaveBeenCalled();
+  });
+
+  it('creates a new album when the stored one was deleted in Immich', async () => {
+    mockCheckImmichAlbum.mockResolvedValue({ album_id: null, exists: false });
+    mockCreateImmichAlbum.mockResolvedValue({ album_id: 'fresh-id', album_url: null });
+    const onAlbumCreated = vi.fn();
+    const { getByText } = render(ImmichAlbumButton, {
+      props: { ...BASE_PROPS, immichAlbumId: 'album-xyz', onAlbumCreated },
+    });
+
+    await fireEvent.click(getByText('immich.open_album'));
+    await waitFor(() => expect(mockCreateImmichAlbum).toHaveBeenCalledWith('trip-1'));
+    await waitFor(() => expect(window.location.href).toBe('immich://album?id=fresh-id'));
+    expect(onAlbumCreated).toHaveBeenCalledWith('fresh-id');
+  });
+
+  it('opens the existing album if the deletion check itself fails', async () => {
+    mockCheckImmichAlbum.mockRejectedValue(new Error('network error'));
+    const { getByText } = render(ImmichAlbumButton, {
+      props: { ...BASE_PROPS, immichAlbumId: 'album-xyz' },
+    });
+
+    await fireEvent.click(getByText('immich.open_album'));
+    await waitFor(() => expect(window.location.href).toBe('immich://album?id=album-xyz'));
     expect(mockCreateImmichAlbum).not.toHaveBeenCalled();
   });
 
@@ -67,6 +95,7 @@ describe('ImmichAlbumButton', () => {
     });
 
     await fireEvent.click(getByText('immich.open_album'));
+    await waitFor(() => expect(mockCheckImmichAlbum).toHaveBeenCalled());
     vi.advanceTimersByTime(1500);
 
     expect(window.open).toHaveBeenCalledWith(
@@ -83,6 +112,7 @@ describe('ImmichAlbumButton', () => {
     });
 
     await fireEvent.click(getByText('immich.open_album'));
+    await waitFor(() => expect(mockCheckImmichAlbum).toHaveBeenCalled());
 
     // Simulate app opening: page becomes hidden
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
