@@ -41,11 +41,17 @@ vi.mock('../lib/i18n', () => ({
   },
 }));
 
+const futureDate = (daysFromNow: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  return d.toISOString().slice(0, 10);
+};
+
 const TRIP = {
   id: 'trip-1',
   name: 'Paris Trip',
-  start_date: '2026-06-01',
-  end_date: '2026-06-10',
+  start_date: futureDate(1),
+  end_date: futureDate(10),
   origin_airport: 'GRU',
   destination_airport: 'CDG',
   booking_refs: [],
