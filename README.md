@@ -365,7 +365,7 @@ The LLM fallback was evaluated against 114 real flight emails using two small lo
 
 **Conclusion:** the LLM fallback is not reliable enough to replace parser rules for known airlines. It may work better with a larger or more capable model (e.g. `llama3`, `mistral`, or a cloud API), but this has not been tested.
 
-To improve results, edit the system prompt in `backend/llm_parser.py` (`_PROMPT_SYSTEM`) and re-run `eval_eml_files` against known flight emails to measure the impact.
+To improve results, edit the system prompt in `backend/integrations/llm/parser.py` (`_PROMPT_SYSTEM`) and re-run `eval_eml_files` against known flight emails to measure the impact.
 
 ---
 

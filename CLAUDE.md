@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   3. `cd frontend && npm run lint` — fix any ESLint errors
 
 - **Always write tests** for every new feature or bug fix without being asked:
-  - **Backend**: place tests in `backend/tests/` following existing patterns (class per module, `asyncio.run()` for async, `test_db` fixture, mock with `unittest.mock`). Keep coverage above 70%.
+  - **Backend**: for a layered feature package (`backend/<feature>/` with routes/service/repository — e.g. `notifications`, `packing`, `expenses`, `boarding_passes`, `shares`), place its tests in `backend/tests/<feature>/`, mirroring the package (`test_repository.py`-style files per layer plus the black-box `test_api_*.py`). For everything else, place tests directly in `backend/tests/` following existing patterns. Both use: class per module, `asyncio.run()` for async, `test_db` fixture, mock with `unittest.mock`. Keep coverage above 70%.
   - **Frontend**: add unit tests as `*.test.ts` files alongside the source (e.g. `utils.test.ts`, `ComponentName.test.ts`) using Vitest + `@testing-library/svelte`. Run with `npm test` inside `frontend/`. Both are already configured.
   - **E2E**: for every new feature, add a Playwright test in `frontend/tests/` as a `*.spec.ts` file. E2E tests require the server running at `http://localhost:8000`. For bug fixes, E2E is optional but preferred if the fix touches a user-facing flow.
 
@@ -74,18 +74,18 @@ docker compose up -d --build
 
 ### Backend (`backend/`)
 - **`main.py`** — FastAPI app entry point; mounts frontend static files, initializes DB, starts scheduler and SMTP server
-- **`database.py`** — Raw sqlite3 (no ORM), WAL mode, handles migrations via `RULES_VERSION`
+- **`database.py`** — Raw sqlite3 (no ORM), WAL mode, connection helpers (`db_conn`/`db_write`), Alembic migration bootstrapping, and `init_database()`'s startup sequencing (credential-encryption migrations + aircraft-type normalization/seeding). Domain-table seed data and queries live in their owning package's repository (`airports/repository.py`, `integrations/aircraft/repository.py`), not here.
 - **`scheduler.py`** — APScheduler runs email sync every 10 min and aircraft sync daily
-- **`sync_job.py`** — Main pipeline: fetch emails → parse → extract flights → group into trips; `use_llm` flag enables LLM fallback for incremental sync (disabled for full rescan)
+- **`sync/pipeline.py`** — Main pipeline: fetch emails → parse → extract flights → group into trips (via `sync/grouping.py`); `use_llm` flag enables LLM fallback for incremental sync (disabled for full rescan). `sync/service.py` (the `/api/sync/*` routes' use-case layer) calls into it rather than owning the pipeline itself.
 - **`parsers/engine.py`** — Extraction engine: tries BS4 HTML parsing first, then regex fallback, then PDF
 - **`parsers/builtin_rules.py`** — Airline rules keyed to `PARSER_VERSION = '27'`; supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY), Wizz Air (W6), Brussels Airlines (SN), Iberia (IB)
-- **`llm_parser.py`** — Optional Ollama LLM fallback; `llm_extract_flights(email_msg)` returns validated flights or `[]` when disabled; validates IATA codes against airports DB before returning
-- **`grouping.py`** — Auto-groups flights into trips by booking reference, then 48h time proximity
-- **`auth.py`** — Session cookies (itsdangerous), bcrypt passwords, TOTP 2FA
+- **`sync/grouping.py`** — Auto-groups flights into trips by booking reference, then 48h time proximity
+- **`auth/`** — Session cookies (itsdangerous), bcrypt passwords, TOTP 2FA, audit logging (`audit_log.py`); also re-exports cross-cutting authorization helpers (`get_current_user`, `can_access_trip`, etc.) imported as `from ..auth import ...` throughout the backend
 - **`smtp_server.py`** — aiosmtpd inbound SMTP on port 2525 for email forwarding
-- **`aircraft_sync.py`** — Lazy-loads aircraft type from AviationStack → OpenSky Network fallback
-- **`timezone_utils.py`** — Converts naive local flight times to UTC using airport coordinates + TimezoneFinder
-- **`routes/`** — API endpoints split by resource (auth, trips, flights, settings, users, airports, sync)
+- **`utils/`** — Generic, dependency-light helpers with no DB access, used across every feature: `dates.py` (flight-number validation, ISO datetime conversion, duration/status calc — re-exported from `utils/__init__.py` for import-path stability), `i18n.py` (minimal backend translations reusing the frontend's locale JSON files)
+- **`airports/`** — `repository.py` (AirportRepository: search + IATA lookup + CSV bulk-load-if-empty seeding) + `routes.py` (`GET /api/airports/search`, `GET /api/airports/{iata}`) + `timezone.py` (converts naive local flight times to UTC using airport coordinates + TimezoneFinder — lives here rather than in `utils/` because it touches the DB, and not in `flights/` because `parsers/` needs it too and parsers/flights are kept independent). Lighter than the full routes→service→repository layering since there's no business logic in the routes. Other packages still query the `airports` table directly for their own narrow needs (parsers/, sync/grouping.py, trips/, settings/) rather than going through this repository.
+- **`routes/`** — Leftover pre-refactor routes not yet folded into a feature package: `version.py` (app version endpoint)
+- **`integrations/`** — Third-party API clients, one subpackage per provider: `immich/client.py` (album create/check), `aircraft/client.py` (AviationStack → OpenSky → hexdb.io lookups) + `aircraft/sync.py` (background aircraft-type sync job) + `aircraft/status_sync.py` (background live flight-status sync job, also AviationStack) + `aircraft/repository.py` (AircraftTypeRepository: the local `aircraft_types` cache table, seed data, and the one-time flight-row name-normalization sweep), `llm/parser.py` (optional Ollama LLM fallback; `llm_extract_flights(email_msg)` returns validated flights or `[]` when disabled; validates IATA codes against airports DB before returning), `wikipedia/client.py` (destination photo fetch + local WebP cache). Feature packages (trips, flights, sync, settings) call into these as clients rather than owning the third-party integration logic themselves.
 
 ### Frontend (`frontend/src/`)
 - **Svelte 5** SPA with Vite; TypeScript throughout

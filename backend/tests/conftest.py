@@ -36,7 +36,7 @@ def test_db(tmp_path, monkeypatch):
 
     monkeypatch.setattr(db_module.settings, "DB_PATH", db_path)
 
-    # Also patch the config.settings so auth.py / audit_log.py see the same path.
+    # Also patch the config.settings so auth/service.py / auth/audit_log.py see the same path.
     import backend.config as cfg_module
 
     monkeypatch.setattr(cfg_module.settings, "DB_PATH", db_path)
@@ -45,11 +45,11 @@ def test_db(tmp_path, monkeypatch):
     )
 
     # Reset lazy singletons that depend on DB_PATH / SECRET_KEY.
-    import backend.auth as auth_mod
+    import backend.auth.session as auth_session_mod
 
-    auth_mod._serializer = None
+    auth_session_mod._serializer = None
 
-    import backend.audit_log as audit_mod
+    import backend.auth.audit_log as audit_mod
 
     audit_mod._audit_logger = None
 
@@ -69,28 +69,28 @@ def api_app(test_db):
     """Create a minimal FastAPI app with all API routers for integration testing."""
     from fastapi import FastAPI
 
-    from backend.routes import airports as airports_routes
-    from backend.routes import auth as auth_routes
-    from backend.routes import boarding_passes as bp_routes
-    from backend.routes import day_notes as day_notes_routes
-    from backend.routes import expenses as expenses_routes
-    from backend.routes import flights as flights_routes
-    from backend.routes import notifications as notifications_routes
-    from backend.routes import packing as packing_routes
-    from backend.routes import settings as settings_routes
-    from backend.routes import shares as shares_routes
-    from backend.routes import stats as stats_routes
-    from backend.routes import sync as sync_routes
-    from backend.routes import trip_documents as trip_documents_routes
-    from backend.routes import trips as trips_routes
-    from backend.routes import users as users_routes
+    from backend.airports import routes as airports_routes
+    from backend.auth import routes as auth_routes
+    from backend.boarding_passes import routes as bp_routes
+    from backend.day_notes import routes as day_notes_routes
+    from backend.expenses import routes as expenses_routes
+    from backend.flights import routes as flights_routes
+    from backend.notifications import routes as notifications_routes
+    from backend.packing import routes as packing_routes
+    from backend.settings import routes as settings_routes
+    from backend.stats import routes as stats_routes
+    from backend.sync import routes as sync_routes
+    from backend.trip_documents import routes as trip_documents_routes
+    from backend.trips import routes as trips_routes
+    from backend.trips import sharing_routes
+    from backend.users import routes as users_routes
 
     app = FastAPI()
     app.include_router(auth_routes.router)
     app.include_router(users_routes.router)
-    # shares router MUST be registered BEFORE trips router to avoid
+    # sharing router MUST be registered BEFORE trips router to avoid
     # /api/trips/invitations being matched by trips' /{trip_id} route
-    app.include_router(shares_routes.router)
+    app.include_router(sharing_routes.router)
     app.include_router(trips_routes.router)
     app.include_router(flights_routes.router)
     app.include_router(sync_routes.router)
@@ -128,11 +128,9 @@ def auth_client(api_app):
 
 def load_anonymized_fixture(json_filename: str):
     """
-    Load an anonymized JSON fixture (produced by email_anonymizer.save_anonymized_fixture)
-    into an EmailMessage for parser pipeline tests.
+    Load a pre-anonymized JSON fixture into an EmailMessage for parser pipeline tests.
 
-    Use this instead of load_eml_as_email_message() for fixtures that were created via
-    the automated anonymization pipeline — these contain no real PII.
+    Use this instead of load_eml_as_email_message() for fixtures that contain no real PII.
     """
     import json
     from datetime import timezone

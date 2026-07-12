@@ -17,24 +17,28 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from .airports import routes as airports_routes
+from .auth import routes as auth_routes
 from .auth import validate_secret_key
-from .database import init_database, load_airports_if_empty
+from .boarding_passes import routes as boarding_passes_routes
+from .database import init_database
+from .day_notes import routes as day_notes_routes
+from .expenses import routes as expenses_routes
+from .flights import routes as flights_routes
 from .limiter import limiter
 from .middleware import FirstRunMiddleware
-from .routes import airports, flights, settings, sync, trips
-from .routes import auth as auth_routes
-from .routes import boarding_passes as boarding_passes_routes
-from .routes import day_notes as day_notes_routes
-from .routes import expenses as expenses_routes
-from .routes import notifications as notifications_routes
-from .routes import packing as packing_routes
-from .routes import shares as shares_routes
-from .routes import stats as stats_routes
-from .routes import trip_documents as trip_documents_routes
-from .routes import users as users_routes
+from .notifications import routes as notifications_routes
+from .packing import routes as packing_routes
 from .routes import version as version_routes
 from .scheduler import start_scheduler, stop_scheduler
+from .settings import routes as settings_routes
 from .smtp_server import start_smtp_server, stop_smtp_server
+from .stats import routes as stats_routes
+from .sync import routes as sync_routes
+from .trip_documents import routes as trip_documents_routes
+from .trips import routes as trips_routes
+from .trips import sharing_routes
+from .users import routes as users_routes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +56,7 @@ if not _FRONTEND_DIR.exists():
 
 def _convert_and_cleanup(jpg_path: Path, webp_path: Path) -> None:
     """Read jpg, encode as WebP, write result, delete original — runs in a thread."""
-    from .trip_images import _resize_and_encode_webp
+    from .integrations.wikipedia.client import _resize_and_encode_webp
 
     raw = jpg_path.read_bytes()
     webp_bytes = _resize_and_encode_webp(raw)
@@ -62,7 +66,7 @@ def _convert_and_cleanup(jpg_path: Path, webp_path: Path) -> None:
 
 async def _migrate_images_to_webp() -> None:
     """Convert any legacy .jpg trip images to WebP in the background at startup."""
-    from .trip_images import _images_dir
+    from .integrations.wikipedia.client import _images_dir
 
     images_dir = _images_dir()
     jpg_files = list(images_dir.glob("*.jpg"))
@@ -89,10 +93,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Partiu...")
     validate_secret_key()  # Fail loudly if SECRET_KEY is not configured
     init_database()
-    load_airports_if_empty()
-    from .push import ensure_vapid_keys
+    from .airports.repository import AirportRepository
 
-    ensure_vapid_keys()
+    AirportRepository().load_from_csv_if_empty()
+    from .notifications import push_service
+
+    push_service.ensure_vapid_keys()
     # Reset any sync states left as "running" from a previous crash/kill
     from .database import db_write
 
@@ -133,16 +139,16 @@ app.add_middleware(
 app.add_middleware(FirstRunMiddleware)  # type: ignore[arg-type]
 
 # Include API routers
-# NOTE: shares_routes MUST be registered BEFORE trips router to avoid
+# NOTE: sharing_routes MUST be registered BEFORE trips router to avoid
 # /api/trips/invitations being matched by trips' /{trip_id} catch-all route.
 app.include_router(auth_routes.router)
 app.include_router(users_routes.router)
-app.include_router(shares_routes.router)
-app.include_router(trips.router)
-app.include_router(flights.router)
-app.include_router(sync.router)
-app.include_router(settings.router)
-app.include_router(airports.router)
+app.include_router(sharing_routes.router)
+app.include_router(trips_routes.router)
+app.include_router(flights_routes.router)
+app.include_router(sync_routes.router)
+app.include_router(settings_routes.router)
+app.include_router(airports_routes.router)
 app.include_router(stats_routes.router)
 app.include_router(notifications_routes.router)
 app.include_router(boarding_passes_routes.router)
@@ -165,14 +171,19 @@ if _FRONTEND_DIR.exists():
         fallback = Path(__file__).parent.parent / "frontend" / "public" / "manifest.json"
         return FileResponse(str(fallback))
 
+    # Never let browsers cache the service worker script or the SPA shell:
+    # both must be revalidated on every request so a new deploy is picked up
+    # promptly instead of being served stale from the HTTP cache.
+    _NO_CACHE_HEADERS = {"Cache-Control": "no-cache"}
+
     @app.get("/sw.js")
     def serve_sw():
         sw = _FRONTEND_DIR / "sw.js"
         if sw.exists():
-            return FileResponse(str(sw))
+            return FileResponse(str(sw), headers=_NO_CACHE_HEADERS)
         # sw.js lives in frontend/ root, not in dist/
         fallback = Path(__file__).parent.parent / "frontend" / "sw.js"
-        return FileResponse(str(fallback))
+        return FileResponse(str(fallback), headers=_NO_CACHE_HEADERS)
 
     # Mount all built assets (Vite outputs assets/ subdir with hashed filenames)
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIR / "assets")), name="assets") if (
@@ -196,5 +207,5 @@ if _FRONTEND_DIR.exists():
         # SPA: all other paths get index.html
         index = _FRONTEND_DIR / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            return FileResponse(str(index), headers=_NO_CACHE_HEADERS)
         return {"message": "Frontend not built"}

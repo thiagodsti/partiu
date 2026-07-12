@@ -161,7 +161,7 @@ def _extract_original_sender(raw_msg) -> str | None:
 def _process_raw_message(raw_msg, sender_address: str, user_id: int | None = None):
     """Convert a raw email.message.Message to an EmailMessage and run it through the pipeline."""
     from .parsers.email_connector import EmailMessage, get_email_body_and_html
-    from .sync_job import process_inbound_email
+    from .sync.pipeline import process_inbound_email
 
     # Prefer the From header inside the email (original sender) over the SMTP envelope
     # sender. This is critical when emails are forwarded — the envelope sender is the

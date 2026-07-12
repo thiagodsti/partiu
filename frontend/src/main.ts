@@ -6,10 +6,29 @@ import { mount } from 'svelte';
 
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
+  // Reload once a new service worker takes control, so the tab picks up the
+  // new JS/CSS bundle instead of continuing to run the old one from memory.
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
-      .then((reg) => console.log('[SW] Registered:', reg.scope))
+      .then((reg) => {
+        console.log('[SW] Registered:', reg.scope);
+        // A backgrounded PWA reopened from the home screen often resumes its
+        // existing page instead of doing a fresh navigation, so the browser's
+        // own update check never fires. Force one whenever the app regains
+        // focus/visibility to catch new deploys promptly.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update();
+        });
+        window.addEventListener('focus', () => reg.update());
+      })
       .catch((err) => console.warn('[SW] Registration failed:', err));
   });
 }

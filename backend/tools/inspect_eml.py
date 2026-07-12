@@ -64,7 +64,7 @@ def _load_eml(path: Path):
 
 
 def _inspect(path: Path) -> None:
-    from backend.llm_parser import llm_available, llm_extract_flights
+    from backend.integrations.llm.parser import llm_available, llm_extract_flights
     from backend.parsers.builtin_rules import get_builtin_rules
     from backend.parsers.engine import (
         extract_flights_from_email,

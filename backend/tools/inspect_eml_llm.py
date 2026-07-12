@@ -6,7 +6,7 @@ normalised output — so you can debug exactly what the model returned and
 why any flight was rejected.
 
 Uses the exact same production functions: _call_ollama, _validate_flight,
-_normalise_flight from llm_parser.py.
+_normalise_flight from backend/integrations/llm/parser.py.
 
 Usage:
     uv run python -m backend.tools.inspect_eml_llm ~/Downloads/brussels.eml
@@ -122,7 +122,7 @@ def _dump_html_structure(html: str) -> None:
 
 def _inspect(path: Path, dump_body: bool = False, dump_html: bool = False) -> None:
     from backend.config import settings
-    from backend.llm_parser import (
+    from backend.integrations.llm.parser import (
         _PROMPT_USER_TEMPLATE,
         _call_ollama,
         _normalise_flight,

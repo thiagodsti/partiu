@@ -72,7 +72,11 @@ def _load_email(eml_path: str):
 def _run_model(email_msg, model: str, ollama_url: str) -> dict:
     from datetime import UTC, datetime
 
-    from backend.llm_parser import _PROMPT_USER_TEMPLATE, _call_ollama, _validate_flight
+    from backend.integrations.llm.parser import (
+        _PROMPT_USER_TEMPLATE,
+        _call_ollama,
+        _validate_flight,
+    )
     from backend.parsers.shared import html_to_text
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
