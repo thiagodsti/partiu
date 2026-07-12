@@ -48,6 +48,8 @@ Want to try it before self-hosting? A public demo is available at:
 - Add notes per flight (up to 10,000 chars)
 - Calendar-style day notes per trip
 - Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency
+- Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency
+- Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings
 
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)

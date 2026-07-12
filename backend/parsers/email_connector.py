@@ -133,12 +133,6 @@ def get_email_body_and_html(msg) -> tuple[str, str | None, list[bytes], list[str
     return text_body, raw_html, pdf_bytes_list, ics_texts
 
 
-def get_email_body(msg) -> str:
-    """Extract text from an email message (backward-compatible wrapper)."""
-    text_body, _, _, _ = get_email_body_and_html(msg)
-    return text_body
-
-
 class EmailMessage:
     """Lightweight container for a fetched email."""
 

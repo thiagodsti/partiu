@@ -53,6 +53,12 @@ export interface PackingItem {
   created_at: string;
 }
 
+export interface Participant {
+  type: 'user' | 'guest';
+  id: number;
+  name: string;
+}
+
 export interface TripExpense {
   id: string;
   trip_id: string;
@@ -61,8 +67,27 @@ export interface TripExpense {
   currency: string;
   created_by: number | null;
   created_by_username: string | null;
+  paid_by: Participant;
+  participants: Participant[];
   created_at: string;
   updated_at: string;
+}
+
+export interface Guest {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+export interface BalanceEntry {
+  type: 'user' | 'guest';
+  id: number;
+  name: string;
+  net: number;
+}
+
+export interface Balances {
+  balances: Record<string, BalanceEntry[]>;
 }
 
 export interface TripShare {

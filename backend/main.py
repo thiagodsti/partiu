@@ -23,6 +23,7 @@ from .auth import validate_secret_key
 from .boarding_passes import routes as boarding_passes_routes
 from .database import init_database
 from .day_notes import routes as day_notes_routes
+from .expenses import guests_routes
 from .expenses import routes as expenses_routes
 from .flights import routes as flights_routes
 from .limiter import limiter
@@ -154,6 +155,7 @@ app.include_router(notifications_routes.router)
 app.include_router(boarding_passes_routes.router)
 app.include_router(day_notes_routes.router)
 app.include_router(expenses_routes.router)
+app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)

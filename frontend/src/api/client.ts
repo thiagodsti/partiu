@@ -7,6 +7,9 @@ import type {
   Trip,
   PackingItem,
   TripExpense,
+  Participant,
+  Guest,
+  Balances,
   Flight,
   PaginatedFlights,
   Airport,
@@ -41,6 +44,20 @@ interface RequestOptions {
   credentials: RequestCredentials;
 }
 
+/** Thrown for API errors that carry a machine-readable code + params, so the
+ * caller can render a translated message instead of the raw (English-only) detail. */
+export class ApiError extends Error {
+  code?: string;
+  params?: Record<string, string | number>;
+
+  constructor(message: string, code?: string, params?: Record<string, string | number>) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.params = params;
+  }
+}
+
 async function _request<T>(method: string, path: string, body: unknown = null): Promise<T> {
   const opts: RequestOptions = {
     method,
@@ -59,12 +76,17 @@ async function _request<T>(method: string, path: string, body: unknown = null): 
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const d = data as { detail?: string; error?: string; message?: string; setup_required?: boolean };
+    const d = data as { detail?: unknown; error?: string; message?: string; setup_required?: boolean };
     // Special marker so App.svelte can detect first-run state
     if (res.status === 503 && d.setup_required) {
       throw new Error('setup_required');
     }
-    const message = d.detail || d.error || d.message || `HTTP ${res.status}`;
+    if (d.detail && typeof d.detail === 'object') {
+      const nested = d.detail as { message?: string; error?: string; params?: Record<string, string | number> };
+      throw new ApiError(nested.message || `HTTP ${res.status}`, nested.error, nested.params);
+    }
+    const detail = typeof d.detail === 'string' ? d.detail : undefined;
+    const message = detail || d.error || d.message || `HTTP ${res.status}`;
     throw new Error(message);
   }
 
@@ -313,14 +335,32 @@ export const dayNotesApi = {
     _request<{ ok: boolean }>('PATCH', `/api/trips/${tripId}/day-notes/${date}`, { content }),
 };
 
+export interface ExpenseWriteData {
+  description: string;
+  amount: number;
+  currency: string;
+  paid_by?: { type: 'user' | 'guest'; id: number };
+  participants?: { type: 'user' | 'guest'; id: number }[];
+}
+
 export const expensesApi = {
   list: (tripId: string) => get<TripExpense[]>(`/api/trips/${tripId}/expenses`),
-  create: (tripId: string, data: { description: string; amount: number; currency: string }) =>
+  create: (tripId: string, data: ExpenseWriteData) =>
     post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/expenses`, data),
-  update: (tripId: string, expenseId: string, data: { description?: string; amount?: number; currency?: string }) =>
+  update: (tripId: string, expenseId: string, data: Partial<ExpenseWriteData>) =>
     patch<{ ok: boolean }>(`/api/trips/${tripId}/expenses/${expenseId}`, data),
   delete: (tripId: string, expenseId: string) =>
     del<null>(`/api/trips/${tripId}/expenses/${expenseId}`),
+  participants: (tripId: string) =>
+    get<Participant[]>(`/api/trips/${tripId}/expenses/participants`),
+  balances: (tripId: string) => get<Balances>(`/api/trips/${tripId}/expenses/balances`),
+};
+
+export const guestsApi = {
+  list: () => get<Guest[]>('/api/guests'),
+  create: (name: string) => post<{ id: number; ok: boolean }>('/api/guests', { name }),
+  update: (guestId: number, name: string) => patch<Guest>(`/api/guests/${guestId}`, { name }),
+  delete: (guestId: number) => del<null>(`/api/guests/${guestId}`),
 };
 
 export interface NonFlightDomain {

@@ -9,6 +9,8 @@ const {
   mockNotifVapidStatus, mockNotifGetPrefs,
   mockAirportCount, mockReloadAirports,
   mockAuthChangePassword,
+  mockGuestsList, mockGuestsCreate, mockGuestsUpdate, mockGuestsDelete,
+  MockApiError,
 } = vi.hoisted(() => ({
   mockSettingsGet: vi.fn(),
   mockSettingsUpdate: vi.fn(),
@@ -20,6 +22,19 @@ const {
   mockAirportCount: vi.fn(),
   mockReloadAirports: vi.fn(),
   mockAuthChangePassword: vi.fn(),
+  mockGuestsList: vi.fn(),
+  mockGuestsCreate: vi.fn(),
+  mockGuestsUpdate: vi.fn(),
+  mockGuestsDelete: vi.fn(),
+  MockApiError: class ApiError extends Error {
+    code?: string;
+    params?: Record<string, unknown>;
+    constructor(message: string, code?: string, params?: Record<string, unknown>) {
+      super(message);
+      this.code = code;
+      this.params = params;
+    }
+  },
 }));
 
 vi.mock('../api/client', () => ({
@@ -43,6 +58,18 @@ vi.mock('../api/client', () => ({
   versionApi: {
     get: vi.fn().mockResolvedValue({ current_version: '2.2.5', latest_version: null, update_available: false }),
   },
+  sharesApi: {
+    listTrustedUsers: vi.fn().mockResolvedValue([]),
+    addTrustedUser: vi.fn(),
+    removeTrustedUser: vi.fn(),
+  },
+  guestsApi: {
+    list: mockGuestsList,
+    create: mockGuestsCreate,
+    update: mockGuestsUpdate,
+    delete: mockGuestsDelete,
+  },
+  ApiError: MockApiError,
 }));
 
 vi.mock('../lib/authStore', () => ({
@@ -107,6 +134,7 @@ describe('SettingsPage', () => {
     mockNotifVapidStatus.mockResolvedValue({ configured: true, source: 'auto' });
     mockNotifGetPrefs.mockResolvedValue({ flight_reminder: true, checkin_reminder: true, trip_reminder: true, delay_alert: true });
     mockAirportCount.mockResolvedValue({ count: 5000 });
+    mockGuestsList.mockResolvedValue([]);
   });
 
   it('shows loading screen initially', () => {
@@ -157,5 +185,82 @@ describe('SettingsPage', () => {
   it('shows admin-only Push Notifications section for admin user', async () => {
     const { container } = render(SettingsPage);
     await waitFor(() => expect(container.textContent).toContain('settings.push_title'));
+  });
+
+  describe('Guests', () => {
+    it('renders existing guests', async () => {
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      const { container } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+    });
+
+    it('shows empty state when there are no guests', async () => {
+      const { container } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('settings.no_guests_yet'));
+    });
+
+    it('adds a guest and shows it in the list', async () => {
+      mockGuestsCreate.mockResolvedValue({ id: 2, ok: true });
+      const { container, getByPlaceholderText, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('settings.no_guests_yet'));
+
+      const input = getByPlaceholderText('settings.guest_name_placeholder') as HTMLInputElement;
+      await fireEvent.input(input, { target: { value: 'Grandpa' } });
+      await fireEvent.click(getByText('settings.add_guest'));
+
+      await waitFor(() => expect(mockGuestsCreate).toHaveBeenCalledWith('Grandpa'));
+      await waitFor(() => expect(container.textContent).toContain('Grandpa'));
+    });
+
+    it('renames a guest', async () => {
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsUpdate.mockResolvedValue({ id: 1, name: 'Grandpa', created_at: '2026-01-01T00:00:00Z' });
+      const { container, getByText, getByDisplayValue } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      await fireEvent.click(getByText('settings.edit_guest'));
+      const editInput = getByDisplayValue('Grandma') as HTMLInputElement;
+      await fireEvent.input(editInput, { target: { value: 'Grandpa' } });
+      await fireEvent.click(getByText('settings.save_guest'));
+
+      await waitFor(() => expect(mockGuestsUpdate).toHaveBeenCalledWith(1, 'Grandpa'));
+      await waitFor(() => expect(container.textContent).toContain('Grandpa'));
+    });
+
+    it('deletes a guest', async () => {
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsDelete.mockResolvedValue(null);
+      const { container, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      await fireEvent.click(getByText('settings.delete_guest'));
+
+      await waitFor(() => expect(mockGuestsDelete).toHaveBeenCalledWith(1));
+      await waitFor(() => expect(container.textContent).not.toContain('Grandma'));
+    });
+
+    it('shows a translated error message when delete fails because the guest is in use', async () => {
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsDelete.mockRejectedValue(
+        new MockApiError('Guest Grandma is used in 3 existing expense(s)', 'guest_in_use', { name: 'Grandma', count: 3 })
+      );
+      const { container, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      await fireEvent.click(getByText('settings.delete_guest'));
+
+      await waitFor(() => expect(container.textContent).toContain('settings.guest_in_use_error'));
+    });
+
+    it('falls back to the raw error message for errors without a known code', async () => {
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsDelete.mockRejectedValue(new Error('Guest not found'));
+      const { container, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      await fireEvent.click(getByText('settings.delete_guest'));
+
+      await waitFor(() => expect(container.textContent).toContain('Guest not found'));
+    });
   });
 });

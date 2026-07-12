@@ -750,34 +750,6 @@ def make_flight_dict(
     }
 
 
-def _extract_booking_reference(soup, subject: str = "") -> str:
-    """Extract a booking / PNR reference code from the email subject and body."""
-    return _extract_booking_ref_text(subject + "\n" + _get_text(soup))
-
-
-def _extract_passenger_name(soup) -> str:
-    """Extract passenger name from greeting or passenger-list marker."""
-    text = _get_text(soup)
-
-    m = re.search(
-        r"(?:Lista\s+de\s+passageiros|passenger\s*(?:list|name)|"
-        r"Passagier|Reisender|passager|passasjer)"
-        r"[\s:]*[-•·]?\s*"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
-        text,
-        re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip()
-
-    m = re.search(
-        r"(?:Ol[áa]|Hello|Hola)\s+(?:<b[^>]*>)?\s*([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)",
-        text,
-        re.IGNORECASE,
-    )
-    return m.group(1).strip() if m else ""
-
-
 # ---------------------------------------------------------------------------
 # Public API — consistent names used by every parser
 # ---------------------------------------------------------------------------

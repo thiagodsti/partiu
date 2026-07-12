@@ -9,7 +9,7 @@
  *   - everything else      → network-first (app shell, always get latest deploy)
  */
 
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v18';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
