@@ -73,6 +73,7 @@ def api_app(test_db):
     from backend.auth import routes as auth_routes
     from backend.boarding_passes import routes as bp_routes
     from backend.day_notes import routes as day_notes_routes
+    from backend.expenses import guests_routes
     from backend.expenses import routes as expenses_routes
     from backend.flights import routes as flights_routes
     from backend.notifications import routes as notifications_routes
@@ -101,6 +102,7 @@ def api_app(test_db):
     app.include_router(trip_documents_routes.router)
     app.include_router(day_notes_routes.router)
     app.include_router(expenses_routes.router)
+    app.include_router(guests_routes.router)
     app.include_router(packing_routes.router)
     app.include_router(stats_routes.router)
     return app

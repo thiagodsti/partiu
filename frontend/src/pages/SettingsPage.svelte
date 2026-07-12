@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, versionApi } from "../api/client";
+  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, guestsApi, versionApi, ApiError } from "../api/client";
   import type { NonFlightDomain } from "../api/client";
-  import type { Settings, SyncStatus, NotifPreferences, TrustedUser, VersionInfo } from "../api/types";
+  import type { Settings, SyncStatus, NotifPreferences, TrustedUser, Guest, VersionInfo } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -651,6 +651,79 @@
   async function removeTrustedUser(userId: number) {
     await sharesApi.removeTrustedUser(userId);
     trustedUsers = trustedUsers.filter((u) => u.user_id !== userId);
+  }
+
+  // ---- Guests ----
+  let guests = $state<Guest[]>([]);
+  let guestsLoading = $state(false);
+  let newGuestName = $state('');
+  let addingGuest = $state(false);
+  let guestError = $state('');
+  let editingGuestId = $state<number | null>(null);
+  let editingGuestName = $state('');
+
+  async function loadGuests() {
+    guestsLoading = true;
+    try {
+      guests = await guestsApi.list();
+    } catch { /* ignore */ } finally {
+      guestsLoading = false;
+    }
+  }
+
+  loadGuests();
+
+  async function addGuest() {
+    if (!newGuestName.trim()) return;
+    addingGuest = true;
+    guestError = '';
+    try {
+      const { id } = await guestsApi.create(newGuestName.trim());
+      guests = [...guests, { id, name: newGuestName.trim(), created_at: new Date().toISOString() }].sort((a, b) => a.name.localeCompare(b.name));
+      newGuestName = '';
+    } catch (err) {
+      guestError = (err as Error).message;
+    } finally {
+      addingGuest = false;
+    }
+  }
+
+  function startEditGuest(guest: Guest) {
+    editingGuestId = guest.id;
+    editingGuestName = guest.name;
+    guestError = '';
+  }
+
+  function cancelEditGuest() {
+    editingGuestId = null;
+    editingGuestName = '';
+  }
+
+  async function saveGuest(guestId: number) {
+    if (!editingGuestName.trim()) return;
+    guestError = '';
+    try {
+      const updated = await guestsApi.update(guestId, editingGuestName.trim());
+      guests = guests.map((g) => (g.id === guestId ? updated : g)).sort((a, b) => a.name.localeCompare(b.name));
+      editingGuestId = null;
+      editingGuestName = '';
+    } catch (err) {
+      guestError = (err as Error).message;
+    }
+  }
+
+  async function deleteGuest(guestId: number) {
+    guestError = '';
+    try {
+      await guestsApi.delete(guestId);
+      guests = guests.filter((g) => g.id !== guestId);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'guest_in_use' && err.params) {
+        guestError = $t('settings.guest_in_use_error', { values: err.params });
+      } else {
+        guestError = (err as Error).message;
+      }
+    }
   }
 </script>
 
@@ -1578,6 +1651,65 @@
               <button class="btn btn-danger btn-sm" onclick={() => removeTrustedUser(tu.user_id)}>
                 {$t('settings.remove_trusted_user')}
               </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+
+    <!-- Guests -->
+    <div class="settings-section">
+      <div class="settings-section-title">{$t('settings.guests')}</div>
+      <div class="form-hint" style="margin-bottom:var(--space-sm)">{$t('settings.guests_desc')}</div>
+      <div style="display:flex;gap:var(--space-xs);margin-bottom:var(--space-sm)">
+        <input
+          type="text"
+          class="form-input"
+          placeholder={$t('settings.guest_name_placeholder')}
+          bind:value={newGuestName}
+          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGuest(); } }}
+          style="flex:1"
+        />
+        <button class="btn btn-primary btn-sm" disabled={addingGuest || !newGuestName.trim()} onclick={addGuest}>
+          {$t('settings.add_guest')}
+        </button>
+      </div>
+      {#if guestError}
+        <p style="color:var(--error,red);font-size:0.85rem;margin:0 0 var(--space-xs)">{guestError}</p>
+      {/if}
+      {#if guestsLoading}
+        <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.failed_emails_loading')}</p>
+      {:else if guests.length === 0}
+        <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.no_guests_yet')}</p>
+      {:else}
+        <ul style="list-style:none;padding:0;margin:0">
+          {#each guests as guest (guest.id)}
+            <li style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-xs);padding:var(--space-xs) 0">
+              {#if editingGuestId === guest.id}
+                <input
+                  type="text"
+                  class="form-input"
+                  bind:value={editingGuestName}
+                  onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveGuest(guest.id); } if (e.key === 'Escape') cancelEditGuest(); }}
+                  style="flex:1"
+                />
+                <button class="btn btn-primary btn-sm" disabled={!editingGuestName.trim()} onclick={() => saveGuest(guest.id)}>
+                  {$t('settings.save_guest')}
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick={cancelEditGuest}>
+                  {$t('settings.cancel')}
+                </button>
+              {:else}
+                <span>{guest.name}</span>
+                <span style="display:flex;gap:var(--space-xs)">
+                  <button class="btn btn-secondary btn-sm" onclick={() => startEditGuest(guest)}>
+                    {$t('settings.edit_guest')}
+                  </button>
+                  <button class="btn btn-danger btn-sm" onclick={() => deleteGuest(guest.id)}>
+                    {$t('settings.delete_guest')}
+                  </button>
+                </span>
+              {/if}
             </li>
           {/each}
         </ul>
