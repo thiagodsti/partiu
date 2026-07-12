@@ -179,6 +179,7 @@
   async function addExpense() {
     const amount = Number(newAmount);
     if (!newDesc.trim() || !newAmount || isNaN(amount) || amount <= 0) return;
+    if (newParticipantKeys.size === 0) return;
     adding = true;
     addError = null;
     const desc = newDesc.trim();

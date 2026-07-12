@@ -319,6 +319,83 @@ class TestParticipantsAndPaidBy:
         )
         assert r2.status_code == 400
 
+    def test_update_paid_by_and_participants(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip U2"})
+        trip_id = r.json()["id"]
+        me = auth_client.get("/api/auth/me").json()["id"]
+        collaborator = _make_user(api_app, "exp_collab3")
+        auth_client.post(f"/api/trips/{trip_id}/share", json={"username": "exp_collab3"})
+        invitations = collaborator.get("/api/trips/invitations").json()
+        collaborator.post(f"/api/trips/invitations/{invitations[0]['id']}/accept")
+        collab_id = next(
+            p["id"]
+            for p in auth_client.get(f"/api/trips/{trip_id}/expenses/participants").json()
+            if p["id"] != me
+        )
+        guest = auth_client.post("/api/guests", json={"name": "Friend"}).json()["id"]
+
+        expense_id = auth_client.post(
+            f"/api/trips/{trip_id}/expenses",
+            json={"description": "Lunch", "amount": 100.0, "currency": "EUR"},
+        ).json()["id"]
+
+        r2 = auth_client.patch(
+            f"/api/trips/{trip_id}/expenses/{expense_id}",
+            json={
+                "paid_by": {"type": "user", "id": collab_id},
+                "participants": [{"type": "user", "id": collab_id}, {"type": "guest", "id": guest}],
+            },
+        )
+        assert r2.status_code == 200
+
+        [expense] = auth_client.get(f"/api/trips/{trip_id}/expenses").json()
+        assert expense["paid_by"] == {"type": "user", "id": collab_id, "name": "exp_collab3"}
+        participant_keys = {(p["type"], p["id"]) for p in expense["participants"]}
+        assert participant_keys == {("user", collab_id), ("guest", guest)}
+
+    def test_update_rejects_paid_by_not_on_trip(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip U3"})
+        trip_id = r.json()["id"]
+        expense_id = auth_client.post(
+            f"/api/trips/{trip_id}/expenses",
+            json={"description": "Lunch", "amount": 100.0, "currency": "EUR"},
+        ).json()["id"]
+
+        r2 = auth_client.patch(
+            f"/api/trips/{trip_id}/expenses/{expense_id}",
+            json={"paid_by": {"type": "user", "id": 999999}},
+        )
+        assert r2.status_code == 400
+
+    def test_update_rejects_participant_not_on_trip(self, auth_client):
+        r = auth_client.post("/api/trips", json={"name": "Trip U4"})
+        trip_id = r.json()["id"]
+        expense_id = auth_client.post(
+            f"/api/trips/{trip_id}/expenses",
+            json={"description": "Lunch", "amount": 100.0, "currency": "EUR"},
+        ).json()["id"]
+
+        r2 = auth_client.patch(
+            f"/api/trips/{trip_id}/expenses/{expense_id}",
+            json={"participants": [{"type": "user", "id": 999999}]},
+        )
+        assert r2.status_code == 400
+
+    def test_update_other_users_trip_returns_404(self, auth_client, api_app):
+        r = auth_client.post("/api/trips", json={"name": "Trip U5"})
+        trip_id = r.json()["id"]
+        expense_id = auth_client.post(
+            f"/api/trips/{trip_id}/expenses",
+            json={"description": "Lunch", "amount": 100.0, "currency": "EUR"},
+        ).json()["id"]
+
+        other = _make_user(api_app, "exp_other4")
+        r2 = other.patch(
+            f"/api/trips/{trip_id}/expenses/{expense_id}",
+            json={"participants": []},
+        )
+        assert r2.status_code == 404
+
     def test_get_balances_equal_split(self, auth_client):
         r = auth_client.post("/api/trips", json={"name": "Trip V"})
         trip_id = r.json()["id"]

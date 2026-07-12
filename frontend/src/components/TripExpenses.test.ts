@@ -155,6 +155,28 @@ describe('TripExpenses', () => {
     expect(payload.participants).toEqual([{ type: 'user', id: 1 }]);
   });
 
+  it('does not submit when every participant is unchecked, even via Enter', async () => {
+    const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+    await waitFor(() => getByText('+ expenses.add'));
+    await fireEvent.click(getByText('+ expenses.add'));
+
+    const desc = container.querySelector('.expense-input-desc') as HTMLInputElement;
+    const amount = container.querySelector('.expense-input-amount') as HTMLInputElement;
+    await fireEvent.input(desc, { target: { value: 'Taxi' } });
+    await fireEvent.input(amount, { target: { value: '40' } });
+
+    const chips = container.querySelectorAll('.expense-participant-chip');
+    await fireEvent.click(chips[0]);
+    await fireEvent.click(chips[1]);
+
+    const saveButton = getByText('expenses.save') as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+
+    await fireEvent.keyDown(amount, { key: 'Enter' });
+
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it('quick-adding a guest creates it and checks it as a participant', async () => {
     const { container, getByText, getByPlaceholderText } = render(TripExpenses, { tripId: 't1' });
     await waitFor(() => getByText('+ expenses.add'));

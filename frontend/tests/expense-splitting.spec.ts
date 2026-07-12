@@ -119,10 +119,12 @@ test('lunch split between owner, spouse and two guests nets the expected balance
     expect(netOf('guest', guestIds[0])).toBe(-25);
     expect(netOf('guest', guestIds[1])).toBe(-25);
   } finally {
+    // Delete the trip (and its expenses) first — guests referenced by an
+    // existing expense can't be deleted, so this must happen before guest cleanup.
+    await ownerCtx.delete(`/api/trips/${trip.id}`);
     for (const guestId of guestIds) {
       await ownerCtx.delete(`/api/guests/${guestId}`).catch(() => {});
     }
-    await ownerCtx.delete(`/api/trips/${trip.id}`);
     await ownerCtx.dispose();
     await spouseCtx.dispose();
   }
@@ -151,7 +153,9 @@ test('a guest cannot be deleted while referenced by an expense', async () => {
     const deleteRes = await ownerCtx.delete(`/api/guests/${guestId}`);
     expect(deleteRes.status()).toBe(400);
   } finally {
+    // Trip (and its expense) first, so the guest is no longer referenced and can be cleaned up.
     await ownerCtx.delete(`/api/trips/${trip.id}`);
+    await ownerCtx.delete(`/api/guests/${guestId}`).catch(() => {});
     await ownerCtx.dispose();
     await spouseCtx.dispose();
   }
@@ -180,8 +184,10 @@ test('a guest tagged on one trip does not show up on an unrelated trip', async (
     expect(participantsA.some((p: { type: string; id: number }) => p.type === 'guest' && p.id === guestId)).toBe(true);
     expect(participantsB.some((p: { type: string; id: number }) => p.type === 'guest' && p.id === guestId)).toBe(false);
   } finally {
+    // Trips first, so the guest is no longer referenced and can be cleaned up.
     await ownerCtx.delete(`/api/trips/${tripA.id}`);
     await ownerCtx.delete(`/api/trips/${tripB.id}`);
+    await ownerCtx.delete(`/api/guests/${guestId}`).catch(() => {});
     await ownerCtx.dispose();
     await spouseCtx.dispose();
   }

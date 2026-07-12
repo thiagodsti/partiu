@@ -442,6 +442,7 @@
   "settings.remove_trusted_user": "Remove",
   "settings.guests": "Guests",
   "settings.guests_desc": "Non-account trip companions you can add as expense payers or participants.",
+  "settings.guests_loading": "Loading guests…",
   "settings.guest_name_placeholder": "Guest name",
   "settings.add_guest": "Add",
   "settings.edit_guest": "Edit",

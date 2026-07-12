@@ -47,10 +47,9 @@ class GuestService:
         guest = self._repository.get(guest_id)
         if guest is None or guest.owner_id != user_id:
             raise GuestNotFoundError(guest_id)
-        count = self._repository.count_references(guest_id)
+        count = self._repository.delete_if_unused(guest_id, user_id)
         if count > 0:
             raise GuestInUseError(guest.name, count)
-        self._repository.delete(guest_id, user_id)
 
 
 guest_service = GuestService()

@@ -1,43 +1,10 @@
 """Tests for backend.expenses.service (trip-access checks + validation rules)."""
 
-import itertools
-import uuid
 from datetime import UTC, datetime
 
 import pytest
 
-_user_counter = itertools.count(1)
-
-
-def _seed_user(db_path: str) -> int:
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    username = f"testuser{next(_user_counter)}"
-    conn.execute(
-        "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
-        (username, "hashed", 0, datetime.now(UTC).isoformat()),
-    )
-    conn.commit()
-    user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
-    return user_id
-
-
-def _seed_trip(db_path: str, user_id: int) -> str:
-    import sqlite3
-
-    trip_id = str(uuid.uuid4())
-    now = datetime.now(UTC).isoformat()
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "INSERT INTO trips (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (trip_id, user_id, "Test Trip", now, now),
-    )
-    conn.commit()
-    conn.close()
-    return trip_id
+from backend.tests.expenses.conftest import _seed_guest, _seed_trip, _seed_user
 
 
 def _seed_accepted_share(db_path: str, trip_id: str, owner_id: int, collaborator_id: int) -> None:
@@ -52,20 +19,6 @@ def _seed_accepted_share(db_path: str, trip_id: str, owner_id: int, collaborator
     )
     conn.commit()
     conn.close()
-
-
-def _seed_guest(db_path: str, owner_id: int, name: str = "Guest") -> int:
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "INSERT INTO guests (owner_id, name, created_at) VALUES (?, ?, ?)",
-        (owner_id, name, datetime.now(UTC).isoformat()),
-    )
-    conn.commit()
-    guest_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
-    return guest_id
 
 
 class TestListExpenses:
@@ -309,6 +262,22 @@ class TestCreateExpenseWithSplits:
         assert (expense.paid_by.type, expense.paid_by.id) == ("user", owner_id)
         keys = {(p.type, p.id) for p in expense.participants}
         assert keys == {("user", owner_id), ("user", collaborator_id)}
+
+    def test_explicit_empty_participants_is_not_defaulted(self, test_db):
+        """An explicit `participants: []` means "don't split this with anyone" —
+        it must not silently fall back to the default (everyone on the trip)."""
+        from backend.expenses.service import ExpenseService
+
+        service = ExpenseService()
+        owner_id = _seed_user(test_db)
+        collaborator_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        _seed_accepted_share(test_db, trip_id, owner_id, collaborator_id)
+
+        service.create_expense(trip_id, owner_id, "Personal item", 20.0, "EUR", participants=[])
+        [expense] = service.list_expenses(trip_id, owner_id)
+
+        assert expense.participants == []
 
     def test_explicit_paid_by_and_participants(self, test_db):
         from backend.expenses.service import ExpenseService

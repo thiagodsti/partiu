@@ -1,43 +1,11 @@
 """Tests for backend.expenses.guests_service (ownership checks + trip-scoped picker)."""
 
-import itertools
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 
-_user_counter = itertools.count(1)
-
-
-def _seed_user(db_path: str) -> int:
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    username = f"testuser{next(_user_counter)}"
-    conn.execute(
-        "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
-        (username, "hashed", 0, datetime.now(UTC).isoformat()),
-    )
-    conn.commit()
-    user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
-    return user_id
-
-
-def _seed_trip(db_path: str, user_id: int) -> str:
-    import sqlite3
-
-    trip_id = str(uuid.uuid4())
-    now = datetime.now(UTC).isoformat()
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "INSERT INTO trips (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (trip_id, user_id, "Test Trip", now, now),
-    )
-    conn.commit()
-    conn.close()
-    return trip_id
+from backend.tests.expenses.conftest import _seed_trip, _seed_user
 
 
 class TestCreate:

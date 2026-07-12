@@ -1678,7 +1678,7 @@
         <p style="color:var(--error,red);font-size:0.85rem;margin:0 0 var(--space-xs)">{guestError}</p>
       {/if}
       {#if guestsLoading}
-        <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.failed_emails_loading')}</p>
+        <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.guests_loading')}</p>
       {:else if guests.length === 0}
         <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.no_guests_yet')}</p>
       {:else}

@@ -54,12 +54,11 @@ class GuestRepository:
     def create(self, owner_id: int, name: str) -> int:
         now = now_iso()
         with db_write() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO guests (owner_id, name, created_at) VALUES (?, ?, ?)",
                 (owner_id, name, now),
             )
-            guest_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return guest_id
+            return cursor.lastrowid
 
     def update(self, guest_id: int, owner_id: int, name: str) -> None:
         with db_write() as conn:
@@ -68,13 +67,12 @@ class GuestRepository:
                 (name, guest_id, owner_id),
             )
 
-    def delete(self, guest_id: int, owner_id: int) -> None:
+    def delete_if_unused(self, guest_id: int, owner_id: int) -> int:
+        """Delete the guest unless it's referenced by an expense, atomically — the
+        reference count and the delete happen under the same write-lock hold, so a
+        concurrent request can't tag the guest in a new expense between the check
+        and the delete. Returns the reference count found (0 means deleted)."""
         with db_write() as conn:
-            conn.execute("DELETE FROM guests WHERE id = ? AND owner_id = ?", (guest_id, owner_id))
-
-    def count_references(self, guest_id: int) -> int:
-        """Number of distinct expenses that reference this guest, as payer or participant."""
-        with db_conn() as conn:
             row = conn.execute(
                 """SELECT COUNT(DISTINCT id) FROM (
                        SELECT expense_id AS id FROM trip_expense_participants WHERE guest_id = ?
@@ -83,4 +81,9 @@ class GuestRepository:
                    )""",
                 (guest_id, guest_id),
             ).fetchone()
-        return row[0]
+            count = row[0]
+            if count == 0:
+                conn.execute(
+                    "DELETE FROM guests WHERE id = ? AND owner_id = ?", (guest_id, owner_id)
+                )
+            return count

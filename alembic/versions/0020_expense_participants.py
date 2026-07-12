@@ -26,10 +26,20 @@ def upgrade() -> None:
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_guests_owner ON guests(owner_id)")
 
-    op.execute("ALTER TABLE trip_expenses ADD COLUMN paid_by_user_id INTEGER")
-    op.execute("ALTER TABLE trip_expenses ADD COLUMN paid_by_guest_id INTEGER")
+    op.execute(
+        "ALTER TABLE trip_expenses ADD COLUMN paid_by_user_id "
+        "INTEGER REFERENCES users(id) ON DELETE SET NULL"
+    )
+    op.execute(
+        "ALTER TABLE trip_expenses ADD COLUMN paid_by_guest_id "
+        "INTEGER REFERENCES guests(id) ON DELETE SET NULL"
+    )
     op.execute(
         "UPDATE trip_expenses SET paid_by_user_id = created_by WHERE paid_by_user_id IS NULL"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trip_expenses_paid_by_guest "
+        "ON trip_expenses(paid_by_guest_id)"
     )
 
     op.execute("""
@@ -45,10 +55,23 @@ def upgrade() -> None:
         "CREATE INDEX IF NOT EXISTS idx_expense_participants_expense "
         "ON trip_expense_participants(expense_id)"
     )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expense_participants_guest "
+        "ON trip_expense_participants(guest_id)"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_participants_user_unique "
+        "ON trip_expense_participants(expense_id, user_id) WHERE user_id IS NOT NULL"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_participants_guest_unique "
+        "ON trip_expense_participants(expense_id, guest_id) WHERE guest_id IS NOT NULL"
+    )
 
 
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS trip_expense_participants")
+    op.execute("DROP INDEX IF EXISTS idx_trip_expenses_paid_by_guest")
     op.execute("ALTER TABLE trip_expenses DROP COLUMN paid_by_guest_id")
     op.execute("ALTER TABLE trip_expenses DROP COLUMN paid_by_user_id")
     op.execute("DROP TABLE IF EXISTS guests")

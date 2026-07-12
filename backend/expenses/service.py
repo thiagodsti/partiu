@@ -83,14 +83,13 @@ class ExpenseService:
 
         Field validation runs before the trip-access check (matches the original
         route's behavior: bad input on someone else's trip returns 400, not 404).
+        The access check itself happens inside list_participants_for_trip below.
         paid_by defaults to the creator; participants default to everyone
         currently on the trip.
         """
         clean_description = self._validate_description(description)
         self._validate_amount(amount)
         clean_currency = self._validate_currency(currency)
-
-        self._check_access(trip_id, user_id)
 
         trip_participants = self.list_participants_for_trip(trip_id, user_id)
         valid_choices = self._acceptable_choices(trip_id, user_id, trip_participants)
@@ -137,9 +136,13 @@ class ExpenseService:
         if currency is not None:
             updates["currency"] = self._validate_currency(currency)
 
-        if paid_by is not None:
+        trip_participants: list[ParticipantRef] = []
+        valid_choices: list[ParticipantRef] = []
+        if paid_by is not None or participants is not None:
             trip_participants = self.list_participants_for_trip(trip_id, user_id)
             valid_choices = self._acceptable_choices(trip_id, user_id, trip_participants)
+
+        if paid_by is not None:
             paid_by_type, paid_by_id = self._resolve_paid_by(paid_by, user_id, valid_choices)
             updates["paid_by_user_id"] = paid_by_id if paid_by_type == "user" else None
             updates["paid_by_guest_id"] = paid_by_id if paid_by_type == "guest" else None
@@ -148,8 +151,6 @@ class ExpenseService:
             self._repository.update(expense_id, trip_id, updates)
 
         if participants is not None:
-            trip_participants = self.list_participants_for_trip(trip_id, user_id)
-            valid_choices = self._acceptable_choices(trip_id, user_id, trip_participants)
             resolved_participants = self._resolve_participants(
                 participants, trip_participants, valid_choices
             )
@@ -216,7 +217,7 @@ class ExpenseService:
         defaults_from: list[ParticipantRef],
         valid_choices: list[ParticipantRef],
     ) -> list[tuple[str, int]]:
-        if not participants:
+        if participants is None:
             return [(p.type, p.id) for p in defaults_from]
         valid_keys = {(p.type, p.id) for p in valid_choices}
         for ptype, pid in participants:

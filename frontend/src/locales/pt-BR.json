@@ -442,6 +442,7 @@
   "settings.remove_trusted_user": "Remover",
   "settings.guests": "Convidados",
   "settings.guests_desc": "Acompanhantes de viagem sem conta que podem ser adicionados como pagadores ou participantes de despesas.",
+  "settings.guests_loading": "Carregando convidados…",
   "settings.guest_name_placeholder": "Nome do convidado",
   "settings.add_guest": "Adicionar",
   "settings.edit_guest": "Editar",
