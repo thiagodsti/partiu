@@ -53,8 +53,8 @@
     FR: 'Ryanair', U2: 'easyJet', W6: 'Wizz Air', G3: 'GOL',
   };
 
-  function airlineName(code: string) {
-    return airlineNames[code] ?? code;
+  function airlineName(code: string, label: string | null) {
+    return label ?? airlineNames[code] ?? code;
   }
 
   function fmtCo2(kg: number): string {
@@ -234,7 +234,7 @@
             {#each stats.top_airlines as a}
               <div class="airline-chip airline-{a.key}">
                 <span class="airline-chip-code">{a.key}</span>
-                <span class="airline-chip-name">{airlineName(a.key)}</span>
+                <span class="airline-chip-name">{airlineName(a.key, a.label)}</span>
                 <span class="airline-chip-count">{a.count}</span>
               </div>
             {/each}

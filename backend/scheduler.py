@@ -22,11 +22,11 @@ def start_scheduler():
         logger.info("Scheduler disabled (DISABLE_SCHEDULER=true) — skipping")
         return
 
-    from .aircraft_sync import run_aircraft_sync
     from .database import get_global_setting
-    from .flight_status_sync import run_flight_status_sync
-    from .push_notifications import run_push_notifications
-    from .sync_job import run_email_sync
+    from .integrations.aircraft.status_sync import run_flight_status_sync
+    from .integrations.aircraft.sync import run_aircraft_sync
+    from .notifications.reminder_job import run_push_notifications
+    from .sync.pipeline import run_email_sync
 
     sync_interval = int(get_global_setting("sync_interval_minutes", "10"))
 

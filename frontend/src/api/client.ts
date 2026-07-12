@@ -261,7 +261,7 @@ export const statsApi = {
       longest_flight_route: string;
       top_routes: { key: string; count: number }[];
       top_airports: { key: string; count: number }[];
-      top_airlines: { key: string; count: number }[];
+      top_airlines: { key: string; count: number; label: string | null }[];
       years: string[];
       visited_countries: string[];
       flights_by_period: { label: string; count: number }[];

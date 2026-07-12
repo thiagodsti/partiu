@@ -381,7 +381,7 @@ def _flights_proportional(
         return []
 
     try:
-        from ...timezone_utils import localize_to_utc as _ltu
+        from ...airports.timezone import localize_to_utc as _ltu
 
         dep_utc = _ltu(dep_dt.replace(tzinfo=None), dep_match.group(3))
         arr_utc = _ltu(arr_dt.replace(tzinfo=None), arr_match.group(3))

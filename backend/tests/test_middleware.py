@@ -8,18 +8,24 @@ from fastapi.testclient import TestClient
 
 def _make_app(test_db):
     """Build a minimal FastAPI app with FirstRunMiddleware and the auth/flights routers."""
+    from backend.airports import routes as airports_routes
+    from backend.auth import routes as auth_routes
+    from backend.flights import routes as flights_routes
     from backend.middleware import FirstRunMiddleware
-    from backend.routes import airports, auth, flights, settings, sync, trips, users
+    from backend.settings import routes as settings_routes
+    from backend.sync import routes as sync_routes
+    from backend.trips import routes as trips_routes
+    from backend.users import routes as users_routes
 
     app = FastAPI()
     app.add_middleware(FirstRunMiddleware)  # type: ignore[arg-type]
-    app.include_router(auth.router)
-    app.include_router(flights.router)
-    app.include_router(trips.router)
-    app.include_router(sync.router)
-    app.include_router(airports.router)
-    app.include_router(users.router)
-    app.include_router(settings.router)
+    app.include_router(auth_routes.router)
+    app.include_router(flights_routes.router)
+    app.include_router(trips_routes.router)
+    app.include_router(sync_routes.router)
+    app.include_router(airports_routes.router)
+    app.include_router(users_routes.router)
+    app.include_router(settings_routes.router)
 
     @app.get("/api/health")
     def health():

@@ -87,37 +87,32 @@ def migrate_legacy_encryption() -> int:
 
     Safe to call repeatedly — values already on the new key are left untouched.
     """
-    from .database import db_write
+    from .users.repository import UserRepository
 
     columns = ["gmail_app_password", "immich_api_key"]
     migrated = 0
+    repository = UserRepository()
 
-    with db_write() as conn:
-        rows = conn.execute("SELECT id, gmail_app_password, immich_api_key FROM users").fetchall()
-        for row in rows:
-            updates: dict[str, str] = {}
-            for col in columns:
-                value = row[col]
-                if not value:
-                    continue
-                # Try new key first — already migrated, skip
-                try:
-                    _get_fernet().decrypt(value.encode())
-                    continue
-                except InvalidToken:
-                    pass
-                # Try legacy key — needs migration
-                try:
-                    plaintext = _get_fernet_legacy().decrypt(value.encode()).decode()
-                    updates[col] = _get_fernet().encrypt(plaintext.encode()).decode()
-                    migrated += 1
-                except (InvalidToken, Exception):
-                    pass  # unencrypted plaintext — leave as-is
-            if updates:
-                set_clause = ", ".join(f"{c} = ?" for c in updates)
-                conn.execute(
-                    f"UPDATE users SET {set_clause} WHERE id = ?",  # noqa: S608
-                    (*updates.values(), row["id"]),
-                )
+    for row in repository.list_credential_columns():
+        updates: dict[str, str] = {}
+        for col in columns:
+            value = row[col]
+            if not value:
+                continue
+            # Try new key first — already migrated, skip
+            try:
+                _get_fernet().decrypt(value.encode())
+                continue
+            except InvalidToken:
+                pass
+            # Try legacy key — needs migration
+            try:
+                plaintext = _get_fernet_legacy().decrypt(value.encode()).decode()
+                updates[col] = _get_fernet().encrypt(plaintext.encode()).decode()
+                migrated += 1
+            except (InvalidToken, Exception):
+                pass  # unencrypted plaintext — leave as-is
+        if updates:
+            repository.update_user(row["id"], updates)
 
     return migrated

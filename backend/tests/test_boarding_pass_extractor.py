@@ -5,7 +5,7 @@ import base64
 import pytest
 from conftest import load_eml_as_email_message
 
-from backend.boarding_pass_extractor import (
+from backend.parsers.boarding_pass_extractor import (
     extract_from_html,
     is_checkin_email,
 )

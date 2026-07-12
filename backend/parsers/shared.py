@@ -559,10 +559,13 @@ def _extract_passenger_text(text: str) -> str:
 
     # "Lista de passageiros: John Smith" / "Passenger list:\nJohn Smith"
     # Negative lookahead prevents matching "passenger name record (PNR)" in legal text.
+    # Word separator inside the capture is same-line only ([ \t], not \s): a bare \s+
+    # would cross the newline after the name and glom up whatever list item follows
+    # (e.g. "John Smith\nTrip Administrator\nJohn Smith" all as one "name").
     m = re.search(
         r"(?:Lista\s+de\s+passageiros|Passenger\s*list|Passenger\s*name(?!\s+record))"
         r"[\s:]*[-•·]?\s*"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ \t]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
         text,
         re.IGNORECASE,
     )
@@ -583,7 +586,7 @@ def _extract_passenger_text(text: str) -> str:
     m = re.search(
         r"(?:Passagier|Reisender|passager|passasjer)"
         r"[\s:]*[-•·]?\s*"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ \t]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
         text,
         re.IGNORECASE,
     )
@@ -591,9 +594,11 @@ def _extract_passenger_text(text: str) -> str:
         return m.group(1).strip()
 
     # "Mr / Mrs / Ms / Miss JOHN SMITH" — title guarantees this is a person
+    # \b is required before the alternation: without it "Ms" matches inside
+    # any word ending in "-ms" (e.g. "terms of ... Policy" in legal boilerplate).
     m = re.search(
-        r"(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+"
-        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
+        r"\b(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+"
+        r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ \t]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)+)",
         text,
         re.IGNORECASE,
     )
