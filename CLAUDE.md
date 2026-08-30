@@ -78,7 +78,7 @@ docker compose up -d --build
 - **`scheduler.py`** — APScheduler runs email sync every 10 min and aircraft sync daily
 - **`sync/pipeline.py`** — Main pipeline: fetch emails → parse → extract flights → group into trips (via `sync/grouping.py`); `use_llm` flag enables LLM fallback for incremental sync (disabled for full rescan). `sync/service.py` (the `/api/sync/*` routes' use-case layer) calls into it rather than owning the pipeline itself.
 - **`parsers/engine.py`** — Extraction engine: tries BS4 HTML parsing first, then regex fallback, then PDF
-- **`parsers/builtin_rules.py`** — Airline rules keyed to `PARSER_VERSION = '27'`; supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY), Wizz Air (W6), Brussels Airlines (SN), Iberia (IB)
+- **`parsers/builtin_rules.py`** — Airline rules keyed to `PARSER_VERSION = '28'`; supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY), Wizz Air (W6), Brussels Airlines (SN), Iberia (IB)
 - **`sync/grouping.py`** — Auto-groups flights into trips by booking reference, then 48h time proximity
 - **`auth/`** — Session cookies (itsdangerous), bcrypt passwords, TOTP 2FA, audit logging (`audit_log.py`); also re-exports cross-cutting authorization helpers (`get_current_user`, `can_access_trip`, etc.) imported as `from ..auth import ...` throughout the backend
 - **`smtp_server.py`** — aiosmtpd inbound SMTP on port 2525 for email forwarding
@@ -130,7 +130,7 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 
 ### Email sync & parsing
 - IMAP sync (Gmail App Password or custom IMAP host/port) per user
-- Built-in airline rules — 15 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY), Wizz Air (W6), Brussels Airlines (SN), Iberia (IB); `PARSER_VERSION = '27'`
+- Built-in airline rules — 15 supported: LATAM (LA), SAS (SK), Norwegian (DY), Azul (AD), Lufthansa (LH), British Airways (BA), ITA Airways (AZ), Kiwi.com, Ryanair (FR), Austrian Airlines (OS), TAP Air Portugal (TP), Finnair (AY), Wizz Air (W6), Brussels Airlines (SN), Iberia (IB); `PARSER_VERSION = '28'`
 - PDF extraction fallback
 - **Ollama LLM fallback** (optional): set `OLLAMA_URL` + `OLLAMA_MODEL` in `.env`; used as last resort for incremental sync; `run.sh` auto-starts Ollama if binary present; optional `ollama` service in `docker-compose.yml`
 - CLI eval tool: `uv run python -m backend.tools.eval_eml_files` — tests LLM against `.eml` files (pass file or glob)

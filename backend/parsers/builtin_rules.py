@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "27"  # feat: Iberia (IB) booking confirmation parser
+PARSER_VERSION = "28"  # fix: SAS "leg card" template (codeshare legs, no dash-route text)
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.

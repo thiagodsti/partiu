@@ -97,6 +97,77 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
             if flight:
                 flights.append(flight)
 
+    if not flights:
+        flights = _extract_leg_card_style(text, rule, booking_ref)
+
+    return flights
+
+
+# ---------------------------------------------------------------------------
+# "Leg card" BS4 extractor — newer SAS confirmation template
+# ---------------------------------------------------------------------------
+
+# Departure/arrival timestamp anchor: "23 Mar 2027 | 18:30". Unlike the
+# dash-route format above, this template has no explicit "A - B" route text —
+# each leg is a stack of lines (flattened to one line by _get_text):
+#   23 Mar 2027 | 18:30
+#   Stockholm | Arlanda ARN | Avgångsterminal 5
+#   02h 50min
+#   AF 1063 | Air France | Economy | 1 X Incheckat Bagage
+#   23 Mar 2027 | 21:20
+#   Paris | CDG | Ankomstterminal 2F
+# Departure and arrival timestamps alternate strictly (dep, arr, dep, arr, ...),
+# one pair per leg, so anchors are simply paired up sequentially. The IATA code
+# and flight number are recovered from the text between/after each anchor
+# rather than a route regex, which also picks up codeshare flight numbers
+# (e.g. "AF", "KL") that aren't in SAS's own partner code list.
+_LEG_CARD_ANCHOR_RE = re.compile(r"(\d{1,2}\s+[A-Za-zÀ-ÿ]{3,9}\s+\d{4})\s*\|\s*(\d{1,2}:\d{2})")
+_LEG_CARD_IATA_RE = re.compile(r"\b([A-Z]{3})\b")
+_LEG_CARD_FLIGHT_NUM_RE = re.compile(r"\b([A-Z]{2}\s?\d{2,5})\b(?=\s*\|)")
+
+
+def _extract_leg_card_style(text: str, rule, booking_ref: str) -> list[dict]:
+    """Parse the "leg card" SAS confirmation format (see module comment above)."""
+    anchors = list(_LEG_CARD_ANCHOR_RE.finditer(text))
+    flights = []
+
+    for i in range(0, len(anchors) - 1, 2):
+        dep_m, arr_m = anchors[i], anchors[i + 1]
+
+        dep_date = parse_flight_date(dep_m.group(1))
+        arr_date = parse_flight_date(arr_m.group(1))
+        if not dep_date or not arr_date:
+            continue
+
+        dep_window = text[dep_m.end() : arr_m.start()]
+        next_anchor_start = (
+            anchors[i + 2].start() if i + 2 < len(anchors) else min(len(text), arr_m.end() + 150)
+        )
+        arr_window = text[arr_m.end() : next_anchor_start]
+
+        dep_iata_m = _LEG_CARD_IATA_RE.search(dep_window)
+        arr_iata_m = _LEG_CARD_IATA_RE.search(arr_window)
+        fn_m = _LEG_CARD_FLIGHT_NUM_RE.search(dep_window)
+        if not dep_iata_m or not arr_iata_m or not fn_m:
+            continue
+
+        dep_dt = _build_datetime(dep_date, dep_m.group(2))
+        arr_dt = _build_datetime(arr_date, arr_m.group(2))
+        if dep_dt and arr_dt:
+            arr_dt = fix_overnight(dep_dt, arr_dt)
+
+        flight = make_flight_dict(
+            rule,
+            normalize_fn(fn_m.group(1)),
+            dep_iata_m.group(1),
+            arr_iata_m.group(1),
+            dep_dt,
+            arr_dt,
+            booking_ref,
+        )
+        if flight:
+            flights.append(flight)
+
     return flights
 
 
