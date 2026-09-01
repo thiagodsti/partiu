@@ -108,11 +108,14 @@
   });
 
   async function fetchAll() {
+    // Each call updates its own state slice independently — one endpoint
+    // failing (or being transiently slow) must not stop the others from
+    // reflecting a mutation that already succeeded on the server.
     const [exp, parts, bal, guests] = await Promise.all([
-      expensesApi.list(tripId),
-      expensesApi.participants(tripId),
-      expensesApi.balances(tripId),
-      guestsApi.list(),
+      expensesApi.list(tripId).catch((err) => { console.error(err); return expenses; }),
+      expensesApi.participants(tripId).catch((err) => { console.error(err); return participants; }),
+      expensesApi.balances(tripId).catch((err) => { console.error(err); return { balances }; }),
+      guestsApi.list().catch((err) => { console.error(err); return myGuests; }),
     ]);
     expenses = exp;
     participants = parts;

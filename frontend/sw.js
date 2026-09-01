@@ -4,12 +4,13 @@
  * Strategies:
  *   - GET /api/auth/*      → network-first (session state must always be fresh)
  *   - GET /api/*           → stale-while-revalidate (serve cache instantly, update in background)
- *   - non-GET /api/*       → pass-through (mutations never cached)
+ *   - non-GET /api/*       → pass-through, then wipe the API cache (mutations must never be
+ *                            followed by a stale read — see purgeApiCache)
  *   - /assets/*            → cache-first (content-hashed filenames)
  *   - everything else      → network-first (app shell, always get latest deploy)
  */
 
-const CACHE_VERSION = 'v18';
+const CACHE_VERSION = 'v19';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
@@ -41,8 +42,18 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   if (url.pathname.startsWith('/api/')) {
-    // Only cache GET requests; mutations pass through unchanged
-    if (event.request.method !== 'GET') return;
+    // Mutations pass through unchanged, but any successful one invalidates the
+    // whole API cache — otherwise a GET right after a POST/PATCH/DELETE can be
+    // served stale-while-revalidate's "stale" copy from before the mutation.
+    if (event.request.method !== 'GET') {
+      event.respondWith(
+        fetch(event.request).then((response) => {
+          if (response.ok) event.waitUntil(purgeApiCache());
+          return response;
+        })
+      );
+      return;
+    }
 
     // Auth endpoints are always network-first so session state is never stale
     if (url.pathname.startsWith('/api/auth/')) {
@@ -130,6 +141,16 @@ async function staleWhileRevalidate(request, cacheName) {
     headers: { 'Content-Type': 'application/json' },
     status: 503,
   });
+}
+
+async function purgeApiCache() {
+  try {
+    const cache = await caches.open(API_CACHE);
+    const keys = await cache.keys();
+    await Promise.all(keys.map((k) => cache.delete(k)));
+  } catch (e) {
+    console.warn('[SW] purgeApiCache failed', e);
+  }
 }
 
 // ---- Cache size management ----

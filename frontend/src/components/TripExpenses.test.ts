@@ -135,6 +135,24 @@ describe('TripExpenses', () => {
     ]);
   });
 
+  it('still shows a newly added expense even if the balances refresh fails', async () => {
+    mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([EXPENSE]);
+    mockBalances
+      .mockResolvedValueOnce({ balances: {} })
+      .mockRejectedValueOnce(new Error('network error'));
+    const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+    await waitFor(() => getByText('+ expenses.add'));
+    await fireEvent.click(getByText('+ expenses.add'));
+
+    const desc = container.querySelector('.expense-input-desc') as HTMLInputElement;
+    const amount = container.querySelector('.expense-input-amount') as HTMLInputElement;
+    await fireEvent.input(desc, { target: { value: 'Lunch' } });
+    await fireEvent.input(amount, { target: { value: '100' } });
+    await fireEvent.click(getByText('expenses.save'));
+
+    await waitFor(() => expect(container.textContent).toContain('Lunch'));
+  });
+
   it('unchecking a participant excludes them from the split', async () => {
     const { container, getByText } = render(TripExpenses, { tripId: 't1' });
     await waitFor(() => getByText('+ expenses.add'));
