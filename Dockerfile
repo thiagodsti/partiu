@@ -30,6 +30,10 @@ COPY load_airports.py ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY frontend/sw.js ./frontend/
 
+# Locale JSONs — the backend translates notification text with these, and the
+# built frontend bundles them into JS, so they must ship as files too.
+COPY frontend/src/locales ./backend/locales
+
 # Scripts (seed, etc.)
 COPY scripts/ ./scripts/
 

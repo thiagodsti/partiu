@@ -31,22 +31,45 @@ logger = logging.getLogger(__name__)
 # "Travel documents" format extractor
 # ---------------------------------------------------------------------------
 
-_travel_docs_marker_re = re.compile(r"YOUR BOOKING REFERENCE IS", re.IGNORECASE)
+# The same template ships in every market language, so the booking-reference
+# heading has to be matched in each: an English-only marker meant the Swedish
+# "Resehandlingar" mails matched no format at all.
+_travel_docs_marker_re = re.compile(
+    r"YOUR BOOKING REFERENCE IS|DIN BOKNINGSREFERENS|DITT BOOKINGSREFERANSE"
+    r"|DIN BOOKINGSREFERENCE|BOOKINGSREFERANSEN DIN",
+    re.IGNORECASE,
+)
 
 # Per-flight block pattern (applied to whitespace-collapsed text):
 #   DY4371\n-\n14 Aug 2019\n17:10\nStockholm-Arlanda\n20:45\nSicily-Catania\n
+# The Scandinavian renderings put the year first ("2019 aug 14"), so both
+# orderings are accepted and normalised by _parse_travel_docs_date.
 _flight_block_re = re.compile(
     r"(DY\d{4,5}|D8\d{4,5})\n"  # flight number
     r"-\n"  # separator
-    r"(\d{1,2}\s+\w{3,}\s+\d{4})\n"  # date e.g. "14 Aug 2019"
+    r"(\d{1,2}\s+\w{3,}\s+\d{4}|\d{4}\s+\w{3,}\s+\d{1,2})\n"  # date, either order
     r"\n?"  # optional blank line
     r"(\d{2}:\d{2})\n"  # departure time
-    r"([A-Za-z][A-Za-z -]+)\n"  # departure city/airport name
+    r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ -]+)\n"  # departure city/airport name
     r"\n?"  # optional blank line
     r"(\d{2}:\d{2})\n"  # arrival time
-    r"([A-Za-z][A-Za-z -]+)\n",  # arrival city/airport name
+    r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ -]+)\n",  # arrival city/airport name
     re.MULTILINE,
 )
+
+_year_first_date_re = re.compile(r"^(\d{4})\s+(\w{3,})\s+(\d{1,2})$")
+
+
+def _parse_travel_docs_date(raw: str):
+    """Parse a travel-documents date in either "14 Aug 2019" or "2019 aug 14" order."""
+    raw = raw.strip()
+    d = parse_flight_date(raw)
+    if d:
+        return d
+    m = _year_first_date_re.match(raw)
+    if m:
+        return parse_flight_date(f"{m.group(3)} {m.group(2)} {m.group(1)}")
+    return None
 
 
 def _collapse_body(body: str) -> str:
@@ -73,7 +96,7 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
 
     flights = []
     for m in _flight_block_re.finditer(collapsed):
-        dep_date = parse_flight_date(m.group(2).strip())
+        dep_date = _parse_travel_docs_date(m.group(2))
         if not dep_date:
             continue
 

@@ -11,10 +11,9 @@ Flow:
 import calendar
 import logging
 import re
-from datetime import UTC, datetime
 from datetime import date as date_type
+from datetime import datetime
 
-from ..utils import validate_flight_number
 from .email_connector import EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -170,14 +169,29 @@ def match_rule_to_email(email_msg: EmailMessage, rules):
     return None
 
 
+# Forwarded-message header labels. Gmail (and most webmail) localises these to
+# the *forwarder's* UI language, not the original sender's — a Brazilian user
+# forwarding a Ryanair itinerary produces "De:", not "From:". Matching only the
+# English label meant those emails reached no airline rule at all.
+_FORWARDED_FROM_LABELS = r"From|De|Von|Fr[aå]n|Fra|Da|Van|Exp[eé]diteur|Remitente|L[aä]hettäjä"
+_FORWARDED_SUBJECT_LABELS = r"Subject|Assunto|Asunto|Betreff|[ÄA]mne|Emne|Oggetto|Objet|Aihe"
+
+_forwarded_from_re = re.compile(
+    rf"^(?:{_FORWARDED_FROM_LABELS}):\s*(.+)$", re.MULTILINE | re.IGNORECASE
+)
+_forwarded_subject_re = re.compile(
+    rf"^(?:{_FORWARDED_SUBJECT_LABELS}):\s*(.+)$", re.MULTILINE | re.IGNORECASE
+)
+
+
 def _extract_forwarded_senders(body: str) -> list[str]:
     """Extract From: addresses from forwarded-message headers in the email body."""
-    return re.findall(r"^From:\s*(.+)$", body[:5000], re.MULTILINE)
+    return _forwarded_from_re.findall(body[:5000])
 
 
 def _extract_forwarded_subjects(body: str) -> list[str]:
     """Extract Subject: lines from forwarded-message headers in the email body."""
-    return re.findall(r"^Subject:\s*(.+)$", body[:5000], re.MULTILINE)
+    return _forwarded_subject_re.findall(body[:5000])
 
 
 def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
@@ -185,37 +199,25 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     Extract flight data from an email that has been matched to an airline rule.
 
     Calls ``rule.extractor(email_msg, rule)`` — the per-airline unified callable
-    set by ``get_builtin_rules()``.  Also runs the generic PDF extractor and
-    merges any richer fields it finds.
+    set by ``get_builtin_rules()``.  PDF attachments are the individual rule's
+    business (via ``gds_eticket`` for receipts, or its own reader): the generic
+    PDF pattern that used to be merged in here contributed nothing across the
+    whole email corpus while remaining able to invent a leg from any table that
+    happened to look like an itinerary.
     """
     extractor = getattr(rule, "extractor", None)
     if extractor is None:
         return []
 
     try:
-        results = extractor(email_msg, rule)
+        return extractor(email_msg, rule)
     except Exception:
         logger.debug(
             "Extractor for '%s' raised an exception",
             rule.airline_name,
             exc_info=True,
         )
-        results = []
-
-    # Always also attempt generic PDF extraction and merge any richer data
-    if email_msg.pdf_attachments:
-        pdf_results = _try_generic_pdf(email_msg)
-        results = merge_flights(results, pdf_results)
-
-    return results
-
-
-def _try_generic_pdf(email_msg: EmailMessage) -> list[dict]:
-    """Extract flights from PDF attachments using the generic pattern."""
-    from .email_connector import _extract_text_from_pdf
-
-    pdf_text = "\n".join(t for b in email_msg.pdf_attachments if (t := _extract_text_from_pdf(b)))
-    return _extract_generic_pdf(pdf_text, email_msg) if pdf_text else []
+        return []
 
 
 def merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
@@ -249,179 +251,3 @@ def merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
             primary.append(sec)
 
     return primary
-
-
-def try_generic_html_extraction(email_msg: EmailMessage, rule=None) -> list[dict]:
-    """
-    Smart generic HTML fallback for emails with no matched rule (or failed extraction).
-
-    Runs BEFORE the LLM fallback. Anchors on flight number tokens and searches
-    a surrounding window for IATA codes, times, and dates.
-
-    Returns [] when nothing plausible is found.
-    """
-    from .generic_html import extract_generic_html
-
-    return extract_generic_html(email_msg, rule)
-
-
-def try_generic_pdf_extraction(email_msg: EmailMessage) -> list[dict]:
-    """
-    Last-resort extraction for emails that matched no rule.
-    Tries to pull flight data directly from any PDF attachment using
-    common itinerary patterns (time + IATA + date + flight-number + time + IATA).
-
-    Returns [] when nothing plausible is found, so callers can safely ignore it.
-    """
-    if not email_msg.pdf_attachments:
-        return []
-
-    from .email_connector import _extract_text_from_pdf
-
-    pdf_text = "\n".join(t for b in email_msg.pdf_attachments if (t := _extract_text_from_pdf(b)))
-    if not pdf_text:
-        return []
-
-    return _extract_generic_pdf(pdf_text, email_msg)
-
-
-def _parse_time_on_date(date_obj: date_type, time_str: str) -> datetime | None:
-    """Combine a date and HH:MM string into a timezone-aware UTC datetime."""
-    try:
-        h, m = time_str.split(":")
-        dt = datetime(date_obj.year, date_obj.month, date_obj.day, int(h), int(m))
-        return dt.replace(tzinfo=UTC)
-    except (ValueError, TypeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Generic PDF fallback (no matched rule required)
-# ---------------------------------------------------------------------------
-
-# Pattern: HH:MM IATA  ...  date-line  ...  flight-number  ...  HH:MM IATA
-# Each section allows a few intervening lines so it survives extra content
-# (airport names, carrier info, etc.) without matching across unrelated blocks.
-_pdf_itinerary_re = re.compile(
-    r"^(\d{1,2}:\d{2})\s+([A-Z]{3})\b[^\n]*\n"  # dep time + dep IATA
-    r"(?:[^\n]*\n){0,4}"  # up to 4 content lines
-    r"([^\n]*\b\d{4}\b[^\n]*)\n"  # date line (contains a 4-digit year)
-    r"(?:[^\n]*\n){0,4}"  # up to 4 more lines
-    r"[^\n]*\b([A-Z]{2}\s*\d{2,5})\b[^\n]*\n"  # flight number
-    r"(?:[^\n]*\n){0,3}"  # up to 3 more lines
-    r"^(\d{1,2}:\d{2})\s+([A-Z]{3})\b",  # arr time + arr IATA
-    re.MULTILINE,
-)
-
-_booking_reference_re = re.compile(
-    r"(?:booking\s*(?:ref|code|reference|number)|PNR|confirmation\s*(?:code|number)|"
-    r"N[UÚ]MERO\s+DE\s+RESERVA|Buchungsnummer|Reservierungscode)"
-    r"[:\s#]+([\w\s]{5,20})",
-    re.IGNORECASE,
-)
-
-_passenger_name_re = re.compile(
-    r"(?:Ms\.|Mr\.|Mrs\.|Miss)\s+([A-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]+?)(?=\s+\d|\s*\n)",
-)
-
-
-def _extract_generic_pdf(pdf_text: str, email_msg: EmailMessage) -> list[dict]:
-    """
-    Extract flights from a PDF using common itinerary patterns.
-    Used as a last resort when no airline rule matched the email.
-    """
-    booking_ref = ""
-    m = _booking_reference_re.search(pdf_text)
-    if m:
-        booking_ref = m.group(1).strip().replace(" ", "")
-
-    passenger = ""
-    m = _passenger_name_re.search(pdf_text)
-    if m:
-        passenger = m.group(1).strip()
-
-    ref_year = email_msg.date.year if email_msg.date else datetime.now().year
-    flights = []
-    seen = set()  # deduplicate by (flight_number, dep_airport, arr_airport)
-
-    for m in _pdf_itinerary_re.finditer(pdf_text):
-        dep_time_str = m.group(1)
-        dep_airport = m.group(2)
-        date_line = m.group(3)
-        flight_num = m.group(4).replace(" ", "")
-        arr_time_str = m.group(5)
-        arr_airport = m.group(6)
-
-        # Skip if airports are identical (false positive)
-        if dep_airport == arr_airport:
-            continue
-
-        # Skip duplicate matches (the Kiwi PDF repeats each segment twice)
-        key = (flight_num, dep_airport, arr_airport)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        # Extract a parseable date from the date line
-        date_m = re.search(r"(\d{1,2}\s+\w+\.?\s+\d{4})", date_line)
-        if not date_m:
-            # Try DD/MM/YYYY
-            date_m = re.search(r"(\d{1,2}/\d{2}/\d{4})", date_line)
-        if not date_m:
-            continue
-        dep_date = parse_flight_date(date_m.group(1))
-        if dep_date is None:
-            # Year-less date — inject ref_year
-            date_m2 = re.search(r"(\d{1,2}\s+\w+\.?)", date_line)
-            if date_m2:
-                dep_date = parse_flight_date(date_m2.group(1) + f" {ref_year}")
-        if dep_date is None:
-            continue
-
-        dep_dt = _parse_time_on_date(dep_date, dep_time_str)
-        if dep_dt is None:
-            continue
-
-        # Arrival date: same day unless time wraps past midnight
-        dep_h = int(dep_time_str.split(":")[0])
-        arr_h = int(arr_time_str.split(":")[0])
-        arr_date = dep_date
-        if arr_h < dep_h:
-            from datetime import timedelta
-
-            arr_date = dep_date + timedelta(days=1)
-        arr_dt = _parse_time_on_date(arr_date, arr_time_str)
-        if arr_dt is None:
-            continue
-
-        if not validate_flight_number(flight_num):
-            logger.debug("Skipping invalid flight number from PDF %r", flight_num)
-            continue
-        airline_code = flight_num[:2]
-        flights.append(
-            {
-                "airline_name": airline_code,  # best we can do without a rule
-                "airline_code": airline_code,
-                "flight_number": flight_num,
-                "departure_airport": dep_airport,
-                "arrival_airport": arr_airport,
-                "departure_datetime": dep_dt,
-                "arrival_datetime": arr_dt,
-                "booking_reference": booking_ref,
-                "passenger_name": passenger,
-                "seat": "",
-                "cabin_class": "",
-                "departure_terminal": "",
-                "arrival_terminal": "",
-                "departure_gate": "",
-                "arrival_gate": "",
-            }
-        )
-
-    if flights:
-        logger.info(
-            "Generic PDF fallback found %d flight(s) in email %s",
-            len(flights),
-            email_msg.message_id,
-        )
-    return flights

@@ -20,8 +20,6 @@ from ..parsers.engine import (
     extract_flights_from_email,
     match_rule_to_email,
     merge_flights,
-    try_generic_html_extraction,
-    try_generic_pdf_extraction,
 )
 from ..parsers.gds_eticket import extract_gds_eticket
 from ..parsers.validation import validate_flights
@@ -436,11 +434,16 @@ def _process_emails(
             if gds_flights:
                 flights_data = merge_flights(flights_data, gds_flights)
 
-            # 3. Generic line-based scanners: last resort before the LLM.
-            if not flights_data:
-                flights_data = try_generic_html_extraction(
-                    email_msg, rule
-                ) or try_generic_pdf_extraction(email_msg)
+            # There used to be a third tier here: generic line scanners that
+            # anchored on any flight-number-shaped token and guessed the rest
+            # from nearby lines. Across a 372-email corpus every leg it was the
+            # sole source of was wrong or incomplete — a Ryanair round trip with
+            # both legs pointing the same way, a TAP receipt reading the "NVA"
+            # not-valid-after label as Neiva, e-tickets dated a year off — and
+            # each one passed the plausibility gate looking perfectly ordinary.
+            # The formats it was covering are now read by the airlines' own rules;
+            # anything else is better left to the LLM, which at least knows when
+            # it doesn't know.
 
             # --- LLM fallback (incremental sync only, when Ollama is available) ---
             if not flights_data and _use_llm:

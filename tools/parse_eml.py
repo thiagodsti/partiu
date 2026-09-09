@@ -97,23 +97,21 @@ def run(eml_path: Path):
 
     if rule is None:
         print("  ❌  No rule matched.\n")
-        print("  → Trying generic HTML / PDF fallback (no airline rule required) …\n")
+        print("  → Trying the GDS e-ticket parser (airline-independent) …\n")
 
-        from backend.parsers.engine import try_generic_html_extraction, try_generic_pdf_extraction
+        from backend.parsers.gds_eticket import extract_gds_eticket
 
-        flights = try_generic_html_extraction(email_msg)
-        if not flights:
-            flights = try_generic_pdf_extraction(email_msg)
+        flights = extract_gds_eticket(email_msg, None)
 
         if not flights:
-            print("  ❌  Generic fallback also returned 0 flights.\n")
+            print("  ❌  Not a GDS e-ticket receipt either.\n")
             print("  → Next steps:")
             print("    1. Add a rule to backend/parsers/builtin_rules.py")
             print("    2. Add an extractor in backend/parsers/airlines/")
             print("    3. Register it in backend/parsers/airlines/__init__.py\n")
             return None, []
 
-        print(f"  ⚠️  Generic fallback extracted {len(flights)} flight(s) (no rule):\n")
+        print(f"  ✓  GDS e-ticket parser extracted {len(flights)} flight(s) (no rule):\n")
         for i, f in enumerate(flights):
             print(
                 f"  [{i}] {f.get('flight_number', '?'):8}  "

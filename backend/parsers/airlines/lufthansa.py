@@ -2,10 +2,16 @@
 Lufthansa flight extractor (BS4 only — no plain-text regex fallback needed).
 
 Handles four confirmed email formats:
-  1. Standard e-ticket / itinerary (lufthansa.com):
+  1. Itinerary table — "Your itinerary" / "O seu itinerário" (booking.lufthansa.com,
+     booking-lufthansa.com, and the 15below template). One block per leg:
+       "Fri. 29 March 2024:" / "seg. 20. dezembro 2021:"
+       "06:45 h" / "16:20 Hora"   → "Stockholm Arlanda (ARN)" → "Terminal 5"
+       "09:00 h"  [ "+1" ]        → "Frankfurt Frankfurt (FRA)" → "Terminal 1"
+       "LH 809" → "operated by: Lufthansa" → "Status: confirmed"
+     Parsed by ``_extract_itinerary`` as a line-driven block scan rather than one
+     regex, because every one of those lines is optional in some variant.
+  2. Standard e-ticket / itinerary (lufthansa.com):
        "16 Mar 2026  10:00  (FRA) ... LH1234 ... 11:50  (LHR)"
-  2. Booking details (booking.lufthansa.com):
-       "Fri. 29 March 2024: Stockholm – Frankfurt 06:45 h ... (ARN) ... 09:00 h ... (FRA) ... LH 809"
   3. Mobile boarding pass / check-in confirmed (lufthansa.com):
        "LH803\\nFlight\\n24JAN19\\nDate\\nARN\\n...\\nFRA\\n...\\n14:00\\nPartida\\nVT353Y\\nCódigo da reserva"
   4. Check-in available notification (your.lufthansa-group.com):
@@ -13,7 +19,7 @@ Handles four confirmed email formats:
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from bs4 import BeautifulSoup
 
@@ -22,7 +28,10 @@ from ..shared import (
     _build_datetime,
     _get_text,
     extract_booking_reference,
+    extract_passenger,
     fix_overnight,
+    html_to_text,
+    is_valid_iata,
     make_flight_dict,
     normalize_fn,
 )
@@ -40,23 +49,33 @@ _date_time_airport_re = re.compile(
 _flight_number_re = re.compile(r"(LH[\s\xa0]*\d{3,5})")
 
 # ---------------------------------------------------------------------------
-# Format 2: booking.lufthansa.com "Booking details" emails
+# Format 1 (itinerary table): per-line patterns for the block scan
 # ---------------------------------------------------------------------------
-_booking_leg_re = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\.\s+"
-    r"(\d{1,2}\s+[A-Za-z]+\s+\d{4}):"  # g1: date
-    r".*?"
-    r"(\d{1,2}:\d{2})\s+h"  # g2: dep time
-    r".*?"
-    r"\(([A-Z]{3})\)"  # g3: dep airport
-    r".*?"
-    r"(\d{1,2}:\d{2})\s+h"  # g4: arr time
-    r".*?"
-    r"\(([A-Z]{3})\)"  # g5: arr airport
-    r".*?"
-    r"(LH[\s\xa0]*\d{3,5})",  # g6: flight number
-    re.DOTALL,
-)
+# A leg opens with a date header. The weekday abbreviation is localised
+# ("Fri.", "Thur.", "seg.", "qui.", "Do."), so it is stripped generically rather
+# than enumerated; what identifies the line is that the remainder parses as a
+# date. A trailing ":" and the German/Portuguese dot after the day ("20.
+# dezembro 2021") are normalised away first.
+_itin_weekday_prefix_re = re.compile(r"^[A-Za-zÀ-ÿ]{2,10}\.?,?\s+")
+_itin_day_dot_re = re.compile(r"^(\d{1,2})\.\s*")
+# "06:45 h" / "16:20 Hora" / "14:00 Uhr" — the unit suffix is what separates an
+# itinerary time from the many other HH:MM values on the page (durations, deadlines).
+_itin_time_re = re.compile(r"^(\d{1,2}):(\d{2})[\s\xa0]*(?:h|hora|hrs?|uhr)\.?$", re.IGNORECASE)
+# "Stockholm Arlanda (ARN)" — the IATA code closes the airport line.
+_itin_airport_re = re.compile(r"\(([A-Z]{3})\)\s*$")
+_itin_terminal_re = re.compile(r"^Terminal[\s\xa0]+(\S+)$", re.IGNORECASE)
+# "+1" on its own line: the arrival lands the next day. Lufthansa states this
+# explicitly, so we never have to infer an overnight from the clock alone.
+_itin_next_day_re = re.compile(r"^\+(\d)$")
+# "LH803" / "LH 809" / "LX 4709" — any marketing carrier, not just LH. A
+# Lufthansa booking routinely sells LX/OS/SN legs, and pinning this to "LH"
+# silently dropped every one of them.
+_itin_flight_re = re.compile(r"^([A-Z]{2}[\s\xa0]?\d{1,4})$")
+# "Cancelada" / "cancelled" / "storniert" — a schedule-change mail lists the
+# dropped leg alongside the new ones; storing it would invent a flight the
+# passenger never takes.
+_itin_cancelled_re = re.compile(r"cancel|stornier|anulad", re.IGNORECASE)
+_itin_status_label_re = re.compile(r"^(?:Status|Estatuto|Estado|Statut)\s*:?$", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Format 3: mobile boarding pass / check-in confirmed
@@ -147,27 +166,115 @@ def _extract_f1(text: str, rule, booking_ref: str) -> list[dict]:
     return flights
 
 
-def _extract_f2(text: str, rule, booking_ref: str) -> list[dict]:
-    """Format 2: booking.lufthansa.com 'Booking details' with 'HH:MM h' times."""
-    flights = []
-    for m in _booking_leg_re.finditer(text):
-        dep_date = parse_flight_date(m.group(1))
-        if not dep_date:
+def _itin_date_header(line: str) -> date | None:
+    """Parse an itinerary leg's date header, or return None if it isn't one.
+
+    Handles "Fri. 29 March 2024:", "Thur. 24 January 2019" and the Portuguese
+    "seg. 20. dezembro 2021:" — the weekday is localised and the day may carry a
+    trailing dot, so both are normalised before parsing.
+    """
+    s = line.strip().rstrip(":").strip()
+    if not s or len(s) > 60:
+        return None
+    d = parse_flight_date(s)
+    if d:
+        return d
+    s = _itin_weekday_prefix_re.sub("", s, count=1)
+    s = _itin_day_dot_re.sub(r"\1 ", s, count=1)
+    return parse_flight_date(s)
+
+
+def _itin_leg_bounds(lines: list[str]) -> list[tuple[int, date]]:
+    """Return (line index, date) for every itinerary leg header in *lines*."""
+    return [(i, d) for i, ln in enumerate(lines) if (d := _itin_date_header(ln)) is not None]
+
+
+def _itin_parse_leg(lines: list[str], dep_date: date, rule, booking_ref: str) -> dict | None:
+    """Build one flight from the lines of a single itinerary leg block.
+
+    The block is a fixed sequence — dep time, dep airport, [terminal], arr time,
+    [+N], arr airport, [terminal], flight number, operator, status — but any of
+    the optional entries may be absent, so each line is classified on its own and
+    the pieces are assembled by order of appearance.
+    """
+    times: list[str] = []
+    airports: list[str] = []
+    terminals: dict[int, str] = {}  # airport index → terminal
+    fn = ""
+    day_offset = 0
+    saw_arrival_time = False
+    cancelled = False
+    expect_status = False
+
+    for ln in lines:
+        line = ln.strip()
+
+        if expect_status:
+            expect_status = False
+            if _itin_cancelled_re.search(line):
+                cancelled = True
+                continue
+        if _itin_status_label_re.match(line):
+            expect_status = True
             continue
-        dep_dt = _build_datetime(dep_date, m.group(2))
-        arr_dt = _build_datetime(dep_date, m.group(4))
-        if not dep_dt or not arr_dt:
+
+        m = _itin_time_re.match(line)
+        if m:
+            times.append(f"{m.group(1)}:{m.group(2)}")
+            saw_arrival_time = len(times) >= 2
             continue
+
+        m = _itin_next_day_re.match(line)
+        if m and saw_arrival_time:
+            day_offset = int(m.group(1))
+            continue
+
+        m = _itin_terminal_re.match(line)
+        if m:
+            if airports:
+                terminals[len(airports) - 1] = m.group(1)
+            continue
+
+        m = _itin_airport_re.search(line)
+        if m and is_valid_iata(m.group(1)):
+            airports.append(m.group(1))
+            continue
+
+        if not fn:
+            m = _itin_flight_re.match(line)
+            if m:
+                fn = normalize_fn(m.group(1))
+
+    if cancelled or not fn or len(times) < 2 or len(airports) < 2:
+        return None
+
+    dep_dt = _build_datetime(dep_date, times[0])
+    arr_dt = _build_datetime(dep_date + timedelta(days=day_offset), times[1])
+    if not dep_dt or not arr_dt:
+        return None
+    # The explicit "+N" marker already moved the arrival date; only guess at an
+    # overnight when the email gave us no marker to go on.
+    if not day_offset:
         arr_dt = fix_overnight(dep_dt, arr_dt)
-        flight = make_flight_dict(
-            rule,
-            normalize_fn(m.group(6)),
-            m.group(3),
-            m.group(5),
-            dep_dt,
-            arr_dt,
-            booking_ref,
-        )
+
+    flight = make_flight_dict(rule, fn, airports[0], airports[1], dep_dt, arr_dt, booking_ref)
+    if flight:
+        flight["departure_terminal"] = terminals.get(0, "")
+        flight["arrival_terminal"] = terminals.get(1, "")
+    return flight
+
+
+def _extract_itinerary(text_nl: str, rule, booking_ref: str) -> list[dict]:
+    """Format 1: the "Your itinerary" / "O seu itinerário" leg table."""
+    lines = [ln for ln in text_nl.split("\n") if ln.strip()]
+    headers = _itin_leg_bounds(lines)
+    if not headers:
+        return []
+
+    flights = []
+    for idx, (start, dep_date) in enumerate(headers):
+        end = headers[idx + 1][0] if idx + 1 < len(headers) else len(lines)
+        flight = _itin_parse_leg(lines[start + 1 : end], dep_date, rule, booking_ref)
         if flight:
             flights.append(flight)
     return flights
@@ -234,14 +341,27 @@ def _extract_f4(text: str, rule, booking_ref: str) -> list[dict]:
 def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     """Extract flights from a Lufthansa HTML email (tries all 4 formats)."""
     soup = BeautifulSoup(html, "lxml")
-    text = _get_text(soup)  # space-separated (formats 1 & 2)
-    text_nl = soup.get_text(separator="\n", strip=True)  # newline-separated (formats 3 & 4)
+    text = _get_text(soup)  # space-separated (format 2)
+    text_nl = soup.get_text(separator="\n", strip=True)  # newline-separated (1, 3, 4)
     booking_ref = extract_booking_reference(text, email_msg.subject or "")
 
-    for extractor in (_extract_f1, _extract_f2):
-        flights = extractor(text, rule, booking_ref)
-        if flights:
-            return flights
+    # The itinerary table is tried first: it is the richest format (per-leg
+    # terminals, explicit "+1" arrivals, cancelled-leg status) and the only one
+    # that reads non-LH marketing carriers on a Lufthansa booking.
+    # It reads html_to_text output rather than the raw BS4 text the older formats
+    # use: Lufthansa peppers this template with zero-width spaces ("1​4:0​0 h"),
+    # which html_to_text strips and a per-line regex otherwise cannot survive.
+    flights = _extract_itinerary(html_to_text(html), rule, booking_ref)
+    if flights:
+        passenger = extract_passenger(text)
+        if passenger:
+            for f in flights:
+                f["passenger_name"] = f.get("passenger_name") or passenger
+        return flights
+
+    flights = _extract_f1(text, rule, booking_ref)
+    if flights:
+        return flights
 
     for extractor in (_extract_f3, _extract_f4):
         flights = extractor(text_nl, rule, booking_ref)

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "28"  # fix: SAS "leg card" template (codeshare legs, no dash-route text)
+PARSER_VERSION = "29"  # generic line scanners removed; airline rules widened to cover them
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -27,7 +27,7 @@ SUBJECT_PATTERN = (
     r"voo|passagem|bilhete|viagem|compr|embarque|cart[aã]o|"
     r"vuelo|viaje|"
     r"buchung|reise|"
-    r"billet|resa|rejse|bestilling|flygning|bokning|"
+    r"billet|resa|rejse|bestilling|flygning|bokning|resehandling|resedokument|"
     r"\d{2}[A-Z]{3})"  # e.g. "01FEB" date token in TAP e-ticket subjects
 )
 
@@ -190,6 +190,16 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "IB",
         "sender_pattern": r"(@iberia\.com|comunicaciones\.iberia\.com|@iberia\.es)",
         "custom_extractor": "iberia",
+        "priority": 10,
+    },
+    # =========================================================================
+    # Vueling (VY) — booking confirmation emails
+    # =========================================================================
+    {
+        "airline_name": "Vueling",
+        "airline_code": "VY",
+        "sender_pattern": r"(@vueling\.com|no-reply@vueling)",
+        "custom_extractor": "vueling",
         "priority": 10,
     },
 ]

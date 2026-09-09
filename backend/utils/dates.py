@@ -8,10 +8,14 @@ import re
 from datetime import UTC, datetime
 from typing import overload
 
-# IATA flight number: 2-char airline code (letter + letter-or-digit), optional dash, 1-4 digits.
+# IATA flight number: 2-char airline designator, optional dash, 1-4 digits.
+# The designator is two alphanumerics with at least one letter, in either order —
+# requiring the *first* character to be a letter rejected the digit-first codes
+# that really exist (4U Germanwings, 9W Jet Airways, 2L Helvetic), which matters
+# now that make_flight_dict turns this check away rather than just advising on it.
 # IATA standard allows 1–4 digit suffixes (range 1–9999); 5-digit numbers don't exist.
-# Examples: LA3045, FR2878, G3-2108, SK117, AY53, BA1
-FLIGHT_NUMBER_RE = re.compile(r"^[A-Z][A-Z0-9]-?\d{1,4}$")
+# Examples: LA3045, FR2878, G3-2108, SK117, AY53, BA1, 4U1234
+FLIGHT_NUMBER_RE = re.compile(r"^(?!\d\d)[A-Z0-9]{2}-?\d{1,4}$")
 
 
 def validate_flight_number(fn: str) -> bool:

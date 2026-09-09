@@ -168,27 +168,28 @@ class TestBookingReference:
 
 
 class TestExtractionOrder:
-    """The GDS parser must be tried before the generic line scanners, including
-    for airlines with no rule of their own.
+    """The GDS parser and the airline rules are the only structural extractors
+    left in the pipeline; nothing may reintroduce a generic line scanner behind
+    them.
 
-    The scanners key off proximity to a flight number rather than table
+    Those scanners keyed off proximity to a flight number rather than table
     position, so on this receipt they read the "NVA" not-valid-after label as an
-    airport (Neiva, Colombia) and miss a leg entirely. Some of that is caught by
-    the plausibility gate, but not all of it — FLN→NVA in 8h05 is a perfectly
-    ordinary speed — so ordering is what keeps it out, not validation.
+    airport (Neiva, Colombia) and missed a leg entirely. Little of that was
+    caught by the plausibility gate — FLN→NVA in 8h05 is a perfectly ordinary
+    speed — which is why the tier was removed rather than reordered.
     """
 
-    def test_pipeline_prefers_gds_over_generic_scanners(self, eticket_email, seeded_airports_db):
+    def test_pipeline_has_no_generic_scanner_tier(self, eticket_email, seeded_airports_db):
         import inspect
 
+        from backend.parsers import engine
         from backend.sync import pipeline
 
         source = inspect.getsource(pipeline._process_emails)
-        gds_at = source.index("extract_gds_eticket")
-        generic_at = source.index("try_generic_html_extraction")
-        assert gds_at < generic_at, (
-            "extract_gds_eticket must be attempted before try_generic_html_extraction"
-        )
+        assert "extract_gds_eticket" in source
+        for banned in ("try_generic_html_extraction", "try_generic_pdf_extraction"):
+            assert banned not in source, f"{banned} must not run in the sync pipeline"
+            assert not hasattr(engine, banned), f"engine.{banned} must not exist"
 
     def test_receipt_from_an_airline_without_a_rule_still_parses(
         self, eticket_email, seeded_airports_db

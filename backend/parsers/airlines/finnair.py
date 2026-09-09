@@ -179,8 +179,101 @@ def _parse_itinerary_text(text: str, year: int, rule) -> list[dict]:
     return flights
 
 
+# ---------------------------------------------------------------------------
+# Booking confirmation ("Bokningsbekräftelse") — per-journey blocks
+# ---------------------------------------------------------------------------
+# Finnair's own confirmation email is not the GDS receipt above. It opens each
+# direction with a heading and lists the leg as alternating time / IATA lines:
+#
+#     Utresa
+#     2024-07-29
+#     Stockholm Arlanda
+#     Helsingfors Helsinki Vantaa
+#     Total längd 1 h 0 min
+#     07:15  →  ARN  →  09:15  →  HEL
+#     ...
+#     AY806
+#
+# Only single-leg journeys are read. On a connecting journey the times printed
+# next to the heading span the whole trip, so pairing them with one of the two
+# flight numbers would invent a leg that was never sold.
+_journey_heading_re = re.compile(
+    r"^(?:Utresa|Hemresa|Returresa|Outbound|Return|Inbound|Menomatka|Paluumatka)$",
+    re.IGNORECASE,
+)
+_journey_time_re = re.compile(r"^(\d{1,2}:\d{2})$")
+_journey_iata_re = re.compile(r"^([A-Z]{3})$")
+_journey_fn_re = re.compile(r"^(AY[\s\xa0]*\d{3,5})$")
+# "Din bokning har avbokats" / "Inställda flyg" / "Cancelled booking reference"
+# — the cancellation notice reprints the full itinerary of the flights that are
+# no longer happening, in exactly the layout above.
+_cancellation_re = re.compile(
+    r"avbokat|avbokad|avbokats|inst[äa]llda|cancelled\s+booking|peruutettu", re.IGNORECASE
+)
+
+
+def _parse_booking_confirmation(text: str, rule) -> list[dict]:
+    """Parse the per-journey booking-confirmation layout described above."""
+    if _cancellation_re.search(text):
+        logger.debug("Finnair: cancellation notice — not extracting its itinerary")
+        return []
+
+    from ..engine import parse_flight_date
+
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    starts = [i for i, ln in enumerate(lines) if _journey_heading_re.match(ln)]
+    if not starts:
+        return []
+
+    flights: list[dict] = []
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(lines)
+        block = lines[start + 1 : end]
+
+        journey_date = None
+        stops: list[tuple[str, str]] = []  # (time, iata)
+        fns: list[str] = []
+        pending_time = ""
+        for ln in block:
+            if journey_date is None:
+                d = parse_flight_date(ln)
+                if d is not None:
+                    journey_date = d
+                    continue
+            m = _journey_time_re.match(ln)
+            if m:
+                pending_time = m.group(1)
+                continue
+            m = _journey_iata_re.match(ln)
+            if m and pending_time:
+                stops.append((pending_time, m.group(1)))
+                pending_time = ""
+                continue
+            m = _journey_fn_re.match(ln)
+            if m:
+                fn = m.group(1).replace(" ", "").replace("\xa0", "")
+                if fn not in fns:
+                    fns.append(fn)
+
+        if journey_date is None or len(fns) != 1 or len(stops) < 2:
+            continue
+        (dep_time, dep_iata), (arr_time, arr_iata) = stops[0], stops[1]
+        if dep_iata == arr_iata:
+            continue
+
+        dep_dt = _build_datetime(journey_date, dep_time)
+        arr_dt = _build_datetime(journey_date, arr_time)
+        if not dep_dt or not arr_dt:
+            continue
+        flight = make_flight_dict(rule, fns[0], dep_iata, arr_iata, dep_dt, arr_dt)
+        if flight:
+            flights.append(flight)
+
+    return flights
+
+
 def extract(email_msg, rule) -> list[dict]:
-    """Extract flights from a Finnair e-ticket email."""
+    """Extract flights from a Finnair e-ticket or booking-confirmation email."""
     subject = email_msg.subject or ""
     year = _extract_year(subject, email_msg.date)
     body = email_msg.body or ""
@@ -203,4 +296,11 @@ def extract(email_msg, rule) -> list[dict]:
             if flights:
                 return enrich_flights(flights, html_text, subject)
 
-    return []
+        from ..shared import html_to_text
+
+        html_text = html_to_text(email_msg.html_body)
+        flights = _parse_booking_confirmation(html_text, rule)
+        if flights:
+            return enrich_flights(flights, html_text, subject)
+
+    return _parse_booking_confirmation(body, rule) if body else []

@@ -185,6 +185,55 @@ def _extract_checkin(text: str, rule, email_year: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Format 2b: "Flight details" check-in card
+# ---------------------------------------------------------------------------
+# The older check-in mail lays each endpoint out as code / city / date / time,
+# with the flight number above both:
+#
+#     TP 788
+#     LIS            ARN
+#     Lisboa         Estocolmo /
+#     5 Dec 18       5 Dec 18
+#     12:45          18:10
+#
+# Format 2 above expects the "HH:MM ARN … Date 01 Feb" wording of the newer
+# template and matches nothing here.
+_checkin_card_re = re.compile(
+    r"^(TP[\s\xa0]*\d{3,4})\n"
+    r"([A-Z]{3})\n"
+    r"[^\n]+\n"  # departure city
+    r"(\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4})\n"
+    r"(\d{1,2}:\d{2})\n"
+    r"([A-Z]{3})\n"
+    r"[^\n]+\n"  # arrival city
+    r"(\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4})\n"
+    r"(\d{1,2}:\d{2})",
+    re.MULTILINE,
+)
+
+
+def _extract_checkin_card(text: str, rule, email_year: int) -> list[dict]:
+    """Parse the "Flight details" check-in card layout."""
+    flights = []
+    for m in _checkin_card_re.finditer(text):
+        dep_date = parse_date(m.group(3), email_year)
+        arr_date = parse_date(m.group(6), email_year)
+        if not dep_date or not arr_date:
+            continue
+        flight = make_flight_dict(
+            rule,
+            m.group(1).replace(" ", "").replace("\xa0", ""),
+            m.group(2),
+            m.group(5),
+            _build_datetime(dep_date, m.group(4)),
+            _build_datetime(arr_date, m.group(7)),
+        )
+        if flight:
+            flights.append(flight)
+    return flights
+
+
+# ---------------------------------------------------------------------------
 # Format 3: E-ticket receipt (RECIBO DE BILHETE ELETRÓNICO)
 # ---------------------------------------------------------------------------
 
@@ -201,8 +250,11 @@ def _extract_checkin(text: str, rule, email_year: int) -> list[dict]:
 # Format 4: Booking confirmation HTML
 # ---------------------------------------------------------------------------
 
+# The weekday and month may each be abbreviated or spelled out, and the year is
+# present in some variants only: "Fri, 10 Nov" (booking confirmation) and
+# "Friday, 10 November 2023" (reservation change) are the same template.
 _weekday_prefixed_leg_re = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+(\d{1,2}\s+\w{3})\n"
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+(\d{1,2}\s+[A-Za-z]{3,9}\.?(?:\s+\d{4})?)\n"
     r"(\d{2}:\d{2})\n"
     r"([A-Z]{3})\n"
     r"(\d{2}:\d{2})\n"
@@ -344,6 +396,10 @@ def extract(email_msg, rule) -> list[dict]:
             return enrich_flights(flights, html_text, email_msg.subject)
 
         flights = _extract_html_from_to(html_text, rule, email_year)
+        if flights:
+            return enrich_flights(flights, html_text, email_msg.subject)
+
+        flights = _extract_checkin_card(html_text, rule, email_year)
         if flights:
             return enrich_flights(flights, html_text, email_msg.subject)
 

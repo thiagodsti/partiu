@@ -69,9 +69,9 @@ def _inspect(path: Path) -> None:
     from backend.parsers.engine import (
         extract_flights_from_email,
         match_rule_to_email,
-        try_generic_html_extraction,
-        try_generic_pdf_extraction,
+        merge_flights,
     )
+    from backend.parsers.gds_eticket import extract_gds_eticket
 
     _section(f"FILE: {path.name}")
 
@@ -99,36 +99,30 @@ def _inspect(path: Path) -> None:
         if flights_data:
             step_name = f"Rule: {rule.airline_name}"
         else:
-            print("           Rule matched but extracted nothing — trying generic HTML fallback")
-            flights_data = try_generic_html_extraction(email_msg, rule)
-            if flights_data:
-                step_name = f"Generic HTML (rule={rule.airline_name})"
+            print("           Rule matched but extracted nothing")
     else:
         print("\n  [Step 1] No rule matched sender")
 
-    # Step 2: generic HTML (no rule match)
-    if not flights_data and not rule:
-        print("  [Step 2] Trying generic HTML extraction...")
-        flights_data = try_generic_html_extraction(email_msg)
-        if flights_data:
-            step_name = "Generic HTML"
+    # Step 2: GDS e-ticket receipt (merged into the rule's result, as the
+    # pipeline does — a rule can silently drop legs on a multi-carrier ticket)
+    gds_flights = extract_gds_eticket(email_msg, rule)
+    if gds_flights:
+        print(f"  [Step 2] GDS e-ticket parser found {len(gds_flights)} leg(s)")
+        flights_data = merge_flights(flights_data or [], gds_flights)
+        if not step_name:
+            step_name = "GDS e-ticket"
+    else:
+        print("  [Step 2] Not a GDS e-ticket receipt")
 
-    # Step 3: PDF fallback
-    if not flights_data:
-        print("  [Step 3] Trying generic PDF extraction...")
-        flights_data = try_generic_pdf_extraction(email_msg)
-        if flights_data:
-            step_name = "PDF"
-
-    # Step 4: LLM fallback
+    # Step 3: LLM fallback
     if not flights_data:
         if llm_available():
-            print("  [Step 4] Trying LLM fallback (Ollama)...")
+            print("  [Step 3] Trying LLM fallback (Ollama)...")
             flights_data = llm_extract_flights(email_msg)
             if flights_data:
                 step_name = "LLM (Ollama)"
         else:
-            print("  [Step 4] LLM not configured (OLLAMA_URL not set) — skipping")
+            print("  [Step 3] LLM not configured (OLLAMA_URL not set) — skipping")
 
     _section("RESULT")
 

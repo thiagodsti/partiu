@@ -50,3 +50,6 @@ htmlcov/
 .pytest_cache/
 playwright-report/
 test-results/
+
+# Locale JSONs copied into the image at build time (see Dockerfile)
+backend/locales/

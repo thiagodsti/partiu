@@ -63,7 +63,7 @@ from functools import lru_cache
 
 from bs4 import BeautifulSoup
 
-from ..utils import fold_text
+from ..utils import fold_text, validate_flight_number
 
 logger = logging.getLogger(__name__)
 
@@ -615,20 +615,33 @@ def scan_flights(text: str, rule, ref_year: int | None = None) -> list[dict]:
                 break
             end += 1
         window = lines[start:end]
+        fn_offset = i - start
+
+        # The two lines of lookbehind exist for layouts that print the route
+        # above the flight number, but on a multi-leg itinerary they also reach
+        # back into the *previous* leg's arrival airport — a Ryanair round trip
+        # read as "BCN → BCN" and was dropped for having equal endpoints. Codes
+        # at or after the flight number are preferred whenever they suffice.
+        def _split_codes(finder) -> list[str]:
+            before: list[str] = []
+            after: list[str] = []
+            for wl_idx, wl in enumerate(window):
+                for code in finder(wl):
+                    target = after if wl_idx >= fn_offset else before
+                    if code not in target:
+                        target.append(code)
+            if len(after) >= 2:
+                return after
+            return before + [c for c in after if c not in before]
 
         # Strategy A-IATA: parenthesised codes "(BCN)"
-        iata_codes: list[str] = []
-        for wl in window:
-            iata_codes.extend(_iata_in_parens_re.findall(wl))
+        iata_codes: list[str] = _split_codes(_iata_in_parens_re.findall)
 
-        # Fallback IATA: standalone 3-letter lines "BCN" (skip the flight-number line)
+        # Fallback IATA: standalone 3-letter lines "BCN"
         if len(iata_codes) < 2:
-            for j, wl in enumerate(window):
-                m_iata = _standalone_iata_re.match(wl)
-                if m_iata:
-                    code = m_iata.group(1)
-                    if code not in iata_codes:
-                        iata_codes.append(code)
+            iata_codes = _split_codes(
+                lambda wl: [m.group(1)] if (m := _standalone_iata_re.match(wl)) else []
+            )
 
         # Strategy A-DT: combined date+time lines "02/03/2026 13:20"
         datetimes: list[tuple] = []
@@ -970,6 +983,14 @@ def make_flight_dict(
     not found in the airports database.
     """
     if not all([flight_number, dep_airport, arr_airport, dep_dt, arr_dt]):
+        return None
+    # Every airline parser funnels through here, so this is the one place that can
+    # reject a token that merely *looks* like a flight number. Aircraft types are
+    # the common false positive: SAS prints "A320" on its own line right beside
+    # the real designator, and the line scanners duplicated every leg as a
+    # phantom "A320" flight because a single letter plus digits passed unchecked.
+    if not validate_flight_number(flight_number):
+        logger.debug("Skipping flight: %r is not a valid flight number", flight_number)
         return None
     if not is_valid_iata(dep_airport) or not is_valid_iata(arr_airport):
         logger.debug(

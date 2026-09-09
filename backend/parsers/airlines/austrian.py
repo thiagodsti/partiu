@@ -26,6 +26,7 @@ from ..shared import (
     _build_datetime,
     _get_text,
     enrich_flights,
+    fix_overnight,
     make_flight_dict,
     normalize_fn,
     resolve_iata,
@@ -212,6 +213,53 @@ def _extract_confirmation(text: str, rule) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# "Travel details" check-in card
+# ---------------------------------------------------------------------------
+# The check-in reminder prints one column per field, flight number first:
+#
+#     Travel details
+#     03.04.2024
+#     OS317
+#     VIE          ARN
+#     Vienna       Stockholm
+#     20:25        22:35
+#
+# _checkin_re above expects the IATA pair *before* the flight number and a
+# "3 Apr 24"-style date, so it matches nothing here.
+_travel_details_card_re = re.compile(
+    r"^(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4})\n"
+    r"(OS[\s\xa0]*\d{3,4})\n"
+    r"([A-Z]{3})\n"
+    r"([A-Z]{3})\n"
+    r"[^\n]+\n"  # departure city
+    r"[^\n]+\n"  # arrival city
+    r"(\d{1,2}:\d{2})\n"
+    r"(\d{1,2}:\d{2})",
+    re.MULTILINE,
+)
+
+
+def _extract_travel_details_card(text: str, rule) -> list[dict]:
+    """Parse the "Travel details" check-in card layout."""
+    flights = []
+    for m in _travel_details_card_re.finditer(text):
+        dep_date = parse_flight_date(m.group(1))
+        if not dep_date:
+            continue
+        dep_dt = _build_datetime(dep_date, m.group(5))
+        arr_dt = _build_datetime(dep_date, m.group(6))
+        if not dep_dt or not arr_dt:
+            continue
+        arr_dt = fix_overnight(dep_dt, arr_dt)
+        flight = make_flight_dict(
+            rule, normalize_fn(m.group(2)), m.group(3), m.group(4), dep_dt, arr_dt
+        )
+        if flight:
+            flights.append(flight)
+    return enrich_flights(flights, text) if flights else []
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -250,4 +298,13 @@ def extract(email_msg, rule) -> list[dict]:
         if flights:
             return flights
 
-    return []
+    # "Travel details" card — needs one field per line, so it reads the
+    # newline-separated rendering rather than _get_text's space-joined one.
+    if email_msg.html_body:
+        from ..shared import html_to_text
+
+        flights = _extract_travel_details_card(html_to_text(email_msg.html_body), rule)
+        if flights:
+            return flights
+
+    return _extract_travel_details_card(body, rule) if body else []

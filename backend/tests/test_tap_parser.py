@@ -368,8 +368,8 @@ class TestTAPJourneySummaryNotTreatedAsLeg:
         routes = {(f["departure_airport"], f["arrival_airport"]) for f in tap_stops_flights}
         assert ("ARN", "FLN") not in routes
 
-    def test_generic_fallback_also_declines(self, tap_stops_email, seeded_airports_db):
-        """The line scanner must not pick the headline times up either."""
-        from backend.parsers.engine import try_generic_html_extraction
+    def test_gds_parser_also_declines(self, tap_stops_email, seeded_airports_db):
+        """Nothing behind the rule may pick the headline times up either."""
+        from backend.parsers.gds_eticket import extract_gds_eticket
 
-        assert try_generic_html_extraction(tap_stops_email) == []
+        assert extract_gds_eticket(tap_stops_email, None) == []

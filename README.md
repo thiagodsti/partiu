@@ -30,8 +30,8 @@ Want to try it before self-hosting? A public demo is available at:
 ### Email sync & flight parsing
 - Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
-- Generic PDF extraction fallback for attachments
-- Built-in parser rules for 15 airlines (see [Supported airlines](#supported-airlines))
+- Built-in parser rules for 16 airlines (see [Supported airlines](#supported-airlines))
+- **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, or the shared GDS receipt parser. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
 - **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — both the HTML table form and the compact one-line-per-leg form found in PDF attachments, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
 - **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
 - **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
@@ -130,6 +130,7 @@ Want to try it before self-hosting? A public demo is available at:
 | Wizz Air | W6 |
 | Brussels Airlines | SN |
 | Iberia | IB |
+| Vueling | VY |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
 
@@ -329,7 +330,7 @@ uv run python -m backend.tools.compare_eval \
 
 ### inspect_eml — run one .eml through the full pipeline
 
-Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → generic HTML → PDF → LLM) and shows which step extracted data and what would be stored.
+Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → GDS e-ticket parser → LLM) and shows which step extracted data and what would be stored.
 
 ```bash
 uv run python -m backend.tools.inspect_eml ~/Downloads/flight.eml

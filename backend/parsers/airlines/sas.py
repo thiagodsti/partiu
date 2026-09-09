@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 # Flight number prefixes for SAS and its codeshare / Star Alliance partners
 _FLIGHT_NUM_CODES = r"(?:SK|DY|D8|VS|LH|LX|OS|TP|A3|SN|BA|AF)"
+# The code list contains real but unlucky prefixes: "A3" (Aegean) also opens
+# every Airbus type SAS prints beside the real designator, so "Airbus A320neo"
+# was read as Aegean flight 320 and every leg got a phantom duplicate. Requiring
+# the match to stand alone as a token rules that out.
+_FLIGHT_NUM_BOUNDED = rf"(?<![A-Za-z0-9])(?:{_FLIGHT_NUM_CODES}\s*\d{{2,5}})(?![A-Za-z0-9])"
 
 
 def _parse_route(route_text: str) -> tuple[str, str]:
@@ -56,7 +61,7 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     date_re = re.compile(r"(?:^|\s)(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?:\s|$)")
     route_re = re.compile(r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})")
     time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
-    flight_num_re = re.compile(rf"({_FLIGHT_NUM_CODES}\s*\d{{2,5}})")
+    flight_num_re = re.compile(rf"({_FLIGHT_NUM_BOUNDED})")
 
     date_matches = list(date_re.finditer(text))
     flights = []
@@ -195,7 +200,7 @@ def _extract_pdf_tabular(body, email_msg, rule, booking_ref, passenger) -> list[
       SK1829 / 16MAR  Stockholm Arlanda - London Heathrow  10:00  11:50
     """
     pdf_line_re = re.compile(
-        rf"(?P<flight_number>{_FLIGHT_NUM_CODES}\s*\d{{2,5}})"
+        rf"(?P<flight_number>{_FLIGHT_NUM_BOUNDED})"
         r"\s*/\s*"
         r"(?P<date>\d{1,2}[A-Z]{3})"
         r"\s+"
@@ -265,7 +270,7 @@ def _extract_block_style(body: str, rule, booking_ref: str) -> list[dict]:
     date_re = re.compile(r"(?:^|\s)(\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})(?:\s|$)")
     route_re = re.compile(r"([A-Z]{3})\s*[-–]\s*(?:[A-ZÀ-ÿ][A-Za-zÀ-ÿ\s-]*?\s+)?([A-Z]{3})")
     time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
-    flight_num_re = re.compile(rf"({_FLIGHT_NUM_CODES}\s*\d{{2,5}})")
+    flight_num_re = re.compile(rf"({_FLIGHT_NUM_BOUNDED})")
 
     date_matches = list(date_re.finditer(body))
     flights = []

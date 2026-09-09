@@ -116,6 +116,113 @@ def _split_into_sections(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# City-name itinerary ("Itinerário da viagem" / "Informação de voo")
+# ---------------------------------------------------------------------------
+# LATAM's purchase-confirmation and flight-information emails print the
+# itinerary with *city names only* — no IATA code anywhere on the page:
+#
+#     24 de dez. de 2024      02 de fev. de 2024
+#     8:00                    12:50
+#     São Paulo               São Paulo
+#     LA3300                  (LA3302)          ← parenthesised in some variants
+#     24 de dez. de 2024      02 de fev. de 2024
+#     9:15                    14:05
+#     Florianópolis           Florianópolis
+#
+# Every other LATAM format anchors on "(GRU)"-style codes, so these emails fell
+# through to the generic scanner, which only ever recovered the first leg of a
+# round trip. The shape is rigid enough to read directly: a date/time/place
+# triple, a flight number, then a second triple.
+
+_city_time_re = re.compile(r"^(\d{1,2}:\d{2})$")
+_city_flight_re = re.compile(r"^\(?([A-Z]{2}[\s\xa0]?\d{2,5})\)?$")
+# A place line is free text; these are the labels that sit in the same column
+# and must not be mistaken for a city.
+_city_reject_re = re.compile(
+    r"\d|^(?:voo|trecho|itiner|informa|tarifa|classe|dura|escala|conex|total|"
+    r"passageir|reserva|status|assento)",
+    re.IGNORECASE,
+)
+
+
+def _city_place_iata(line: str) -> str:
+    """Resolve a city/airport name line to an IATA code ('' when implausible)."""
+    from ..shared import is_valid_iata, resolve_iata
+
+    s = line.strip()
+    if not s or len(s) > 40 or _city_reject_re.search(s):
+        return ""
+    if len(s.split()) > 4:
+        return ""
+    code = resolve_iata(s)
+    return code if code and is_valid_iata(code) else ""
+
+
+def _extract_city_itinerary(text_nl: str, rule, booking_ref: str, passenger: str) -> list[dict]:
+    """Read the city-name itinerary layout described above."""
+    lines = [ln.strip() for ln in text_nl.split("\n") if ln.strip()]
+
+    def triple(i: int) -> tuple[date_type, str, str, int] | None:
+        """Match a date/time/place triple starting at line *i*."""
+        if i + 2 >= len(lines):
+            return None
+        d = parse_flight_date(lines[i])
+        if d is None:
+            return None
+        t = _city_time_re.match(lines[i + 1])
+        if not t:
+            return None
+        code = _city_place_iata(lines[i + 2])
+        if not code:
+            return None
+        return d, t.group(1), code, i + 3
+
+    flights: list[dict] = []
+    seen: set[tuple] = set()
+    i = 0
+    while i < len(lines):
+        dep = triple(i)
+        if dep is None:
+            i += 1
+            continue
+        dep_date, dep_time, dep_iata, nxt = dep
+
+        m = _city_flight_re.match(lines[nxt]) if nxt < len(lines) else None
+        if not m:
+            i = nxt
+            continue
+
+        arr = triple(nxt + 1)
+        if arr is None:
+            i = nxt + 1
+            continue
+        arr_date, arr_time, arr_iata, after = arr
+
+        if dep_iata == arr_iata:
+            i = after
+            continue
+
+        dep_dt = _build_datetime(dep_date, dep_time)
+        arr_dt = _build_datetime(arr_date, arr_time)
+        if not dep_dt or not arr_dt:
+            i = after
+            continue
+
+        fn = m.group(1).replace(" ", "").replace("\xa0", "")
+        key = (fn, dep_iata, arr_iata)
+        if key not in seen:
+            seen.add(key)
+            flight = make_flight_dict(
+                rule, fn, dep_iata, arr_iata, dep_dt, arr_dt, booking_ref, passenger
+            )
+            if flight:
+                flights.append(flight)
+        i = after
+
+    return flights
+
+
+# ---------------------------------------------------------------------------
 # BS4 extractor
 # ---------------------------------------------------------------------------
 
@@ -126,9 +233,7 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     When no language-specific section headers are found, falls back to the
     generic flight-number-anchoring approach.
     """
-    from datetime import UTC, datetime
-
-    from ..generic_html import _extract_from_lines, _zero_width_chars_re
+    from ..shared import html_to_text
 
     soup = BeautifulSoup(html, "lxml")
     html_text = _get_text(soup)
@@ -151,24 +256,16 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
         flights = []
         for section in sections:
             flights.extend(_process_section(section, rule, booking_ref, passenger, pdf_segments))
-        return flights
+        if flights:
+            return flights
+    else:
+        flights = _process_section(text, rule, booking_ref, passenger, pdf_segments)
+        if flights:
+            return flights
 
-    # No language-specific headers — fall back to generic extraction
-    today = datetime.now(UTC).date()
-    lines = [
-        _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
-        for ln in text.split("\n")
-        if ln.strip()
-    ]
-    lines = [ln for ln in lines if ln]
-    flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
-    if flights:
-        if passenger:
-            for f in flights:
-                f.setdefault("passenger_name", passenger)
-        return flights
-
-    return _process_section(text, rule, booking_ref, passenger, pdf_segments)
+    # Every path above anchors on a parenthesised IATA code. The purchase- and
+    # flight-information templates carry city names only, so they land here.
+    return _extract_city_itinerary(html_to_text(html), rule, booking_ref, passenger)
 
 
 def _get_pdf_text(email_msg) -> str:
@@ -426,10 +523,6 @@ def _flights_proportional(
 
 def extract_regex(email_msg, rule) -> list[dict]:
     """Plain-text regex fallback for LATAM emails when HTML is unavailable."""
-    from datetime import UTC, datetime
-
-    from ..generic_html import _extract_from_lines, _zero_width_chars_re
-
     body = email_msg.body
     booking_ref = extract_booking_reference(email_msg.subject + "\n" + body)
     passenger = extract_passenger(body)
@@ -439,24 +532,14 @@ def extract_regex(email_msg, rule) -> list[dict]:
         flights = []
         for section in sections:
             flights.extend(_process_text_section(section, rule, booking_ref, passenger))
-        return flights
+        if flights:
+            return flights
+    else:
+        flights = _process_text_section(body, rule, booking_ref, passenger)
+        if flights:
+            return flights
 
-    # No language-specific headers — fall back to generic extraction
-    today = datetime.now(UTC).date()
-    lines = [
-        _zero_width_chars_re.sub("", ln).replace("\xa0", " ").strip()
-        for ln in body.split("\n")
-        if ln.strip()
-    ]
-    lines = [ln for ln in lines if ln]
-    flights = _extract_from_lines(lines, booking_ref, email_msg.date, rule, today)
-    if flights:
-        if passenger:
-            for f in flights:
-                f.setdefault("passenger_name", passenger)
-        return flights
-
-    return _process_text_section(body, rule, booking_ref, passenger)
+    return _extract_city_itinerary(body, rule, booking_ref, passenger)
 
 
 def _split_text_sections(body: str) -> list[str]:
