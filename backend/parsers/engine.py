@@ -205,7 +205,7 @@ def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
     # Always also attempt generic PDF extraction and merge any richer data
     if email_msg.pdf_attachments:
         pdf_results = _try_generic_pdf(email_msg)
-        results = _merge_flights(results, pdf_results)
+        results = merge_flights(results, pdf_results)
 
     return results
 
@@ -218,7 +218,7 @@ def _try_generic_pdf(email_msg: EmailMessage) -> list[dict]:
     return _extract_generic_pdf(pdf_text, email_msg) if pdf_text else []
 
 
-def _merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
+def merge_flights(primary: list[dict], secondary: list[dict]) -> list[dict]:
     """
     Merge ``secondary`` results into ``primary`` by filling empty fields.
 

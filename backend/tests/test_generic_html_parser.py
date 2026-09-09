@@ -496,3 +496,60 @@ class TestCityResolutionGuards:
         assert len(flights) == 1
         assert flights[0]["departure_airport"] == "ARN"
         assert flights[0]["arrival_airport"] == "MAD"
+
+
+class TestJourneySummaryBoundary:
+    """Confirmation emails lead each journey with a headline row (origin, final
+    destination, total elapsed time, "1 Stop"). Those times cover the whole
+    journey including the connection, so pairing them with the first leg's
+    flight number invents a flight that was never sold."""
+
+    def _email(self, text: str):
+        from datetime import UTC, datetime
+
+        from backend.parsers.email_connector import EmailMessage
+
+        return EmailMessage(
+            message_id="journey-test",
+            sender="no-reply@flytap.com",
+            subject="Your booking",
+            body="",
+            date=datetime(2026, 9, 9, tzinfo=UTC),
+            html_body=f"<html><body>{text}</body></html>",
+        )
+
+    def test_headline_times_are_not_attached_to_a_leg(self, seeded_airports_db):
+        from backend.parsers.generic_html import extract_generic_html
+
+        # Journey headline ARN->FLN with 1 stop, then the legs with no times
+        html = (
+            "<p>Tue, 22 Dec</p><p>14:20</p><p>ARN</p><p>19:10</p><p>FLN</p>"
+            "<p>32h 50m</p><p>1</p><p>Stop</p><p>2</p><p>Flights</p>"
+            "<p>TP781 - (ARN) Stockholm</p><p>to</p><p>(LIS) Lisbon</p>"
+        )
+        flights = extract_generic_html(self._email(html))
+        routes = {(f["departure_airport"], f["arrival_airport"]) for f in flights}
+        assert ("ARN", "FLN") not in routes
+
+    def test_direct_journey_is_still_extracted(self, seeded_airports_db):
+        """No stop marker means the headline times *are* the leg's times."""
+        from backend.parsers.generic_html import extract_generic_html
+
+        html = (
+            "<p>Fri, 10 Nov</p><p>19:05</p><p>ARN</p><p>22:35</p><p>LIS</p>"
+            "<p>4h 30m</p><p>Direct</p><p>TP 783</p>"
+        )
+        flights = extract_generic_html(self._email(html))
+        assert len(flights) == 1
+        assert flights[0]["departure_airport"] == "ARN"
+        assert flights[0]["arrival_airport"] == "LIS"
+
+    def test_next_journey_header_stops_the_forward_scan(self, seeded_airports_db):
+        """A leg must not borrow times from the journey listed after it."""
+        from backend.parsers.generic_html import extract_generic_html
+
+        html = (
+            "<p>TP109 - (LIS) Lisbon</p><p>to</p><p>(FLN) Florianopolis</p>"
+            "<p>Fri, 15 Jan</p><p>11:15</p><p>FLN</p><p>13:30</p><p>ARN</p>"
+        )
+        assert extract_generic_html(self._email(html)) == []

@@ -96,7 +96,11 @@ async def lifespan(app: FastAPI):
     init_database()
     from .airports.repository import AirportRepository
 
-    AirportRepository().load_from_csv_if_empty()
+    _airports = AirportRepository()
+    _airports.load_from_csv_if_empty()
+    # Databases seeded before the ranking columns existed need a one-time
+    # backfill; airport name resolution ranks on them.
+    _airports.backfill_rank_columns()
     from .notifications import push_service
 
     push_service.ensure_vapid_keys()

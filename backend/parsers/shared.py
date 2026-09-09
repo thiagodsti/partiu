@@ -63,6 +63,8 @@ from functools import lru_cache
 
 from bs4 import BeautifulSoup
 
+from ..utils import fold_text
+
 logger = logging.getLogger(__name__)
 
 _INVISIBLE = re.compile(r"[\u00ad\u200b\u200c\u200d\u2028\u2029\ufeff\u034f]+")
@@ -266,33 +268,270 @@ def fix_overnight(dep_dt: datetime, arr_dt: datetime) -> datetime:
     return arr_dt
 
 
+# Words that carry no locating information on their own.  A name that reduces to
+# only these can never be resolved — historically "Airport" matched ~every row in
+# the table and resolved to whichever one SQLite happened to return first.
+_GENERIC_PLACE_WORDS = frozenset(
+    {
+        "airport",
+        "airfield",
+        "aeroport",
+        "aeroporto",
+        "aeropuerto",
+        "flughafen",
+        "lufthavn",
+        "flygplats",
+        "international",
+        "intl",
+        "intern",
+        "national",
+        "domestic",
+        "regional",
+        "municipal",
+        "terminal",
+        "gate",
+        "city",
+        "town",
+        "central",
+        "station",
+        "field",
+        "base",
+        "arrival",
+        "arrivals",
+        "departure",
+        "departures",
+        "flight",
+        "flights",
+        "class",
+        "fare",
+        "basis",
+        "duration",
+        "seat",
+        "booking",
+        "status",
+        "operated",
+        "marketed",
+        "baggage",
+        "and",
+        "the",
+        "for",
+        "from",
+        "to",
+    }
+)
+
+# IATA *metropolitan* city codes — one city, several airports.  Maps to the
+# airport a scheduled itinerary means by default when only the city is named.
+_METRO_CITY_CODES: dict[str, str] = {
+    "sto": "ARN",  # Stockholm
+    "lon": "LHR",  # London
+    "par": "CDG",  # Paris
+    "nyc": "JFK",  # New York
+    "sao": "GRU",  # São Paulo
+    "rio": "GIG",  # Rio de Janeiro
+    "bue": "EZE",  # Buenos Aires
+    "mil": "MXP",  # Milan
+    "rom": "FCO",  # Rome
+    "mow": "SVO",  # Moscow
+    "tyo": "HND",  # Tokyo
+    "osa": "KIX",  # Osaka
+    "sel": "ICN",  # Seoul
+    "bjs": "PEK",  # Beijing
+    "sha": "PVG",  # Shanghai
+    "was": "IAD",  # Washington
+    "chi": "ORD",  # Chicago
+    "yto": "YYZ",  # Toronto
+    "ymq": "YUL",  # Montreal
+    "jkt": "CGK",  # Jakarta
+}
+
+# Spelled-out metro names that must beat a raw name/city LIKE search.
+_METRO_CITY_NAMES: dict[str, str] = {
+    "stockholm": "ARN",
+    "london": "LHR",
+    "paris": "CDG",
+    "new york": "JFK",
+    "sao paulo": "GRU",
+    "são paulo": "GRU",
+    "rio de janeiro": "GIG",
+    "buenos aires": "EZE",
+    "milan": "MXP",
+    "milano": "MXP",
+    "rome": "FCO",
+    "roma": "FCO",
+    "moscow": "SVO",
+    "tokyo": "HND",
+    "osaka": "KIX",
+    "seoul": "ICN",
+    "beijing": "PEK",
+    "shanghai": "PVG",
+    "washington": "IAD",
+    "chicago": "ORD",
+    "toronto": "YYZ",
+    "montreal": "YUL",
+    "berlin": "BER",
+    "jakarta": "CGK",
+    "lisbon": "LIS",
+    "lisboa": "LIS",
+}
+
+
+# Facility types that never appear in a scheduled airline itinerary.  Without
+# this, "Helsinki" resolves to Hernesaari *Heliport* (city "Helsinki") ahead of
+# HEL (city "Helsinki (Vantaa)"), and "Stockholm" to "Stockholm Landing Strip".
+_MINOR_FACILITY_WORDS = frozenset(
+    {
+        "heliport",
+        "helipad",
+        "seaplane",
+        "floatplane",
+        "airstrip",
+        "airpark",
+        "ranch",
+        "glider",
+        "gliding",
+        "ultralight",
+        "balloon",
+        "military",
+    }
+)
+_MINOR_FACILITY_PHRASES = ("landing strip", "air base", "airbase", "army airfield")
+_MINOR_FACILITY_PENALTY = 200
+
+
+def _is_minor_facility(folded_name: str) -> bool:
+    """True when an airport name describes a heliport, airstrip or similar."""
+    words = set(re.split(r"[^a-z0-9]+", folded_name))
+    if words & _MINOR_FACILITY_WORDS:
+        return True
+    return any(p in folded_name for p in _MINOR_FACILITY_PHRASES)
+
+
+def _significant_tokens(folded: str) -> list[str]:
+    """Split a folded name into locating tokens, dropping generic place words."""
+    return [
+        t for t in re.split(r"[^a-z0-9]+", folded) if len(t) >= 3 and t not in _GENERIC_PLACE_WORDS
+    ]
+
+
+# Airport size ranking, straight from the OurAirports `type` column. An
+# itinerary overwhelmingly means the large airport when a city has several.
+_AIRPORT_TYPE_SCORE = {
+    "large_airport": 60,
+    "medium_airport": 30,
+    "small_airport": 0,
+    "seaplane_base": -_MINOR_FACILITY_PENALTY,
+    "heliport": -_MINOR_FACILITY_PENALTY,
+    "balloonport": -_MINOR_FACILITY_PENALTY,
+    "closed": -_MINOR_FACILITY_PENALTY,
+}
+# An airport with no scheduled commercial service essentially cannot appear in
+# an airline itinerary, so this outweighs even an exact city-name match: "Athens"
+# means ATH (city "Spata-Artemida") and not Athens Ben Epps in Georgia, USA.
+_NO_SCHEDULED_SERVICE_PENALTY = 150
+_SCHEDULED_SERVICE_BONUS = 50
+
+
+def _score_candidate(row, tokens: list[str], folded_name: str) -> int | None:
+    """Rank an airports row against the query. Higher is better; None means reject.
+
+    The old implementation took whatever row SQLite returned first, so
+    "SAO PAULO" resolved to "João **Paulo** II Airport" (Ponta Delgada) and
+    "STOCKHOLM" to "Stockholm Skavsta" (Nyköping).  Scoring makes the exact
+    city match win, and requires every query token to actually appear.
+    """
+    city = fold_text(row["city_name"] or "")
+    name = fold_text(row["name"] or "")
+    city_tokens = set(re.split(r"[^a-z0-9]+", city))
+    name_tokens = set(re.split(r"[^a-z0-9]+", name))
+    haystack = city_tokens | name_tokens
+
+    # Every significant query token must appear as a whole word somewhere.
+    # This is what stops '%paulo%' from matching 'João Paulo II'.
+    if not all(t in haystack for t in tokens):
+        return None
+
+    score = 10  # base: every query token accounted for
+    if city == folded_name:
+        score += 100  # exact city name
+    if name == folded_name:
+        score += 90  # exact airport name
+    if all(t in city_tokens for t in tokens):
+        score += 40  # all tokens in the city name
+    if all(t in name_tokens for t in tokens):
+        score += 30  # all tokens in the airport name
+    if _is_minor_facility(name):
+        score -= _MINOR_FACILITY_PENALTY
+
+    # Size / commercial-service ranking. Only applied when the DB actually has
+    # the data — on a database seeded before the backfill, `type` is NULL and
+    # the name heuristics above decide on their own.
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if "type" in keys and row["type"]:
+        score += _AIRPORT_TYPE_SCORE.get(row["type"], 0)
+        score += (
+            _SCHEDULED_SERVICE_BONUS if row["scheduled_service"] else -_NO_SCHEDULED_SERVICE_PENALTY
+        )
+
+    # Prefer the airport whose name carries the fewest unmatched extra words,
+    # so "Stockholm" prefers "Stockholm-Arlanda" over "Stockholm Landing Strip".
+    return score - len(name_tokens - set(tokens))
+
+
 @lru_cache(maxsize=512)
 def resolve_iata(name: str) -> str:
     """Resolve an airport/city name string to a 3-letter IATA code.
 
-    Search order:
+    Returns '' when the name cannot be resolved *confidently*. Emitting nothing
+    is always preferable to emitting the wrong airport: a dropped leg is visible,
+    a silently wrong one is not.
+
+    Search order, most trustworthy first:
       1. Trailing 3-letter uppercase code (e.g. "Stockholm Arlanda ARN")
-      2. Exact match in airport_aliases after stripping parenthetical hints
-      3. Each word/token tried against airport_aliases (handles hyphenated names)
-      4. LIKE search on airports.name / exact on airports.city_name
-      5. Word-by-word LIKE on airports (handles partial names like "Guarulhos Intl")
+      2. IATA metropolitan city code / name ("STO" → ARN, "Sao Paulo" → GRU)
+      3. Exact match in airport_aliases after stripping parenthetical hints
+      4. Each word/token tried against airport_aliases (handles hyphenated names)
+      5. Scored, accent-folded, word-boundary search over airports
+
+    The metro map is checked ahead of the alias table because most alias rows are
+    derived from the reference CSV's free-text keywords, where a minor namesake
+    can claim a major city's name (Sydney, Nova Scotia lists "Sydney").
     """
-    # 1. Trailing IATA code already present
+    # 1. Trailing IATA code already present.  A bare 3-letter token may be a
+    #    metropolitan *city* code ("STO") rather than an airport, so map those
+    #    before trusting it as-is.
     m = re.search(r"\b([A-Z]{3})$", name)
     if m:
-        return m.group(1)
+        code = m.group(1)
+        if name.strip() == code:
+            metro = _METRO_CITY_CODES.get(code.lower())
+            if metro:
+                return metro
+        return code
 
     # Strip parenthetical city hints: "Arlanda (Stockholm)" → "Arlanda"
     clean = re.sub(r"\s*\([^)]*\)", "", name).strip()
     name_lower = clean.lower().strip()
     orig_lower = name.lower().strip()
+    folded = fold_text(clean).strip()
+    tokens = _significant_tokens(folded)
+
+    # Nothing locating left ("Airport", "Terminal", "Fare basis") → give up.
+    if not tokens:
+        return ""
+
+    # 2. Metropolitan city code / name — hand-curated, so it outranks everything
+    #    derived from reference data.
+    metro = _METRO_CITY_NAMES.get(folded) or _METRO_CITY_CODES.get(folded)
+    if metro:
+        return metro
 
     try:
         from ..database import db_conn
 
         with db_conn() as conn:
-            # 2. Exact alias match (try both cleaned and original)
-            for candidate in dict.fromkeys([name_lower, orig_lower]):
+            # 3. Exact alias match (try cleaned, original and accent-folded)
+            for candidate in dict.fromkeys([name_lower, orig_lower, folded]):
                 row = conn.execute(
                     "SELECT iata_code FROM airport_aliases WHERE alias = ?",
                     (candidate,),
@@ -300,8 +539,7 @@ def resolve_iata(name: str) -> str:
                 if row:
                     return row["iata_code"]
 
-            # 3. Word/token alias match — handles "Sicily-Catania", compound names
-            tokens = [t for t in re.split(r"[\s\-()+]", name_lower) if len(t) >= 3]
+            # 4. Word/token alias match — handles "Sicily-Catania", compound names
             for tok in reversed(tokens):
                 row = conn.execute(
                     "SELECT iata_code FROM airport_aliases WHERE alias = ?",
@@ -310,28 +548,38 @@ def resolve_iata(name: str) -> str:
                 if row:
                     return row["iata_code"]
 
-            # 4. LIKE on airports.name, exact on airports.city_name
-            row = conn.execute(
-                "SELECT iata_code FROM airports "
-                "WHERE lower(name) LIKE ? OR lower(city_name) = ? LIMIT 1",
-                (f"%{name_lower}%", name_lower),
-            ).fetchone()
-            if row:
-                return row["iata_code"]
+            # 5. Scored search. Narrow with a LIKE on the rarest (longest) token,
+            #    then rank every candidate rather than trusting SQLite's order.
+            #    Matching runs against the accent-folded columns so "Dusseldorf"
+            #    finds "Düsseldorf"; older databases without them fall back to
+            #    the raw columns until backfill_rank_columns() has run.
+            anchor = max(tokens, key=len)
+            like = f"%{anchor}%"
+            try:
+                # COALESCE so rows inserted outside the CSV loader (and any not
+                # yet backfilled) still match on their raw, accent-sensitive text
+                # rather than dropping out of the search entirely.
+                rows = conn.execute(
+                    "SELECT iata_code, name, city_name, type, scheduled_service FROM airports "
+                    "WHERE COALESCE(name_folded, lower(name)) LIKE ? "
+                    "OR COALESCE(city_folded, lower(city_name)) LIKE ?",
+                    (like, like),
+                ).fetchall()
+            except Exception:
+                rows = conn.execute(
+                    "SELECT iata_code, name, city_name FROM airports "
+                    "WHERE lower(name) LIKE ? OR lower(city_name) LIKE ? LIMIT 400",
+                    (like, like),
+                ).fetchall()
 
-            # 5. Word-by-word LIKE (handles "Guarulhos Intl", "Rome Fiumicino", etc.)
-            _SKIP = {"intl", "airport", "international", "intern", "city"}
-            sig_tokens = [t for t in tokens if t not in _SKIP and len(t) >= 4]
-            for tok in reversed(sig_tokens):
-                row = conn.execute(
-                    "SELECT iata_code FROM airports "
-                    "WHERE lower(name) LIKE ? OR lower(city_name) LIKE ? LIMIT 1",
-                    (f"%{tok}%", f"%{tok}%"),
-                ).fetchone()
-                if row:
-                    return row["iata_code"]
+            best, best_score = "", None
+            for row in rows:
+                score = _score_candidate(row, tokens, folded)
+                if score is not None and (best_score is None or score > best_score):
+                    best, best_score = row["iata_code"], score
+            return best
     except Exception:
-        pass
+        logger.debug("resolve_iata failed for %r", name, exc_info=True)
 
     return ""
 

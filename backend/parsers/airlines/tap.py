@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 
 from bs4 import BeautifulSoup
 
+from ..gds_eticket import extract_gds_eticket
 from ..shared import (
     _build_datetime,
     enrich_flights,
@@ -24,7 +25,6 @@ from ..shared import (
     get_ref_year,
     make_flight_dict,
     parse_date,
-    resolve_iata,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,57 +188,13 @@ def _extract_checkin(text: str, rule, email_year: int) -> list[dict]:
 # Format 3: E-ticket receipt (RECIBO DE BILHETE ELETRÓNICO)
 # ---------------------------------------------------------------------------
 
-_eticket_leg_re = re.compile(
-    r"([A-Z][A-Z ]{3,})\n"
-    r"Terminal\s*/\s*Terminal:\s*\S+\n"
-    r"\n"
-    r"([A-Z][A-Z ]{3,})\n"
-    r"Terminal\s*/\s*Terminal:\s*\S+\n"
-    r"\n"
-    r"(TP\d{2,4})\n"
-    r"\n"
-    r"(\d{2}:\d{2})\n"
-    r"(\d{1,2}\w{3}\d{4})\n"
-    r"\n"
-    r"(\d{2}:\d{2})\n"
-    r"(\d{1,2}\w{3}\d{4})\n",
-)
-
-
-def _extract_eticket_receipt(text: str, rule, email_year: int) -> list[dict]:
-    """Parse TAP e-ticket receipt with city names + TP flight number + times."""
-    if "RECIBO DE BILHETE" not in text.upper() and "ELECTRONIC TICKET RECEIPT" not in text.upper():
-        return []
-
-    flights = []
-    for m in _eticket_leg_re.finditer(text):
-        dep_iata = resolve_iata(m.group(1).strip())
-        arr_iata = resolve_iata(m.group(2).strip())
-        if not dep_iata or not arr_iata:
-            logger.debug(
-                "TAP eticket: could not resolve IATA for '%s' or '%s'",
-                m.group(1).strip(),
-                m.group(2).strip(),
-            )
-            continue
-
-        dep_date = parse_date(m.group(5), email_year)
-        arr_date = parse_date(m.group(7), email_year)
-        if not dep_date or not arr_date:
-            continue
-
-        flight = make_flight_dict(
-            rule,
-            m.group(3).upper(),
-            dep_iata,
-            arr_iata,
-            _build_datetime(dep_date, m.group(4)),
-            _build_datetime(arr_date, m.group(6)),
-        )
-        if flight:
-            flights.append(flight)
-
-    return flights
+#
+# TAP issues its e-ticket receipts through Amadeus in the standard GDS layout,
+# so that format is handled by the shared ``gds_eticket`` parser rather than a
+# TAP-specific pattern.  The regex that used to live here required a blank line
+# between fields and a "Terminal / Terminal: N" line for *both* airports; real
+# receipts have neither (Florianópolis prints no terminal at all), so it matched
+# nothing and every e-ticket fell through to the line-based generic scanner.
 
 
 # ---------------------------------------------------------------------------
@@ -251,16 +207,38 @@ _weekday_prefixed_leg_re = re.compile(
     r"([A-Z]{3})\n"
     r"(\d{2}:\d{2})\n"
     r"([A-Z]{3})\n"
-    r"[\s\S]{0,300}?\n"
+    r"([\s\S]{0,300}?)\n"
     r"(TP\s*\d{3,4})\b",
     re.IGNORECASE,
 )
 
+# "1 Stop", "2 Stops", "3 flights" — markers that the times above belong to a
+# whole *journey* (origin to final destination) rather than a single leg.
+_JOURNEY_SUMMARY_RE = re.compile(r"\b\d+\s*(?:stops?|flights?)\b", re.IGNORECASE)
+
 
 def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list[dict]:
-    """Parse TAP booking confirmation: "Fri, 10 Nov\\n19:05\\nARN\\n22:35\\nLIS\\n...TP 783"."""
+    """Parse TAP booking confirmation: "Fri, 10 Nov\\n19:05\\nARN\\n22:35\\nLIS\\n...TP 783".
+
+    Only *direct* journeys are read here.  TAP's confirmation opens each journey
+    with a summary line carrying the origin, final destination and total elapsed
+    time, then lists the individual legs underneath without their own times.
+    Treating that summary as a leg invented flights that never existed — a
+    Stockholm→Florianópolis "TP781" fusing two real legs into one, with the
+    connection in Lisbon erased.
+    """
     flights = []
     for m in _weekday_prefixed_leg_re.finditer(text):
+        # Between the airports and the flight number sits "1 Stop / 2 Flights"
+        # when this is a connecting journey; those times span the whole trip.
+        if _JOURNEY_SUMMARY_RE.search(m.group(6)):
+            logger.debug(
+                "TAP: skipping journey summary %s->%s (not a single leg)",
+                m.group(3),
+                m.group(5),
+            )
+            continue
+
         dep_date = parse_date(m.group(1), email_year)
         if not dep_date:
             continue
@@ -271,7 +249,7 @@ def _extract_booking_confirmation_html(text: str, rule, email_year: int) -> list
         arr_dt = fix_overnight(dep_dt, arr_dt)
         flight = make_flight_dict(
             rule,
-            m.group(6).replace(" ", "").upper(),
+            m.group(7).replace(" ", "").upper(),
             m.group(3).upper(),
             m.group(5).upper(),
             dep_dt,
@@ -350,10 +328,10 @@ def extract(email_msg, rule) -> list[dict]:
     if flights:
         return enrich_flights(flights, body, email_msg.subject)
 
-    # Format 3: e-ticket receipt
-    flights = _extract_eticket_receipt(body, rule, email_year)
+    # Format 3: e-ticket receipt — shared GDS layout, not TAP-specific
+    flights = extract_gds_eticket(email_msg, rule)
     if flights:
-        return enrich_flights(flights, body, email_msg.subject)
+        return flights
 
     # Formats 4 & 5: HTML-based
     if html:

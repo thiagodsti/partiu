@@ -219,3 +219,66 @@ class TestAirportDistance:
         with patch("backend.database.db_conn", side_effect=Exception("DB error")):
             result = _airport_distance("GRU", "EZE")
         assert result == 1.0
+
+
+class TestFoldText:
+    def test_strips_accents(self):
+        from backend.utils import fold_text
+
+        assert fold_text("Düsseldorf") == "dusseldorf"
+
+    def test_lowercases(self):
+        from backend.utils import fold_text
+
+        assert fold_text("STOCKHOLM") == "stockholm"
+
+    def test_handles_portuguese(self):
+        from backend.utils import fold_text
+
+        assert fold_text("Florianópolis") == "florianopolis"
+        assert fold_text("São Paulo") == "sao paulo"
+
+    def test_none_and_empty(self):
+        from backend.utils import fold_text
+
+        assert fold_text(None) == ""
+        assert fold_text("") == ""
+
+    def test_plain_ascii_is_unchanged_apart_from_case(self):
+        from backend.utils import fold_text
+
+        assert fold_text("Lisbon Airport") == "lisbon airport"
+
+
+class TestSignificantTokens:
+    def test_drops_generic_place_words(self):
+        from backend.parsers.shared import _significant_tokens
+
+        assert _significant_tokens("lisbon airport") == ["lisbon"]
+
+    def test_all_generic_leaves_nothing(self):
+        from backend.parsers.shared import _significant_tokens
+
+        assert _significant_tokens("international airport terminal") == []
+
+    def test_keeps_multiword_place_names(self):
+        from backend.parsers.shared import _significant_tokens
+
+        assert _significant_tokens("sao paulo guarulhos intl") == ["sao", "paulo", "guarulhos"]
+
+
+class TestMinorFacilityDetection:
+    def test_heliport_is_minor(self):
+        from backend.parsers.shared import _is_minor_facility
+
+        assert _is_minor_facility("hernesaari heliport")
+
+    def test_landing_strip_is_minor(self):
+        from backend.parsers.shared import _is_minor_facility
+
+        assert _is_minor_facility("stockholm landing strip")
+
+    def test_ordinary_airport_is_not_minor(self):
+        from backend.parsers.shared import _is_minor_facility
+
+        assert not _is_minor_facility("stockholm-arlanda airport")

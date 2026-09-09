@@ -32,6 +32,9 @@ Want to try it before self-hosting? A public demo is available at:
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
 - Generic PDF extraction fallback for attachments
 - Built-in parser rules for 15 airlines (see [Supported airlines](#supported-airlines))
+- **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — both the HTML table form and the compact one-line-per-leg form found in PDF attachments, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
+- **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
+- **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
 - LLM fallback is used only for incremental sync, not full rescans
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required

@@ -50,6 +50,19 @@ _compact_flight_re = re.compile(
     r"(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})",  # dep time + arr time
     re.IGNORECASE,
 )
+# Journey-summary boundary. Modern confirmation emails lead each journey with a
+# headline row — origin, final destination, total elapsed time, "1 Stop",
+# "2 Flights" — and only then list the legs. Those headline times span the whole
+# journey including the connection, so pairing them with the first leg's flight
+# number invents a flight that was never sold (a Stockholm→Florianópolis "TP781"
+# with the Lisbon stop erased). Scanning backwards stops here.
+# Matches either the "Stop"/"Flights" tail of a summary row, or the weekday-date
+# header that opens the next journey ("Fri, 15 Jan").
+_journey_summary_boundary_re = re.compile(
+    r"^(?:(?:stops?|flights?|escalas?|voos?|paradas?|umsteigen)"
+    r"|(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,\s*\d{1,2}\s+\w+)$",
+    re.IGNORECASE,
+)
 # Exact HH:MM (may also have h suffix like Lufthansa "06:45 h")
 _time_re = re.compile(r"^(\d{1,2}:\d{2})(?:[\s\xa0]*h)?$")
 # Combined time+date like "21:00 - 13 Apr 2025" (ITA Airways format)
@@ -391,6 +404,17 @@ def _extract_from_lines(
         )
         win_start = max(fn_line - 15, prev_fn_line)
         win_end = min(fn_line + 20, next_fn_line)
+
+        # Never cross a journey-summary boundary in either direction: above it
+        # sits this journey's headline row, below it the next journey's.
+        for i in range(fn_line - 1, win_start - 1, -1):
+            if _journey_summary_boundary_re.match(lines[i].strip()):
+                win_start = i + 1
+                break
+        for i in range(fn_line + 1, win_end):
+            if _journey_summary_boundary_re.match(lines[i].strip()):
+                win_end = i
+                break
 
         iatas, times, dates = _scan_window(lines, fn_line, win_start, win_end)
 

@@ -19,9 +19,12 @@ from ..parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from ..parsers.engine import (
     extract_flights_from_email,
     match_rule_to_email,
+    merge_flights,
     try_generic_html_extraction,
     try_generic_pdf_extraction,
 )
+from ..parsers.gds_eticket import extract_gds_eticket
+from ..parsers.validation import validate_flights
 from ..settings.repository import SettingsRepository
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 from .grouping import auto_group_flights
@@ -409,18 +412,35 @@ def _process_emails(
                 flights_updated += bcbp_updated
                 emails_processed += 1
 
-            # --- HTML / rule-based or PDF parsing ---
+            # --- Extraction, most trustworthy strategy first ---------------
+            # 1. The airline's own rule. Hand-written against real emails for
+            #    that carrier, and the only thing that reads formats the others
+            #    cannot (boarding-pass microdata, check-in mails, seat/cabin).
             rule = match_rule_to_email(email_msg, sorted_rules)
-            if rule:
-                flights_data = extract_flights_from_email(email_msg, rule)
-            else:
-                flights_data = try_generic_html_extraction(email_msg) or try_generic_pdf_extraction(
-                    email_msg
-                )
+            flights_data = extract_flights_from_email(email_msg, rule) if rule else []
 
-            # --- Generic HTML fallback when rule matched but extractor returned nothing ---
-            if not flights_data and rule:
-                flights_data = try_generic_html_extraction(email_msg, rule)
+            # 2. GDS e-ticket receipt. Reads the receipt's own structure — a
+            #    table cell's column, or a whole matched line — instead of
+            #    guessing from proximity to a flight number, which makes it far
+            #    more reliable than the line scanners below. It self-gates on a
+            #    receipt marker, returning [] rather than guessing at other
+            #    formats, so it is safe to attempt on every email.
+            #
+            #    Its results are *merged* rather than used only as a fallback:
+            #    an airline rule can quietly miss legs on a multi-carrier
+            #    itinerary (a three-leg ARN→AMS→LHR→JNB ticket came through as
+            #    the final leg alone), and merging recovers those while keeping
+            #    any richer per-leg fields the rule found. Legs are matched on
+            #    flight number and route, so agreeing parsers do not duplicate.
+            gds_flights = extract_gds_eticket(email_msg, rule)
+            if gds_flights:
+                flights_data = merge_flights(flights_data, gds_flights)
+
+            # 3. Generic line-based scanners: last resort before the LLM.
+            if not flights_data:
+                flights_data = try_generic_html_extraction(
+                    email_msg, rule
+                ) or try_generic_pdf_extraction(email_msg)
 
             # --- LLM fallback (incremental sync only, when Ollama is available) ---
             if not flights_data and _use_llm:
@@ -437,6 +457,11 @@ def _process_emails(
                 continue
 
             flights_data = [apply_airport_timezones(f) for f in flights_data]
+            # Single gate every extraction path passes through: times are real
+            # UTC by this point, so impossible legs can actually be spotted.
+            flights_data = validate_flights(flights_data, source=email_msg.subject[:60])
+            if not flights_data:
+                continue
             if not bcbp_legs:
                 emails_processed += 1
 

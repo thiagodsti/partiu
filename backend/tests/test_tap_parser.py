@@ -324,3 +324,52 @@ class TestTAPEticketFlightData:
 
     def test_booking_reference(self, tap_eticket_flights):
         assert all(f["booking_reference"] == "TESTRF" for f in tap_eticket_flights)
+
+
+# ---------------------------------------------------------------------------
+# Booking confirmation with connections
+# ---------------------------------------------------------------------------
+#
+# tap_booking_confirmation_stops_anonymized.json
+#   A confirmation for a connecting itinerary (booking TESTRF).  Each direction
+#   opens with a *journey* headline — origin, final destination, total elapsed
+#   time, "1 Stop", "2 Flights" — and only then lists the legs, which carry no
+#   times of their own.
+#
+#   Reading that headline as a leg produced flights that were never sold: a
+#   single "TP781 ARN→FLN" fusing the Stockholm→Lisbon and Lisbon→Florianópolis
+#   legs into one and erasing the connection.  Since the per-leg times are simply
+#   not in this email, the correct result is to extract nothing and let the
+#   e-ticket receipt for the same booking supply the itinerary.
+
+
+@pytest.fixture(scope="module")
+def tap_stops_email():
+    return load_anonymized_fixture("tap_booking_confirmation_stops_anonymized.json")
+
+
+@pytest.fixture(scope="module")
+def tap_stops_flights(tap_stops_email, seeded_airports_db):
+    from backend.parsers.builtin_rules import get_builtin_rules
+    from backend.parsers.engine import extract_flights_from_email, match_rule_to_email
+
+    rules = sorted(get_builtin_rules(), key=lambda r: r.priority, reverse=True)
+    rule = match_rule_to_email(tap_stops_email, rules)
+    assert rule is not None
+    return extract_flights_from_email(tap_stops_email, rule)
+
+
+class TestTAPJourneySummaryNotTreatedAsLeg:
+    def test_no_flights_invented_from_journey_headline(self, tap_stops_flights):
+        assert tap_stops_flights == []
+
+    def test_no_leg_spans_the_whole_journey(self, tap_stops_flights):
+        # ARN→FLN is the journey, not any single flight that was sold
+        routes = {(f["departure_airport"], f["arrival_airport"]) for f in tap_stops_flights}
+        assert ("ARN", "FLN") not in routes
+
+    def test_generic_fallback_also_declines(self, tap_stops_email, seeded_airports_db):
+        """The line scanner must not pick the headline times up either."""
+        from backend.parsers.engine import try_generic_html_extraction
+
+        assert try_generic_html_extraction(tap_stops_email) == []

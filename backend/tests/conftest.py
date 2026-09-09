@@ -207,7 +207,9 @@ def seeded_airports_db(tmp_path_factory):
         ("GIG", "Rio de Janeiro Galeao Airport", "Rio de Janeiro", "BR"),
         ("VCP", "Campinas Viracopos Airport", "Campinas", "BR"),
         # Additional airports used by parser test fixtures
-        ("FLN", "Florianopolis International Airport", "Florianopolis", "BR"),
+        # Real name, as in the reference data: the airport is not named after
+        # its city, which is exactly the case name resolution has to handle.
+        ("FLN", "Hercilio Luz International Airport", "Florianopolis", "BR"),
         ("CDG", "Paris Charles de Gaulle Airport", "Paris", "FR"),
         ("CPT", "Cape Town International Airport", "Cape Town", "ZA"),
         ("LIN", "Milan Linate Airport", "Milan", "IT"),
@@ -217,11 +219,19 @@ def seeded_airports_db(tmp_path_factory):
         ("SDU", "Rio de Janeiro Santos Dumont Airport", "Rio de Janeiro", "BR"),
         ("BSB", "Brasilia International Airport", "Brasilia", "BR"),
     ]
+    # Seed the ranking/folded columns too, so resolve_iata() is exercised the
+    # way it runs in production rather than through its degraded fallback path.
+    from backend.utils import fold_text
+
     with db_write() as conn:
         conn.executemany(
-            "INSERT OR IGNORE INTO airports (iata_code, name, city_name, country_code)"
-            " VALUES (?, ?, ?, ?)",
-            airports,
+            "INSERT OR IGNORE INTO airports (iata_code, name, city_name, country_code,"
+            " type, scheduled_service, name_folded, city_folded)"
+            " VALUES (?, ?, ?, ?, 'large_airport', 1, ?, ?)",
+            [
+                (iata, name, city, cc, fold_text(name), fold_text(city))
+                for iata, name, city, cc in airports
+            ],
         )
 
     yield db_path
