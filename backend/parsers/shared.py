@@ -767,7 +767,7 @@ def _extract_booking_ref_text(text: str) -> str:
         r"|Reserv\w{1,12}\b(?:\s*(?:code|number|no\.?))?"  # Reservation (code), Reserva…
         r"|Rezervasyon(?:\s*kodu)?"  # TR (Turkish Airlines)
         r"|Bokning(?:snummer)?"  # SV
-        r"|PNR"  # Universal
+        r"|PNR\b(?:\s*(?:no\.?|nr\.?|number))?"  # Universal; "PNR No:" (Pegasus)
         r"|Buchungscode|Buchungsnummer|Reservierungscode|Buchungsreferenz"  # DE
         r"|confirmation\s*(?:code|number)"  # EN
         r"|Flight\s+confirmation\s+code"  # EN (Wizz Air)

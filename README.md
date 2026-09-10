@@ -30,10 +30,11 @@ Want to try it before self-hosting? A public demo is available at:
 ### Email sync & flight parsing
 - Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
-- Built-in parser rules for 18 airlines (see [Supported airlines](#supported-airlines))
+- Built-in parser rules for 19 airlines (see [Supported airlines](#supported-airlines))
 - **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, or the shared GDS receipt parser. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
 - **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — both the HTML table form and the compact one-line-per-leg form found in PDF attachments, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
 - **Turkish Airlines ticket mails**: TK sends its own branded "Ticket Details" document rather than a GDS receipt, so it gets a dedicated parser that reads both of its renderings — the HTML itinerary and, if that is missing, the attached `TicketDetails.pdf` — including connections, overnight arrivals and the Turkish-language version
+- **Pegasus Airlines confirmations**: PC's Turkish-language booking mail carries no attachment at all, so its dedicated parser reads the HTML leg blocks directly, taking each leg's date from the header above it (never from the "check-in opens" date at the top of the mail) and picking up per-leg terminals along the way
 - **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
 - **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
@@ -134,6 +135,7 @@ Want to try it before self-hosting? A public demo is available at:
 | Vueling | VY |
 | Qatar Airways | QR |
 | Turkish Airlines (branded "Ticket Details" mail — HTML and PDF renderings) | TK |
+| Pegasus Airlines (Turkish-language booking confirmation) | PC |
 
 More airlines can be added by contributing a new rule (see [Contributing](#contributing)).
 

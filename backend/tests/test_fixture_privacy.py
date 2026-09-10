@@ -66,6 +66,8 @@ ALLOWED_AIRLINE_DOMAIN_WORDS = (
     "vueling",
     "turkishairlines",
     "thy.com",
+    "flypgs",
+    "pegasus",
     "google.com",
     "sendgrid",
     "media-carrier.de",

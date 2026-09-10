@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "30"  # Turkish Airlines (TK) rule added
+PARSER_VERSION = "31"  # Pegasus Airlines (PC) rule added
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -24,7 +24,7 @@ PARSER_VERSION = "30"  # Turkish Airlines (TK) rule added
 SUBJECT_PATTERN = (
     r"(?:confirm|reserv|booking|itinerar|ticket|receipt|"
     r"boarding|check.?in|travel|trip|flight|order|"
-    r"voo|passagem|bilhete|bilet|viagem|compr|embarque|cart[aã]o|"
+    r"voo|passagem|bilhete|bilet|rezerv|viagem|compr|embarque|cart[aã]o|"
     r"vuelo|viaje|"
     r"buchung|reise|"
     r"billet|resa|rejse|bestilling|flygning|bokning|resehandling|resedokument|"
@@ -200,6 +200,16 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "VY",
         "sender_pattern": r"(@vueling\.com|no-reply@vueling)",
         "custom_extractor": "vueling",
+        "priority": 10,
+    },
+    # =========================================================================
+    # Pegasus Airlines (PC) — "Rezervasyonun onaylandı!" booking confirmations
+    # =========================================================================
+    {
+        "airline_name": "Pegasus Airlines",
+        "airline_code": "PC",
+        "sender_pattern": r"(flypgs\.com|@pegasus\.)",
+        "custom_extractor": "pegasus",
         "priority": 10,
     },
     # =========================================================================
