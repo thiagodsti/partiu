@@ -223,6 +223,9 @@ def seeded_airports_db(tmp_path_factory):
         ("MUC", "Munich Airport", "Munich", "DE"),
         ("ZRH", "Zurich Airport", "Zurich", "CH"),
         ("CTA", "Catania Fontanarossa Airport", "Catania", "IT"),
+        ("IST", "Istanbul Airport", "Istanbul", "TR"),
+        ("ADB", "Izmir Adnan Menderes Airport", "Izmir", "TR"),
+        ("DNZ", "Denizli Cardak Airport", "Denizli", "TR"),
     ]
     # Seed the ranking/folded columns too, so resolve_iata() is exercised the
     # way it runs in production rather than through its degraded fallback path.

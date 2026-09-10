@@ -1,9 +1,9 @@
 """
 Test: Brussels Airlines (SN) parser.
 
-Fixture: tests/fixtures/brussels.eml
+Fixture: tests/fixtures/brussels_anonymized.eml
   Round trip: ARN→BRU→OLB (SN2298 + SN3107) and OLB→BRU→ARN (SN3108 + SN2297)
-  Booking reference: 8EOVNP
+  Booking reference: TESTRF
 
 The fixture sender is anonymised (From: bob.test@example.com), so rule
 matching is tested via direct extractor invocation rather than the engine's
@@ -25,7 +25,7 @@ def dt(year, month, day, hour, minute) -> datetime:
 
 @pytest.fixture(scope="module")
 def brussels_email():
-    return load_eml_as_email_message("brussels.eml")
+    return load_eml_as_email_message("brussels_anonymized.eml")
 
 
 @pytest.fixture(scope="module")
@@ -158,7 +158,7 @@ class TestBrusselsAirlinesBookingReference:
 
     def test_booking_reference_value(self, brussels_flights):
         for f in brussels_flights:
-            assert f.get("booking_reference") == "8EOVNP"
+            assert f.get("booking_reference") == "TESTRF"
 
 
 # ---------------------------------------------------------------------------

@@ -746,6 +746,9 @@ def _extract_booking_ref_text(text: str) -> str:
       connecting word like "IS" (Norwegian: "YOUR BOOKING REFERENCE IS:\\nQAJV6E").
     - ``Reserv\\w{1,12}`` instead of just "Reservation" because test fixtures
       anonymise the label to "ReservTESTRF" (real emails always have "Reservation").
+      The optional code/number sub-keyword after it is what makes "Reservation
+      code: T2TQXB" (Turkish Airlines) match — the separator class stops at the
+      "c" of "code", so without it the label never reaches the reference.
     - Sub-keywords for Ticket / Order / e-ticket are **required** (not optional)
       to avoid matching "Ticket details", "Order summary", etc.
     - The captured code uses ``(?-i:[A-Z0-9]{5,8})`` (inline no-IGNORECASE) so
@@ -761,7 +764,8 @@ def _extract_booking_ref_text(text: str) -> str:
         r"C[óo]digo\s+de\s+reserva(?:\s*/\s*Booking\s+ref)?"  # PT/ES + bilingual
         r"|Referência\s+da\s+reserva"  # PT (TAP)
         r"|booking\s*(?:ref(?:erence)?|code|number)"  # EN: all variants
-        r"|Reserv\w{1,12}\b"  # Reservation, Reserva, ReservTESTRF…
+        r"|Reserv\w{1,12}\b(?:\s*(?:code|number|no\.?))?"  # Reservation (code), Reserva…
+        r"|Rezervasyon(?:\s*kodu)?"  # TR (Turkish Airlines)
         r"|Bokning(?:snummer)?"  # SV
         r"|PNR"  # Universal
         r"|Buchungscode|Buchungsnummer|Reservierungscode|Buchungsreferenz"  # DE

@@ -142,7 +142,7 @@ class TestTapReservationChange:
 
     HTML = _html(
         "Booking Reference",
-        "OP2NJ2",
+        "TESTR9",
         "Your itinerary",
         "Friday, 10 November 2023",
         "19:30",

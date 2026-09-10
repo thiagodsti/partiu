@@ -101,4 +101,4 @@ class TestWizzAirBookingReference:
 
     def test_booking_reference_value(self, wizz_flights):
         for f in wizz_flights:
-            assert (f.get("booking_reference") or "").strip() == "GW8PSD"
+            assert (f.get("booking_reference") or "").strip() == "TESTR7"

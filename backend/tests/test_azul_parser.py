@@ -3,7 +3,7 @@ Test: Azul Brazilian Airlines parser.
 
 Fixture: tests/fixtures/azul_anonymized.eml
   VCP → FLN  AD4849
-  Booking reference: TQJWFX
+  Booking reference: TESTR5
 """
 
 from datetime import UTC, datetime
@@ -88,7 +88,7 @@ class TestAzulFlightData:
         assert azul_flights[0]["arrival_datetime"] == dt(2026, 3, 2, 14, 35)
 
     def test_booking_reference(self, azul_flights):
-        assert azul_flights[0]["booking_reference"] == "TQJWFX"
+        assert azul_flights[0]["booking_reference"] == "TESTR5"
 
 
 # ---------------------------------------------------------------------------
@@ -128,4 +128,4 @@ class TestAzulLayoutB:
         assert azul2_flights[0]["arrival_datetime"] == dt(2026, 3, 2, 14, 35)
 
     def test_booking_reference(self, azul2_flights):
-        assert azul2_flights[0]["booking_reference"] == "TQJWFX"
+        assert azul2_flights[0]["booking_reference"] == "TESTR5"

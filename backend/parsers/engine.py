@@ -88,6 +88,26 @@ def _build_month_map() -> dict[str, int]:
         "augusti": 8,
         "okt": 10,
         "des": 12,
+        # Turkish — both the diacritic spelling the emails use and the folded
+        # form, because some senders strip the diacritics.
+        "ocak": 1,
+        "şubat": 2,
+        "subat": 2,
+        "mart": 3,
+        "nisan": 4,
+        "mayıs": 5,
+        "mayis": 5,
+        "haziran": 6,
+        "temmuz": 7,
+        "ağustos": 8,
+        "agustos": 8,
+        "eylül": 9,
+        "eylul": 9,
+        "ekim": 10,
+        "kasım": 11,
+        "kasim": 11,
+        "aralık": 12,
+        "aralik": 12,
     }
     mapping.update(_EXTRA)
     return mapping

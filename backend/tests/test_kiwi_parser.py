@@ -12,6 +12,7 @@ The email was forwarded from a personal Gmail address, so the outer From header
 is not @kiwi.com.  The parser must resolve the rule via forwarded-sender
 detection (scanning the email body for "From: … @kiwi.com").
 """
+
 from datetime import UTC, datetime, timezone
 
 import pytest
@@ -49,6 +50,7 @@ def kiwi_flights(kiwi_email, kiwi_rule):
 # Rule matching
 # ---------------------------------------------------------------------------
 
+
 class TestKiwiRuleMatching:
     def test_rule_is_found(self, kiwi_rule):
         assert kiwi_rule is not None
@@ -76,17 +78,18 @@ class TestKiwiRuleMatching:
 # Flight count
 # ---------------------------------------------------------------------------
 
+
 class TestKiwiFlightCount:
     def test_four_flights_extracted(self, kiwi_flights):
-        assert len(kiwi_flights) == 4, (
-            f"Expected 4 flights, got {len(kiwi_flights)}: "
-            + str([f["flight_number"] for f in kiwi_flights])
+        assert len(kiwi_flights) == 4, f"Expected 4 flights, got {len(kiwi_flights)}: " + str(
+            [f["flight_number"] for f in kiwi_flights]
         )
 
 
 # ---------------------------------------------------------------------------
 # Leg 1: ARN → GDN  FR4678  Ryanair  Thu 14 May 2026
 # ---------------------------------------------------------------------------
+
 
 class TestKiwiLeg1:
     def test_flight_number(self, kiwi_flights):
@@ -115,6 +118,7 @@ class TestKiwiLeg1:
 # Leg 2: GDN → STN  FR532  Ryanair  Thu 14 May 2026
 # ---------------------------------------------------------------------------
 
+
 class TestKiwiLeg2:
     def test_flight_number(self, kiwi_flights):
         assert kiwi_flights[1]["flight_number"] == "FR532"
@@ -141,6 +145,7 @@ class TestKiwiLeg2:
 # ---------------------------------------------------------------------------
 # Leg 3: STN → OSL  RK1392  Ryanair UK  Sun 17 May 2026
 # ---------------------------------------------------------------------------
+
 
 class TestKiwiLeg3:
     def test_flight_number(self, kiwi_flights):
@@ -169,6 +174,7 @@ class TestKiwiLeg3:
 # Leg 4: OSL → ARN  SK864  SAS  Sun 17 May 2026
 # ---------------------------------------------------------------------------
 
+
 class TestKiwiLeg4:
     def test_flight_number(self, kiwi_flights):
         assert kiwi_flights[3]["flight_number"] == "SK864"
@@ -196,6 +202,7 @@ class TestKiwiLeg4:
 # Booking reference
 # ---------------------------------------------------------------------------
 
+
 class TestKiwiBookingReference:
     def test_booking_reference_present_on_all_legs(self, kiwi_flights):
         for f in kiwi_flights:
@@ -204,4 +211,4 @@ class TestKiwiBookingReference:
 
     def test_booking_reference_value(self, kiwi_flights):
         for f in kiwi_flights:
-            assert (f.get("booking_reference") or "").strip() == "755885086"
+            assert (f.get("booking_reference") or "").strip() == "100000001"

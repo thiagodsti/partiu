@@ -135,4 +135,4 @@ class TestSASScandinavianAirlinesBookingReference:
 
     def test_booking_reference_value(self, sas_scandinavian_airlines_flights):
         for f in sas_scandinavian_airlines_flights:
-            assert (f.get("booking_reference") or "").strip() == "WD7WYD"
+            assert (f.get("booking_reference") or "").strip() == "TESTR6"

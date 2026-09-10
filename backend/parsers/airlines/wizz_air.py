@@ -7,7 +7,7 @@ Uses the generic ``scan_flights`` scanner — no custom regex needed.
 
 Plain-text structure produced by BS4 (one table cell per line):
 
-  Flight confirmation code: GW8PSD
+  Flight confirmation code: TESTR7
   ...
   GOING OUT
   Flight Number: W9 5362        ← NBSP between code and number

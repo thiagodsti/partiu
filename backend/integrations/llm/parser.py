@@ -50,7 +50,7 @@ Always prefix with the airline's 2-letter IATA code: e.g. digits "4849" from an 
 Azul email → "AD4849"; find the IATA code from the airline name or sender domain. \
 If the code already has a 2-letter prefix (e.g. "SK117"), keep it as-is. \
 Remove spaces: "LH 809" → "LH809". \
-Booking references (short alphanumeric codes like "TQJWFX") are NOT flight numbers. \
+Booking references (short alphanumeric codes like "TESTR5") are NOT flight numbers. \
 Ticket numbers (long numeric strings, 10+ digits) are NOT flight numbers.
 
 seat: the passenger's seat assignment — row number followed by a letter (e.g. "6C", \
@@ -74,7 +74,7 @@ passenger_name: copy exactly as written — never anonymize or replace with plac
 If multiple passengers share the same booking, use the first passenger's name for every \
 flight leg (repeat it on each leg — do not leave it null on any leg).
 
-booking_reference: the PNR/confirmation code (short alphanumeric, e.g. TQJWFX). \
+booking_reference: the PNR/confirmation code (short alphanumeric, e.g. TESTR5). \
 null if not present.
 
 CONNECTING FLIGHTS: extract each leg as a separate flight object with its own \

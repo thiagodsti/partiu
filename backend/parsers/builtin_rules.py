@@ -11,20 +11,20 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "29"  # generic line scanners removed; airline rules widened to cover them
+PARSER_VERSION = "30"  # Turkish Airlines (TK) rule added
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
-# Covers flight-confirmation keywords across EN / PT / ES / DE / FR / NO / SV / DK.
+# Covers flight-confirmation keywords across EN / PT / ES / DE / FR / NO / SV / DK / TR.
 # The sender_pattern already pins the airline; this prevents matching marketing
 # or service emails that happen to come from the same domain.
 # Add new keywords here when a new language or format is discovered — all
 # airlines benefit automatically.
 # ---------------------------------------------------------------------------
 SUBJECT_PATTERN = (
-    r"(?:confirm|reserv|booking|itinerar|e-?ticket|eticket|receipt|"
+    r"(?:confirm|reserv|booking|itinerar|ticket|receipt|"
     r"boarding|check.?in|travel|trip|flight|order|"
-    r"voo|passagem|bilhete|viagem|compr|embarque|cart[aã]o|"
+    r"voo|passagem|bilhete|bilet|viagem|compr|embarque|cart[aã]o|"
     r"vuelo|viaje|"
     r"buchung|reise|"
     r"billet|resa|rejse|bestilling|flygning|bokning|resehandling|resedokument|"
@@ -200,6 +200,16 @@ BUILTIN_AIRLINE_RULES = [
         "airline_code": "VY",
         "sender_pattern": r"(@vueling\.com|no-reply@vueling)",
         "custom_extractor": "vueling",
+        "priority": 10,
+    },
+    # =========================================================================
+    # Turkish Airlines (TK) — "Ticket Details" / booking confirmation emails
+    # =========================================================================
+    {
+        "airline_name": "Turkish Airlines",
+        "airline_code": "TK",
+        "sender_pattern": r"(turkishairlines\.com|@thy\.com)",
+        "custom_extractor": "turkish",
         "priority": 10,
     },
 ]

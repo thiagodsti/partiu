@@ -9,12 +9,12 @@ Fixtures:
   tap_boarding_pass_anonymized.json
     TP82  GRU→LIS, 23 Feb 2024 16:20 → 24 Feb 2024 05:15
     TP780 LIS→ARN, 24 Feb 2024 08:05 → 24 Feb 2024 13:30
-    Booking reference: P6ANPW (in HTML microdata)
+    Booking reference: TESTR8 (in HTML microdata)
 
   tap_booking_confirmation_anonymized.json
     TP783 ARN→LIS, 10 Nov 2023 19:05 → 22:35
     TP780 LIS→ARN, 18 Nov 2023 08:05 → 13:30
-    Booking reference: OP2NJ2
+    Booking reference: TESTR9
 
   tap_eticket_anonymized.json
     TP781 ARN→LIS, 01 Feb 2024 14:20 → 17:50
@@ -170,7 +170,7 @@ class TestTAPBoardingPassFlightData:
         assert tap_bp_flights[1]["arrival_datetime"] == dt(2024, 2, 24, 13, 30)
 
     def test_booking_reference(self, tap_bp_flights):
-        assert all(f["booking_reference"] == "P6ANPW" for f in tap_bp_flights)
+        assert all(f["booking_reference"] == "TESTR8" for f in tap_bp_flights)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ class TestTAPBookingConfirmationFlightData:
         assert tap_confirm_flights[1]["arrival_datetime"] == dt(2023, 11, 18, 13, 30)
 
     def test_booking_reference(self, tap_confirm_flights):
-        assert all(f["booking_reference"] == "OP2NJ2" for f in tap_confirm_flights)
+        assert all(f["booking_reference"] == "TESTR9" for f in tap_confirm_flights)
 
 
 # ---------------------------------------------------------------------------
