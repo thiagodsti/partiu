@@ -46,15 +46,27 @@ Want to try it before self-hosting? A public demo is available at:
 
 ### Trip & flight management
 - Auto-groups flights into trips by booking reference, then 48h time proximity
-- Create and edit trips and flights manually
-- Shows outbound / return legs with connection badges and layover times
+- Create and edit trips and flights manually — every field of a flight (route, times, terminals, gates, seat, cabin, booking reference, passenger, notes) is editable from **Edit Flight** on the flight's page, with times entered as local time at each airport
+- One **Transport** list per trip holding flights and ground legs together, grouped into Outbound / Getting around / Return — the middle group is where trains, buses and ferries live on a longer trip
+- Connection badges and layover times span both, so the wait between landing and boarding a train is visible
+- Trip map drawing each flight as a great-circle arc, with a **Move map / Lock map** toggle: panning starts off on phones so the map doesn't swallow the page's scroll, and one tap turns it on (zoom buttons and pinch work either way)
 - Tracks flight status: upcoming, in-progress, completed
-- Export any trip as an iCalendar (.ics) file
+- Export any trip as an iCalendar (.ics) file — flights **and** ground legs as timed events with a 1h reminder, plus one all-day event per day-planner day (its note and checklist), since planner entries carry no time of their own
 - Add notes per flight (up to 10,000 chars)
 - Calendar-style day notes per trip
 - Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency
 - Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency
 - Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings
+
+### Ground transport (train, bus, ferry, car)
+- Add non-flight legs to a trip by hand — a train between two cities, an airport bus, a ferry — so a trip is not limited to the flights that bracket it
+- Station type-ahead backed by [Photon](https://photon.komoot.io) (OpenStreetMap): search "Xi'an North" and get the real station with coordinates
+- Times are entered as local time at each station and stored as UTC, using the timezone derived from the station's coordinates — so durations across timezones are real elapsed time
+- Ground legs draw on the trip map as dashed straight lines, colour-coded per transport type (train, bus, ferry, car) and visually distinct from the great-circle flight arcs
+- They also show up in the day planner, interleaved with that day's flights in departure order, and extend the trip's date range so a day holding only a train still gets its own day card
+- Records operator, service number, seat and booking reference
+- No email parsing — these are entered manually, and the station lookup is optional: a hand-typed place still saves, it just doesn't appear on the map
+- Not counted in travel statistics, which remain flight-only
 
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
@@ -171,6 +183,8 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `DB_PATH` | | Path to the SQLite database (default: `./data/partiu.db`) |
 | `DISABLE_SCHEDULER` | | Set to `true` to disable background email sync (useful for dev) |
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
+| `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
+| `PHOTON_URL` | | Geocoder for the train/bus station picker (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and enter station names as plain text |
 
 All other settings (Gmail credentials, sync interval, SMTP server) are configured per-user or by the admin through the Settings page in the UI.
 
@@ -196,6 +210,17 @@ Provides aircraft type (e.g. Boeing 737-800) for airborne flights. The free plan
 2. Copy your Access Key and add it to `.env` as `AVIATIONSTACK_API_KEY`
 
 Falls back to [OpenSky Network](https://opensky-network.org) (free, no account needed) if not set.
+
+### CARTO basemap API key (optional)
+
+The trip map draws on [CARTO](https://carto.com)'s Voyager basemap. CARTO now requires an API key for its tiles and stamps unkeyed ones with an "API KEY REQUIRED" watermark.
+
+1. Request a free key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/) (5M tile requests/month)
+2. Add it to `.env` as `CARTO_API_KEY` and restart the container
+
+It is read at runtime, not baked in at build time, so the published Docker image picks up your key without rebuilding. Leave it unset and the map falls back to plain OpenStreetMap tiles, which need no key — you lose the Voyager styling and get place names in the local language (上海 rather than Shanghai), nothing else.
+
+The same OpenStreetMap fallback also catches a CARTO blocked by an adblocker or DNS filter. You can tell which basemap you are looking at from the attribution in the map's bottom-right corner: `© OSM © CARTO` is the keyed Voyager basemap, `© OpenStreetMap` alone is the fallback.
 
 ### Immich integration (optional)
 
@@ -392,6 +417,7 @@ To improve results, edit the system prompt in `backend/integrations/llm/parser.p
 | HTML parsing | BeautifulSoup4 + lxml |
 | Aircraft data | AviationStack (primary) + OpenSky Network (fallback) |
 | Photo albums | Immich (optional, self-hosted) |
+| Station lookup | Photon / OpenStreetMap (optional, self-hostable) |
 
 ---
 

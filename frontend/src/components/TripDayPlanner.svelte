@@ -1,18 +1,27 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Trip, Flight, TripDayNote } from '../api/types';
+  import type { Trip, Flight, TripSegment, TripDayNote } from '../api/types';
   import { dayNotesApi } from '../api/client';
   import { t } from '../lib/i18n';
   import TripDayCard, { type DayContent } from './TripDayCard.svelte';
 
   interface Props {
     trip: Trip;
+    /** Ground legs live outside `trip`, so they are passed in separately. */
+    segments?: TripSegment[];
     onLoaded?: (contentByDate: Record<string, DayContent>) => void;
     forceExpanded?: boolean;
     onlyDate?: string;
     collapseAll?: boolean;
   }
-  const { trip, onLoaded, forceExpanded = false, onlyDate, collapseAll = false }: Props = $props();
+  const {
+    trip,
+    segments = [],
+    onLoaded,
+    forceExpanded = false,
+    onlyDate,
+    collapseAll = false,
+  }: Props = $props();
 
   function getDayRange(start: string, end: string): string[] {
     const days: string[] = [];
@@ -52,6 +61,31 @@
     return map;
   }
 
+  /** A leg belongs to the day it departs *locally*, not in UTC — a 08:00
+   * Beijing departure is 00:00Z and would otherwise land on the right day only
+   * by luck. Mirrors flightLocalDate, but the zone comes from the station. */
+  function segmentLocalDate(s: TripSegment): string | null {
+    if (!s.departure_datetime) return null;
+    try {
+      return new Date(s.departure_datetime).toLocaleDateString('en-CA', {
+        timeZone: s.departure.timezone ?? undefined,
+      });
+    } catch {
+      return s.departure_datetime.slice(0, 10);
+    }
+  }
+
+  function groupSegmentsByDate(list: TripSegment[]): Map<string, TripSegment[]> {
+    const map = new Map<string, TripSegment[]>();
+    for (const s of list) {
+      const date = segmentLocalDate(s);
+      if (!date) continue;
+      if (!map.has(date)) map.set(date, []);
+      map.get(date)!.push(s);
+    }
+    return map;
+  }
+
   function parseContent(raw: string): DayContent {
     if (!raw) return { note: '', items: [] };
     try {
@@ -81,6 +115,7 @@
   );
   const days = $derived(onlyDate ? allDays.filter((d) => d === onlyDate) : allDays);
   const flightMap = $derived(groupFlightsByDate(trip.flights ?? []));
+  const segmentMap = $derived(groupSegmentsByDate(segments));
   const today = todayStr();
 
   let contentByDate = $state<Record<string, DayContent>>({});
@@ -114,6 +149,7 @@
         tripId={trip.id}
         {date}
         flights={flightMap.get(date) ?? []}
+        segments={segmentMap.get(date) ?? []}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}

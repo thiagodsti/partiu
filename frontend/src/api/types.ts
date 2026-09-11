@@ -8,6 +8,8 @@ export interface User {
   totp_enabled?: boolean;
   locale?: string;
   announcement?: string;
+  /** CARTO basemap key, supplied by the server at runtime (see MeResponseDTO). */
+  carto_api_key?: string;
 }
 
 export interface LoginResponse {
@@ -41,6 +43,48 @@ export interface Trip {
   note?: string | null;
   expenses_total?: Record<string, number>;
   search_index?: string;
+}
+
+export type SegmentType = 'train' | 'bus' | 'ferry' | 'car';
+
+/** One end of a trip segment. `lat`/`lon` are present when the station picker
+ * matched a geocoder result, absent when the name was typed by hand — the map
+ * skips segments missing either end's coordinates. */
+export interface SegmentPlace {
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  timezone: string | null;
+}
+
+/** A manually-added non-flight transport leg (train, bus, ferry, car). */
+export interface TripSegment {
+  id: string;
+  trip_id: string;
+  type: SegmentType;
+  operator: string | null;
+  number: string | null;
+  booking_reference: string | null;
+  departure: SegmentPlace;
+  departure_datetime: string;
+  arrival: SegmentPlace;
+  arrival_datetime: string;
+  duration_minutes: number | null;
+  seat: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StationResult {
+  name: string;
+  city: string;
+  country: string;
+  countrycode: string;
+  lat: number;
+  lon: number;
 }
 
 export interface PackingItem {

@@ -1,18 +1,70 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import 'leaflet/dist/leaflet.css';
   import type { Map as LeafletMap } from 'leaflet';
-  import type { Flight } from '../api/types';
+  import type { Flight, TripSegment, SegmentType } from '../api/types';
   import { airportsApi } from '../api/client';
+  import { currentUser } from '../lib/authStore';
+  import { t } from '../lib/i18n';
+  import { escapeHtml } from '../lib/utils';
 
   interface Props {
     flights: Flight[];
+    segments?: TripSegment[];
   }
 
-  const { flights }: Props = $props();
+  const { flights, segments = [] }: Props = $props();
+
+  const FLIGHT_COLOR = '#3b82f6';
+
+  /** Consecutive tile failures, with none ever having loaded, before the
+   * basemap is treated as blocked. A blocked layer fails every one of the
+   * dozen-odd tiles a viewport asks for, so this trips immediately; a flaky
+   * connection does not reach it without also landing a success. */
+  const UNREACHABLE_TILE_FAILURES = 4;
+
+  // Ground legs get their own hue so a train is distinguishable from a flight
+  // at a glance, and are drawn as dashed straight lines rather than
+  // great-circle arcs — a train does not fly the geodesic.
+  const SEGMENT_COLORS: Record<SegmentType, string> = {
+    train: '#10b981',
+    bus: '#f59e0b',
+    ferry: '#06b6d4',
+    car: '#8b5cf6',
+  };
+
+  /** Only segments with coordinates at both ends can be drawn; a hand-typed
+   * place has none, and is silently skipped rather than mis-plotted. */
+  function mappableSegments(list: TripSegment[]) {
+    return list.filter(
+      (s) =>
+        s.departure.lat != null && s.departure.lon != null &&
+        s.arrival.lat != null && s.arrival.lon != null,
+    );
+  }
 
   let mapEl: HTMLDivElement | undefined = $state();
   let map: LeafletMap | null = null;
+
+  // A full-width map that answers vertical swipes traps the page scroll on a
+  // phone, so panning starts off on touch devices — which used to mean it could
+  // never be turned on. The control below is that switch. Matches what
+  // L.Browser.touch decides, but is readable before Leaflet is imported, so the
+  // map can be created already in the right state instead of flipping after.
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window || (navigator.maxTouchPoints ?? 0) > 0);
+
+  let panEnabled = $state(!isTouchDevice);
+
+  function setPanEnabled(on: boolean) {
+    panEnabled = on;
+    // Wheel zoom stays off in both states: unlike dragging it has no gesture of
+    // its own to trap, it steals the page's scroll outright. Zooming is the
+    // +/- control and pinch, which both keep working while panning is off.
+    if (on) map?.dragging.enable();
+    else map?.dragging.disable();
+  }
 
   // Great-circle intermediate points for a curved arc
   function greatCirclePoints(
@@ -42,7 +94,12 @@
   }
 
   $effect(() => {
-    if (!mapEl || flights.length === 0) return;
+    const drawableSegments = mappableSegments(segments);
+    // Read synchronously so the effect re-runs (and rebuilds the map) if the
+    // key arrives after the first paint; inside the async block below it would
+    // not register as a dependency.
+    const cartoKey = $currentUser?.carto_api_key ?? '';
+    if (!mapEl || (flights.length === 0 && drawableSegments.length === 0)) return;
 
     const codes = [...new Set(flights.flatMap((f) => [f.departure_airport, f.arrival_airport]))];
 
@@ -66,39 +123,68 @@
       });
 
       const validCodes = Object.keys(coords);
-      if (validCodes.length === 0) return;
+      if (validCodes.length === 0 && drawableSegments.length === 0) return;
 
       leafletMap = L.map(mapEl, {
         zoomControl: true,
         attributionControl: true,
         scrollWheelZoom: false,
-        // Disable drag on touch so the map doesn't trap page scrolling on mobile
-        dragging: !L.Browser.touch,
+        // untrack: the toggle must not be a dependency of this effect, or
+        // flipping it would tear the whole map down and rebuild it.
+        dragging: untrack(() => panEnabled),
       });
       map = leafletMap;
 
-      // Voyager tiles with OSM fallback if blocked by adblocker
       const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       });
 
-      let switchedToOsm = false;
-      const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 19,
-      });
+      // Voyager tiles, but only with a key: CARTO stopped serving unkeyed
+      // raster tiles in 2026 and now stamps them "API KEY REQUIRED" — served as
+      // a normal 200, so the tileerror fallback below never fires on them and
+      // the watermark would just sit on the map. Without a key we go straight
+      // to OSM; the fallback still covers a keyed layer blocked by an adblocker.
+      if (cartoKey) {
+        const cartoLayer = L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' +
+            `?key=${encodeURIComponent(cartoKey)}`,
+          {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 19,
+          },
+        );
 
-      cartoLayer.on('tileerror', () => {
-        if (!switchedToOsm) {
+        // The fallback is for a CARTO that is *unreachable* — blocked by an
+        // adblocker or a DNS filter — not for a tile that happened to drop.
+        // Demoting on the first tileerror meant one lost request on a phone
+        // swapped the whole basemap for OSM, whose labels are in the local
+        // language (上海, not SHANGHAI) — which is how a working map turned
+        // Chinese on mobile and stayed Latin on a desktop that never dropped a
+        // tile. A layer that has drawn even one tile is reachable, so it is
+        // never demoted; a blocked one draws none and fails every request.
+        let switchedToOsm = false;
+        let anyTileLoaded = false;
+        let failedTiles = 0;
+
+        cartoLayer.on('tileload', () => {
+          anyTileLoaded = true;
+        });
+
+        cartoLayer.on('tileerror', () => {
+          if (switchedToOsm || anyTileLoaded) return;
+          failedTiles += 1;
+          if (failedTiles < UNREACHABLE_TILE_FAILURES) return;
           switchedToOsm = true;
           leafletMap!.removeLayer(cartoLayer);
           osmLayer.addTo(leafletMap!);
-        }
-      });
+        });
 
-      cartoLayer.addTo(leafletMap);
+        cartoLayer.addTo(leafletMap);
+      } else {
+        osmLayer.addTo(leafletMap);
+      }
 
       // Draw arcs — two layers for a glow effect
       for (const flight of flights) {
@@ -107,9 +193,49 @@
         if (!dep || !arr) continue;
         const pts = greatCirclePoints(dep.lat, dep.lon, arr.lat, arr.lon);
         // Glow layer
-        L.polyline(pts, { color: '#3b82f6', weight: 10, opacity: 0.15, lineCap: 'round' }).addTo(leafletMap);
+        L.polyline(pts, { color: FLIGHT_COLOR, weight: 10, opacity: 0.15, lineCap: 'round' }).addTo(leafletMap);
         // Main line
-        L.polyline(pts, { color: '#3b82f6', weight: 2.5, opacity: 0.9, lineCap: 'round' }).addTo(leafletMap);
+        L.polyline(pts, { color: FLIGHT_COLOR, weight: 2.5, opacity: 0.9, lineCap: 'round' }).addTo(leafletMap);
+      }
+
+      // Ground legs: straight dashed lines, coloured by transport type.
+      const segmentPoints: [number, number][] = [];
+      for (const seg of drawableSegments) {
+        const from: [number, number] = [seg.departure.lat!, seg.departure.lon!];
+        const to: [number, number] = [seg.arrival.lat!, seg.arrival.lon!];
+        const color = SEGMENT_COLORS[seg.type] ?? FLIGHT_COLOR;
+        L.polyline([from, to], {
+          color,
+          weight: 3,
+          opacity: 0.9,
+          dashArray: '7 6',
+          lineCap: 'round',
+        }).addTo(leafletMap);
+        segmentPoints.push(from, to);
+
+        for (const [point, name] of [
+          [from, seg.departure.name] as const,
+          [to, seg.arrival.name] as const,
+        ]) {
+          const icon = L.divIcon({
+            className: '',
+            html: `
+              <div style="
+                width:9px;height:9px;border-radius:2px;
+                background:${color};border:2px solid #fff;
+                box-shadow:0 2px 6px rgba(0,0,0,.35);
+                transform:translate(-50%,-50%);
+              "></div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
+          });
+          // bindTooltip renders its string as HTML, and a segment's place name is
+          // free user text (unlike the airport names below, which come from the
+          // airports table) — so it has to be escaped.
+          L.marker(point, { icon })
+            .bindTooltip(escapeHtml(name), { direction: 'top', offset: [0, -10], opacity: 0.95 })
+            .addTo(leafletMap);
+        }
       }
 
       // Airport markers with IATA label
@@ -141,7 +267,11 @@
           .addTo(leafletMap);
       }
 
-      const latLngs = validCodes.map((c) => L.latLng(coords[c].lat, coords[c].lon));
+      const latLngs = [
+        ...validCodes.map((c) => L.latLng(coords[c].lat, coords[c].lon)),
+        ...segmentPoints.map(([lat, lon]) => L.latLng(lat, lon)),
+      ];
+      if (latLngs.length === 0) return;
       leafletMap.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40] });
     })();
 
@@ -167,9 +297,24 @@
   });
 </script>
 
-<div class="trip-map" bind:this={mapEl}></div>
+<div class="trip-map-wrap">
+  <div class="trip-map" bind:this={mapEl}></div>
+  <button
+    type="button"
+    class="map-pan-toggle"
+    class:map-pan-on={panEnabled}
+    aria-pressed={panEnabled}
+    onclick={() => setPanEnabled(!panEnabled)}
+  >
+    {panEnabled ? `🔒 ${$t('map.lock')}` : `✋ ${$t('map.unlock')}`}
+  </button>
+</div>
 
 <style>
+  .trip-map-wrap {
+    position: relative;
+  }
+
   .trip-map {
     width: 100%;
     height: 280px;
@@ -181,7 +326,47 @@
     isolation: isolate;
   }
 
+  /* Leaflet's own controls sit at z-index 800-1000, so this has to clear them
+     as well as the tile panes. Top-right keeps it clear of the zoom control. */
+  .map-pan-toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1000;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #1e293b;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.5;
+    cursor: pointer;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
+  }
+
+  .map-pan-toggle:hover {
+    background: #fff;
+  }
+
+  .map-pan-on {
+    background: rgba(59, 130, 246, 0.94);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #fff;
+  }
+
+  .map-pan-on:hover {
+    background: rgba(59, 130, 246, 1);
+  }
+
   @media print {
+    .map-pan-toggle {
+      display: none;
+    }
+
     .trip-map {
       height: 260px;
       border-radius: 0;

@@ -25,6 +25,27 @@ def _create_flight(client, **kwargs):
     return r.json()["id"]
 
 
+def _seed_airport_coords():
+    """Give GRU/LHR coordinates so local→UTC conversion has a zone to use.
+
+    The shared ``test_db`` airports table is empty, which silently degrades
+    ``localize_to_utc`` into treating local time as UTC.
+    """
+    from backend.airports.timezone import _get_airport_timezone
+    from backend.database import db_write
+
+    with db_write() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO airports (iata_code, name, city_name, country_code,"
+            " latitude, longitude) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("GRU", "Guarulhos International Airport", "Sao Paulo", "BR", -23.4356, -46.4731),
+                ("LHR", "London Heathrow Airport", "London", "GB", 51.4706, -0.4619),
+            ],
+        )
+    _get_airport_timezone.cache_clear()
+
+
 class TestListFlights:
     def test_list_empty(self, auth_client):
         r = auth_client.get("/api/flights")
@@ -199,6 +220,63 @@ class TestUpdateFlight:
         assert r.json()["seat"] == "12B"
         assert r.json()["cabin_class"] == "business"
 
+    def test_update_full_form_relocalises_times(self, auth_client):
+        """The edit-flight form resubmits every field, with the datetimes as
+        naive local time at each airport — the same shape create uses."""
+        _seed_airport_coords()
+        fid = _create_flight(auth_client)
+        r = auth_client.patch(
+            f"/api/flights/{fid}",
+            json={
+                "flight_number": "LA8094",
+                "airline_code": "LA",
+                "airline_name": "LATAM",
+                "departure_airport": "GRU",
+                "departure_datetime": "2030-06-01T10:00",
+                "arrival_airport": "LHR",
+                "arrival_datetime": "2030-06-01T22:00",
+                "booking_reference": "ABC123",
+                "passenger_name": "SILVA/JOAO",
+                "seat": "12A",
+                "cabin_class": "economy",
+                "departure_terminal": "3",
+                "departure_gate": "",
+                "arrival_terminal": "",
+                "arrival_gate": "",
+                "notes": "",
+            },
+        )
+        assert r.status_code == 200, r.text
+        flight = auth_client.get(f"/api/flights/{fid}").json()
+        # GRU is UTC-3, LHR is UTC+1 in June: 13:00Z → 21:00Z, so 8h in the air.
+        assert flight["departure_datetime"].startswith("2030-06-01T13:00")
+        assert flight["arrival_datetime"].startswith("2030-06-01T21:00")
+        assert flight["duration_minutes"] == 480
+        assert flight["departure_timezone"] == "America/Sao_Paulo"
+        assert flight["arrival_timezone"] == "Europe/London"
+        assert flight["seat"] == "12A"
+        # A field cleared in the form is cleared on the flight.
+        assert flight["arrival_gate"] == ""
+
+    def test_update_times_moves_trip_span(self, auth_client):
+        """Editing a flight's times drags its trip's start/end along."""
+        trip_id = auth_client.post("/api/trips", json={"name": "Edit span"}).json()["id"]
+        fid = _create_flight(auth_client, trip_id=trip_id)
+
+        r = auth_client.patch(
+            f"/api/flights/{fid}",
+            json={
+                "departure_airport": "GRU",
+                "departure_datetime": "2030-07-15T10:00",
+                "arrival_airport": "LHR",
+                "arrival_datetime": "2030-07-15T22:00",
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        trip = auth_client.get(f"/api/trips/{trip_id}").json()
+        assert trip["start_date"].startswith("2030-07-15")
+
 
 class TestDeleteFlight:
     def test_delete_flight(self, auth_client):
@@ -289,7 +367,10 @@ class TestFlightAircraft:
     def test_get_aircraft_no_cache_future_flight(self, auth_client):
         # Flight with no aircraft cache — triggers OpenSky lookup (mocked)
         fid = _create_flight(auth_client)
-        with patch("backend.integrations.aircraft.client.get_or_fetch_aircraft", new=AsyncMock(return_value={})):
+        with patch(
+            "backend.integrations.aircraft.client.get_or_fetch_aircraft",
+            new=AsyncMock(return_value={}),
+        ):
             r = auth_client.get(f"/api/flights/{fid}/aircraft")
         assert r.status_code == 200
         assert r.json() == {}

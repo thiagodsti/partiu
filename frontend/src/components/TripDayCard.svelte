@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Flight } from '../api/types';
+  import type { Flight, TripSegment, SegmentType } from '../api/types';
   import { dayNotesApi } from '../api/client';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
@@ -18,12 +18,28 @@
     tripId: string;
     date: string;
     flights: Flight[];
+    segments?: TripSegment[];
     initialContent: DayContent;
     initiallyExpanded: boolean;
     forceExpanded?: boolean;
   }
 
-  const { tripId, date, flights, initialContent, initiallyExpanded, forceExpanded = false }: Props = $props();
+  const {
+    tripId,
+    date,
+    flights,
+    segments = [],
+    initialContent,
+    initiallyExpanded,
+    forceExpanded = false,
+  }: Props = $props();
+
+  const SEGMENT_ICONS: Record<SegmentType, string> = {
+    train: '🚆',
+    bus: '🚌',
+    ferry: '⛴️',
+    car: '🚗',
+  };
 
   function autogrow(el: HTMLTextAreaElement) {
     const resize = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
@@ -65,6 +81,58 @@
       return iso.slice(11, 16);
     }
   }
+
+  /** Flights and ground legs share one chronological list: on a day with both,
+   * showing the train after every flight regardless of time would misrepresent
+   * the day. Sorted on the real instant, not the printed local time, since the
+   * two ends of a day can sit in different zones. */
+  interface DayEntry {
+    id: string;
+    icon: string;
+    isFlight: boolean;
+    title: string;
+    route: string;
+    at: number;
+  }
+
+  /** A flight's departure_datetime is nullable; such a leg sorts last rather
+   * than to the epoch, where it would jump to the top of the day. */
+  function instant(iso: string | null | undefined): number {
+    if (!iso) return Number.MAX_SAFE_INTEGER;
+    const t = new Date(iso).getTime();
+    return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+  }
+
+  const entries = $derived.by((): DayEntry[] => {
+    const rows: DayEntry[] = flights.map((f) => ({
+      id: `flight-${f.id}`,
+      icon: '✈︎',
+      isFlight: true,
+      title: f.flight_number,
+      route:
+        `${f.departure_airport} ${formatFlightTime(f.departure_datetime, f.departure_timezone)}` +
+        ` → ${f.arrival_airport} ${formatFlightTime(f.arrival_datetime, f.arrival_timezone)}`,
+      at: instant(f.departure_datetime),
+    }));
+
+    for (const seg of segments) {
+      // Operator and number are both optional, so fall back to the transport
+      // type rather than rendering a leg with no label at all.
+      const label = [seg.operator, seg.number].filter(Boolean).join(' ');
+      rows.push({
+        id: `segment-${seg.id}`,
+        icon: SEGMENT_ICONS[seg.type] ?? '🚆',
+        isFlight: false,
+        title: label || $t(`segments.type_${seg.type}`),
+        route:
+          `${seg.departure.name} ${formatFlightTime(seg.departure_datetime, seg.departure.timezone)}` +
+          ` → ${seg.arrival.name} ${formatFlightTime(seg.arrival_datetime, seg.arrival.timezone)}`,
+        at: instant(seg.departure_datetime),
+      });
+    }
+
+    return rows.sort((a, b) => a.at - b.at);
+  });
 
   // ---- Mutations ----
 
@@ -131,16 +199,15 @@
   </div>
 
   <div class="day-card-body">
-    <!-- Flights (always read-only) -->
-    {#if flights.length > 0}
+    <!-- Travel for the day — flights and ground legs, always read-only -->
+    {#if entries.length > 0}
       <div class="day-flights">
-        {#each flights as f (f.id)}
+        {#each entries as entry (entry.id)}
           <div class="day-flight-row">
-            <span class="day-flight-badge">✈︎</span>
+            <span class="day-flight-badge" class:is-flight={entry.isFlight}>{entry.icon}</span>
             <span class="day-flight-info">
-              <strong>{f.flight_number}</strong>
-              {f.departure_airport} {formatFlightTime(f.departure_datetime, f.departure_timezone)}
-              → {f.arrival_airport} {formatFlightTime(f.arrival_datetime, f.arrival_timezone)}
+              <strong>{entry.title}</strong>
+              {entry.route}
             </span>
           </div>
         {/each}
@@ -207,7 +274,7 @@
           {/each}
         </div>
       {/if}
-      {#if !note.trim() && items.length === 0 && flights.length === 0}
+      {#if !note.trim() && items.length === 0 && entries.length === 0}
         <span class="note-hint">{$t('planner.add_notes_hint')}</span>
       {/if}
     {/if}
@@ -311,12 +378,14 @@
 
   .day-flight-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-xs);
     font-size: 0.85rem;
   }
 
-  .day-flight-badge { color: var(--primary, #3b82f6); flex-shrink: 0; }
+  /* Station names are far longer than IATA codes, so ground legs must wrap. */
+  .day-flight-badge { flex-shrink: 0; }
+  .day-flight-badge.is-flight { color: var(--primary, #3b82f6); }
   .day-flight-info { color: var(--text); }
 
   .note-textarea {

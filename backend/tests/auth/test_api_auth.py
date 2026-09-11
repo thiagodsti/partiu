@@ -107,6 +107,22 @@ class TestMe:
         assert data["is_admin"] is True
         assert "totp_enabled" in data
 
+    def test_me_carries_carto_api_key(self, auth_client, monkeypatch):
+        """The trip map reads its CARTO key off /auth/me — the image is built
+        before the deployer has a key, so it cannot be baked in at build time."""
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "CARTO_API_KEY", "carto-test-key")
+        data = auth_client.get("/api/auth/me").json()
+        assert data["carto_api_key"] == "carto-test-key"
+
+    def test_me_carto_api_key_empty_when_unset(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "CARTO_API_KEY", "")
+        data = auth_client.get("/api/auth/me").json()
+        assert data["carto_api_key"] == ""
+
 
 # ---------------------------------------------------------------------------
 # /api/auth/logout

@@ -8,9 +8,11 @@
  *                            followed by a stale read — see purgeApiCache)
  *   - /assets/*            → cache-first (content-hashed filenames)
  *   - everything else      → network-first (app shell, always get latest deploy)
+ *
+ * Cross-origin requests are not handled at all — see the fetch listener.
  */
 
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v20';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
@@ -40,6 +42,15 @@ self.addEventListener('activate', (event) => {
 // ---- Fetch: routing strategy ----
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Third-party requests — map tiles, above all — go straight to the network.
+  // The catch-all below is meant for the app shell, but it was matching on
+  // pathname alone and so swallowed basemap tiles too, answering a dropped one
+  // with a JSON 503. That turns a blip the browser would have retried into a
+  // hard image error, which is exactly what the map reads as "this basemap is
+  // blocked". Nothing cross-origin is cacheable here anyway: these are no-cors
+  // requests, so the responses are opaque.
+  if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith('/api/')) {
     // Mutations pass through unchanged, but any successful one invalidates the

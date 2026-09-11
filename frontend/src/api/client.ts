@@ -33,6 +33,9 @@ import type {
   TripDayNote,
   InAppNotification,
   VersionInfo,
+  TripSegment,
+  SegmentType,
+  StationResult,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -354,6 +357,44 @@ export const expensesApi = {
   participants: (tripId: string) =>
     get<Participant[]>(`/api/trips/${tripId}/expenses/participants`),
   balances: (tripId: string) => get<Balances>(`/api/trips/${tripId}/expenses/balances`),
+};
+
+export interface SegmentPlaceInput {
+  name: string;
+  lat?: number | null;
+  lon?: number | null;
+}
+
+export interface SegmentWriteData {
+  type: SegmentType;
+  departure: SegmentPlaceInput;
+  arrival: SegmentPlaceInput;
+  /** Naive local time at the respective station ("2026-10-04T08:00"); the
+   * backend converts to UTC using each station's own timezone. */
+  departure_datetime: string;
+  arrival_datetime: string;
+  operator?: string | null;
+  number?: string | null;
+  booking_reference?: string | null;
+  seat?: string | null;
+  notes?: string | null;
+}
+
+export const segmentsApi = {
+  list: (tripId: string) => get<TripSegment[]>(`/api/trips/${tripId}/segments`),
+  create: (tripId: string, data: SegmentWriteData) =>
+    post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/segments`, data),
+  update: (tripId: string, segmentId: string, data: Partial<SegmentWriteData>) =>
+    patch<{ ok: boolean }>(`/api/trips/${tripId}/segments/${segmentId}`, data),
+  delete: (tripId: string, segmentId: string) =>
+    del<null>(`/api/trips/${tripId}/segments/${segmentId}`),
+};
+
+export const stationsApi = {
+  search: (q: string, kind?: string) =>
+    get<StationResult[]>(
+      `/api/stations/search?q=${encodeURIComponent(q)}${kind ? `&kind=${kind}` : ''}`,
+    ),
 };
 
 export const guestsApi = {

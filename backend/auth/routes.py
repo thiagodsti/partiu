@@ -146,7 +146,7 @@ def me(request: Request):
 
     from ..config import settings
 
-    return user_summary_to_me_dto(summary, settings.ANNOUNCEMENT)
+    return user_summary_to_me_dto(summary, settings.ANNOUNCEMENT, settings.CARTO_API_KEY)
 
 
 @router.patch("/me", response_model=OkDTO)

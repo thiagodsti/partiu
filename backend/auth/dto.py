@@ -48,6 +48,11 @@ class UserResponseDTO(BaseModel):
 
 class MeResponseDTO(UserResponseDTO):
     announcement: str = ""
+    # Server-side runtime config the frontend needs; not a user attribute, but
+    # /auth/me is the one response the SPA already fetches at boot, and the
+    # Docker image is built before the deployer's key exists, so it cannot be
+    # baked in at build time.
+    carto_api_key: str = ""
 
 
 class RequiresTwoFADTO(BaseModel):

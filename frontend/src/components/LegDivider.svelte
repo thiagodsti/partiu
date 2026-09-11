@@ -1,20 +1,20 @@
 <script lang="ts">
-  import type { Flight } from '../api/types';
+  import type { TransportLeg } from '../lib/utils';
   import { legStats, formatDuration } from '../lib/utils';
   import { t } from '../lib/i18n';
 
   interface Props {
     label: string;
-    flights: Flight[];
+    legs: TransportLeg[];
   }
-  const { label, flights }: Props = $props();
+  const { label, legs }: Props = $props();
 
-  const stats = $derived(legStats(flights));
+  const stats = $derived(legStats(legs));
   const flyingStr = $derived(formatDuration(stats.flyingMinutes));
   const totalStr = $derived(formatDuration(stats.totalMinutes));
   const info = $derived(
     stats.flyingMinutes > 0
-      ? ` · ${flyingStr} ${$t('trip.flying')}${stats.totalMinutes > stats.flyingMinutes ? ` · ${totalStr} ${$t('trip.total')}` : ''}`
+      ? ` · ${flyingStr} ${$t('trip.travelling')}${stats.totalMinutes > stats.flyingMinutes ? ` · ${totalStr} ${$t('trip.total')}` : ''}`
       : ''
   );
 </script>

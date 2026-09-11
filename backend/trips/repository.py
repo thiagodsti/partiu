@@ -230,18 +230,37 @@ class TripRepository:
 
     @staticmethod
     def _recompute_span(conn, trip_id: str, now: str) -> None:
-        """Recalculate start/end dates and airports from all flights now in the
-        trip. start_date = departure date of first flight; end_date = arrival
-        date of last flight."""
+        """Recalculate start/end dates and airports from everything now in the
+        trip. start_date = earliest departure; end_date = latest arrival.
+
+        Dates span **flights and ground segments** together: a trip whose middle
+        days are a train leg would otherwise end on its last flight, and the day
+        planner — which renders one card per day in the trip's range — would have
+        no card for those days to appear in.
+
+        Origin/destination stay flight-only. They are IATA codes used for trip
+        cards and the destination photo lookup; a train station has no code to
+        put there.
+
+        MIN/MAX are the aggregate forms, not the two-argument scalar ones: the
+        scalars return NULL when either side is NULL, which would blank the span
+        of a trip that has flights but no segments (or the reverse).
+        """
         conn.execute(
             """UPDATE trips SET
                 start_date = (
-                    SELECT DATE(departure_datetime) FROM flights WHERE trip_id = ?
-                    ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                    SELECT MIN(d) FROM (
+                        SELECT DATE(departure_datetime) AS d FROM flights WHERE trip_id = ?
+                        UNION ALL
+                        SELECT DATE(departure_datetime) FROM trip_segments WHERE trip_id = ?
+                    )
                 ),
                 end_date = (
-                    SELECT DATE(arrival_datetime) FROM flights WHERE trip_id = ?
-                    ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                    SELECT MAX(d) FROM (
+                        SELECT DATE(arrival_datetime) AS d FROM flights WHERE trip_id = ?
+                        UNION ALL
+                        SELECT DATE(arrival_datetime) FROM trip_segments WHERE trip_id = ?
+                    )
                 ),
                 origin_airport = (
                     SELECT departure_airport FROM flights WHERE trip_id = ?
@@ -253,7 +272,7 @@ class TripRepository:
                 ),
                 updated_at = ?
             WHERE id = ?""",
-            (trip_id, trip_id, trip_id, trip_id, now, trip_id),
+            (trip_id, trip_id, trip_id, trip_id, trip_id, trip_id, now, trip_id),
         )
 
     # -- Flight assignment -----------------------------------------------------

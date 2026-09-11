@@ -206,6 +206,9 @@
   const backUrl = $derived(
     params.tripId ? `#/${basePath}/${params.tripId}` : `#/${basePath}`,
   );
+  const editUrl = $derived(
+    `#/${basePath}/${params.tripId}/flights/${params.flightId}/edit`,
+  );
   const title = $derived(
     flight
       ? `${flight.departure_airport ?? "?"} → ${flight.arrival_airport ?? "?"}`
@@ -595,6 +598,13 @@
         {emailLoading ? $t("flight.btn_loading") : $t("flight.view_email")}
       </button>
       {#if String(flight.user_id) === String($currentUser?.id)}
+        <a
+          href={editUrl}
+          class="btn btn-secondary"
+          style="width:100%;text-align:center;text-decoration:none"
+        >
+          {$t("flight.edit")}
+        </a>
         {#if flight.trip_id}
           <button
             class="btn btn-secondary"

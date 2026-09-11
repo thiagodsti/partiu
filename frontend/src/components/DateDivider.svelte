@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Flight } from '../api/types';
+  import type { TransportLeg } from '../lib/utils';
   import { dateDividerInfo } from '../lib/utils';
 
   interface Props {
-    prev: Flight;
-    next: Flight;
+    prev: TransportLeg;
+    next: TransportLeg;
   }
   const { prev, next }: Props = $props();
 

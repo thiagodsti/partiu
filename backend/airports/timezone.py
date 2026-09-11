@@ -4,7 +4,12 @@ Airport timezone lookup and local→UTC conversion.
 Uses the airports table (lat/lon, via AirportRepository) + timezonefinder to
 determine the correct IANA timezone for an airport, then converts naive local
 datetimes to UTC.
+
+The coordinate-based half (``get_timezone_for_coords``) is used directly by
+``segments/`` for train/bus stations, which have their own lat/lon and no IATA
+code to look up.
 """
+
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -17,22 +22,59 @@ logger = logging.getLogger(__name__)
 _airport_repository = AirportRepository()
 
 
+# Coordinates are rounded before lookup so that near-identical points (the same
+# station returned twice by a geocoder, for instance) share one cache entry.
+# 3 decimal places is ~110 m, far below any timezone boundary resolution.
+@lru_cache(maxsize=2000)
+def _timezone_at(lat_rounded: float, lon_rounded: float) -> str | None:
+    from timezonefinder import TimezoneFinder
+
+    tf = TimezoneFinder()
+    return tf.timezone_at(lat=lat_rounded, lng=lon_rounded)
+
+
+def get_timezone_for_coords(lat: float | None, lon: float | None) -> str | None:
+    """Return the IANA timezone string for a lat/lon pair, or None."""
+    if lat is None or lon is None:
+        return None
+    try:
+        return _timezone_at(round(lat, 3), round(lon, 3))
+    except Exception as e:
+        logger.debug("Could not get timezone for (%s, %s): %s", lat, lon, e)
+        return None
+
+
 # Cache up to 1000 airport timezones in memory
 @lru_cache(maxsize=1000)
 def _get_airport_timezone(iata_code: str) -> str | None:
     """Return the IANA timezone string for an airport IATA code, or None."""
     try:
         airport = _airport_repository.get_by_iata(iata_code)
-        if not airport or airport['latitude'] is None or airport['longitude'] is None:
+        if not airport or airport["latitude"] is None or airport["longitude"] is None:
             return None
 
-        from timezonefinder import TimezoneFinder
-        tf = TimezoneFinder()
-        tz_name = tf.timezone_at(lat=airport['latitude'], lng=airport['longitude'])
-        return tz_name
+        return get_timezone_for_coords(airport["latitude"], airport["longitude"])
     except Exception as e:
         logger.debug("Could not get timezone for %s: %s", iata_code, e)
         return None
+
+
+def localize_naive_to_utc(naive_dt: datetime, tz_name: str | None) -> datetime:
+    """Interpret a naive datetime as local time in ``tz_name`` and return UTC.
+
+    Falls back to treating the value as UTC when the zone is unknown or invalid —
+    the same degradation ``localize_to_utc`` applies for airports.
+    """
+    if naive_dt.tzinfo is not None:
+        return naive_dt.astimezone(UTC)
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return naive_dt.replace(tzinfo=ZoneInfo(tz_name)).astimezone(UTC)
+        except Exception as e:
+            logger.debug("Timezone conversion failed for %s: %s", tz_name, e)
+    return naive_dt.replace(tzinfo=UTC)
 
 
 @overload
@@ -57,6 +99,7 @@ def localize_to_utc(naive_dt: datetime | None, airport_iata: str) -> datetime | 
     if tz_name:
         try:
             from zoneinfo import ZoneInfo
+
             local_tz = ZoneInfo(tz_name)
             aware = naive_dt.replace(tzinfo=local_tz)
             return aware.astimezone(UTC)
@@ -80,22 +123,22 @@ def apply_airport_timezones(flight_data: dict) -> dict:
     """
     # Proportional-distribution paths pre-compute in real UTC and set this flag.
     # We only need to add the timezone name strings, not re-convert the datetimes.
-    if flight_data.get('_times_already_utc'):
+    if flight_data.get("_times_already_utc"):
         result = dict(flight_data)
-        result.pop('_times_already_utc', None)
-        dep_airport = flight_data.get('departure_airport', '')
-        arr_airport = flight_data.get('arrival_airport', '')
+        result.pop("_times_already_utc", None)
+        dep_airport = flight_data.get("departure_airport", "")
+        arr_airport = flight_data.get("arrival_airport", "")
         if dep_airport:
-            result['departure_timezone'] = _get_airport_timezone(dep_airport)
+            result["departure_timezone"] = _get_airport_timezone(dep_airport)
         if arr_airport:
-            result['arrival_timezone'] = _get_airport_timezone(arr_airport)
+            result["arrival_timezone"] = _get_airport_timezone(arr_airport)
         return result
 
-    dep_airport = flight_data.get('departure_airport', '')
-    arr_airport = flight_data.get('arrival_airport', '')
+    dep_airport = flight_data.get("departure_airport", "")
+    arr_airport = flight_data.get("arrival_airport", "")
 
-    dep_dt = flight_data.get('departure_datetime')
-    arr_dt = flight_data.get('arrival_datetime')
+    dep_dt = flight_data.get("departure_datetime")
+    arr_dt = flight_data.get("arrival_datetime")
 
     # Strip UTC tzinfo if it was incorrectly applied by _make_aware()
     # (i.e., the time is actually local time mislabelled as UTC)
@@ -106,10 +149,10 @@ def apply_airport_timezones(flight_data: dict) -> dict:
 
     result = dict(flight_data)
     if dep_dt and dep_airport:
-        result['departure_datetime'] = localize_to_utc(dep_dt, dep_airport)
-        result['departure_timezone'] = _get_airport_timezone(dep_airport)
+        result["departure_datetime"] = localize_to_utc(dep_dt, dep_airport)
+        result["departure_timezone"] = _get_airport_timezone(dep_airport)
     if arr_dt and arr_airport:
-        result['arrival_datetime'] = localize_to_utc(arr_dt, arr_airport)
-        result['arrival_timezone'] = _get_airport_timezone(arr_airport)
+        result["arrival_datetime"] = localize_to_utc(arr_dt, arr_airport)
+        result["arrival_timezone"] = _get_airport_timezone(arr_airport)
 
     return result

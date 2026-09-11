@@ -26,11 +26,21 @@ class Settings:
     VAPID_PUBLIC_KEY: str = os.getenv("VAPID_PUBLIC_KEY", "")
     VAPID_SUBJECT: str = os.getenv("VAPID_SUBJECT", "mailto:admin@example.com")
     # LLM fallback (optional — requires a running Ollama instance)
+    # Photon geocoder for the train/bus station picker (segments/). Defaults to
+    # komoot's public instance; point at a self-hosted one, or blank it out to
+    # disable the lookup and leave the picker as plain free-text entry.
+    PHOTON_URL: str = os.getenv("PHOTON_URL", "https://photon.komoot.io")
+
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     # Optional announcement banner shown to all users (empty = no banner)
     ANNOUNCEMENT: str = os.getenv("ANNOUNCEMENT", "")
+    # CARTO basemap API key for the trip map's tiles. CARTO started watermarking
+    # unkeyed raster tiles with "API KEY REQUIRED" in 2026; a free key is at
+    # https://carto.com/basemaps/apikey. Left empty, the map falls back to plain
+    # OpenStreetMap tiles, which need no key.
+    CARTO_API_KEY: str = os.getenv("CARTO_API_KEY", "")
 
 
 settings = Settings()

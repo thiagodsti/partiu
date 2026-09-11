@@ -32,6 +32,7 @@ from .notifications import routes as notifications_routes
 from .packing import routes as packing_routes
 from .routes import version as version_routes
 from .scheduler import start_scheduler, stop_scheduler
+from .segments import routes as segments_routes
 from .settings import routes as settings_routes
 from .smtp_server import start_smtp_server, stop_smtp_server
 from .stats import routes as stats_routes
@@ -161,6 +162,7 @@ app.include_router(day_notes_routes.router)
 app.include_router(expenses_routes.router)
 app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
+app.include_router(segments_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 

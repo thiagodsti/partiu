@@ -4,22 +4,17 @@
   import { tripsApi, settingsApi, tripDocumentsApi, sharesApi, boardingPassesApi } from '../api/client';
   import TripExpenses from '../components/TripExpenses.svelte';
   import TripPackingList from '../components/TripPackingList.svelte';
+  import TripTransport from '../components/TripTransport.svelte';
   import { tripImageBust } from '../lib/tripImageStore';
-  import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass } from '../api/types';
+  import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass, TripSegment } from '../api/types';
   import {
     formatDateRange,
     inferTripStatus,
-    splitLegs,
-    dateDividerInfo,
     timeUntilTrip,
   } from '../lib/utils';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import TopNav from '../components/TopNav.svelte';
-  import FlightRow from '../components/FlightRow.svelte';
-  import LegDivider from '../components/LegDivider.svelte';
-  import ConnectionBadge from '../components/ConnectionBadge.svelte';
-  import DateDivider from '../components/DateDivider.svelte';
   import ImmichAlbumButton from '../components/ImmichAlbumButton.svelte';
   import TripMap from '../components/TripMap.svelte';
   import TripDayPlanner from '../components/TripDayPlanner.svelte';
@@ -74,7 +69,6 @@
   const flightList = $derived<Flight[]>(trip?.flights ?? []);
   const dateRange = $derived(formatDateRange(trip?.start_date, trip?.end_date));
   const airlines = $derived([...new Set(flightList.map((f) => f.airline_code).filter(Boolean))]);
-  const legs = $derived(trip ? splitLegs(flightList, trip) : { outbound: flightList, returning: null });
 
   // ---- Destination image ----
   let refreshingImage = $state(false);
@@ -160,6 +154,11 @@
       setTimeout(() => { noteSaved = false; }, 2000);
     }, 800);
   }
+
+  // ---- Ground transport ----
+  // Held here rather than only inside TripSegments so the map can draw the
+  // ground legs alongside the flight arcs.
+  let segments = $state<TripSegment[]>([]);
 
   // ---- Documents ----
   let documents = $state<TripDocument[]>([]);
@@ -571,67 +570,39 @@
     </div>
 
     <!-- Route Map -->
-    {#if flightList.length > 0}
-      <TripMap flights={flightList} />
+    {#if flightList.length > 0 || segments.length > 0}
+      <TripMap flights={flightList} {segments} />
     {/if}
 
-    <!-- Flight List -->
-    {#if flightList.length === 0}
+    <!-- Transport: flights and ground legs in one list -->
+    {#if flightList.length === 0 && segments.length === 0}
       <EmptyState title={$t('trip.empty')}>
         <a href="#/trips/{params.id}/add-flight" class="btn btn-primary">{$t('trip.add_flight')}</a>
       </EmptyState>
-    {:else}
-      <div class="trip-section">
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="trip-section-header section-toggle" class:no-bottom-margin={flightsCollapsed} onclick={() => (flightsCollapsed = !flightsCollapsed)}>
-          <div class="section-header-inner">
-            <div class="section-title-row">
-              <h3 class="trip-section-title">{$t('trip.flights')}</h3>
-              <span class="section-chevron">{flightsCollapsed ? '▼' : '▲'}</span>
-            </div>
-            {#if flightsCollapsed && flightsSummary}
-              <p class="section-summary">{flightsSummary}</p>
-            {/if}
+    {/if}
+    <div class="trip-section">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="trip-section-header section-toggle" class:no-bottom-margin={flightsCollapsed} onclick={() => (flightsCollapsed = !flightsCollapsed)}>
+        <div class="section-header-inner">
+          <div class="section-title-row">
+            <h3 class="trip-section-title">{$t('trip.transport')}</h3>
+            <span class="section-chevron">{flightsCollapsed ? '▼' : '▲'}</span>
           </div>
-        </div>
-        <div class:section-hidden={flightsCollapsed}>
-          <!-- Outbound leg -->
-          <LegDivider label={$t('trip.outbound')} flights={legs.outbound} />
-          {#each legs.outbound as flight, i (flight.id)}
-            <FlightRow {flight} basePath={flightBasePath} />
-            {#if i < legs.outbound.length - 1}
-              {@const prev = legs.outbound[i]}
-              {@const next = legs.outbound[i + 1]}
-              {@const divInfo = dateDividerInfo(prev, next)}
-              {#if divInfo}
-                <DateDivider {prev} {next} />
-              {:else}
-                <ConnectionBadge {prev} {next} />
-              {/if}
-            {/if}
-          {/each}
-
-          <!-- Return leg -->
-          {#if legs.returning}
-            <LegDivider label={$t('trip.return')} flights={legs.returning} />
-            {#each legs.returning as flight, i (flight.id)}
-              <FlightRow {flight} basePath={flightBasePath} />
-              {#if i < (legs.returning?.length ?? 0) - 1}
-                {@const prev = legs.returning[i]}
-                {@const next = legs.returning[i + 1]}
-                {@const divInfo = dateDividerInfo(prev, next)}
-                {#if divInfo}
-                  <DateDivider {prev} {next} />
-                {:else}
-                  <ConnectionBadge {prev} {next} />
-                {/if}
-              {/if}
-            {/each}
+          {#if flightsCollapsed && flightsSummary}
+            <p class="section-summary">{flightsSummary}</p>
           {/if}
         </div>
       </div>
-    {/if}
+      <div class:section-hidden={flightsCollapsed}>
+        <TripTransport
+          {trip}
+          flights={flightList}
+          {flightBasePath}
+          onchange={(list) => (segments = list)}
+        />
+      </div>
+    </div>
 
     <!-- Day Planner -->
     {#if trip.start_date && trip.end_date}
@@ -647,6 +618,7 @@
           </div>
         </div>
         <TripDayPlanner
+          {segments}
           {trip}
           forceExpanded={printing}
           onlyDate={plannerCollapsed ? (plannerFocusDate ?? undefined) : undefined}
