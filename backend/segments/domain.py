@@ -24,6 +24,10 @@ class Place:
     lat: float | None
     lon: float | None
     timezone: str | None
+    # ISO-3166-1 alpha-2, as reported by the geocoder for the picked result.
+    # Feeds the visited-countries statistic; None means "unknown", which is
+    # counted as nothing rather than guessed at.
+    country_code: str | None
 
 
 @dataclass

@@ -70,12 +70,14 @@ class SegmentService:
                 "name": existing.departure.name,
                 "lat": existing.departure.lat,
                 "lon": existing.departure.lon,
+                "country_code": existing.departure.country_code,
             },
             "arrival": data.get("arrival")
             or {
                 "name": existing.arrival.name,
                 "lat": existing.arrival.lat,
                 "lon": existing.arrival.lon,
+                "country_code": existing.arrival.country_code,
             },
             "departure_datetime": data.get("departure_datetime") or existing.departure_datetime,
             "arrival_datetime": data.get("arrival_datetime") or existing.arrival_datetime,
@@ -130,11 +132,13 @@ class SegmentService:
             "departure_lon": dep_lon,
             "departure_datetime": dep_utc.isoformat(),
             "departure_timezone": dep_tz,
+            "departure_country": _country(departure),
             "arrival_place": arr_name,
             "arrival_lat": arr_lat,
             "arrival_lon": arr_lon,
             "arrival_datetime": arr_utc.isoformat(),
             "arrival_timezone": arr_tz,
+            "arrival_country": _country(arrival),
             "seat": _clean(data.get("seat")),
             "notes": _clean(data.get("notes")),
         }
@@ -159,6 +163,16 @@ class SegmentService:
             allowed = can_access_trip(trip_id, user_id, conn)
         if not allowed:
             raise TripAccessError(trip_id)
+
+
+def _country(place: dict) -> str | None:
+    """The ISO country code the geocoder reported for the picked result.
+
+    Only ever read from the payload — never derived from the coordinates. See
+    `photon.reverse_country` for the measurement behind that rule.
+    """
+    code = (place.get("country_code") or "").strip().upper()
+    return code or None
 
 
 def _clean(value: str | None) -> str | None:

@@ -55,6 +55,8 @@ def stats_to_dto(stats: TravelStats) -> TravelStatsDTO:
         unique_airports=stats.unique_airports,
         unique_countries=stats.unique_countries,
         visited_countries=stats.visited_countries,
+        ground_legs=stats.ground_legs,
+        nights_away=stats.nights_away,
         earth_laps=stats.earth_laps,
         longest_flight_km=stats.longest_flight_km,
         longest_flight_route=stats.longest_flight_route,

@@ -165,6 +165,8 @@ class TestStationSearch:
                 "city": "Beijing",
                 "country": "China",
                 "countrycode": "CN",
+                "address": "",
+                "category": "place",
                 "lat": 39.8936695,
                 "lon": 116.3151027,
                 "osm_id": 123,
@@ -177,6 +179,9 @@ class TestStationSearch:
         body = r.json()
         assert len(body) == 1
         assert body[0]["name"] == "Beijing West Railway Station"
+        # The country code rides along so the picker can record it on the
+        # segment — it is what makes the leg count toward visited countries.
+        assert body[0]["countrycode"] == "CN"
         # osm_id is an internal detail and is not part of the response contract.
         assert "osm_id" not in body[0]
 

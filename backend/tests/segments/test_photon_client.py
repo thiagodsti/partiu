@@ -11,6 +11,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_photon_cache():
+    """The client's response cache is process-global, so a warmed entry would
+    otherwise leak between tests — two reverse lookups a few metres apart share
+    a rounded key, which is exactly what the cache is for and exactly what makes
+    tests order-dependent without this."""
+    from backend.integrations.photon import client
+
+    client.clear_cache()
+    yield
+    client.clear_cache()
+
+
 def _feature(name, lon, lat, **props):
     return {
         "type": "Feature",
@@ -174,3 +187,307 @@ class TestSearchStations:
             assert client.search_stations("beijing", "train") == []
         mock_get.assert_not_called()
         assert client.is_configured() is False
+
+
+class TestPlaceSearch:
+    """The accommodation/address search behind the stay picker."""
+
+    def test_stay_kind_uses_accommodation_tags(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("avenida palace", "stay")
+
+        tags = [v for k, v in fetch.call_args_list[0].args[0] if k == "osm_tag"]
+        assert "tourism:hotel" in tags
+        assert "tourism:apartment" in tags
+        # Station tags must not leak in, or a train station lands in the hotel list.
+        assert "railway:station" not in tags
+
+    def test_stay_falls_back_to_an_untagged_address_search(self):
+        """A private rental is usually not in OSM as a venue, so a thin tagged
+        result set triggers a second, untagged pass over plain addresses."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("rua garrett 20", "stay")
+
+        assert fetch.call_count == 2
+        second_call_tags = [v for k, v in fetch.call_args_list[1].args[0] if k == "osm_tag"]
+        assert second_call_tags == []
+
+    def test_a_full_tagged_result_set_costs_one_request(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            {
+                "properties": {"name": f"Hotel {i}", "city": "Lisbon", "osm_key": "tourism"},
+                "geometry": {"coordinates": [-9.14, 38.71 + i / 100]},
+            }
+            for i in range(5)
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features) as fetch,
+        ):
+            client.search_places("hotel", "stay")
+
+        assert fetch.call_count == 1
+
+    def test_station_search_never_returns_accommodation(self):
+        """`search_stations` is the segments endpoint; a 'stay' reaching it must
+        not swap the station tags for hotel ones."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_stations("something", "stay")
+
+        tags = [v for k, v in fetch.call_args_list[0].args[0] if k == "osm_tag"]
+        assert "tourism:hotel" not in tags
+        assert "railway:station" in tags
+
+    def test_results_are_classified_and_carry_an_address(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            {
+                "properties": {
+                    "name": "Hotel Avenida Palace",
+                    "street": "Rua 1º de Dezembro",
+                    "housenumber": "123",
+                    "postcode": "1200-359",
+                    "city": "Lisbon",
+                    "countrycode": "PT",
+                    "osm_key": "tourism",
+                },
+                "geometry": {"coordinates": [-9.1409, 38.7145]},
+            },
+            {
+                "properties": {
+                    "name": "Rua Garrett",
+                    "street": "Rua Garrett",
+                    "city": "Lisbon",
+                    "countrycode": "PT",
+                    "osm_key": "place",
+                },
+                "geometry": {"coordinates": [-9.1420, 38.7108]},
+            },
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features),
+        ):
+            results = client.search_places("garrett", "stay")
+
+        assert results[0]["category"] == "place"
+        assert results[0]["address"] == "Rua 1º de Dezembro 123, 1200-359, Lisbon"
+        assert results[0]["countrycode"] == "PT"
+        assert results[1]["category"] == "address"
+
+    def test_disabled_geocoder_returns_empty(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with patch.object(client.settings, "PHOTON_URL", ""):
+            assert client.search_places("hotel", "stay") == []
+
+
+class TestReverseCountry:
+    def test_returns_the_country_code(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [{"properties": {"countrycode": "se", "name": "Malmö central"}}]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features),
+        ):
+            assert client.reverse_country(55.6091, 13.0007) == "SE"
+
+    def test_returns_none_rather_than_guessing(self):
+        """No answer means unknown. A wrong country shown as a visited fact is
+        worse than a missing one — see the docstring for the measurement."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]),
+        ):
+            assert client.reverse_country(55.6091, 13.0007) is None
+
+    def test_returns_none_without_a_geocoder(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with patch.object(client.settings, "PHOTON_URL", ""):
+            assert client.reverse_country(55.6091, 13.0007) is None
+
+
+class TestResponseCache:
+    """The picker fires a request per debounced keystroke against a public,
+    rate-limited service, so repeated prefixes must not each cost a round trip."""
+
+    def test_a_repeated_search_does_not_hit_the_network_twice(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            {
+                "properties": {
+                    "name": "Oslo Central Station",
+                    "city": "Oslo",
+                    "osm_key": "railway",
+                },
+                "geometry": {"coordinates": [10.75, 59.91]},
+            }
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features) as fetch,
+        ):
+            first = client.search_places("oslo s", "train")
+            second = client.search_places("oslo s", "train")
+
+        assert fetch.call_count == 1
+        assert first == second
+
+    def test_the_cache_is_case_insensitive(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("Oslo S", "train")
+            client.search_places("oslo s", "train")
+
+        assert fetch.call_count == 1
+
+    def test_different_kinds_do_not_share_an_entry(self):
+        """A hotel search and a station search for the same text are different
+        questions — sharing a cache entry would put hotels in the station list."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("central", "train")
+            client.search_places("central", "stay")
+
+        assert fetch.call_count > 1
+
+    def test_a_returned_list_cannot_corrupt_the_cached_entry(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            {
+                "properties": {
+                    "name": "Oslo Central Station",
+                    "city": "Oslo",
+                    "osm_key": "railway",
+                },
+                "geometry": {"coordinates": [10.75, 59.91]},
+            }
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features),
+        ):
+            first = client.search_places("oslo s", "train")
+            first[0]["name"] = "MUTATED"
+            second = client.search_places("oslo s", "train")
+
+        assert second[0]["name"] == "Oslo Central Station"
+
+    def test_entries_expire(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_CACHE_TTL_SECONDS", -1),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("oslo s", "train")
+            client.search_places("oslo s", "train")
+
+        assert fetch.call_count == 2
+
+    def test_the_cache_is_bounded(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_CACHE_MAX_ENTRIES", 3),
+            patch.object(client, "_fetch", return_value=[]),
+        ):
+            for i in range(10):
+                client.search_places(f"query {i}", "train")
+
+        assert len(client._cache) <= 3
+
+    def test_reverse_lookups_are_cached_and_rounded(self):
+        """The backfill walks many places; two points in the same city round to
+        one key, and they are certainly in the same country."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [{"properties": {"countrycode": "NO"}}]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features) as fetch,
+        ):
+            assert client.reverse_country(59.9107, 10.7522) == "NO"
+            assert client.reverse_country(59.9109, 10.7523) == "NO"
+
+        assert fetch.call_count == 1
+
+    def test_an_unresolvable_coordinate_is_not_retried(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            assert client.reverse_country(0.0, 0.0) is None
+            assert client.reverse_country(0.0, 0.0) is None
+
+        assert fetch.call_count == 1

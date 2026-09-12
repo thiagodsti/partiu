@@ -3,7 +3,7 @@
  * Ported from the vanilla JS page files.
  */
 
-import type { Flight, TripSegment } from '../api/types';
+import type { Flight, TripSegment, TripStay } from '../api/types';
 
 /** Read the app locale persisted in localStorage (set by i18n module). */
 function appLocale(): string | undefined {
@@ -494,4 +494,140 @@ export function dateDividerInfo(prev: TransportLeg, next: TransportLeg): DateDiv
     label = dep.slice(0, 10);
   }
   return { label, crossesDay: true };
+}
+
+// ---------------------------------------------------------------------------
+// Stays
+//
+// Everything below works on `YYYY-MM-DD` date *keys*, never on Date objects
+// built from the stored instants. A stay's identity is its local calendar dates
+// at the property — "14-18 October" — and the backend already resolved those
+// into `check_in_date` / `check_out_date`. Re-deriving them in the browser would
+// reintroduce exactly the bug those columns exist to prevent: a 15:00 check-in
+// at UTC-10 is the next day in UTC, and a viewer in a third timezone gets a
+// third answer.
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+
+function dateKeyToUtcMs(key: string): number {
+  const [y, m, d] = key.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+/** Whole days from `a` to `b`, both `YYYY-MM-DD`. Negative when `b` precedes `a`. */
+export function daysBetweenDateKeys(a: string, b: string): number {
+  return Math.round((dateKeyToUtcMs(b) - dateKeyToUtcMs(a)) / DAY_MS);
+}
+
+export function addDaysToDateKey(key: string, days: number): string {
+  return new Date(dateKeyToUtcMs(key) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The number of nights a stay covers, falling back to its own dates when the
+ * backend did not supply the count. */
+export function stayNightCount(stay: TripStay): number {
+  return stay.nights ?? daysBetweenDateKeys(stay.check_in_date, stay.check_out_date);
+}
+
+export interface StayNight {
+  stay: TripStay;
+  /** 1-based night number within this stay, for "night 2 of 4". */
+  night: number;
+  nights: number;
+}
+
+export interface StayDay {
+  /** Stays whose *night* falls on this day. */
+  nights: StayNight[];
+  checkIns: TripStay[];
+  checkOuts: TripStay[];
+}
+
+/**
+ * What a given planner day should show for accommodation.
+ *
+ * A stay covers the **night of** every date from check-in up to, but excluding,
+ * check-out — you sleep at the property on the 4th through the 7th for a 4-8
+ * October booking, and on the 8th you are already leaving. Check-out therefore
+ * gets an entry on its own day without that day counting as a night.
+ */
+export function staysForDay(stays: TripStay[], date: string): StayDay {
+  const nights: StayNight[] = [];
+  const checkIns: TripStay[] = [];
+  const checkOuts: TripStay[] = [];
+
+  for (const stay of stays) {
+    if (stay.check_in_date === date) checkIns.push(stay);
+    if (stay.check_out_date === date) checkOuts.push(stay);
+    if (date >= stay.check_in_date && date < stay.check_out_date) {
+      nights.push({
+        stay,
+        night: daysBetweenDateKeys(stay.check_in_date, date) + 1,
+        nights: stayNightCount(stay),
+      });
+    }
+  }
+
+  return { nights, checkIns, checkOuts };
+}
+
+/**
+ * Nights in the trip's span with no accommodation booked, as date keys.
+ *
+ * The last day of a trip is not a night — you leave that morning — so the range
+ * checked stops one day short of `endDate`. Returns `[]` when the trip has no
+ * span yet, or no stays at all: "every night is missing" is not a useful thing
+ * to tell someone who has not started booking.
+ */
+export function accommodationGaps(
+  stays: TripStay[],
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+): string[] {
+  if (!startDate || !endDate || stays.length === 0) return [];
+
+  const gaps: string[] = [];
+  const lastNight = daysBetweenDateKeys(startDate, endDate) - 1;
+  for (let offset = 0; offset <= lastNight; offset++) {
+    const date = addDaysToDateKey(startDate, offset);
+    const covered = stays.some((s) => date >= s.check_in_date && date < s.check_out_date);
+    if (!covered) gaps.push(date);
+  }
+  return gaps;
+}
+
+/**
+ * Whether a stay sits entirely outside the trip's transport, and on which side.
+ *
+ * This drives a *warning*, never a rejection. A stay legitimately falls outside
+ * the flights — the airport hotel the night before an early departure is the
+ * standard case — so the only thing worth flagging is a stay with no overlap at
+ * all, which is usually a mistyped month or year. Returns null when there is no
+ * transport to compare against.
+ *
+ * The transport range is read off the stored UTC instants rather than local
+ * dates, which can be a day out at the edges. That is deliberate: this answers
+ * "is this booking in the wrong month?", and a day of slack costs nothing.
+ */
+export function stayOutsideTravel(
+  stay: TripStay,
+  flights: Flight[],
+  segments: TripSegment[],
+): 'before' | 'after' | null {
+  const dates = [
+    ...flights.flatMap((f) => [f.departure_datetime, f.arrival_datetime]),
+    ...segments.flatMap((s) => [s.departure_datetime, s.arrival_datetime]),
+  ]
+    .filter((d): d is string => Boolean(d))
+    .map((d) => d.slice(0, 10))
+    .sort();
+
+  if (dates.length === 0) return null;
+
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (stay.check_out_date < first) return 'before';
+  if (stay.check_in_date > last) return 'after';
+  return null;
 }

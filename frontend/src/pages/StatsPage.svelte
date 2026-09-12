@@ -3,7 +3,7 @@
   import TopNav from '../components/TopNav.svelte';
   import LoadingScreen from '../components/LoadingScreen.svelte';
   import MonthlyChart from '../components/MonthlyChart.svelte';
-  import { t } from '../lib/i18n';
+  import { t, locale } from '../lib/i18n';
 
   type Stats = Awaited<ReturnType<typeof statsApi.get>>;
 
@@ -31,6 +31,36 @@
     selectedYear = y;
     load(y ?? undefined);
   }
+
+  /** Country codes rendered as names for the hero subtitle ("Sweden · Norway").
+   * `Intl.DisplayNames` is built in and locale-aware, so no lookup table is
+   * needed; a code it cannot resolve falls back to itself rather than
+   * disappearing. Capped so a well-travelled year does not wrap the hero. */
+  const HERO_COUNTRY_LIMIT = 6;
+
+  const countryNames = $derived.by((): string => {
+    const codes = stats?.visited_countries ?? [];
+    if (codes.length === 0) return '';
+    let display: Intl.DisplayNames | null = null;
+    try {
+      display = new Intl.DisplayNames([$locale ?? 'en'], { type: 'region' });
+    } catch {
+      display = null;
+    }
+    const names = codes
+      .slice(0, HERO_COUNTRY_LIMIT)
+      .map((c) => {
+        try {
+          return display?.of(c) ?? c;
+        } catch {
+          return c;
+        }
+      })
+      .join(' · ');
+    return codes.length > HERO_COUNTRY_LIMIT
+      ? `${names} +${codes.length - HERO_COUNTRY_LIMIT}`
+      : names;
+  });
 
   function fmtKm(km: number): string {
     if (km >= 1_000_000) return `${(km / 1_000_000).toFixed(1)}M`;
@@ -90,27 +120,45 @@
       </div>
     {/if}
 
-    {#if stats.total_flights === 0}
+    <!-- A trip made entirely of trains has no flights but real countries, so
+         the empty state keys off "nothing at all" rather than the flight count.
+         The hero and the flight-shaped cards below still read zero, which is
+         honest — ground travel deliberately contributes only countries. -->
+    {#if stats.total_flights === 0 && stats.unique_countries === 0}
       <div class="stats-empty">
         <div class="stats-empty-icon">✈</div>
         <p>{$t('stats.empty')}</p>
       </div>
     {:else}
 
-      <!-- Hero: km flown -->
-      <div class="stat-hero">
-        <div class="stat-hero-number">{fmtKm(stats.total_km)} <span class="stat-hero-unit">km</span></div>
-        <div class="stat-hero-label">{$t('stats.total_distance')}</div>
-        {#if stats.earth_laps > 0}
-          <div class="stat-hero-sub">
-            {#if stats.earth_laps >= 1}
-              {$t('stats.earth_laps', { values: { n: stats.earth_laps.toFixed(1) } })}
-            {:else}
-              {$t('stats.earth_pct', { values: { pct: Math.round(stats.earth_laps * 100) } })}
-            {/if}
-          </div>
-        {/if}
-      </div>
+      <!-- Hero. Distance is the headline for anyone who flies, but it reads
+           "0 km" for a period spent entirely on trains, so countries take over
+           when there are no flights. Ground travel has no distance of its own
+           on purpose: rail track runs well above the great-circle line, and an
+           estimate rendered this large would read as a measurement. -->
+      {#if stats.total_flights === 0}
+        <div class="stat-hero">
+          <div class="stat-hero-number">{stats.unique_countries}</div>
+          <div class="stat-hero-label">{$t('stats.countries_visited')}</div>
+          {#if countryNames}
+            <div class="stat-hero-sub">{countryNames}</div>
+          {/if}
+        </div>
+      {:else}
+        <div class="stat-hero">
+          <div class="stat-hero-number">{fmtKm(stats.total_km)} <span class="stat-hero-unit">km</span></div>
+          <div class="stat-hero-label">{$t('stats.total_distance')}</div>
+          {#if stats.earth_laps > 0}
+            <div class="stat-hero-sub">
+              {#if stats.earth_laps >= 1}
+                {$t('stats.earth_laps', { values: { n: stats.earth_laps.toFixed(1) } })}
+              {:else}
+                {$t('stats.earth_pct', { values: { pct: Math.round(stats.earth_laps * 100) } })}
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       <!-- 4-up stat grid -->
       <div class="stat-grid">
@@ -130,6 +178,18 @@
           <div class="stat-value">{stats.unique_countries}</div>
           <div class="stat-label">{$t('stats.countries')} →</div>
         </a>
+        {#if stats.ground_legs > 0}
+          <div class="stat-card">
+            <div class="stat-value">{stats.ground_legs}</div>
+            <div class="stat-label">{$t('stats.ground_legs')}</div>
+          </div>
+        {/if}
+        {#if stats.nights_away > 0}
+          <div class="stat-card">
+            <div class="stat-value">{stats.nights_away}</div>
+            <div class="stat-label">{$t('stats.nights_away')}</div>
+          </div>
+        {/if}
         {#if stats.total_co2_kg > 0}
           <div class="stat-card stat-card-co2">
             <div class="stat-value">{fmtCo2(stats.total_co2_kg)}</div>
@@ -219,7 +279,19 @@
               <span class="stat-list-label">{$t('stats.total')}</span>
               <div class="breakdown-numbers">
                 <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
-                {#if stats.total_co2_kg > 0}<span class="breakdown-co2">{fmtCo2(stats.total_co2_kg)}</span>{/if}
+                {#if stats.ground_legs > 0}
+          <div class="stat-card">
+            <div class="stat-value">{stats.ground_legs}</div>
+            <div class="stat-label">{$t('stats.ground_legs')}</div>
+          </div>
+        {/if}
+        {#if stats.nights_away > 0}
+          <div class="stat-card">
+            <div class="stat-value">{stats.nights_away}</div>
+            <div class="stat-label">{$t('stats.nights_away')}</div>
+          </div>
+        {/if}
+        {#if stats.total_co2_kg > 0}<span class="breakdown-co2">{fmtCo2(stats.total_co2_kg)}</span>{/if}
               </div>
             </div>
           </div>

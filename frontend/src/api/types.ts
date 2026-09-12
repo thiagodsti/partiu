@@ -35,6 +35,11 @@ export interface Trip {
   destination_airport: string | null;
   booking_refs: string[];
   flight_count?: number;
+  segment_count?: number;
+  stay_count?: number;
+  /** Distinct ground-transport types on the trip; lets the card say
+   * "2 trains" instead of the generic "2 legs" when there is only one. */
+  segment_types?: string[];
   flights?: Flight[];
   immich_album_id?: string | null;
   is_owner?: boolean;
@@ -55,6 +60,8 @@ export interface SegmentPlace {
   lat: number | null;
   lon: number | null;
   timezone: string | null;
+  /** ISO-3166-1 alpha-2 from the geocoder; null when typed by hand. */
+  country_code: string | null;
 }
 
 /** A manually-added non-flight transport leg (train, bus, ferry, car). */
@@ -78,13 +85,80 @@ export interface TripSegment {
   updated_at: string;
 }
 
-export interface StationResult {
+export type StayKind = 'hotel' | 'airbnb' | 'hostel' | 'other';
+
+/** Where a stay is. One place, unlike a segment's two.
+ *
+ * `address` is separate from `name` because they serve different readers: the
+ * name titles the card, the address is what the calendar export puts in
+ * LOCATION. `lat`/`lon` are null until the accommodation picker lands — a stay
+ * without them is saved as text and left off the map. */
+export interface StayPlace {
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lon: number | null;
+  timezone: string | null;
+  /** ISO-3166-1 alpha-2 from the geocoder; null when typed by hand. */
+  country_code: string | null;
+}
+
+/** A booked place to sleep: hotel, Airbnb, hostel.
+ *
+ * `check_in_date` / `check_out_date` are the local calendar dates at the
+ * property, computed by the backend. Prefer them over slicing the datetimes:
+ * a 15:00 check-in at UTC-10 is the *next* day in UTC, so the instants band
+ * onto the wrong planner day. */
+export interface TripStay {
+  id: string;
+  trip_id: string;
+  kind: StayKind;
+  place: StayPlace;
+  check_in_datetime: string;
+  check_in_date: string;
+  check_out_datetime: string;
+  check_out_date: string;
+  nights: number | null;
+  booking_reference: string | null;
+  confirmation: string | null;
+  contact: string | null;
+  room_type: string | null;
+  guests: number | null;
+  notes: string | null;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One geocoder candidate, from either the station or the place search. */
+export interface PlaceResult {
   name: string;
   city: string;
+  /** One-line street address; often "" for a station. */
+  address: string;
   country: string;
+  /** ISO-3166-1 alpha-2. Recorded on the saved place, and what makes it count
+   * toward visited countries in Stats. */
   countrycode: string;
+  /** 'place' is a mapped venue, 'address' a street. The picker groups on it. */
+  category: 'place' | 'address';
   lat: number;
   lon: number;
+}
+
+/** Kept as the old name so existing station callers read unchanged. */
+export type StationResult = PlaceResult;
+
+export type PlaceInputKind = SegmentType | 'stay';
+
+/** What PlaceInput hands back when the user picks a result or types freely. */
+export interface PickedPlace {
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  country_code: string | null;
+  address: string | null;
 }
 
 export interface PackingItem {
@@ -317,3 +391,16 @@ export interface VersionInfo {
   update_available: boolean;
 }
 
+/** Configuration state of one optional third-party integration.
+ *
+ * Carries no key material by design — only whether something is set and which
+ * environment variable sets it. `state` distinguishes Photon's three cases,
+ * where a plain configured/not answer would report the out-of-the-box public
+ * instance as a deliberate choice.
+ */
+export interface IntegrationStatus {
+  key: string;
+  configured: boolean;
+  state: 'set' | 'unset' | 'public_instance' | 'self_hosted' | 'disabled';
+  env_var: string | null;
+}

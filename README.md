@@ -46,6 +46,7 @@ Want to try it before self-hosting? A public demo is available at:
 
 ### Trip & flight management
 - Auto-groups flights into trips by booking reference, then 48h time proximity
+- Trip cards name what a trip is made of — "2 trains", "2 flights · 1 stay" — rather than always counting flights
 - Create and edit trips and flights manually — every field of a flight (route, times, terminals, gates, seat, cabin, booking reference, passenger, notes) is editable from **Edit Flight** on the flight's page, with times entered as local time at each airport
 - One **Transport** list per trip holding flights and ground legs together, grouped into Outbound / Getting around / Return — the middle group is where trains, buses and ferries live on a longer trip
 - Connection badges and layover times span both, so the wait between landing and boarding a train is visible
@@ -66,7 +67,17 @@ Want to try it before self-hosting? A public demo is available at:
 - They also show up in the day planner, interleaved with that day's flights in departure order, and extend the trip's date range so a day holding only a train still gets its own day card
 - Records operator, service number, seat and booking reference
 - No email parsing — these are entered manually, and the station lookup is optional: a hand-typed place still saves, it just doesn't appear on the map
-- Not counted in travel statistics, which remain flight-only
+- **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
+
+### Stays (hotels, Airbnbs, hostels)
+- Add accommodation to a trip by hand, in its own section between Transport and the day planner: property name, address, check-in/check-out, room, guests, booking reference, confirmation and host contact
+- Check-in and check-out are entered as local time at the property; the trip's **local calendar dates** are what everything else reads, so a 15:00 check-in in Honolulu files on the day you actually arrive rather than the next day in UTC
+- The day planner bands a stay across the nights it covers — each day card shows "night 2 of 4" without being expanded — and lists check-in and check-out as entries on the boundary days, in time order with that day's flights and ground legs
+- Stays **extend** the trip's date range rather than being validated against it, so the airport hotel booked for the night before an early departure is a normal thing to record, and accommodation can be booked before any transport is
+- Nights with nothing booked are listed under the Stays section; a stay that does not overlap the trip's transport at all is flagged as a warning, never rejected
+- Exported to iCalendar as one all-day block covering the nights (ending after check-out, not before it) plus a timed check-out reminder with a 1h alarm; the address rides along in `LOCATION` so the calendar entry opens in a maps app
+- No email parsing yet, and no accommodation autocomplete yet — a hand-typed place saves fine
+- **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
 
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
@@ -108,6 +119,11 @@ Want to try it before self-hosting? A public demo is available at:
 - Web push notifications (VAPID) for flight reminders, check-in reminders, delays, new flights detected, and more
 - In-app notification inbox with unread count badge
 - Per-user notification preferences
+
+### Optional integration status
+- **Settings → Optional integrations** (admin only) shows which of CARTO, AviationStack, Photon, Ollama and web push are configured, and spells out exactly what each one adds
+- The same summary is logged once at startup at INFO level. Nothing nags you: every integration is optional, and running without one is a legitimate choice rather than an error
+- Photon is reported as *public instance* / *self-hosted* / *disabled* rather than just on-or-off, since it defaults to komoot's shared service
 
 ### Authentication & security
 - Username / password login with session cookies (30-day expiration, server-side revocable)
@@ -184,7 +200,14 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `DISABLE_SCHEDULER` | | Set to `true` to disable background email sync (useful for dev) |
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
 | `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
-| `PHOTON_URL` | | Geocoder for the train/bus station picker (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and enter station names as plain text |
+| `PHOTON_URL` | | Geocoder for the station, hotel and address pickers (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and type places as plain text — note that a place with no coordinates gets no map pin, no timezone conversion, and does not count toward visited countries |
+| `OLLAMA_URL` | | Ollama endpoint for the LLM parsing fallback (e.g. `http://ollama:11434`). Unset, the fallback is disabled and only the built-in airline rules run |
+| `OLLAMA_MODEL` | | Model for the fallback (default: `qwen2.5:1.5b`) |
+| `SECURE_COOKIES` | | Set to `false` when testing over plain HTTP on a local network. Leave `true` in production |
+| `ANNOUNCEMENT` | | A short message shown as a banner to every signed-in user |
+| `PARTIU_VERSION` | | The running version, shown in the UI and used for the update check. Normally set to the Docker image tag |
+
+Which of these are set is visible at a glance in **Settings → Optional integrations** (admin only), along with what each one adds. It is also summarised in one line at INFO level on startup. Nothing here is required: every integration degrades a single feature rather than breaking the app.
 
 All other settings (Gmail credentials, sync interval, SMTP server) are configured per-user or by the admin through the Settings page in the UI.
 

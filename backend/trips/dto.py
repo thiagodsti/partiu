@@ -27,6 +27,12 @@ class TripListItemDTO(BaseModel):
     is_owner: bool
     owner_username: str | None
     flight_count: int
+    segment_count: int
+    stay_count: int
+    # Distinct ground-transport types on the trip, so the card can name the
+    # kind ('2 trains') when there is only one and fall back to a generic
+    # label when there are several.
+    segment_types: list[str]
     expenses_total: dict[str, float]
     immich_album_id: str | None
     search_index: str

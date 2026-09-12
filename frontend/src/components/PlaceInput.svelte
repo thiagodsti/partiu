@@ -1,23 +1,28 @@
 <script lang="ts">
-  import { stationsApi } from '../api/client';
-  import type { StationResult, SegmentType } from '../api/types';
+  import { stationsApi, placesApi } from '../api/client';
+  import type { PlaceResult, PlaceInputKind, PickedPlace } from '../api/types';
   import { t } from '../lib/i18n';
 
   interface Props {
     /** The place name. Bound both ways: typing edits it, picking a suggestion replaces it. */
     value: string;
-    /** Coordinates of the picked station, or null when the name was typed by hand. */
+    /** Coordinates of the picked place, or null when the name was typed by hand. */
     lat: number | null;
     lon: number | null;
-    kind: SegmentType;
+    /** A station kind ('train' | 'bus' | 'ferry' | 'car') or 'stay'. Selects
+     * both the endpoint and the OSM tags it filters on. */
+    kind: PlaceInputKind;
     placeholder?: string;
     id?: string;
-    onchange: (place: { name: string; lat: number | null; lon: number | null }) => void;
+    /** Carries the geocoder's country code and street address alongside the
+     * name — the country is what makes the leg count toward visited countries,
+     * and the address is what makes the calendar entry tappable into maps. */
+    onchange: (place: PickedPlace) => void;
   }
 
   const { value, lat, lon, kind, placeholder = '', id, onchange }: Props = $props();
 
-  let results = $state<StationResult[]>([]);
+  let results = $state<PlaceResult[]>([]);
   let open = $state(false);
   let searching = $state(false);
   let searchFailed = $state(false);
@@ -27,17 +32,54 @@
    * overwrite the results of a later one. */
   let requestSeq = 0;
 
-  function label(s: StationResult): string {
-    return [s.city, s.country].filter(Boolean).join(', ');
+  /** Per-component memo of queries already answered. Backspacing is the common
+   * case — typing past a match and correcting it re-issues queries the server
+   * has already answered, and the geocoder behind them is a rate-limited
+   * third-party service. Lives for the life of the form, which is short enough
+   * that staleness is not a concern. */
+  const queryCache = new Map<string, PlaceResult[]>();
+
+  /** The secondary line under a result: its street address where Photon had
+   * one, since that is what distinguishes two results with the same name, and
+   * city/country otherwise. */
+  function label(s: PlaceResult): string {
+    return s.address || [s.city, s.country].filter(Boolean).join(', ');
   }
+
+  /** Venues before streets, so the "Addresses" heading is a single divider
+   * rather than one per run. Photon interleaves the two by relevance, and the
+   * heading repeated four times in a six-result list. `sort` is stable, so
+   * relevance order is preserved inside each group. */
+  const grouped = $derived(
+    [...results].sort(
+      (a, b) => (a.category === 'address' ? 1 : 0) - (b.category === 'address' ? 1 : 0),
+    ),
+  );
+
+  /** The station wording is wrong on an accommodation form, where the thing
+   * being picked is a hotel or a street. */
+  const isStay = $derived(kind === 'stay');
 
   async function runSearch(q: string) {
     const seq = ++requestSeq;
+
+    const memo = queryCache.get(q.toLowerCase());
+    if (memo) {
+      results = memo;
+      open = memo.length > 0;
+      searching = false;
+      searchFailed = false;
+      return;
+    }
+
     searching = true;
     searchFailed = false;
     try {
-      const found = await stationsApi.search(q, kind);
+      // Stays search accommodation *and* plain addresses; a private rental is
+      // usually only findable as the latter. Stations stay tag-filtered.
+      const found = kind === 'stay' ? await placesApi.search(q) : await stationsApi.search(q, kind);
       if (seq !== requestSeq) return;
+      queryCache.set(q.toLowerCase(), found);
       results = found;
       open = found.length > 0;
     } catch {
@@ -54,9 +96,10 @@
 
   function onInput(e: Event) {
     const text = (e.target as HTMLInputElement).value;
-    // Typing invalidates any previously picked station's coordinates — the name
-    // no longer necessarily refers to that place.
-    onchange({ name: text, lat: null, lon: null });
+    // Typing invalidates everything the geocoder resolved — the name no longer
+    // necessarily refers to that place, so its coordinates, country and address
+    // must go with it rather than being silently kept.
+    onchange({ name: text, lat: null, lon: null, country_code: null, address: null });
     highlighted = -1;
     if (debounceTimer) clearTimeout(debounceTimer);
     if (text.trim().length < 3) {
@@ -67,8 +110,14 @@
     debounceTimer = setTimeout(() => runSearch(text.trim()), 300);
   }
 
-  function pick(s: StationResult) {
-    onchange({ name: s.name, lat: s.lat, lon: s.lon });
+  function pick(s: PlaceResult) {
+    onchange({
+      name: s.name,
+      lat: s.lat,
+      lon: s.lon,
+      country_code: s.countrycode || null,
+      address: s.address || null,
+    });
     results = [];
     open = false;
     highlighted = -1;
@@ -108,15 +157,18 @@
 
   <span class="station-status">
     {#if searching}
-      <span class="station-spinner" aria-label={$t('segments.searching')}></span>
+      <span class="station-spinner" aria-label={isStay ? $t('places.searching') : $t('segments.searching')}></span>
     {:else if lat != null && lon != null}
-      <span class="station-pin" title={$t('segments.located')}>📍</span>
+      <span class="station-pin" title={isStay ? $t('places.located') : $t('segments.located')}>📍</span>
     {/if}
   </span>
 
   {#if open && results.length > 0}
     <ul class="station-results">
-      {#each results as s, i (`${s.lat},${s.lon}`)}
+      {#each grouped as s, i (`${s.lat},${s.lon}`)}
+        {#if i > 0 && s.category === 'address' && grouped[i - 1].category !== 'address'}
+          <li class="place-group">{$t('places.addresses')}</li>
+        {/if}
         <li>
           <button
             type="button"
@@ -134,9 +186,13 @@
   {/if}
 
   {#if searchFailed}
-    <p class="station-hint">{$t('segments.lookup_failed')}</p>
+    <p class="station-hint">
+      {isStay ? $t('places.lookup_failed') : $t('segments.lookup_failed')}
+    </p>
   {:else if value.trim() && lat == null}
-    <p class="station-hint">{$t('segments.no_coords_hint')}</p>
+    <p class="station-hint">
+      {isStay ? $t('places.no_coords_hint') : $t('segments.no_coords_hint')}
+    </p>
   {/if}
 </div>
 
@@ -182,6 +238,15 @@
     border: 1px solid var(--border, #e2e8f0);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+
+  .place-group {
+    padding: 6px 9px 2px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #64748b);
   }
 
   .station-result {

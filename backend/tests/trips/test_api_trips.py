@@ -55,6 +55,65 @@ class TestTripsListGet:
         trip = r2.json()["trips"][0]
         assert trip["flight_count"] == 1
 
+    def test_list_trips_counts_ground_legs_and_stays(self, auth_client):
+        """A trip of two trains used to read "0 flights" on its card, which is
+        true and useless — the card now names what the trip is made of."""
+        trip_id = auth_client.post("/api/trips", json={"name": "Rail trip"}).json()["id"]
+        for number, dep, arr in (
+            ("605", "2026-11-02T09:00", "2026-11-02T13:30"),
+            ("606", "2026-11-05T09:00", "2026-11-05T13:30"),
+        ):
+            auth_client.post(
+                f"/api/trips/{trip_id}/segments",
+                json={
+                    "type": "train",
+                    "number": number,
+                    "departure": {"name": "Stockholm C", "lat": 59.33, "lon": 18.06},
+                    "arrival": {"name": "Oslo S", "lat": 59.91, "lon": 10.75},
+                    "departure_datetime": dep,
+                    "arrival_datetime": arr,
+                },
+            )
+        auth_client.post(
+            f"/api/trips/{trip_id}/stays",
+            json={
+                "kind": "hotel",
+                "place": {"name": "Grand Hotel"},
+                "check_in_datetime": "2026-11-02T15:00",
+                "check_out_datetime": "2026-11-05T11:00",
+            },
+        )
+
+        trip = auth_client.get("/api/trips").json()["trips"][0]
+        assert trip["flight_count"] == 0
+        assert trip["segment_count"] == 2
+        assert trip["stay_count"] == 1
+        # One kind of ground transport, so the card can say "trains".
+        assert trip["segment_types"] == ["train"]
+
+    def test_segment_types_lists_every_kind_used(self, auth_client):
+        trip_id = auth_client.post("/api/trips", json={"name": "Mixed"}).json()["id"]
+        for kind in ("train", "ferry"):
+            auth_client.post(
+                f"/api/trips/{trip_id}/segments",
+                json={
+                    "type": kind,
+                    "departure": {"name": "A"},
+                    "arrival": {"name": "B"},
+                    "departure_datetime": "2026-11-02T09:00",
+                    "arrival_datetime": "2026-11-02T13:30",
+                },
+            )
+
+        trip = auth_client.get("/api/trips").json()["trips"][0]
+        assert trip["segment_types"] == ["ferry", "train"]
+
+    def test_an_empty_trip_still_reports_zero_counts(self, auth_client):
+        auth_client.post("/api/trips", json={"name": "Empty"})
+        trip = auth_client.get("/api/trips").json()["trips"][0]
+        assert (trip["flight_count"], trip["segment_count"], trip["stay_count"]) == (0, 0, 0)
+        assert trip["segment_types"] == []
+
     def test_list_trips_unauthenticated(self, client):
         client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
         client.cookies.clear()
@@ -235,7 +294,9 @@ class TestTripImage:
     def test_get_image_no_city_returns_404(self, auth_client):
         r = auth_client.post("/api/trips", json={"name": "My Trip"})
         trip_id = r.json()["id"]
-        with patch("backend.trips.image_service.fetch_trip_image", new=AsyncMock(return_value=False)):
+        with patch(
+            "backend.trips.image_service.fetch_trip_image", new=AsyncMock(return_value=False)
+        ):
             r2 = auth_client.get(f"/api/trips/{trip_id}/image")
         assert r2.status_code == 404
 
@@ -259,7 +320,9 @@ class TestTripImage:
     def test_refresh_image_no_city_returns_404(self, auth_client):
         r = auth_client.post("/api/trips", json={"name": "No City"})
         trip_id = r.json()["id"]
-        with patch("backend.trips.image_service.fetch_trip_image", new=AsyncMock(return_value=False)):
+        with patch(
+            "backend.trips.image_service.fetch_trip_image", new=AsyncMock(return_value=False)
+        ):
             r2 = auth_client.post(f"/api/trips/{trip_id}/image/refresh")
         assert r2.status_code == 404
 

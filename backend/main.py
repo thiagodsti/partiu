@@ -36,6 +36,7 @@ from .segments import routes as segments_routes
 from .settings import routes as settings_routes
 from .smtp_server import start_smtp_server, stop_smtp_server
 from .stats import routes as stats_routes
+from .stays import routes as stays_routes
 from .sync import routes as sync_routes
 from .trip_documents import routes as trip_documents_routes
 from .trips import routes as trips_routes
@@ -102,6 +103,12 @@ async def lifespan(app: FastAPI):
     # Databases seeded before the ranking columns existed need a one-time
     # backfill; airport name resolution ranks on them.
     _airports.backfill_rank_columns()
+    # Places stored before their country was recorded contribute nothing to the
+    # visited-countries statistic; resolve them in the background (no-op once
+    # done, and skipped entirely when no geocoder is configured).
+    from .stays.country_backfill import start_place_country_backfill
+
+    start_place_country_backfill()
     from .notifications import push_service
 
     push_service.ensure_vapid_keys()
@@ -117,6 +124,9 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     start_smtp_server()
     asyncio.create_task(_migrate_images_to_webp())
+    from .settings.integrations import log_integration_summary
+
+    log_integration_summary()
     logger.info("Startup complete")
     yield
     # Shutdown
@@ -163,6 +173,7 @@ app.include_router(expenses_routes.router)
 app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
 app.include_router(segments_routes.router)
+app.include_router(stays_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 

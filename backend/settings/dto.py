@@ -80,3 +80,16 @@ class AddDomainResponseDTO(BaseModel):
 
 class OkDTO(BaseModel):
     ok: bool
+
+
+class IntegrationStatusDTO(BaseModel):
+    """One optional integration's configuration state.
+
+    Deliberately carries no key material — only whether something is set and
+    which environment variable sets it.
+    """
+
+    key: str
+    configured: bool
+    state: str
+    env_var: str | None

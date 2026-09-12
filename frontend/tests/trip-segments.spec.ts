@@ -199,6 +199,49 @@ test("another user cannot read or write a trip's segments", async () => {
   await ownerCtx.delete(`/api/trips/${tripId}`);
 });
 
+test('a ground leg counts its countries in travel statistics', async () => {
+  const users = await ensureUsers();
+  test.skip(!users, 'Could not set up users — skipping segments tests');
+  const { ownerCtx } = users!;
+
+  // The case the feature exists for: Sweden to Norway overland, no flight
+  // involved, so Norway had no way to be counted before.
+  const tripId = await createTrip(ownerCtx, 'E2E Stockholm to Oslo');
+  const created = await ownerCtx.post(`/api/trips/${tripId}/segments`, {
+    data: {
+      type: 'train',
+      operator: 'SJ',
+      number: '605',
+      departure: {
+        name: 'Stockholm Central',
+        lat: 59.3298746,
+        lon: 18.0575007,
+        country_code: 'SE',
+      },
+      arrival: {
+        name: 'Oslo Central Station',
+        lat: 59.9110251,
+        lon: 10.7531379,
+        country_code: 'NO',
+      },
+      // Past, so it counts as completed travel the way a flight would.
+      departure_datetime: '2020-08-10T07:00',
+      arrival_datetime: '2020-08-10T13:30',
+    },
+  });
+  expect(created.status()).toBe(201);
+
+  const stats = await (await ownerCtx.get('/api/stats?year=2020')).json();
+  expect(stats.visited_countries).toContain('NO');
+  expect(stats.visited_countries).toContain('SE');
+  // Countries only — a train must not inflate the flight-shaped numbers.
+  expect(stats.total_flights).toBe(0);
+  expect(stats.total_km).toBe(0);
+  expect(stats.total_hours).toBe(0);
+
+  await ownerCtx.delete(`/api/trips/${tripId}`);
+});
+
 test('the station search endpoint requires authentication', async () => {
   const anon = await (await import('@playwright/test')).request.newContext({ baseURL: BASE });
   const res = await anon.get('/api/stations/search?q=beijing');

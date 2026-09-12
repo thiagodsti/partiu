@@ -58,6 +58,13 @@ vi.mock('../api/client', () => ({
   versionApi: {
     get: vi.fn().mockResolvedValue({ current_version: '2.2.5', latest_version: null, update_available: false }),
   },
+  integrationsApi: {
+    list: vi.fn().mockResolvedValue([
+      { key: 'carto', configured: false, state: 'unset', env_var: 'CARTO_API_KEY' },
+      { key: 'photon', configured: true, state: 'public_instance', env_var: 'PHOTON_URL' },
+      { key: 'push', configured: true, state: 'set', env_var: null },
+    ]),
+  },
   sharesApi: {
     listTrustedUsers: vi.fn().mockResolvedValue([]),
     addTrustedUser: vi.fn(),
@@ -262,5 +269,40 @@ describe('SettingsPage', () => {
 
       await waitFor(() => expect(container.textContent).toContain('Guest not found'));
     });
+  });
+});
+
+describe('SettingsPage optional integrations', () => {
+  it('lists each integration with its state for an admin', async () => {
+    const { container } = render(SettingsPage);
+    await waitFor(() => expect(container.textContent).toContain('settings.integrations'));
+    expect(container.textContent).toContain('integrations.carto');
+    expect(container.textContent).toContain('integrations.state_unset');
+  });
+
+  it('names the env var only for something that is not configured', async () => {
+    // An admin who has already set a key does not need to be told which
+    // variable it came from; one who has not does.
+    const { container } = render(SettingsPage);
+    await waitFor(() => expect(container.textContent).toContain('CARTO_API_KEY'));
+    expect(container.textContent).not.toContain('PHOTON_URL');
+  });
+
+  it('distinguishes Photon on the public instance from a configured key', async () => {
+    // A plain configured/not answer would claim credit for a default the admin
+    // never chose, so the public instance gets its own state and tone.
+    const { container } = render(SettingsPage);
+    await waitFor(() => expect(container.textContent).toContain('integrations.state_public_instance'));
+    expect(container.querySelector('.integration-dot.warn')).toBeTruthy();
+  });
+
+  it('marks an unconfigured integration neutrally, not as an error', async () => {
+    // These are optional by design: an unset key is a choice, not a fault.
+    const { container } = render(SettingsPage);
+    await waitFor(() => expect(container.textContent).toContain('settings.integrations'));
+    const dots = container.querySelectorAll('.integration-dot');
+    expect(dots.length).toBe(3);
+    // The unset CARTO row carries neither the ok nor the warn modifier.
+    expect(container.querySelectorAll('.integration-dot.ok').length).toBe(1);
   });
 });

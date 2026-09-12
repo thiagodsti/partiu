@@ -12,9 +12,9 @@ from .mappers import row_to_segment
 _SEGMENT_SELECT = """
     SELECT s.id, s.trip_id, s.type, s.operator, s.number, s.booking_reference,
            s.departure_place, s.departure_lat, s.departure_lon,
-           s.departure_datetime, s.departure_timezone,
+           s.departure_datetime, s.departure_timezone, s.departure_country,
            s.arrival_place, s.arrival_lat, s.arrival_lon,
-           s.arrival_datetime, s.arrival_timezone,
+           s.arrival_datetime, s.arrival_timezone, s.arrival_country,
            s.seat, s.notes, s.created_by, s.created_at, s.updated_at,
            u.username AS created_by_username
     FROM trip_segments s
@@ -33,11 +33,13 @@ _UPDATABLE: dict[str, str] = {
     "departure_lon": "departure_lon",
     "departure_datetime": "departure_datetime",
     "departure_timezone": "departure_timezone",
+    "departure_country": "departure_country",
     "arrival_place": "arrival_place",
     "arrival_lat": "arrival_lat",
     "arrival_lon": "arrival_lon",
     "arrival_datetime": "arrival_datetime",
     "arrival_timezone": "arrival_timezone",
+    "arrival_country": "arrival_country",
     "seat": "seat",
     "notes": "notes",
 }
@@ -68,11 +70,11 @@ class SegmentRepository:
                 INSERT INTO trip_segments (
                     id, trip_id, type, operator, number, booking_reference,
                     departure_place, departure_lat, departure_lon,
-                    departure_datetime, departure_timezone,
+                    departure_datetime, departure_timezone, departure_country,
                     arrival_place, arrival_lat, arrival_lon,
-                    arrival_datetime, arrival_timezone,
+                    arrival_datetime, arrival_timezone, arrival_country,
                     seat, notes, created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     segment_id,
@@ -86,11 +88,13 @@ class SegmentRepository:
                     values.get("departure_lon"),
                     values["departure_datetime"],
                     values.get("departure_timezone"),
+                    values.get("departure_country"),
                     values["arrival_place"],
                     values.get("arrival_lat"),
                     values.get("arrival_lon"),
                     values["arrival_datetime"],
                     values.get("arrival_timezone"),
+                    values.get("arrival_country"),
                     values.get("seat"),
                     values.get("notes"),
                     created_by,

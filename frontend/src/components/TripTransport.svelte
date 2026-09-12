@@ -4,7 +4,7 @@
   import type { Trip, Flight, TripSegment, SegmentType } from '../api/types';
   import { splitTransport, toLocalInputValue } from '../lib/utils';
   import { t } from '../lib/i18n';
-  import StationInput from './StationInput.svelte';
+  import PlaceInput from './PlaceInput.svelte';
   import FlightRow from './FlightRow.svelte';
   import SegmentRow from './SegmentRow.svelte';
   import LegDivider from './LegDivider.svelte';
@@ -52,8 +52,8 @@
   function emptyForm(): FormState {
     return {
       type: 'train',
-      departure: { name: '', lat: null, lon: null },
-      arrival: { name: '', lat: null, lon: null },
+      departure: { name: '', lat: null, lon: null, country_code: null },
+      arrival: { name: '', lat: null, lon: null, country_code: null },
       departure_datetime: '',
       arrival_datetime: '',
       operator: '',
@@ -66,8 +66,18 @@
   function formFromSegment(s: TripSegment): FormState {
     return {
       type: s.type,
-      departure: { name: s.departure.name, lat: s.departure.lat, lon: s.departure.lon },
-      arrival: { name: s.arrival.name, lat: s.arrival.lat, lon: s.arrival.lon },
+      departure: {
+        name: s.departure.name,
+        lat: s.departure.lat,
+        lon: s.departure.lon,
+        country_code: s.departure.country_code,
+      },
+      arrival: {
+        name: s.arrival.name,
+        lat: s.arrival.lat,
+        lon: s.arrival.lon,
+        country_code: s.arrival.country_code,
+      },
       // Stored as UTC; the form edits wall-clock time at each station.
       departure_datetime: toLocalInputValue(s.departure_datetime, s.departure.timezone),
       arrival_datetime: toLocalInputValue(s.arrival_datetime, s.arrival.timezone),
@@ -241,13 +251,13 @@
     <div class="segment-form-row">
       <div class="segment-field">
         <span class="segment-label">{$t('segments.from')}</span>
-        <StationInput
+        <PlaceInput
           value={form.departure.name}
           lat={form.departure.lat ?? null}
           lon={form.departure.lon ?? null}
           kind={form.type}
           placeholder={$t('segments.from_placeholder')}
-          onchange={(p) => (form.departure = p)}
+          onchange={(p) => (form.departure = { name: p.name, lat: p.lat, lon: p.lon, country_code: p.country_code })}
         />
       </div>
       <label class="segment-field">
@@ -259,13 +269,13 @@
     <div class="segment-form-row">
       <div class="segment-field">
         <span class="segment-label">{$t('segments.to')}</span>
-        <StationInput
+        <PlaceInput
           value={form.arrival.name}
           lat={form.arrival.lat ?? null}
           lon={form.arrival.lon ?? null}
           kind={form.type}
           placeholder={$t('segments.to_placeholder')}
-          onchange={(p) => (form.arrival = p)}
+          onchange={(p) => (form.arrival = { name: p.name, lat: p.lat, lon: p.lon, country_code: p.country_code })}
         />
       </div>
       <label class="segment-field">

@@ -19,6 +19,7 @@ def row_to_segment(row: sqlite3.Row) -> Segment:
             lat=row["departure_lat"],
             lon=row["departure_lon"],
             timezone=row["departure_timezone"],
+            country_code=row["departure_country"],
         ),
         departure_datetime=row["departure_datetime"],
         arrival=Place(
@@ -26,6 +27,7 @@ def row_to_segment(row: sqlite3.Row) -> Segment:
             lat=row["arrival_lat"],
             lon=row["arrival_lon"],
             timezone=row["arrival_timezone"],
+            country_code=row["arrival_country"],
         ),
         arrival_datetime=row["arrival_datetime"],
         seat=row["seat"],
@@ -38,7 +40,13 @@ def row_to_segment(row: sqlite3.Row) -> Segment:
 
 
 def place_to_dto(place: Place) -> PlaceDTO:
-    return PlaceDTO(name=place.name, lat=place.lat, lon=place.lon, timezone=place.timezone)
+    return PlaceDTO(
+        name=place.name,
+        lat=place.lat,
+        lon=place.lon,
+        timezone=place.timezone,
+        country_code=place.country_code,
+    )
 
 
 def segment_to_dto(segment: Segment) -> SegmentDTO:

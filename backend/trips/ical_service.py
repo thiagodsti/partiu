@@ -4,6 +4,8 @@ kept out of service.py (which owns trip CRUD, not calendar formatting).
 The export covers everything on the trip's timeline:
 
 * **flights** and **ground segments** as timed events, both with a 1h alarm;
+* **stays** as an all-day block covering the nights, plus a timed check-out
+  reminder — see `_stay_events` for why it is split in two;
 * **day-planner content** as all-day events, one per day that has a note or a
   checklist. Planner entries carry no time of their own, so an all-day event is
   the honest representation — inventing a clock time would put "buy tickets" at
@@ -71,6 +73,16 @@ def _fold(line: str) -> str:
     return "\r\n ".join(chunks)
 
 
+def _plus_minutes(ical_utc: str, minutes: int) -> str:
+    """Shift an ``YYYYMMDDTHHMMSSZ`` stamp forward, for a zero-length event that
+    several clients would otherwise render as nothing at all."""
+    try:
+        parsed = datetime.strptime(ical_utc, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except (ValueError, TypeError):
+        return ical_utc
+    return (parsed + timedelta(minutes=minutes)).strftime("%Y%m%dT%H%M%SZ")
+
+
 def _parse_day_content(raw: str) -> tuple[str, list[dict]]:
     """Return (note, items) from a stored day-note payload.
 
@@ -117,9 +129,11 @@ class IcalService:
 
         from ..day_notes.repository import DayNoteRepository
         from ..segments.repository import SegmentRepository
+        from ..stays.repository import StayRepository
 
         flights = self._repository.get_flights_for_trip(trip_id)
         segments = SegmentRepository().list_for_trip(trip_id)
+        stays = StayRepository().list_for_trip(trip_id)
         day_notes = DayNoteRepository().list_for_trip(trip_id)
 
         now_utc = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -150,6 +164,8 @@ class IcalService:
         all_dates += [f["arrival_datetime"] for f in flights if f["arrival_datetime"]]
         all_dates += [s.departure_datetime for s in segments if s.departure_datetime]
         all_dates += [s.arrival_datetime for s in segments if s.arrival_datetime]
+        all_dates += [s.check_in_datetime for s in stays if s.check_in_datetime]
+        all_dates += [s.check_out_datetime for s in stays if s.check_out_datetime]
         if all_dates:
             try:
                 parsed = [datetime.fromisoformat(d) for d in all_dates]
@@ -218,6 +234,7 @@ class IcalService:
             ]
 
         lines += self._segment_events(segments, now_utc, _to_ical_dt)
+        lines += self._stay_events(stays, now_utc, _to_ical_dt)
         lines += self._day_note_events(trip_id, day_notes, now_utc)
 
         lines.append("END:VCALENDAR")
@@ -259,6 +276,90 @@ class IcalService:
                 "END:VALARM",
                 "END:VEVENT",
             ]
+        return lines
+
+    @staticmethod
+    def _stay_events(stays, now_utc: str, to_ical_dt) -> list[str]:
+        """Two events per stay: an all-day block, and a timed check-out reminder.
+
+        The block is all-day rather than a single timed event spanning several
+        nights, because that is what a booking is — "14-18 October" at the
+        property, not an instant-to-instant interval a viewer in another zone
+        would see shifted. Its ``DTEND`` is the check-out date **plus one day**:
+        DTEND is exclusive on an all-day event, so without the extra day the
+        block stops the night before check-out and the morning you are still
+        there falls outside it.
+
+        The reminder is separate because the block cannot carry a useful alarm —
+        an alarm on an all-day event fires at midnight in whatever zone the
+        client picks. Check-out is the deadline people actually miss, so it gets
+        its own 30-minute timed event an hour ahead of which the alarm fires.
+
+        ``LOCATION`` prefers the street address over the property name: it is
+        what makes the entry tappable through to a maps app, which is most of
+        the value of having the stay in the calendar at all.
+        """
+        lines: list[str] = []
+        for stay in stays:
+            where = stay.place.address or stay.place.name
+            nights = stay.nights
+
+            desc_parts = [f"Type: {stay.kind.capitalize()}"]
+            if nights is not None:
+                desc_parts.append(f"Nights: {nights}")
+            for field_label, value in (
+                ("Address", stay.place.address),
+                ("Booking Ref", stay.booking_reference),
+                ("Confirmation", stay.confirmation),
+                ("Contact", stay.contact),
+                ("Room", stay.room_type),
+                ("Guests", stay.guests),
+                ("Notes", stay.notes),
+            ):
+                if value:
+                    desc_parts.append(f"{field_label}: {value}")
+            description = _escape(chr(10).join(desc_parts))
+
+            try:
+                check_in_day = date.fromisoformat(stay.check_in_date)
+                check_out_day = date.fromisoformat(stay.check_out_date)
+            except (ValueError, TypeError):
+                continue
+
+            block = [
+                "BEGIN:VEVENT",
+                f"UID:{stay.id}@partiu",
+                f"DTSTAMP:{now_utc}",
+                f"DTSTART;VALUE=DATE:{check_in_day.strftime('%Y%m%d')}",
+                f"DTEND;VALUE=DATE:{(check_out_day + timedelta(days=1)).strftime('%Y%m%d')}",
+                f"SUMMARY:{_escape(stay.place.name)}",
+                f"LOCATION:{_escape(where)}",
+                f"DESCRIPTION:{description}",
+            ]
+            # GEO is only meaningful with real coordinates; a hand-typed place
+            # has none and must not be pinned at (0, 0) off West Africa.
+            if stay.place.lat is not None and stay.place.lon is not None:
+                block.append(f"GEO:{stay.place.lat};{stay.place.lon}")
+            block += ["TRANSP:TRANSPARENT", "END:VEVENT"]
+            lines += block
+
+            if stay.check_out_datetime:
+                check_out_utc = to_ical_dt(stay.check_out_datetime)
+                lines += [
+                    "BEGIN:VEVENT",
+                    f"UID:{stay.id}-checkout@partiu",
+                    f"DTSTAMP:{now_utc}",
+                    f"DTSTART:{check_out_utc}",
+                    f"DTEND:{_plus_minutes(check_out_utc, 30)}",
+                    f"SUMMARY:{_escape(f'Check out: {stay.place.name}')}",
+                    f"LOCATION:{_escape(where)}",
+                    "BEGIN:VALARM",
+                    "TRIGGER:-PT1H",
+                    "ACTION:DISPLAY",
+                    f"DESCRIPTION:{_escape(f'Check out of {stay.place.name} in 1 hour')}",
+                    "END:VALARM",
+                    "END:VEVENT",
+                ]
         return lines
 
     @staticmethod

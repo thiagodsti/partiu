@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, guestsApi, versionApi, ApiError } from "../api/client";
+  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, guestsApi, versionApi, integrationsApi, ApiError } from "../api/client";
   import type { NonFlightDomain } from "../api/client";
-  import type { Settings, SyncStatus, NotifPreferences, TrustedUser, Guest, VersionInfo } from "../api/types";
+  import type { Settings, SyncStatus, NotifPreferences, TrustedUser, Guest, VersionInfo, IntegrationStatus } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
@@ -106,6 +106,29 @@
   }
 
   if ($currentUser?.is_admin) loadVapidStatus();
+
+  // Optional integrations — a status list, not a nag. Every one of these is
+  // optional by design, so the panel reports what each is and what is lost
+  // without it, and nothing interrupts the UI elsewhere.
+  let integrations = $state<IntegrationStatus[]>([]);
+  let integrationsLoading = $state(true);
+  if ($currentUser?.is_admin) {
+    integrationsApi
+      .list()
+      .then((rows) => (integrations = rows))
+      .catch(() => {})
+      .finally(() => (integrationsLoading = false));
+  } else {
+    integrationsLoading = false;
+  }
+
+  /** Photon is the reason `state` exists rather than a plain boolean: it
+   * defaults to komoot's public instance, so "configured" alone would claim
+   * credit for something the admin never chose. */
+  function integrationTone(i: IntegrationStatus): 'ok' | 'warn' | 'off' {
+    if (i.state === 'public_instance') return 'warn';
+    return i.configured ? 'ok' : 'off';
+  }
 
   let versionInfo = $state<VersionInfo | null>(null);
   if ($currentUser?.is_admin) {
@@ -1279,6 +1302,33 @@
     <!-- Admin: blocked sender domains -->
     {#if $currentUser?.is_admin}
       <div class="settings-section">
+        <div class="settings-section-title">{$t("settings.integrations")}</div>
+        <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
+          {$t("settings.integrations_desc")}
+        </p>
+        {#if integrationsLoading}
+          <p style="font-size:0.875rem;color:var(--text-secondary)">Loading…</p>
+        {:else}
+          {#each integrations as integ (integ.key)}
+            <div class="integration-row">
+              <span class="integration-dot" class:ok={integrationTone(integ) === 'ok'}
+                    class:warn={integrationTone(integ) === 'warn'}></span>
+              <div class="integration-body">
+                <div class="integration-head">
+                  <span class="integration-name">{$t(`integrations.${integ.key}`)}</span>
+                  <span class="integration-state">{$t(`integrations.state_${integ.state}`)}</span>
+                </div>
+                <p class="integration-effect">{$t(`integrations.${integ.key}_${integ.state}`)}</p>
+                {#if integ.env_var && !integ.configured}
+                  <code class="integration-env">{integ.env_var}</code>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">{$t("settings.blocked_domains")}</div>
         <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
           {$t("settings.blocked_domains_desc")}
@@ -1719,6 +1769,73 @@
 </div>
 
 <style>
+  .integration-row {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .integration-row:last-child {
+    border-bottom: none;
+  }
+
+  /* Grey by default: an unconfigured optional integration is a choice, not a
+     fault, so it must not read as an error. */
+  .integration-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--text-muted, #94a3b8);
+  }
+
+  .integration-dot.ok {
+    background: var(--success, #16a34a);
+  }
+
+  .integration-dot.warn {
+    background: var(--warning, #d97706);
+  }
+
+  .integration-body {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .integration-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .integration-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .integration-state {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #64748b);
+  }
+
+  .integration-effect {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #64748b);
+  }
+
+  .integration-env {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-alt, rgba(100, 116, 139, 0.12));
+    font-size: 0.75rem;
+  }
+
   .theme-toggle {
     display: flex;
     gap: var(--space-xs);

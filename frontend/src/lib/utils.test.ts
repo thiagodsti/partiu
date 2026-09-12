@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Flight, TripSegment } from '../api/types';
+import type { Flight, TripSegment, TripStay } from '../api/types';
 import {
   escapeHtml,
   formatDuration,
@@ -17,6 +17,12 @@ import {
   flightToLeg,
   segmentToLeg,
   splitTransport,
+  daysBetweenDateKeys,
+  addDaysToDateKey,
+  stayNightCount,
+  staysForDay,
+  accommodationGaps,
+  stayOutsideTravel,
 } from './utils';
 
 // ---- helpers ----
@@ -386,9 +392,9 @@ function makeSegment(overrides: Partial<TripSegment> = {}): TripSegment {
     operator: 'China Railway',
     number: 'G87',
     booking_reference: null,
-    departure: { name: 'Beijing West', lat: 39.89, lon: 116.31, timezone: 'Asia/Shanghai' },
+    departure: { name: 'Beijing West', lat: 39.89, lon: 116.31, timezone: 'Asia/Shanghai', country_code: 'CN' },
     departure_datetime: '2024-06-05T00:00:00Z',
-    arrival: { name: "Xi'an North", lat: 34.37, lon: 108.93, timezone: 'Asia/Shanghai' },
+    arrival: { name: "Xi'an North", lat: 34.37, lon: 108.93, timezone: 'Asia/Shanghai', country_code: 'CN' },
     arrival_datetime: '2024-06-05T04:30:00Z',
     duration_minutes: 270,
     seat: null,
@@ -604,5 +610,207 @@ describe('toLocalInputValue', () => {
     expect(toLocalInputValue('2026-10-04T08:00:00+00:00', null)).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
     );
+  });
+});
+
+// ---- Stays ----
+
+function makeStay(overrides: Partial<TripStay> = {}): TripStay {
+  return {
+    id: 'st1',
+    trip_id: 't1',
+    kind: 'hotel',
+    place: {
+      name: 'Hotel Avenida Palace',
+      address: 'R. 1º de Dezembro 123',
+      lat: 38.71,
+      lon: -9.14,
+      timezone: 'Europe/Lisbon',
+      country_code: 'PT',
+    },
+    check_in_datetime: '2024-06-04T14:00:00Z',
+    check_in_date: '2024-06-04',
+    check_out_datetime: '2024-06-08T10:00:00Z',
+    check_out_date: '2024-06-08',
+    nights: 4,
+    booking_reference: 'BK1',
+    confirmation: null,
+    contact: null,
+    room_type: null,
+    guests: 2,
+    notes: null,
+    created_by: null,
+    created_by_username: null,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('date-key arithmetic', () => {
+  it('counts whole days between keys', () => {
+    expect(daysBetweenDateKeys('2024-06-04', '2024-06-08')).toBe(4);
+  });
+
+  it('is negative when the second key is earlier', () => {
+    expect(daysBetweenDateKeys('2024-06-08', '2024-06-04')).toBe(-4);
+  });
+
+  it('crosses a month boundary', () => {
+    expect(daysBetweenDateKeys('2024-06-29', '2024-07-02')).toBe(3);
+  });
+
+  it('crosses a DST boundary without drifting', () => {
+    // Europe springs forward on 31 March 2024; a naive local-Date subtraction
+    // would come back 23 hours short and round to 6.
+    expect(daysBetweenDateKeys('2024-03-28', '2024-04-04')).toBe(7);
+  });
+
+  it('adds days across a month boundary', () => {
+    expect(addDaysToDateKey('2024-06-29', 3)).toBe('2024-07-02');
+  });
+});
+
+describe('stayNightCount', () => {
+  it('uses the backend count when present', () => {
+    expect(stayNightCount(makeStay())).toBe(4);
+  });
+
+  it('falls back to the stay dates', () => {
+    expect(stayNightCount(makeStay({ nights: null }))).toBe(4);
+  });
+});
+
+describe('staysForDay', () => {
+  const stay = makeStay();
+
+  it('counts the check-in day as the first night', () => {
+    const day = staysForDay([stay], '2024-06-04');
+    expect(day.nights).toHaveLength(1);
+    expect(day.nights[0].night).toBe(1);
+    expect(day.nights[0].nights).toBe(4);
+    expect(day.checkIns).toHaveLength(1);
+    expect(day.checkOuts).toHaveLength(0);
+  });
+
+  it('numbers a middle night correctly', () => {
+    expect(staysForDay([stay], '2024-06-06').nights[0].night).toBe(3);
+  });
+
+  it('counts the last night before check-out', () => {
+    expect(staysForDay([stay], '2024-06-07').nights[0].night).toBe(4);
+  });
+
+  it('does not count the check-out day as a night', () => {
+    // You leave that morning: an entry for the check-out, but no night.
+    const day = staysForDay([stay], '2024-06-08');
+    expect(day.nights).toHaveLength(0);
+    expect(day.checkOuts).toHaveLength(1);
+  });
+
+  it('ignores days outside the stay', () => {
+    expect(staysForDay([stay], '2024-06-03').nights).toHaveLength(0);
+    expect(staysForDay([stay], '2024-06-09').nights).toHaveLength(0);
+  });
+
+  it('reports both stays on a changeover day', () => {
+    const next = makeStay({
+      id: 'st2',
+      check_in_date: '2024-06-08',
+      check_out_date: '2024-06-10',
+      nights: 2,
+    });
+    const day = staysForDay([stay, next], '2024-06-08');
+    expect(day.checkOuts.map((s) => s.id)).toEqual(['st1']);
+    expect(day.checkIns.map((s) => s.id)).toEqual(['st2']);
+    expect(day.nights.map((n) => n.stay.id)).toEqual(['st2']);
+  });
+
+  it('handles a day-use booking with no nights', () => {
+    const dayUse = makeStay({ check_out_date: '2024-06-04', nights: 0 });
+    const day = staysForDay([dayUse], '2024-06-04');
+    expect(day.nights).toHaveLength(0);
+    expect(day.checkIns).toHaveLength(1);
+    expect(day.checkOuts).toHaveLength(1);
+  });
+});
+
+describe('accommodationGaps', () => {
+  it('finds nothing when the stay covers the trip', () => {
+    expect(accommodationGaps([makeStay()], '2024-06-04', '2024-06-08')).toEqual([]);
+  });
+
+  it('reports uncovered nights in the middle', () => {
+    const first = makeStay({ check_out_date: '2024-06-06', nights: 2 });
+    const second = makeStay({
+      id: 'st2',
+      check_in_date: '2024-06-07',
+      check_out_date: '2024-06-08',
+      nights: 1,
+    });
+    expect(accommodationGaps([first, second], '2024-06-04', '2024-06-08')).toEqual(['2024-06-06']);
+  });
+
+  it('does not treat the last day of the trip as a night', () => {
+    // The trip ends on the 8th and the stay ends on the 8th: nothing missing.
+    expect(accommodationGaps([makeStay()], '2024-06-04', '2024-06-08')).toEqual([]);
+  });
+
+  it('reports a night before the first stay', () => {
+    expect(accommodationGaps([makeStay()], '2024-06-03', '2024-06-08')).toEqual(['2024-06-03']);
+  });
+
+  it('is silent when there are no stays at all', () => {
+    // "Every night is missing" is not useful to someone who has not booked yet.
+    expect(accommodationGaps([], '2024-06-04', '2024-06-08')).toEqual([]);
+  });
+
+  it('is silent when the trip has no span', () => {
+    expect(accommodationGaps([makeStay()], null, null)).toEqual([]);
+  });
+});
+
+describe('stayOutsideTravel', () => {
+  const flight = makeFlight({
+    departure_datetime: '2024-06-04T08:00:00Z',
+    arrival_datetime: '2024-06-04T12:00:00Z',
+  });
+  const ret = makeFlight({
+    id: 'f2',
+    departure_datetime: '2024-06-08T18:00:00Z',
+    arrival_datetime: '2024-06-08T22:00:00Z',
+  });
+
+  it('passes a stay that overlaps the flights', () => {
+    expect(stayOutsideTravel(makeStay(), [flight, ret], [])).toBeNull();
+  });
+
+  it('passes the airport hotel booked the night before departure', () => {
+    // The standard case the hard validation was deliberately not written for.
+    const hotel = makeStay({ check_in_date: '2024-06-03', check_out_date: '2024-06-04', nights: 1 });
+    expect(stayOutsideTravel(hotel, [flight, ret], [])).toBeNull();
+  });
+
+  it('flags a stay entirely before the trip', () => {
+    const wrong = makeStay({ check_in_date: '2024-05-01', check_out_date: '2024-05-04', nights: 3 });
+    expect(stayOutsideTravel(wrong, [flight, ret], [])).toBe('before');
+  });
+
+  it('flags a stay entirely after the trip', () => {
+    const wrong = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
+    expect(stayOutsideTravel(wrong, [flight, ret], [])).toBe('after');
+  });
+
+  it('says nothing when there is no transport to compare against', () => {
+    expect(stayOutsideTravel(makeStay(), [], [])).toBeNull();
+  });
+
+  it('considers ground segments too', () => {
+    const segment = makeSegment({
+      departure_datetime: '2024-07-02T00:00:00Z',
+      arrival_datetime: '2024-07-02T04:00:00Z',
+    });
+    const stay = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
+    expect(stayOutsideTravel(stay, [], [segment])).toBeNull();
   });
 });

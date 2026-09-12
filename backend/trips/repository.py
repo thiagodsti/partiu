@@ -63,6 +63,49 @@ class TripRepository:
             ).fetchall()
         return {r["trip_id"]: r["cnt"] for r in rows}
 
+    def get_segment_counts(self, trip_ids: list[str]) -> dict[str, int]:
+        """Ground legs per trip, for the trips-list card.
+
+        A sibling of get_flight_counts rather than a UNION with it: the card
+        names each kind separately ("2 trains", not "2 legs"), so the counts
+        have to stay apart.
+        """
+        return self._count_by_trip("trip_segments", trip_ids)
+
+    def get_stay_counts(self, trip_ids: list[str]) -> dict[str, int]:
+        """Stays per trip, for the trips-list card."""
+        return self._count_by_trip("trip_stays", trip_ids)
+
+    @staticmethod
+    def _count_by_trip(table: str, trip_ids: list[str]) -> dict[str, int]:
+        if not trip_ids:
+            return {}
+        placeholders = ",".join("?" * len(trip_ids))
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"SELECT trip_id, COUNT(*) AS cnt FROM {table} "
+                f"WHERE trip_id IN ({placeholders}) GROUP BY trip_id",
+                trip_ids,
+            ).fetchall()
+        return {r["trip_id"]: r["cnt"] for r in rows}
+
+    def get_segment_types(self, trip_ids: list[str]) -> dict[str, list[str]]:
+        """The distinct transport types on each trip, so a card can say "trains"
+        rather than the generic "legs" when a trip only uses one kind."""
+        if not trip_ids:
+            return {}
+        placeholders = ",".join("?" * len(trip_ids))
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT trip_id, type FROM trip_segments "
+                f"WHERE trip_id IN ({placeholders})",
+                trip_ids,
+            ).fetchall()
+        out: dict[str, list[str]] = {}
+        for r in rows:
+            out.setdefault(r["trip_id"], []).append(r["type"])
+        return {k: sorted(v) for k, v in out.items()}
+
     def get_usernames(self, user_ids: list[int]) -> dict[int, str]:
         if not user_ids:
             return {}
@@ -233,10 +276,18 @@ class TripRepository:
         """Recalculate start/end dates and airports from everything now in the
         trip. start_date = earliest departure; end_date = latest arrival.
 
-        Dates span **flights and ground segments** together: a trip whose middle
-        days are a train leg would otherwise end on its last flight, and the day
-        planner — which renders one card per day in the trip's range — would have
-        no card for those days to appear in.
+        Dates span **flights, ground segments and stays** together: a trip whose
+        middle days are a train leg would otherwise end on its last flight, and
+        the day planner — which renders one card per day in the trip's range —
+        would have no card for those days to appear in. Stays count for the same
+        reason and one more: accommodation is frequently booked before any
+        transport is, so a stays-only trip must still have a span.
+
+        Stays contribute their pre-computed local `check_in_date` /
+        `check_out_date` columns rather than `DATE(check_in_datetime)`. The
+        stored instants are UTC and SQLite cannot convert zones, so a 15:00
+        check-in at a property in UTC-10 would otherwise widen the span by a day
+        in the wrong direction.
 
         Origin/destination stay flight-only. They are IATA codes used for trip
         cards and the destination photo lookup; a train station has no code to
@@ -253,6 +304,8 @@ class TripRepository:
                         SELECT DATE(departure_datetime) AS d FROM flights WHERE trip_id = ?
                         UNION ALL
                         SELECT DATE(departure_datetime) FROM trip_segments WHERE trip_id = ?
+                        UNION ALL
+                        SELECT check_in_date FROM trip_stays WHERE trip_id = ?
                     )
                 ),
                 end_date = (
@@ -260,6 +313,8 @@ class TripRepository:
                         SELECT DATE(arrival_datetime) AS d FROM flights WHERE trip_id = ?
                         UNION ALL
                         SELECT DATE(arrival_datetime) FROM trip_segments WHERE trip_id = ?
+                        UNION ALL
+                        SELECT check_out_date FROM trip_stays WHERE trip_id = ?
                     )
                 ),
                 origin_airport = (
@@ -272,7 +327,7 @@ class TripRepository:
                 ),
                 updated_at = ?
             WHERE id = ?""",
-            (trip_id, trip_id, trip_id, trip_id, trip_id, trip_id, now, trip_id),
+            (trip_id,) * 8 + (now, trip_id),
         )
 
     # -- Flight assignment -----------------------------------------------------

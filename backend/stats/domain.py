@@ -57,6 +57,12 @@ class TravelStats:
     unique_airports: int
     unique_countries: int
     visited_countries: list[str]
+    # Ground legs and nights are exact counts. There is deliberately no
+    # ground *distance*: rail track runs well above the great-circle line
+    # (Stockholm-Oslo is ~520km straight against ~600km of track), and an
+    # estimate rendered as a statistic is the guess this page avoids.
+    ground_legs: int
+    nights_away: int
     earth_laps: float
     longest_flight_km: int
     longest_flight_route: str

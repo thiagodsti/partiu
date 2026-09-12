@@ -8,6 +8,7 @@ class PlaceDTO(BaseModel):
     lat: float | None = None
     lon: float | None = None
     timezone: str | None = None
+    country_code: str | None = None
 
 
 class PlaceInputDTO(BaseModel):
@@ -21,6 +22,9 @@ class PlaceInputDTO(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     lat: float | None = Field(default=None, ge=-90, le=90)
     lon: float | None = Field(default=None, ge=-180, le=180)
+    # ISO-3166-1 alpha-2, straight from the geocoder result the user picked.
+    # Never inferred from the coordinates — see photon.reverse_country.
+    country_code: str | None = Field(default=None, max_length=2)
 
 
 class SegmentDTO(BaseModel):
@@ -79,8 +83,16 @@ class CreateSegmentResponseDTO(BaseModel):
 class StationDTO(BaseModel):
     name: str
     city: str
+    # One-line street address when Photon had the components. Defaulted because
+    # it is genuinely often absent for a station, which is why the picker falls
+    # back to showing city/country.
+    address: str = ""
     country: str
     countrycode: str
+    # "place" (a mapped venue) or "address" (a street). Always "place" here in
+    # practice — the station search is tag-filtered — but carried so the picker
+    # component can be shared with the stay search, which returns both.
+    category: str = "place"
     lat: float
     lon: float
 

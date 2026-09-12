@@ -154,3 +154,59 @@ describe('TripCard', () => {
     expect(container.querySelector('.trip-card-meta')).toBeNull();
   });
 });
+
+describe('TripCard contents line', () => {
+  function renderWith(trip: Partial<Trip>) {
+    return render(TripCard, { ...defaultProps, trip: makeTrip(trip) });
+  }
+
+  it('names the flights on a flights-only trip', () => {
+    const { container } = renderWith({ flight_count: 2 });
+    expect(container.textContent).toContain('trips.flight_count_plural');
+  });
+
+  it('names the trains on a trains-only trip instead of "0 flights"', () => {
+    // The bug this replaced: a rail trip read "0 flights", which is true and
+    // tells the reader nothing about what the trip is.
+    const { container } = renderWith({
+      flight_count: 0,
+      segment_count: 2,
+      segment_types: ['train'],
+    });
+    expect(container.textContent).toContain('trips.segment_count_train_plural');
+    expect(container.textContent).not.toContain('trips.flight_count');
+  });
+
+  it('falls back to a generic label when several kinds are mixed', () => {
+    const { container } = renderWith({
+      flight_count: 0,
+      segment_count: 2,
+      segment_types: ['ferry', 'train'],
+    });
+    expect(container.textContent).toContain('trips.segment_count_plural');
+    expect(container.textContent).not.toContain('trips.segment_count_train');
+  });
+
+  it('shows flights, ground legs and stays together on a mixed trip', () => {
+    const { container } = renderWith({
+      flight_count: 2,
+      segment_count: 1,
+      segment_types: ['train'],
+      stay_count: 3,
+    });
+    expect(container.textContent).toContain('trips.flight_count_plural');
+    expect(container.textContent).toContain('trips.segment_count_train');
+    expect(container.textContent).toContain('trips.stay_count_plural');
+  });
+
+  it('uses the singular key for a count of one', () => {
+    const { container } = renderWith({ flight_count: 0, stay_count: 1 });
+    expect(container.textContent).toContain('trips.stay_count');
+    expect(container.textContent).not.toContain('trips.stay_count_plural');
+  });
+
+  it('still prompts with "0 flights" on a genuinely empty trip', () => {
+    const { container } = renderWith({ flight_count: 0, segment_count: 0, stay_count: 0 });
+    expect(container.textContent).toContain('trips.flight_count_plural');
+  });
+});

@@ -5,8 +5,9 @@
   import TripExpenses from '../components/TripExpenses.svelte';
   import TripPackingList from '../components/TripPackingList.svelte';
   import TripTransport from '../components/TripTransport.svelte';
+  import TripStays from '../components/TripStays.svelte';
   import { tripImageBust } from '../lib/tripImageStore';
-  import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass, TripSegment } from '../api/types';
+  import type { Trip, Flight, TripDocument, TripShare, TripBoardingPass, TripSegment, TripStay } from '../api/types';
   import {
     formatDateRange,
     inferTripStatus,
@@ -159,6 +160,7 @@
   // Held here rather than only inside TripSegments so the map can draw the
   // ground legs alongside the flight arcs.
   let segments = $state<TripSegment[]>([]);
+  let stays = $state<TripStay[]>([]);
 
   // ---- Documents ----
   let documents = $state<TripDocument[]>([]);
@@ -303,14 +305,17 @@
 
   // ---- Collapsible sections ----
   let flightsCollapsed = $state(false);
+  let staysCollapsed = $state(false);
   let plannerCollapsed = $state(false);
   let packingCollapsed = $state(false);
   let printing = $state(false);
 
   async function exportPdf() {
     const prevFlights = flightsCollapsed;
+    const prevStays = staysCollapsed;
     const prevPlanner = plannerCollapsed;
     flightsCollapsed = false;
+    staysCollapsed = false;
     plannerCollapsed = false;
     printing = true;
     await tick();
@@ -319,6 +324,7 @@
     window.print();
     printing = false;
     flightsCollapsed = prevFlights;
+    staysCollapsed = prevStays;
     plannerCollapsed = prevPlanner;
   }
 
@@ -575,7 +581,7 @@
     {/if}
 
     <!-- Transport: flights and ground legs in one list -->
-    {#if flightList.length === 0 && segments.length === 0}
+    {#if flightList.length === 0 && segments.length === 0 && stays.length === 0}
       <EmptyState title={$t('trip.empty')}>
         <a href="#/trips/{params.id}/add-flight" class="btn btn-primary">{$t('trip.add_flight')}</a>
       </EmptyState>
@@ -604,6 +610,28 @@
       </div>
     </div>
 
+    <!-- Stays: accommodation for the trip -->
+    <div class="trip-section">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="trip-section-header section-toggle" onclick={() => (staysCollapsed = !staysCollapsed)}>
+        <div class="section-header-inner">
+          <div class="section-title-row">
+            <h3 class="trip-section-title">{$t('stays.title')}</h3>
+            <span class="section-chevron">{staysCollapsed ? '▼' : '▲'}</span>
+          </div>
+        </div>
+      </div>
+      <div class:section-hidden={staysCollapsed}>
+        <TripStays
+          {trip}
+          flights={flightList}
+          {segments}
+          onchange={(list) => (stays = list)}
+        />
+      </div>
+    </div>
+
     <!-- Day Planner -->
     {#if trip.start_date && trip.end_date}
       <div class="trip-section">
@@ -619,6 +647,7 @@
         </div>
         <TripDayPlanner
           {segments}
+          {stays}
           {trip}
           forceExpanded={printing}
           onlyDate={plannerCollapsed ? (plannerFocusDate ?? undefined) : undefined}

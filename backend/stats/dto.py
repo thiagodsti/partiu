@@ -30,6 +30,8 @@ class TravelStatsDTO(BaseModel):
     unique_airports: int
     unique_countries: int
     visited_countries: list[str]
+    ground_legs: int
+    nights_away: int
     earth_laps: float
     longest_flight_km: int
     longest_flight_route: str

@@ -9,10 +9,20 @@ _user_counter = itertools.count(1)
 
 # Real coordinates from Photon for the two stations the feature was designed
 # around, so the timezone conversions under test are the ones that actually run.
-BEIJING_WEST = {"name": "Beijing West Railway Station", "lat": 39.8936695, "lon": 116.3151027}
-XIAN_NORTH = {"name": "Xi'an North Railway Station", "lat": 34.3775583, "lon": 108.9339348}
+BEIJING_WEST = {
+    "name": "Beijing West Railway Station",
+    "lat": 39.8936695,
+    "lon": 116.3151027,
+    "country_code": "CN",
+}
+XIAN_NORTH = {
+    "name": "Xi'an North Railway Station",
+    "lat": 34.3775583,
+    "lon": 108.9339348,
+    "country_code": "CN",
+}
 # Different timezone (CET) so cross-zone conversion is exercised too.
-PARIS_NORD = {"name": "Paris Nord", "lat": 48.8809, "lon": 2.3553}
+PARIS_NORD = {"name": "Paris Nord", "lat": 48.8809, "lon": 2.3553, "country_code": "FR"}
 
 
 def seed_user(db_path: str) -> int:
@@ -70,11 +80,13 @@ def row_values(**overrides) -> dict:
         "departure_lon": BEIJING_WEST["lon"],
         "departure_datetime": "2026-10-04T00:00:00+00:00",
         "departure_timezone": "Asia/Shanghai",
+        "departure_country": "CN",
         "arrival_place": XIAN_NORTH["name"],
         "arrival_lat": XIAN_NORTH["lat"],
         "arrival_lon": XIAN_NORTH["lon"],
         "arrival_datetime": "2026-10-04T04:30:00+00:00",
         "arrival_timezone": "Asia/Shanghai",
+        "arrival_country": "CN",
         "seat": "Car 3, 12A",
         "notes": None,
     }

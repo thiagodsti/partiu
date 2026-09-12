@@ -57,6 +57,9 @@ class StatsService:
     def compute_stats(self, user_id: int, year: int | None = None) -> TravelStats:
         rows = self._repository.list_completed_flights(user_id, year)
         years = self._repository.list_years_with_flights(user_id)
+        ground_countries = self._repository.list_ground_countries(user_id, year)
+        ground_legs = self._repository.count_ground_legs(user_id, year)
+        nights_away = _count_distinct_nights(self._repository.list_stay_night_ranges(user_id, year))
 
         total_km = 0.0
         total_co2_kg = 0.0
@@ -171,6 +174,12 @@ class StatsService:
                 else:
                     countries.add(dep_country)
 
+        # Ground legs and stays contribute countries but nothing else: a train
+        # to Oslo proves Norway just as well as a flight does, while counting it
+        # in "hours in air" or the flight tally would be a lie. No layover rule
+        # applies — see StatsRepository.list_ground_countries.
+        countries.update(ground_countries)
+
         return TravelStats(
             total_km=round(total_km),
             total_co2_kg=round(total_co2_kg, 1),
@@ -179,6 +188,8 @@ class StatsService:
             unique_airports=len(airports),
             unique_countries=len(countries),
             visited_countries=sorted(countries),
+            ground_legs=ground_legs,
+            nights_away=nights_away,
             earth_laps=round(total_km / EARTH_CIRCUMFERENCE_KM, 2),
             longest_flight_km=round(longest_flight_km),
             longest_flight_route=longest_flight_route,
@@ -192,3 +203,28 @@ class StatsService:
 
 
 stats_service = StatsService()
+
+
+def _count_distinct_nights(ranges: list[tuple[str, str]]) -> int:
+    """Nights covered by at least one stay.
+
+    A union of dates rather than a sum of each stay's nights: overlapping
+    bookings (a hotel held over a night also spent in an apartment, or two
+    rooms on the same night) are still one night away. A stay covers the night
+    of every date from check-in up to but excluding check-out — you leave on
+    the check-out morning — which is the same rule the day planner bands on.
+    """
+    from datetime import date, timedelta
+
+    nights: set[date] = set()
+    for check_in, check_out in ranges:
+        try:
+            start = date.fromisoformat(check_in)
+            end = date.fromisoformat(check_out)
+        except (TypeError, ValueError):
+            continue
+        day = start
+        while day < end:
+            nights.add(day)
+            day += timedelta(days=1)
+    return len(nights)

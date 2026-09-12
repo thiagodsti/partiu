@@ -13,6 +13,7 @@ from .dto import (
     AddDomainResponseDTO,
     AirportCountDTO,
     AirportReloadDTO,
+    IntegrationStatusDTO,
     NonFlightDomainDTO,
     OkDTO,
     OkMessageDTO,
@@ -21,6 +22,7 @@ from .dto import (
     TestImapRequestDTO,
 )
 from .errors import AdminRequiredError, SmtpConflictError, ValidationError
+from .integrations import integration_statuses
 from .mappers import non_flight_domain_to_dto, settings_to_dto
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -86,6 +88,21 @@ def get_airport_count(user: dict = Depends(get_current_user)):
 @router.get("/admin/non-flight-domains", response_model=list[NonFlightDomainDTO])
 def list_blocked_domains(user: dict = Depends(require_admin)):
     return [non_flight_domain_to_dto(d) for d in settings_service.list_non_flight_domains()]
+
+
+@router.get("/admin/integrations", response_model=list[IntegrationStatusDTO])
+def list_integrations(user: dict = Depends(require_admin)):
+    """Configuration status of the optional third-party integrations.
+
+    Admin-only because every one of these is a server-level setting: telling a
+    regular user that AviationStack is unset is noise they cannot act on.
+    Returns whether each is configured and the env var that configures it —
+    never a key's value.
+    """
+    return [
+        IntegrationStatusDTO(key=s.key, configured=s.configured, state=s.state, env_var=s.env_var)
+        for s in integration_statuses()
+    ]
 
 
 @router.post("/admin/non-flight-domains", response_model=AddDomainResponseDTO)

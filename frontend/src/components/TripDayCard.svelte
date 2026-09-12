@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Flight, TripSegment, SegmentType } from '../api/types';
+  import type { Flight, TripSegment, SegmentType, TripStay, StayKind } from '../api/types';
   import { dayNotesApi } from '../api/client';
+  import { staysForDay } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
 
@@ -19,6 +20,9 @@
     date: string;
     flights: Flight[];
     segments?: TripSegment[];
+    /** Every stay on the trip, not just this day's — the card works out which
+     * of them cover this night itself, since a stay spans days. */
+    stays?: TripStay[];
     initialContent: DayContent;
     initiallyExpanded: boolean;
     forceExpanded?: boolean;
@@ -29,6 +33,7 @@
     date,
     flights,
     segments = [],
+    stays = [],
     initialContent,
     initiallyExpanded,
     forceExpanded = false,
@@ -39,6 +44,13 @@
     bus: '🚌',
     ferry: '⛴️',
     car: '🚗',
+  };
+
+  const STAY_ICONS: Record<StayKind, string> = {
+    hotel: '🏨',
+    airbnb: '🏡',
+    hostel: '🛏️',
+    other: '📍',
   };
 
   function autogrow(el: HTMLTextAreaElement) {
@@ -103,6 +115,13 @@
     return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
   }
 
+  /* Two different keys, deliberately. A stay is *banded* onto a day by comparing
+   * local calendar dates at the property (staysForDay, on the backend's
+   * check_in_date / check_out_date), because a booking's identity is its dates.
+   * Its check-in and check-out rows below sort on the real instant, alongside
+   * flights, because that is the order the day actually happens in. */
+  const stayDay = $derived(staysForDay(stays, date));
+
   const entries = $derived.by((): DayEntry[] => {
     const rows: DayEntry[] = flights.map((f) => ({
       id: `flight-${f.id}`,
@@ -131,8 +150,34 @@
       });
     }
 
+    // Check-in and check-out are the day's real events; the nights in between
+    // are a state, and show in the header band instead of as rows.
+    for (const stay of stayDay.checkIns) {
+      rows.push({
+        id: `stay-in-${stay.id}`,
+        icon: STAY_ICONS[stay.kind] ?? '📍',
+        isFlight: false,
+        title: $t('stays.check_in'),
+        route:
+          `${stay.place.name} ${formatFlightTime(stay.check_in_datetime, stay.place.timezone)}`,
+        at: instant(stay.check_in_datetime),
+      });
+    }
+    for (const stay of stayDay.checkOuts) {
+      rows.push({
+        id: `stay-out-${stay.id}`,
+        icon: STAY_ICONS[stay.kind] ?? '📍',
+        isFlight: false,
+        title: $t('stays.check_out'),
+        route:
+          `${stay.place.name} ${formatFlightTime(stay.check_out_datetime, stay.place.timezone)}`,
+        at: instant(stay.check_out_datetime),
+      });
+    }
+
     return rows.sort((a, b) => a.at - b.at);
   });
+
 
   // ---- Mutations ----
 
@@ -187,6 +232,15 @@
   <div class="day-card-header" onclick={() => (expanded = !expanded)}>
     <div class="day-card-header-left">
       <span class="day-label">{formatDayHeader()}</span>
+      {#each stayDay.nights as n (n.stay.id)}
+        <span class="day-stay-band">
+          {STAY_ICONS[n.stay.kind] ?? '📍'}
+          {n.stay.place.name}
+          <span class="day-stay-night">
+            {$t('stays.night_of', { values: { night: n.night, nights: n.nights } })}
+          </span>
+        </span>
+      {/each}
     </div>
     <div class="day-header-right">
       {#if saving}
@@ -274,7 +328,7 @@
           {/each}
         </div>
       {/if}
-      {#if !note.trim() && items.length === 0 && entries.length === 0}
+      {#if !note.trim() && items.length === 0 && entries.length === 0 && stayDay.nights.length === 0}
         <span class="note-hint">{$t('planner.add_notes_hint')}</span>
       {/if}
     {/if}
@@ -310,6 +364,21 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+  }
+
+  /* Sits in the always-visible header: "where am I sleeping on the 14th" is
+     the question the planner is opened to answer, so it must not need a click. */
+  .day-stay-band {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: baseline;
+    font-size: 0.76rem;
+    color: var(--text-muted, #64748b);
+  }
+
+  .day-stay-night {
+    opacity: 0.85;
   }
 
   .day-label {

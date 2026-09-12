@@ -21,6 +21,52 @@
 
   const dateRange = $derived(formatDateRange(trip.start_date, trip.end_date));
   const flightCount = $derived(trip.flight_count ?? 0);
+  const segmentCount = $derived(trip.segment_count ?? 0);
+  const stayCount = $derived(trip.stay_count ?? 0);
+  const segmentTypes = $derived(trip.segment_types ?? []);
+
+  const SEGMENT_ICONS: Record<string, string> = {
+    train: '🚆',
+    bus: '🚌',
+    ferry: '⛴️',
+    car: '🚗',
+  };
+
+  function plural(key: string, n: number): string {
+    return $t(n === 1 ? key : `${key}_plural`, { values: { n } });
+  }
+
+  /**
+   * What the trip is made of, as icon + count chips.
+   *
+   * A trip of two trains used to read "✈ 0 flights", which is technically true
+   * and useless. Each kind is counted separately rather than summed into
+   * "3 legs" because the icons are the fastest way to see what a trip *is*.
+   *
+   * Ground legs name their type only when the trip uses exactly one kind —
+   * a train-plus-ferry trip gets the generic label, since no single icon
+   * honestly represents it.
+   */
+  const contents = $derived.by((): string[] => {
+    const parts: string[] = [];
+    if (flightCount > 0 || (segmentCount === 0 && stayCount === 0)) {
+      // The flight chip stays on an empty trip: "0 flights" is the right
+      // prompt when a trip genuinely has nothing on it yet.
+      parts.push(`✈ ${plural('trips.flight_count', flightCount)}`);
+    }
+    if (segmentCount > 0) {
+      const onlyType = segmentTypes.length === 1 ? segmentTypes[0] : null;
+      const icon = onlyType ? (SEGMENT_ICONS[onlyType] ?? '🚆') : '🚆';
+      const label = onlyType
+        ? plural(`trips.segment_count_${onlyType}`, segmentCount)
+        : plural('trips.segment_count', segmentCount);
+      parts.push(`${icon} ${label}`);
+    }
+    if (stayCount > 0) {
+      parts.push(`🛏 ${plural('trips.stay_count', stayCount)}`);
+    }
+    return parts;
+  });
   const refs = $derived((trip.booking_refs ?? []).join(', '));
   const showStarRow = $derived(showStars || !!trip.rating);
 
@@ -74,9 +120,9 @@
     {#if dateRange}
       <div class="trip-card-meta">
         <span>📅 {dateRange}</span>
-        <span>✈ {flightCount !== 1
-          ? $t('trips.flight_count_plural', { values: { n: flightCount } })
-          : $t('trips.flight_count', { values: { n: flightCount } })}</span>
+        {#each contents as part}
+          <span>{part}</span>
+        {/each}
       </div>
     {/if}
     <div class="trip-card-footer">

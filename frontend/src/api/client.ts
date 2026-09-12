@@ -35,7 +35,11 @@ import type {
   VersionInfo,
   TripSegment,
   SegmentType,
+  TripStay,
+  StayKind,
   StationResult,
+  IntegrationStatus,
+  PlaceResult,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -281,6 +285,10 @@ export const statsApi = {
       total_hours: number;
       unique_airports: number;
       unique_countries: number;
+      /** Exact counts from ground legs and stays. There is deliberately no
+       * ground distance — see the stats service for why. */
+      ground_legs: number;
+      nights_away: number;
       earth_laps: number;
       longest_flight_km: number;
       longest_flight_route: string;
@@ -363,6 +371,7 @@ export interface SegmentPlaceInput {
   name: string;
   lat?: number | null;
   lon?: number | null;
+  country_code?: string | null;
 }
 
 export interface SegmentWriteData {
@@ -390,11 +399,50 @@ export const segmentsApi = {
     del<null>(`/api/trips/${tripId}/segments/${segmentId}`),
 };
 
+export interface StayPlaceInput {
+  name: string;
+  address?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  country_code?: string | null;
+}
+
+export interface StayWriteData {
+  kind: StayKind;
+  place: StayPlaceInput;
+  /** Naive local time at the property ("2026-10-04T15:00"); the backend
+   * converts to UTC and records the local calendar date alongside it. */
+  check_in_datetime: string;
+  check_out_datetime: string;
+  booking_reference?: string | null;
+  confirmation?: string | null;
+  contact?: string | null;
+  room_type?: string | null;
+  guests?: number | null;
+  notes?: string | null;
+}
+
+export const staysApi = {
+  list: (tripId: string) => get<TripStay[]>(`/api/trips/${tripId}/stays`),
+  create: (tripId: string, data: StayWriteData) =>
+    post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/stays`, data),
+  update: (tripId: string, stayId: string, data: Partial<StayWriteData>) =>
+    patch<{ ok: boolean }>(`/api/trips/${tripId}/stays/${stayId}`, data),
+  delete: (tripId: string, stayId: string) => del<null>(`/api/trips/${tripId}/stays/${stayId}`),
+};
+
 export const stationsApi = {
   search: (q: string, kind?: string) =>
     get<StationResult[]>(
       `/api/stations/search?q=${encodeURIComponent(q)}${kind ? `&kind=${kind}` : ''}`,
     ),
+};
+
+/** Accommodation and street addresses, for the stay picker. Separate from
+ * stationsApi because the station search is tag-filtered to stations — a hotel
+ * reaching it would land in the train-station dropdown. */
+export const placesApi = {
+  search: (q: string) => get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}`),
 };
 
 export const guestsApi = {
@@ -426,6 +474,10 @@ export const nonFlightDomainsApi = {
   list: () => get<NonFlightDomain[]>('/api/settings/admin/non-flight-domains'),
   add: (domain: string, note: string = '') => _request<{ domain: string }>('POST', '/api/settings/admin/non-flight-domains', { domain, note }),
   delete: (domain: string) => del<null>(`/api/settings/admin/non-flight-domains/${encodeURIComponent(domain)}`),
+};
+
+export const integrationsApi = {
+  list: () => get<IntegrationStatus[]>('/api/settings/admin/integrations'),
 };
 
 export const versionApi = {

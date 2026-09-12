@@ -28,6 +28,9 @@ class TripListItem:
         self.is_owner = is_owner
         self.owner_username: str | None = None
         self.flight_count = 0
+        self.segment_count = 0
+        self.stay_count = 0
+        self.segment_types: list[str] = []
         self.expenses_total: dict[str, float] = {}
         self.immich_album_id: str | None = None
         self.search_index = ""
@@ -58,15 +61,22 @@ class TripService:
         return items
 
     def _attach_extras(self, items: list[TripListItem], user_id: int) -> None:
-        """Mutate each item to add flight_count, owner_username, expenses_total,
-        immich_album_id, and search_index."""
+        """Mutate each item to add flight_count, segment_count, stay_count,
+        segment_types, owner_username, expenses_total, immich_album_id, and
+        search_index."""
         trip_ids = [i.trip.id for i in items]
         if not trip_ids:
             return
 
         flight_counts = self._repository.get_flight_counts(trip_ids)
+        segment_counts = self._repository.get_segment_counts(trip_ids)
+        stay_counts = self._repository.get_stay_counts(trip_ids)
+        segment_types = self._repository.get_segment_types(trip_ids)
         for item in items:
             item.flight_count = flight_counts.get(item.trip.id, 0)
+            item.segment_count = segment_counts.get(item.trip.id, 0)
+            item.stay_count = stay_counts.get(item.trip.id, 0)
+            item.segment_types = segment_types.get(item.trip.id, [])
 
         owner_ids = list(
             {i.trip.user_id for i in items if not i.is_owner and i.trip.user_id is not None}
