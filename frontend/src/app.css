@@ -6,6 +6,11 @@
 /* ---- Custom Properties ---- */
 :root {
   /* Dark theme (default) */
+  /* Native controls the page cannot style — the date picker panel above all —
+     follow color-scheme, not our tokens. Without it the app in dark mode opens
+     a white calendar whenever the OS is set to light. Declared once per theme
+     block below, in step with the palette each one sets. */
+  color-scheme: dark;
   --bg-primary: #0f172a;
   --bg-secondary: #1e293b;
   --bg-card: #1e293b;
@@ -55,6 +60,7 @@
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
+    color-scheme: light;
     --bg-primary: #f8fafc;
     --bg-secondary: #f1f5f9;
     --bg-card: #ffffff;
@@ -73,6 +79,7 @@
 
 /* Manual override: force light */
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #f8fafc;
   --bg-secondary: #f1f5f9;
   --bg-card: #ffffff;
@@ -90,6 +97,7 @@
 
 /* Manual override: force dark */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg-primary: #0f172a;
   --bg-secondary: #1e293b;
   --bg-card: #1e293b;
@@ -749,6 +757,13 @@ img {
 
 .form-input {
   width: 100%;
+  /* A bare padding + font-size lands around 37px, under the 44px comfortable
+     tap target — and iOS collapses date/time inputs further still, because
+     -webkit-appearance: none drops the native control's own height and leaves
+     the inner date fields to size themselves. Pinning the minimum here rather
+     than on the date inputs alone keeps every control on a row the same
+     height; a taller datetime next to a text field reads as a mistake. */
+  min-height: 44px;
   padding: var(--space-sm) var(--space-md);
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -764,6 +779,41 @@ img {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* A date field's job is to open a picker, so it gets the affordance of a
+   thing you click. Disabled fields say the opposite in the same language. */
+.form-input[type="date"],
+.form-input[type="datetime-local"],
+.form-input[type="time"],
+.form-input[type="month"] {
+  cursor: pointer;
+}
+
+.form-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* WebKit/Blink only; Firefox's own picker button is not exposed to CSS. The
+   glyph itself is drawn by the browser and follows color-scheme, so it needs
+   no filter — only a bigger target and a hover state to look pressable. */
+.form-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 3px;
+  margin-left: 2px;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.form-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: var(--bg-secondary);
+}
+
+.form-input:disabled::-webkit-calendar-picker-indicator {
+  cursor: not-allowed;
 }
 
 .form-input::placeholder {

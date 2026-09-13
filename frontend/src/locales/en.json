@@ -631,6 +631,9 @@
   "stays.gaps_plural": "No accommodation booked for {count} nights:",
   "stays.warn_before": "This stay ends before the trip's transport starts.",
   "stays.warn_after": "This stay starts after the trip's transport ends.",
+  "stays.warn_overruns": "This stay runs past the trip's last transport.",
+  "stays.error_after_travel": "Check-out is after the trip's last transport ({date}). Add the leg home first, or move the check-out.",
+  "stays.error_check_out_order": "Check-out has to be after check-in.",
   "trip.transport": "Transport",
   "transport.during": "Getting around",
   "trip.travelling": "travelling"

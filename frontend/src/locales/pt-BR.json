@@ -631,6 +631,9 @@
   "stays.gaps_plural": "Sem hospedagem reservada em {count} noites:",
   "stays.warn_before": "Esta hospedagem termina antes do transporte da viagem começar.",
   "stays.warn_after": "Esta hospedagem começa depois do transporte da viagem terminar.",
+  "stays.warn_overruns": "Esta hospedagem termina depois do último transporte da viagem.",
+  "stays.error_after_travel": "O check-out é depois do último transporte da viagem ({date}). Adicione o trecho de volta primeiro, ou mude o check-out.",
+  "stays.error_check_out_order": "O check-out precisa ser depois do check-in.",
   "trip.transport": "Transporte",
   "transport.during": "Deslocamentos",
   "trip.travelling": "em viagem"

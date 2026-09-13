@@ -39,8 +39,16 @@
   function warningFor(stay: TripStay): string | null {
     const side = stayOutsideTravel(stay, flights, segments);
     if (!side) return null;
-    return side === 'before' ? $t('stays.warn_before') : $t('stays.warn_after');
+    if (side === 'before') return $t('stays.warn_before');
+    if (side === 'after') return $t('stays.warn_after');
+    return $t('stays.warn_overruns');
   }
+
+  /* Hotel days, as a starting point rather than a claim: there is no single
+   * standard — check-in is commonly 14:00–15:00 and check-out 10:00–12:00, and
+   * every property sets its own. Both stay editable per stay. */
+  const DEFAULT_CHECK_IN = '14:00';
+  const DEFAULT_CHECK_OUT = '11:00';
 
   interface FormState {
     kind: StayKind;
@@ -118,11 +126,76 @@
   let saving = $state(false);
   let formError = $state<string | null>(null);
 
+  /* The last day the trip is travelling, from flights and ground legs only.
+   *
+   * Stays are excluded on purpose even though `trip.end_date` counts them: the
+   * backend derives that date *from* the stays, so validating against it would
+   * mean a stay could never be extended — the row being edited is itself what
+   * sets the ceiling it would be measured against. Transport is the fixed
+   * thing, and it is what "when the trip ends" means anyway. Null when the trip
+   * has no transport at all, which bounds nothing. */
+  const lastTravelDate = $derived.by(() => {
+    const dates = [
+      ...flights.map((f) => f.arrival_datetime),
+      ...segments.map((sg) => sg.arrival_datetime),
+    ]
+      .filter((d): d is string => Boolean(d))
+      .map((d) => d.slice(0, 10))
+      .sort();
+    return dates.length ? dates[dates.length - 1] : null;
+  });
+
+  /* Floor for the check-out picker: midnight on the **check-in day**, not the
+   * check-in instant. Every earlier day greys out, which is the point, while
+   * the check-in day itself stays fully selectable — a min carrying the 15:00
+   * check-in time makes that day's earlier hours invalid, and pickers express
+   * that by greying the whole day, so the boundary day reads as broken. The
+   * same-day-but-earlier case is caught by `outBeforeIn` below, which can say
+   * what is wrong instead of silently refusing a tap.
+   *
+   * Greyed-out days here have twice been reported as "the picker is broken";
+   * both times the days really were out of range. Before removing this, check
+   * that the dates being tried are not simply earlier than check-in. */
+  const checkOutMin = $derived(
+    form.check_in_datetime ? `${form.check_in_datetime.slice(0, 10)}T00:00` : undefined,
+  );
+
+  /* Ceiling for the check-out picker: the end of the last travel day, so that
+   * whole day stays selectable (a check-out at 11:00 on the day you fly home is
+   * the normal case), mirroring the date-granular floor above.
+   *
+   * Suppressed when it would sit before the floor. min > max greys out the
+   * *entire* calendar, and an inverted range is reachable in ordinary use — a
+   * one-way flight out with the return not added yet, then a check-in after it.
+   * `afterTravel` still reports that case in words. */
+  const checkOutMax = $derived.by(() => {
+    if (!lastTravelDate) return undefined;
+    if (form.check_in_datetime.slice(0, 10) > lastTravelDate) return undefined;
+    return `${lastTravelDate}T23:59`;
+  });
+
+  /** Set when check-out is at or before check-in. Its own flag rather than
+   * just a falsy `formValid`, so the form can say which field is wrong: a Save
+   * button that is disabled for unstated reasons is a dead end. */
+  const outBeforeIn = $derived(
+    form.check_in_datetime.length > 0 &&
+      form.check_out_datetime.length > 0 &&
+      form.check_out_datetime <= form.check_in_datetime,
+  );
+
+  /** Set when the form's check-out would land after the trip's last transport. */
+  const afterTravel = $derived(
+    lastTravelDate !== null &&
+      form.check_out_datetime.length > 0 &&
+      form.check_out_datetime.slice(0, 10) > lastTravelDate,
+  );
+
   const formValid = $derived(
     form.place.name.trim().length > 0 &&
       form.check_in_datetime.length > 0 &&
       form.check_out_datetime.length > 0 &&
-      form.check_out_datetime > form.check_in_datetime,
+      form.check_out_datetime > form.check_in_datetime &&
+      !afterTravel,
   );
 
   async function load() {
@@ -141,9 +214,14 @@
 
   function openAdd() {
     form = emptyForm();
-    // Seed check-in from the trip's first day, which is right far more often
-    // than an empty field is — a stay is usually booked for the trip it is on.
-    if (trip.start_date) form.check_in_datetime = `${trip.start_date}T15:00`;
+    // Seed both ends, which is right far more often than an empty field is — a
+    // stay is usually booked for the trip it is on, and runs from arrival to
+    // departure. Check-out comes off the last transport rather than
+    // `trip.end_date` for the same reason `afterTravel` does: end_date counts
+    // other stays, so seeding from it could open the form already in error.
+    if (trip.start_date) form.check_in_datetime = `${trip.start_date}T${DEFAULT_CHECK_IN}`;
+    const out = lastTravelDate ?? trip.end_date;
+    if (out) form.check_out_datetime = `${out}T${DEFAULT_CHECK_OUT}`;
     editingId = null;
     formError = null;
     showForm = true;
@@ -274,7 +352,10 @@
       </label>
       <label class="stay-field">
         <span class="stay-label">{$t('stays.check_out')}</span>
-        <input class="form-input" type="datetime-local" bind:value={form.check_out_datetime} />
+        <input class="form-input" type="datetime-local"
+               min={checkOutMin}
+               max={checkOutMax}
+               bind:value={form.check_out_datetime} />
       </label>
     </div>
 
@@ -312,6 +393,16 @@
         <input class="form-input" type="text" bind:value={form.notes} />
       </label>
     </div>
+
+    {#if outBeforeIn}
+      <p class="stay-error">{$t('stays.error_check_out_order')}</p>
+    {/if}
+
+    {#if afterTravel}
+      <p class="stay-error">
+        {$t('stays.error_after_travel', { values: { date: formatDate(lastTravelDate) } })}
+      </p>
+    {/if}
 
     {#if formError}
       <p class="stay-error">{formError}</p>

@@ -598,13 +598,23 @@ export function accommodationGaps(
 }
 
 /**
- * Whether a stay sits entirely outside the trip's transport, and on which side.
+ * Whether a stay falls outside the trip's transport, and how.
  *
- * This drives a *warning*, never a rejection. A stay legitimately falls outside
- * the flights — the airport hotel the night before an early departure is the
- * standard case — so the only thing worth flagging is a stay with no overlap at
- * all, which is usually a mistyped month or year. Returns null when there is no
- * transport to compare against.
+ * This drives a *warning*, never a rejection — the trip's end date is derived
+ * from the stays themselves (`TripRepository._recompute_span`), so a check-out
+ * past the last leg is not an error to refuse; it moves the end of the trip.
+ * Three outcomes:
+ *
+ *   'before'   — the stay ends before any transport starts
+ *   'after'    — the stay starts after all transport has ended
+ *   'overruns' — the stay overlaps the transport but its check-out runs past
+ *                the last arrival, i.e. a night at the destination after the
+ *                journey home: usually a leg not yet added, or a mistyped date
+ *
+ * Deliberately asymmetric: a check-out running past the last leg is flagged,
+ * a check-in falling before the first one is not. The night before an early
+ * departure is the standard airport-hotel booking, and warning on it would fire
+ * on ordinary trips — nobody reads a warning that is usually wrong.
  *
  * The transport range is read off the stored UTC instants rather than local
  * dates, which can be a day out at the edges. That is deliberate: this answers
@@ -614,7 +624,7 @@ export function stayOutsideTravel(
   stay: TripStay,
   flights: Flight[],
   segments: TripSegment[],
-): 'before' | 'after' | null {
+): 'before' | 'after' | 'overruns' | null {
   const dates = [
     ...flights.flatMap((f) => [f.departure_datetime, f.arrival_datetime]),
     ...segments.flatMap((s) => [s.departure_datetime, s.arrival_datetime]),
@@ -628,6 +638,9 @@ export function stayOutsideTravel(
   const first = dates[0];
   const last = dates[dates.length - 1];
   if (stay.check_out_date < first) return 'before';
+  // Checked before 'overruns', which is also true of a stay entirely after the
+  // transport: the more specific message wins.
   if (stay.check_in_date > last) return 'after';
+  if (stay.check_out_date > last) return 'overruns';
   return null;
 }

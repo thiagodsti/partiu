@@ -120,9 +120,10 @@ class TestCheckoutReminder:
         """Several clients render a zero-length timed event as nothing at all."""
         user_id, trip_id = _setup(test_db)
         reminder = _find(_events(_export(test_db, user_id, trip_id)), "SUMMARY:Check out:")[0]
-        # 11:00 Lisbon (WEST) is 10:00Z; the block runs to 10:30Z.
-        assert _require(reminder, "DTSTART") == "20261008T100000Z"
-        assert _require(reminder, "DTEND") == "20261008T103000Z"
+        # 11:00 Lisbon, floating — the hour the property actually asks you to
+        # be out — and the block runs 30 minutes past it.
+        assert _require(reminder, "DTSTART") == "20261008T110000"
+        assert _require(reminder, "DTEND") == "20261008T113000"
 
     def test_uids_are_distinct(self, test_db):
         user_id, trip_id = _setup(test_db)

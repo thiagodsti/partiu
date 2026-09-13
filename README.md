@@ -53,6 +53,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Trip map drawing each flight as a great-circle arc, with a **Move map / Lock map** toggle: panning starts off on phones so the map doesn't swallow the page's scroll, and one tap turns it on (zoom buttons and pinch work either way)
 - Tracks flight status: upcoming, in-progress, completed
 - Export any trip as an iCalendar (.ics) file — flights **and** ground legs as timed events with a 1h reminder, plus one all-day event per day-planner day (its note and checklist), since planner entries carry no time of their own
+- Exported times are **local to where they happen**, not converted: a flight boarding at 14:00 in Lisbon reads 14:00 in your calendar even while you are still at home, and the flight back reads the local time printed on that ticket. Events whose timezone the app never resolved stay in UTC rather than show a guess
 - Add notes per flight (up to 10,000 chars)
 - Calendar-style day notes per trip
 - Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency

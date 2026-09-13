@@ -801,6 +801,29 @@ describe('stayOutsideTravel', () => {
     expect(stayOutsideTravel(wrong, [flight, ret], [])).toBe('after');
   });
 
+  it('flags a check-out that runs past the last transport', () => {
+    // The night after the journey home: a leg not added yet, or a mistyped date.
+    const late = makeStay({ check_in_date: '2024-06-06', check_out_date: '2024-06-10', nights: 4 });
+    expect(stayOutsideTravel(late, [flight, ret], [])).toBe('overruns');
+  });
+
+  it('passes a check-out on the day of the last arrival', () => {
+    const same = makeStay({ check_in_date: '2024-06-04', check_out_date: '2024-06-08', nights: 4 });
+    expect(stayOutsideTravel(same, [flight, ret], [])).toBeNull();
+  });
+
+  it('prefers the entirely-after message over the overrun one', () => {
+    // Both are true of a stay past the last leg; the specific one wins.
+    const wrong = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
+    expect(stayOutsideTravel(wrong, [flight, ret], [])).toBe('after');
+  });
+
+  it('does not flag a check-in before the first departure', () => {
+    // Asymmetric on purpose: the night before an early flight is a normal booking.
+    const early = makeStay({ check_in_date: '2024-06-03', check_out_date: '2024-06-06', nights: 3 });
+    expect(stayOutsideTravel(early, [flight, ret], [])).toBeNull();
+  });
+
   it('says nothing when there is no transport to compare against', () => {
     expect(stayOutsideTravel(makeStay(), [], [])).toBeNull();
   });
@@ -810,7 +833,11 @@ describe('stayOutsideTravel', () => {
       departure_datetime: '2024-07-02T00:00:00Z',
       arrival_datetime: '2024-07-02T04:00:00Z',
     });
-    const stay = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
+    const stay = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-02', nights: 1 });
     expect(stayOutsideTravel(stay, [], [segment])).toBeNull();
+
+    // The overrun bound comes off the train too, not just off flights.
+    const late = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
+    expect(stayOutsideTravel(late, [], [segment])).toBe('overruns');
   });
 });

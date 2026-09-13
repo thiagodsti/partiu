@@ -315,6 +315,9 @@
     font-size: 0.9rem;
     padding: 2px 6px;
     height: 1.75rem;
+    /* Opt out of .form-input's 44px minimum: min-height beats height, and this
+       one edits in place inside a dense checklist row. */
+    min-height: 0;
   }
 
   .packing-add-row {

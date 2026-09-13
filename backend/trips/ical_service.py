@@ -10,10 +10,24 @@ The export covers everything on the trip's timeline:
   checklist. Planner entries carry no time of their own, so an all-day event is
   the honest representation — inventing a clock time would put "buy tickets" at
   an arbitrary hour.
+
+Timed events are emitted as **floating** local times (no ``Z``, no ``TZID``)
+whenever the place's timezone is known. A floating value means "this wall clock,
+wherever the calendar is read", which is what an itinerary actually wants: a
+flight boarding at 14:00 Lisbon should read 14:00 while you are still at home,
+and the flight home at 18:00 should read 18:00 — each in the local time printed
+on its own ticket, not rebased on the phone's current zone. UTC (the previous
+behaviour) showed a Lisbon departure as 10:00 to a reader in São Paulo.
+
+An event whose zone is *unknown* — a hand-typed station, a flight whose airports
+never resolved — stays anchored in UTC. Printing an unconverted UTC clock as if
+it were local would be a wrong time presented as a right one, which is worse
+than a converted one.
 """
 
 import json
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from .errors import TripError
 from .repository import TripRepository
@@ -73,14 +87,41 @@ def _fold(line: str) -> str:
     return "\r\n ".join(chunks)
 
 
-def _plus_minutes(ical_utc: str, minutes: int) -> str:
-    """Shift an ``YYYYMMDDTHHMMSSZ`` stamp forward, for a zero-length event that
-    several clients would otherwise render as nothing at all."""
+def _floating(dt_str: str, tz_name: str | None) -> str | None:
+    """The stored UTC instant as local wall clock in ``tz_name``, floating.
+
+    Returns None when the zone is missing or unknown, so the caller falls back
+    to UTC rather than print some other zone's clock as if it were local.
+    """
+    if not tz_name:
+        return None
     try:
-        parsed = datetime.strptime(ical_utc, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        dt = datetime.fromisoformat(dt_str)
     except (ValueError, TypeError):
-        return ical_utc
-    return (parsed + timedelta(minutes=minutes)).strftime("%Y%m%dT%H%M%SZ")
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    try:
+        return dt.astimezone(ZoneInfo(tz_name)).strftime("%Y%m%dT%H%M%S")
+    except (KeyError, ValueError, TypeError):
+        # KeyError covers ZoneInfoNotFoundError for a zone this host lacks.
+        return None
+
+
+def _plus_minutes(stamp: str, minutes: int) -> str:
+    """Shift a DTSTART value forward, for a zero-length event that several
+    clients would otherwise render as nothing at all.
+
+    Takes either form and returns the same one: the UTC ``...Z`` stamp or the
+    floating one. Parsing only the UTC form would leave a floating stamp
+    untouched — silently reintroducing the zero-length event.
+    """
+    fmt = "%Y%m%dT%H%M%SZ" if stamp.endswith("Z") else "%Y%m%dT%H%M%S"
+    try:
+        parsed = datetime.strptime(stamp, fmt)
+    except (ValueError, TypeError):
+        return stamp
+    return (parsed + timedelta(minutes=minutes)).strftime(fmt)
 
 
 def _parse_day_content(raw: str) -> tuple[str, list[dict]]:
@@ -149,6 +190,13 @@ class IcalService:
             f"X-WR-CALNAME:{_escape(trip_name)}",
         ]
 
+        def _timed(dt_str: str | None, tz_name: str | None) -> str:
+            """DTSTART/DTEND value: local wall clock where the zone is known,
+            UTC where it is not. See the module docstring for why."""
+            if not dt_str:
+                return now_utc
+            return _floating(dt_str, tz_name) or _to_ical_dt(dt_str)
+
         def _to_ical_dt(dt_str: str) -> str:
             try:
                 dt = datetime.fromisoformat(dt_str)
@@ -195,8 +243,10 @@ class IcalService:
             dep_str = flight["departure_datetime"]
             arr_str = flight["arrival_datetime"]
 
-            dep_ical = _to_ical_dt(dep_str) if dep_str else now_utc
-            arr_ical = _to_ical_dt(arr_str) if arr_str else now_utc
+            # Each end in its own airport's local time: the outbound reads as
+            # the origin prints it, the flight home as the destination does.
+            dep_ical = _timed(dep_str, flight.get("departure_timezone"))
+            arr_ical = _timed(arr_str, flight.get("arrival_timezone"))
 
             flight_number = flight["flight_number"] or ""
             dep_airport = flight["departure_airport"] or ""
@@ -233,8 +283,8 @@ class IcalService:
                 "END:VEVENT",
             ]
 
-        lines += self._segment_events(segments, now_utc, _to_ical_dt)
-        lines += self._stay_events(stays, now_utc, _to_ical_dt)
+        lines += self._segment_events(segments, now_utc, _timed)
+        lines += self._stay_events(stays, now_utc, _timed)
         lines += self._day_note_events(trip_id, day_notes, now_utc)
 
         lines.append("END:VCALENDAR")
@@ -244,7 +294,7 @@ class IcalService:
         return content, filename
 
     @staticmethod
-    def _segment_events(segments, now_utc: str, to_ical_dt) -> list[str]:
+    def _segment_events(segments, now_utc: str, timed) -> list[str]:
         """Timed events for train/bus/ferry/car legs."""
         lines: list[str] = []
         for s in segments:
@@ -264,8 +314,8 @@ class IcalService:
                 "BEGIN:VEVENT",
                 f"UID:{s.id}@partiu",
                 f"DTSTAMP:{now_utc}",
-                f"DTSTART:{to_ical_dt(s.departure_datetime) if s.departure_datetime else now_utc}",
-                f"DTEND:{to_ical_dt(s.arrival_datetime) if s.arrival_datetime else now_utc}",
+                f"DTSTART:{timed(s.departure_datetime, s.departure.timezone)}",
+                f"DTEND:{timed(s.arrival_datetime, s.arrival.timezone)}",
                 f"SUMMARY:{_escape(f'{label}: {route}')}",
                 f"LOCATION:{_escape(route)}",
                 f"DESCRIPTION:{_escape(chr(10).join(desc_parts))}",
@@ -279,7 +329,7 @@ class IcalService:
         return lines
 
     @staticmethod
-    def _stay_events(stays, now_utc: str, to_ical_dt) -> list[str]:
+    def _stay_events(stays, now_utc: str, timed) -> list[str]:
         """Two events per stay: an all-day block, and a timed check-out reminder.
 
         The block is all-day rather than a single timed event spanning several
@@ -344,13 +394,13 @@ class IcalService:
             lines += block
 
             if stay.check_out_datetime:
-                check_out_utc = to_ical_dt(stay.check_out_datetime)
+                check_out_at = timed(stay.check_out_datetime, stay.place.timezone)
                 lines += [
                     "BEGIN:VEVENT",
                     f"UID:{stay.id}-checkout@partiu",
                     f"DTSTAMP:{now_utc}",
-                    f"DTSTART:{check_out_utc}",
-                    f"DTEND:{_plus_minutes(check_out_utc, 30)}",
+                    f"DTSTART:{check_out_at}",
+                    f"DTEND:{_plus_minutes(check_out_at, 30)}",
                     f"SUMMARY:{_escape(f'Check out: {stay.place.name}')}",
                     f"LOCATION:{_escape(where)}",
                     "BEGIN:VALARM",

@@ -115,9 +115,11 @@ class TestSegments:
 
         block = find_event(export(trip_id, user_id), "China Railway G87")
         assert block is not None
-        # 08:00 Beijing is 00:00Z — the export carries the stored UTC instant.
-        assert value_of(block, "DTSTART") == "20261004T000000Z"
-        assert value_of(block, "DTEND") == "20261004T043000Z"
+        # 08:00 Beijing, floating: the wall clock the ticket prints, not the
+        # 00:00Z instant behind it, which a calendar would rebase on the
+        # reader's own zone.
+        assert value_of(block, "DTSTART") == "20261004T080000"
+        assert value_of(block, "DTEND") == "20261004T123000"
         assert "Beijing West Railway Station" in (value_of(block, "SUMMARY") or "")
         assert "Type: Train" in (value_of(block, "DESCRIPTION") or "")
         assert "Seat: Car 3\\, 12A" in (value_of(block, "DESCRIPTION") or "")
@@ -369,3 +371,61 @@ class TestFlightsUnchanged:
         assert len(events(ics)) == 4
         assert ics.startswith("BEGIN:VCALENDAR")
         assert ics.endswith("END:VCALENDAR\r\n")
+
+
+class TestTimezones:
+    """Timed events carry the local wall clock at their own place.
+
+    The point of the export: an itinerary should read the way its tickets do —
+    the outbound at the origin's clock, the flight home at the destination's —
+    rather than every time rebased on whatever zone the phone is in.
+    """
+
+    def test_each_end_of_a_flight_uses_its_own_airport(self, trip_ctx):
+        db_path, trip_id, user_id = trip_ctx
+        seed_flight(
+            db_path,
+            trip_id,
+            user_id,
+            departure_airport="LIS",
+            departure_datetime="2026-10-01T13:00:00+00:00",
+            departure_timezone="Europe/Lisbon",
+            arrival_airport="GRU",
+            arrival_datetime="2026-10-01T23:30:00+00:00",
+            arrival_timezone="America/Sao_Paulo",
+        )
+
+        block = find_event(export(trip_id, user_id), "LIS → GRU")
+        assert block is not None
+        # 13:00Z is 14:00 in Lisbon (WEST); 23:30Z is 20:30 in São Paulo.
+        assert value_of(block, "DTSTART") == "20261001T140000"
+        assert value_of(block, "DTEND") == "20261001T203000"
+
+    def test_a_flight_with_no_known_zone_stays_in_utc(self, trip_ctx):
+        """Better a converted time than a wrong one presented as local."""
+        db_path, trip_id, user_id = trip_ctx
+        seed_flight(db_path, trip_id, user_id, departure_timezone=None, arrival_timezone=None)
+
+        block = find_event(export(trip_id, user_id), "LH722")
+        assert block is not None
+        assert value_of(block, "DTSTART") == "20261001T114000Z"
+        assert value_of(block, "DTEND") == "20261001T222000Z"
+
+    def test_an_unknown_zone_name_falls_back_rather_than_raising(self, trip_ctx):
+        # A zone this host has never heard of, e.g. a stale tzdata name.
+        db_path, trip_id, user_id = trip_ctx
+        seed_flight(db_path, trip_id, user_id, departure_timezone="Mars/Olympus_Mons")
+
+        block = find_event(export(trip_id, user_id), "LH722")
+        assert block is not None
+        assert value_of(block, "DTSTART") == "20261001T114000Z"
+
+    def test_floating_values_carry_no_zone_marker(self, trip_ctx):
+        """A trailing Z or a TZID would both make the client convert again."""
+        db_path, trip_id, user_id = trip_ctx
+        seed_flight(db_path, trip_id, user_id, departure_timezone="Europe/Berlin")
+
+        block = find_event(export(trip_id, user_id), "LH722")
+        assert block is not None
+        start = next(line for line in block if line.startswith("DTSTART"))
+        assert start == "DTSTART:20261001T134000"
