@@ -136,7 +136,11 @@
   );
 </script>
 
-<TopNav title={$t("trips.title")} />
+<TopNav title={$t("trips.title")}>
+  {#snippet actions()}
+    <a href="#/trips/new" class="nav-action">{$t("trips.btn_new_trip")}</a>
+  {/snippet}
+</TopNav>
 
 <div class="main-content">
   {#if loading}
@@ -160,12 +164,9 @@
 
     <!-- Sync Status Bar -->
     <SyncStatusBar {syncStatus} id="sync-status-bar">
-      <a href="#/trips/new" class="btn btn-primary text-sm" style="padding:4px 12px;margin-left:auto">
-        + {$t("trips.btn_new_trip")}
-      </a>
       <button
-        class="btn btn-secondary text-sm"
-        style="padding:4px 12px"
+        class="btn btn-secondary btn-sm"
+        style="margin-left:auto"
         disabled={emlUploading}
         onclick={openEmlPicker}
       >
@@ -176,8 +177,7 @@
         {/if}
       </button>
       <button
-        class="btn btn-secondary text-sm"
-        style="padding:4px 12px"
+        class="btn btn-secondary btn-sm"
         disabled={syncRunning || syncingNow}
         onclick={syncNow}
       >
@@ -211,6 +211,7 @@
         {@const countdown = status === 'upcoming' && trip.start_date ? timeUntilTrip(trip.start_date, now, $t) : null}
         <TripCard
           {trip}
+          {status}
           href="#/trips/{trip.id}"
           imageUrl={tripImageBust.urlFor(trip.id, $tripImageBust)}
           imgFailed={imgRefresh.imgFailed[trip.id] ?? false}
@@ -229,7 +230,7 @@
           {/snippet}
           {#snippet footer()}
             {#if countdown}
-              <span class="countdown">⏳ {countdown}</span>
+              <span class="countdown">{countdown}</span>
             {/if}
           {/snippet}
         </TripCard>
@@ -239,11 +240,17 @@
 </div>
 
 <style>
+  /* The one amber thing on a trip band, and the only number on it that
+     changes on its own — how long until you leave. */
   .countdown {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--color-accent, #6366f1);
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
     letter-spacing: 0.01em;
+    color: var(--accent-on);
+    background: var(--accent);
+    border-radius: 7px;
+    padding: 1px 9px;
+    white-space: nowrap;
   }
-
 </style>

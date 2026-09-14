@@ -7,6 +7,10 @@ export interface User {
   smtp_recipient_address: string | null;
   totp_enabled?: boolean;
   locale?: string;
+  /** Chosen accent preset. Stored on the user, not in the browser, so the app
+   * looks the same on every device. The light/dark theme is deliberately not
+   * here — that one stays per-device in localStorage. */
+  accent?: string;
   announcement?: string;
   /** CARTO basemap key, supplied by the server at runtime (see MeResponseDTO). */
   carto_api_key?: string;
@@ -20,6 +24,7 @@ export interface LoginResponse {
   smtp_recipient_address?: string | null;
   totp_enabled?: boolean;
   locale?: string;
+  accent?: string;
 }
 
 export interface UserListItem extends User {

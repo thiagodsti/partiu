@@ -3,6 +3,7 @@
   import Router from 'svelte-spa-router';
   import wrap from 'svelte-spa-router/wrap';
   import TabBar from './components/TabBar.svelte';
+  import SideRail from './components/SideRail.svelte';
   import TripsListPage from './pages/TripsListPage.svelte';
   import TripDetailPage from './pages/TripDetailPage.svelte';
   import LoginPage from './pages/LoginPage.svelte';
@@ -11,6 +12,7 @@
   import { currentUser, authLoading } from './lib/authStore';
   import { refreshInvitationCount } from './lib/invitationStore';
   import { applyUserLocale } from './lib/i18n';
+  import { applyUserAccent } from './lib/accentStore';
   import ToastContainer from './components/ToastContainer.svelte';
   import AnnouncementBanner from './components/AnnouncementBanner.svelte';
   import OfflineBanner from './components/OfflineBanner.svelte';
@@ -38,18 +40,18 @@
     '/setup': SetupPage,
   };
 
-  // Auth pages that should not show the TabBar
+  // Auth pages that show no navigation at all — neither rail nor dock.
   const AUTH_ROUTES = new Set(['/login', '/setup']);
 
   let currentHash = $state(window.location.hash.replace('#', '') || '/');
-  let showTabBar = $derived(!AUTH_ROUTES.has(currentHash));
+  let showNav = $derived(!AUTH_ROUTES.has(currentHash));
 
   function routeNotFound() {
     window.location.hash = '/trips';
   }
 
   onMount(() => {
-    // Track hash changes to hide TabBar on auth pages, and refresh invitation count on navigation
+    // Track hash changes to hide the navigation on auth pages, and refresh invitation count on navigation
     const onHashChange = () => {
       currentHash = window.location.hash.replace('#', '') || '/';
       refreshInvitationCount();
@@ -74,6 +76,7 @@
         const user = await authApi.me();
         currentUser.set(user);
         applyUserLocale(user.locale);
+        applyUserAccent(user.accent);
         authLoading.set(false);
         refreshInvitationCount();
 
@@ -119,24 +122,22 @@
     Loading...
   </div>
 {:else}
-  <div class="app-shell">
+  <div class="app-shell" class:with-nav={showNav}>
     <OfflineBanner />
     <AnnouncementBanner />
     <svelte:boundary>
       <div class="app-content">
         <Router {routes} on:routeEvent={routeNotFound} />
       </div>
-      {#if showTabBar}
+      {#if showNav}
+        <SideRail />
         <TabBar />
       {/if}
       <ToastContainer />
       {#snippet failed()}
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;padding:2rem;text-align:center;">
-          <p style="color:var(--text-muted);font-size:1.1rem;">Something went wrong.</p>
-          <button onclick={() => window.location.reload()}
-                  style="padding:0.5rem 1.25rem;border-radius:6px;border:none;background:var(--accent,#6366f1);color:#fff;cursor:pointer;font-size:1rem;">
-            Reload
-          </button>
+          <p style="color:var(--text-secondary);font-size:1.05rem;">This page didn't load.</p>
+          <button class="btn btn-primary" onclick={() => window.location.reload()}>Reload</button>
         </div>
       {/snippet}
     </svelte:boundary>

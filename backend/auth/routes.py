@@ -152,7 +152,7 @@ def me(request: Request):
 @router.patch("/me", response_model=OkDTO)
 def update_me(body: UpdateMeRequestDTO, user: dict = Depends(get_current_user)):
     try:
-        auth_service.update_me(user["id"], body.locale)
+        auth_service.update_me(user["id"], body.locale, body.accent)
     except AuthError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return OkDTO(ok=True)

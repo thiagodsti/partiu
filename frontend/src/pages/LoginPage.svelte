@@ -3,6 +3,7 @@
   import { currentUser } from '../lib/authStore';
   import { refreshInvitationCount } from '../lib/invitationStore';
   import { t, applyUserLocale } from '../lib/i18n';
+  import { applyUserAccent } from '../lib/accentStore';
   import type { User } from '../api/types';
 
   let username = $state('');
@@ -52,6 +53,10 @@
         const user = result as User;
         currentUser.set(user);
         applyUserLocale(user.locale);
+        // Adopted here as well as in App.svelte's boot check: signing in does
+        // not remount the app, so without this the next person on a shared
+        // browser keeps the previous one's colour until a reload.
+        applyUserAccent(user.accent);
         refreshInvitationCount();
         window.location.hash = '/trips';
       }
@@ -83,6 +88,7 @@
       stopCountdown();
       currentUser.set(user);
       applyUserLocale(user.locale);
+      applyUserAccent(user.accent);
       refreshInvitationCount();
       window.location.hash = '/trips';
     } catch (err) {

@@ -35,6 +35,7 @@ class TwoFADisableRequestDTO(BaseModel):
 
 class UpdateMeRequestDTO(BaseModel):
     locale: str | None = None
+    accent: str | None = None
 
 
 class UserResponseDTO(BaseModel):
@@ -44,6 +45,10 @@ class UserResponseDTO(BaseModel):
     smtp_recipient_address: str | None
     totp_enabled: bool
     locale: str
+    # Per-user display preferences live here rather than in the browser, so the
+    # app looks the same on a phone and a laptop. The light/dark theme stays in
+    # localStorage on purpose — that one is genuinely about the device.
+    accent: str
 
 
 class MeResponseDTO(UserResponseDTO):

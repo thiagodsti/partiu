@@ -414,7 +414,7 @@
 
 <TopNav title={loading ? $t('trip.loading') : (trip?.name ?? 'Error')} backHref={backUrl} />
 
-<div class="main-content">
+<div class="main-content trip-page">
   {#if loading}
     <LoadingScreen message={$t('trip.loading')} />
   {:else if error}

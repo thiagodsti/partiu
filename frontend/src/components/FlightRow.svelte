@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Flight } from '../api/types';
-  import { formatTime, formatDate, formatDuration, flightStatus } from '../lib/utils';
+  import { formatTime, formatDayMonth, formatDuration, flightStatus } from '../lib/utils';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -18,25 +18,29 @@
 </script>
 
 <a class="flight-row flight-row-{isCancelled ? 'cancelled' : status}" href="#/{basePath}/{f.trip_id}/flights/{f.id}">
-  <div class="flight-row-route" style="flex:1">
+  <!-- Departure time leads the row, the way it leads a line on a board. -->
+  <div class="flight-row-clock">
+    <span class="flight-row-dep">{formatTime(f.departure_datetime, f.departure_timezone)}</span>
+    <span class="flight-row-date">{formatDayMonth(f.departure_datetime)}</span>
+  </div>
+  <div class="flight-row-route">
     <div class="flight-route">
       <span>{f.departure_airport}</span>
-      <span class="flight-route-arrow">→</span>
+      <span class="flight-route-arrow" aria-hidden="true"></span>
       <span>{f.arrival_airport}</span>
     </div>
     <div class="flight-time">
-      {formatTime(f.departure_datetime, f.departure_timezone)} → {formatTime(f.arrival_datetime, f.arrival_timezone)}
-      <span style="color:var(--text-muted);margin-left:4px">{formatDate(f.departure_datetime)}</span>
+      <span>{$t('flight.arrives_at', { values: { time: formatTime(f.arrival_datetime, f.arrival_timezone) } })}</span>
+      {#if duration}
+        <span class="text-muted">{duration}</span>
+      {/if}
     </div>
   </div>
   <div class="flight-meta">
     {#if f.airline_code}
       <span class="airline-badge airline-{f.airline_code}">{f.airline_code}</span>
     {/if}
-    <div style="margin-top:4px">{f.flight_number}</div>
-    {#if duration}
-      <div style="color:var(--text-muted)">{duration}</div>
-    {/if}
+    <span class="flight-number">{f.flight_number}</span>
     {#if isCancelled}
       <span class="flight-status-badge flight-status-cancelled">{$t('flight.live_status_cancelled')}</span>
     {:else if isDiverted}

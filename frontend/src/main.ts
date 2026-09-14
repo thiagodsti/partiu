@@ -1,5 +1,9 @@
 import './app.css';
 import './lib/themeStore'; // apply saved theme before first render
+// Imported here, not only from Settings: Settings is lazy-loaded, so a reader
+// who chose a non-default accent would otherwise see the default one on every
+// page until they happened to open Settings again.
+import './lib/accentStore';
 import './lib/i18n';
 import App from './App.svelte';
 import { mount } from 'svelte';

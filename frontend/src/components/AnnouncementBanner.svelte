@@ -25,8 +25,10 @@
     justify-content: center;
     gap: var(--space-md);
     padding: 0.5rem var(--space-lg);
-    background: var(--accent, #6366f1);
-    color: #fff;
+    /* --accent is a greyscale value, so the text on it has to be --accent-on:
+       hardcoded #fff was white on white the moment the palette went dark. */
+    background: var(--accent);
+    color: var(--accent-on);
     font-size: 0.875rem;
     text-align: center;
     position: sticky;
@@ -41,7 +43,7 @@
   .announcement-banner button {
     background: none;
     border: none;
-    color: #fff;
+    color: var(--accent-on);
     cursor: pointer;
     font-size: 1rem;
     opacity: 0.8;

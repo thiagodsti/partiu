@@ -150,6 +150,41 @@ class TestGetMeAndUpdateMe:
         assert summary is not None
         assert summary.locale == "pt-BR"
 
+    def test_update_me_rejects_an_accent_the_stylesheet_has_no_block_for(self, test_db):
+        from backend.auth.service import AuthError, AuthService
+
+        service = AuthService()
+        user_id = _seed_user(test_db)
+        with pytest.raises(AuthError) as exc_info:
+            service.update_me(user_id, None, "chartreuse")
+        assert exc_info.value.status_code == 422
+
+    def test_update_me_sets_accent(self, test_db):
+        from backend.auth.service import AuthService
+
+        service = AuthService()
+        user_id = _seed_user(test_db)
+        service.update_me(user_id, None, "orchid")
+
+        summary = service._repository.get_user_summary(user_id)
+        assert summary is not None
+        assert summary.accent == "orchid"
+
+    def test_update_me_leaves_the_other_preference_alone(self, test_db):
+        """Settings sends one field at a time, so a PATCH carrying only an
+        accent must not reset the locale to its default."""
+        from backend.auth.service import AuthService
+
+        service = AuthService()
+        user_id = _seed_user(test_db)
+        service.update_me(user_id, "pt-BR", None)
+        service.update_me(user_id, None, "ocean")
+
+        summary = service._repository.get_user_summary(user_id)
+        assert summary is not None
+        assert summary.locale == "pt-BR"
+        assert summary.accent == "ocean"
+
 
 class TestChangePassword:
     def test_rejects_wrong_current_password(self, test_db):

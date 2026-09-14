@@ -258,14 +258,14 @@
     <!-- Hero card -->
     <div class="flight-detail-hero">
       <div
-        style="display:flex;align-items:center;justify-content:center;gap:var(--space-sm);margin-bottom:var(--space-sm)"
+        style="display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-sm)"
       >
         {#if flight.airline_code}
           <span class="airline-badge airline-{flight.airline_code}"
             >{flight.airline_code}</span
           >
         {/if}
-        <span style="font-size:1.1rem;font-weight:600;font-family:monospace"
+        <span style="font-size:1.1rem;font-weight:600;font-family:var(--font-mono)"
           >{flight.flight_number}</span
         >
         <span class="badge badge-{flight.status ?? 'upcoming'}"

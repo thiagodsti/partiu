@@ -4,6 +4,7 @@
   import { staysForDay } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
+  import Checkbox from './Checkbox.svelte';
 
   interface ChecklistItem {
     text: string;
@@ -280,12 +281,10 @@
       <div class="checklist">
         {#each items as item, idx (idx)}
           <div class="checklist-item">
-            <input
-              type="checkbox"
-              class="check-btn"
+            <Checkbox
               checked={item.checked}
-              onchange={() => toggleItem(idx)}
-              aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+              label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+              onToggle={() => toggleItem(idx)}
             />
             <textarea
               class="check-input"
@@ -316,12 +315,10 @@
         <div class="checklist">
           {#each items as item, idx (idx)}
             <div class="checklist-item">
-              <input
-                type="checkbox"
-                class="check-btn"
+              <Checkbox
                 checked={item.checked}
-                onchange={(e) => { e.stopPropagation(); toggleItem(idx); }}
-                aria-label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+                label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
+                onToggle={() => toggleItem(idx)}
               />
               <span class="check-text" class:done={item.checked}>{item.text || '…'}</span>
             </div>
@@ -329,7 +326,13 @@
         </div>
       {/if}
       {#if !note.trim() && items.length === 0 && entries.length === 0 && stayDay.nights.length === 0}
-        <span class="note-hint">{$t('planner.add_notes_hint')}</span>
+        <!-- A button, not a span: this text *is* the invitation to plan the
+             day, and it sits in the body rather than the header, so the
+             header's click handler never reached it. Tapping the words that
+             say "tap to plan" did nothing at all. -->
+        <button type="button" class="note-hint" onclick={() => (expanded = true)}>
+          {$t('planner.add_notes_hint')}
+        </button>
       {/if}
     {/if}
   </div>
@@ -407,9 +410,22 @@
   }
 
   .note-hint {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 2px 0;
+    background: none;
+    border: none;
+    font-family: inherit;
     font-size: 0.78rem;
     color: var(--text-muted);
     font-style: italic;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .note-hint:hover {
+    color: var(--text-secondary);
   }
 
   .day-header-right {
@@ -492,15 +508,6 @@
     gap: var(--space-xs);
   }
 
-  .check-btn {
-    width: 20px;
-    height: 20px;
-    min-width: 20px;
-    margin-top: 3px;
-    cursor: pointer;
-    accent-color: var(--success, #16a34a);
-    touch-action: manipulation;
-  }
 
   .check-input {
     flex: 1;
@@ -557,6 +564,5 @@
     .day-chevron { display: none !important; }
 
     .day-card { break-inside: avoid; border: 1px solid #ccc; }
-    .check-btn { pointer-events: none; }
   }
 </style>

@@ -14,6 +14,7 @@ def row_to_user_summary(row: sqlite3.Row) -> UserSummary:
         smtp_recipient_address=row["smtp_recipient_address"],
         totp_enabled=bool(row["totp_enabled"]),
         locale=row["locale"] or "en",
+        accent=row["accent"] or "sky",
     )
 
 
@@ -25,6 +26,7 @@ def user_summary_to_dto(user: UserSummary) -> UserResponseDTO:
         smtp_recipient_address=user.smtp_recipient_address,
         totp_enabled=user.totp_enabled,
         locale=user.locale,
+        accent=user.accent,
     )
 
 
@@ -38,6 +40,7 @@ def user_summary_to_me_dto(
         smtp_recipient_address=user.smtp_recipient_address,
         totp_enabled=user.totp_enabled,
         locale=user.locale,
+        accent=user.accent,
         announcement=announcement,
         carto_api_key=carto_api_key,
     )

@@ -176,7 +176,7 @@
         </div>
         <a class="stat-card stat-card-link" href="#/stats/map{selectedYear ? `?year=${selectedYear}` : ''}">
           <div class="stat-value">{stats.unique_countries}</div>
-          <div class="stat-label">{$t('stats.countries')} →</div>
+          <div class="stat-label">{$t('stats.countries')}</div>
         </a>
         {#if stats.ground_legs > 0}
           <div class="stat-card">
@@ -279,19 +279,7 @@
               <span class="stat-list-label">{$t('stats.total')}</span>
               <div class="breakdown-numbers">
                 <span class="stat-list-count">{stats.total_km.toLocaleString()} km</span>
-                {#if stats.ground_legs > 0}
-          <div class="stat-card">
-            <div class="stat-value">{stats.ground_legs}</div>
-            <div class="stat-label">{$t('stats.ground_legs')}</div>
-          </div>
-        {/if}
-        {#if stats.nights_away > 0}
-          <div class="stat-card">
-            <div class="stat-value">{stats.nights_away}</div>
-            <div class="stat-label">{$t('stats.nights_away')}</div>
-          </div>
-        {/if}
-        {#if stats.total_co2_kg > 0}<span class="breakdown-co2">{fmtCo2(stats.total_co2_kg)}</span>{/if}
+                {#if stats.total_co2_kg > 0}<span class="breakdown-co2">{fmtCo2(stats.total_co2_kg)}</span>{/if}
               </div>
             </div>
           </div>
@@ -315,7 +303,7 @@
       {/if}
 
       <!-- Export -->
-      <div class="stat-section export-section">
+      <div class="stat-section">
         <a class="export-link" href="/api/flights/export.csv" download="flights.csv">
           ↓ {$t('stats.export_csv')}
         </a>
@@ -326,8 +314,11 @@
 </div>
 
 <style>
+  /* The shell already clears the dock; the page only needs its own rhythm. */
   .stats-page {
-    padding-bottom: calc(var(--tab-height) + var(--space-xl));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
   }
 
   /* ---- Year pills ---- */
@@ -335,7 +326,6 @@
     display: flex;
     gap: var(--space-xs);
     flex-wrap: wrap;
-    padding: var(--space-md) var(--space-md) 0;
   }
 
   .year-pill {
@@ -352,64 +342,65 @@
   .year-pill.active,
   .year-pill:hover {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-on);
     border-color: var(--accent);
+    font-weight: 600;
   }
 
   /* ---- Hero ---- */
+  /* One flat amber field with the number set in condensed ink — the same
+     black-on-yellow the primary button uses, at the size a gate sign uses it.
+     The gradient it replaces ran amber into violet, a colour that appears
+     nowhere else in the app and meant nothing where it did appear. */
   .stat-hero {
-    margin: var(--space-lg) var(--space-md) var(--space-md);
-    padding: var(--space-xl) var(--space-md);
-    background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+    padding: var(--space-lg);
+    background: var(--accent);
     border-radius: var(--radius-lg);
-    text-align: center;
-    color: #fff;
+    color: var(--accent-on);
   }
 
   .stat-hero-number {
-    font-size: clamp(2.8rem, 12vw, 4.5rem);
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: clamp(3.4rem, 11vw, 6rem);
+    font-weight: 700;
+    line-height: 0.92;
+    letter-spacing: 0.005em;
   }
 
   .stat-hero-unit {
-    font-size: 0.5em;
-    font-weight: 500;
-    opacity: 0.85;
+    font-size: 0.38em;
+    font-weight: 600;
+    margin-left: 0.15em;
   }
 
   .stat-hero-label {
-    margin-top: var(--space-xs);
-    font-size: 1rem;
-    opacity: 0.9;
-    font-weight: 500;
+    margin-top: var(--space-sm);
+    font-size: 1.05rem;
+    font-weight: 600;
   }
 
   .stat-hero-sub {
-    margin-top: var(--space-xs);
-    font-size: 0.85rem;
-    opacity: 0.75;
+    margin-top: 2px;
+    font-size: 0.88rem;
+    opacity: 0.72;
   }
 
   /* ---- stat grid ---- */
+  /* Hairline-separated cells of one board rather than free-floating tiles,
+     so the numbers line up down the page and can be compared. */
   .stat-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-sm);
-    padding: 0 var(--space-md);
-  }
-
-  .stat-card-co2 {
-    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
   }
 
   .stat-card {
     background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
     padding: var(--space-md);
-    text-align: center;
   }
 
   .stat-card-link {
@@ -420,37 +411,36 @@
 
   @media (hover: hover) {
     .stat-card-link:hover {
-      border-color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+      background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
     }
   }
 
   .stat-value {
-    font-size: 1.8rem;
+    font-family: var(--font-display);
+    font-size: 2.2rem;
     font-weight: 700;
     color: var(--text-primary);
-    line-height: 1.1;
+    line-height: 1;
   }
 
   .stat-label {
-    margin-top: 4px;
-    font-size: 0.75rem;
+    margin-top: 2px;
+    font-size: 0.82rem;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  }
+
+  .stat-card-link .stat-label::after {
+    content: ' ↗';
+    color: var(--accent-text);
   }
 
   /* ---- Sections ---- */
-  .stat-section {
-    margin: var(--space-md) var(--space-md) 0;
-  }
-
   .stat-section-title {
-    font-size: 0.7rem;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
+    letter-spacing: 0.01em;
+    color: var(--text-primary);
     margin-bottom: var(--space-sm);
   }
 
@@ -467,7 +457,7 @@
   }
 
   .route-tag {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -475,7 +465,7 @@
 
   .route-km {
     font-size: 0.9rem;
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
     white-space: nowrap;
   }
@@ -525,7 +515,7 @@
   }
 
   .route-mono {
-    font-family: monospace;
+    font-family: var(--font-mono);
   }
 
   .stat-bar-wrap {
@@ -571,7 +561,7 @@
   }
 
   .airline-chip-code {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-weight: 700;
     font-size: 0.9rem;
     width: 28px;
@@ -609,7 +599,7 @@
   .breakdown-flight {
     font-size: 0.75rem;
     color: var(--text-muted);
-    font-family: monospace;
+    font-family: var(--font-mono);
     flex-shrink: 0;
   }
 
@@ -631,9 +621,6 @@
     font-weight: 600;
   }
 
-  .export-section {
-    padding-bottom: var(--space-md);
-  }
 
   .export-link {
     display: inline-block;
@@ -657,7 +644,7 @@
   }
 
   .breakdown-total .stat-list-count {
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 700;
   }
 
@@ -675,7 +662,7 @@
 
   .stats-error {
     padding: var(--space-md);
-    color: var(--danger);
+    color: var(--danger-text);
     text-align: center;
   }
 </style>

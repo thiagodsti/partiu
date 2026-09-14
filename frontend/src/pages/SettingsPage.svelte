@@ -10,9 +10,17 @@
   import SyncStatusBar from "../components/SyncStatusBar.svelte";
   import { currentUser } from "../lib/authStore";
   import { theme } from "../lib/themeStore";
+  import { accent, setAccent, ACCENTS, DEFAULT_ACCENT } from "../lib/accentStore";
   import { t, locale, setLocale, LOCALES } from "../lib/i18n";
 
   // ---- State ----
+  /** The swatches are unlabelled circles, so the name of the chosen one is
+   * spelled out underneath — otherwise the only way to know what "orchid"
+   * means is to click it. */
+  const accentLabel = $derived(
+    ACCENTS.find((a) => a.value === $accent)?.label ?? `settings.accent_${DEFAULT_ACCENT}`,
+  );
+
   let loading = $state(true);
   let error = $state<string | null>(null);
   let currentSettings = $state<Settings | null>(null);
@@ -752,7 +760,7 @@
 
 <TopNav title={$t("settings.title")} />
 
-<div class="main-content">
+<div class="main-content settings-page">
   {#if loading}
     <LoadingScreen icon="⚙" message={$t("settings.loading")} />
   {:else if error}
@@ -1566,6 +1574,24 @@
         {/each}
       </div>
       <div class="form-group" style="margin-top:var(--space-md)">
+        <span class="form-label">{$t("settings.accent")}</span>
+        <div class="accent-row">
+          {#each ACCENTS as a}
+            <button
+              type="button"
+              class="accent-swatch"
+              class:active={$accent === a.value}
+              data-accent-preview={a.value}
+              title={$t(a.label)}
+              aria-label={$t(a.label)}
+              aria-pressed={$accent === a.value}
+              onclick={() => setAccent(a.value)}
+            ></button>
+          {/each}
+        </div>
+        <p class="form-hint">{$t(accentLabel)}</p>
+      </div>
+      <div class="form-group" style="margin-top:var(--space-md)">
         <label class="form-label" for="language-select"
           >{$t("settings.language")}</label
         >
@@ -1862,6 +1888,49 @@
 
   .theme-btn.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-on);
+  }
+
+  .accent-row {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
+
+  /* Each swatch paints itself with its own preset rather than the live one,
+     so the row shows the five choices side by side instead of five copies of
+     the current colour. `data-accent-preview` is scoped to this element, which
+     is why it is a separate attribute from the `data-accent` on <html>. */
+  .accent-swatch {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--swatch);
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.12s, border-color 0.12s;
+  }
+
+  .accent-swatch:hover {
+    transform: scale(1.08);
+  }
+
+  /* The selected swatch is ringed rather than ticked: a checkmark inside a
+     34px circle has to be drawn in either ink or white, and neither reads on
+     all five fills. */
+  .accent-swatch.active {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-card) inset;
+  }
+
+  .accent-swatch[data-accent-preview="sky"] { --swatch: #3d9bff; }
+  .accent-swatch[data-accent-preview="ocean"] { --swatch: #2fc3b0; }
+  .accent-swatch[data-accent-preview="dusk"] { --swatch: #8b82ff; }
+  .accent-swatch[data-accent-preview="orchid"] { --swatch: #ff7ab8; }
+  .accent-swatch[data-accent-preview="graphite"] {
+    /* Half ink, half paper: the greyscale preset is a different colour in each
+       theme, and one flat grey would misrepresent both. */
+    --swatch: linear-gradient(135deg, #f2f2f0 0 50%, #17171a 50% 100%);
   }
 </style>

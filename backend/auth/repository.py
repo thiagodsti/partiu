@@ -16,7 +16,7 @@ class AuthRepository:
     def find_user_by_username(self, username: str) -> AuthUser | None:
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE username = ?",
+                "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale, accent FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
         if row is None:
@@ -29,12 +29,13 @@ class AuthRepository:
             smtp_recipient_address=row["smtp_recipient_address"],
             totp_enabled=bool(row["totp_enabled"]),
             locale=row["locale"] or "en",
+            accent=row["accent"] or "sky",
         )
 
     def get_user_with_totp_secret(self, user_id: int) -> AuthUser | None:
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT id, username, is_admin, smtp_recipient_address, totp_secret, totp_enabled, locale FROM users WHERE id = ?",
+                "SELECT id, username, is_admin, smtp_recipient_address, totp_secret, totp_enabled, locale, accent FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         if row is None:
@@ -46,13 +47,14 @@ class AuthRepository:
             smtp_recipient_address=row["smtp_recipient_address"],
             totp_enabled=bool(row["totp_enabled"]),
             locale=row["locale"] or "en",
+            accent=row["accent"] or "sky",
             totp_secret=row["totp_secret"],
         )
 
     def get_user_summary(self, user_id: int) -> UserSummary | None:
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled, locale FROM users WHERE id = ?",
+                "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled, locale, accent FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         return row_to_user_summary(row) if row else None
@@ -93,6 +95,10 @@ class AuthRepository:
     def update_locale(self, user_id: int, locale: str) -> None:
         with db_write() as conn:
             conn.execute("UPDATE users SET locale = ? WHERE id = ?", (locale, user_id))
+
+    def update_accent(self, user_id: int, accent: str) -> None:
+        with db_write() as conn:
+            conn.execute("UPDATE users SET accent = ? WHERE id = ?", (accent, user_id))
 
     def update_password_hash(self, user_id: int, password_hash: str) -> None:
         with db_write() as conn:

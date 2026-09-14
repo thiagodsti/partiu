@@ -124,6 +124,43 @@ class TestUpdateLocaleAndPassword:
         assert summary is not None
         assert summary.locale == "pt-BR"
 
+    def test_update_accent(self, test_db):
+        from backend.auth.repository import AuthRepository
+
+        repo = AuthRepository()
+        user_id = _seed_user(test_db)
+        repo.update_accent(user_id, "ocean")
+
+        summary = repo.get_user_summary(user_id)
+        assert summary is not None
+        assert summary.accent == "ocean"
+
+    def test_accent_defaults_to_sky_for_a_row_that_never_set_one(self, test_db):
+        """Migration 0026 backfills every existing user with 'sky' rather than
+        NULL, so the frontend never has to treat "unset" as a third state."""
+        from backend.auth.repository import AuthRepository
+
+        repo = AuthRepository()
+        user_id = _seed_user(test_db)
+
+        summary = repo.get_user_summary(user_id)
+        assert summary is not None
+        assert summary.accent == "sky"
+
+    def test_accent_is_carried_by_the_login_lookup_too(self, test_db):
+        """Login builds its own UserSummary from find_user_by_username rather
+        than from get_user_summary; a column missing there means the accent is
+        correct on /me and wrong for the whole first page load after login."""
+        from backend.auth.repository import AuthRepository
+
+        repo = AuthRepository()
+        user_id = _seed_user(test_db, username="alice")
+        repo.update_accent(user_id, "dusk")
+
+        user = repo.find_user_by_username("alice")
+        assert user is not None
+        assert user.accent == "dusk"
+
     def test_update_password_hash(self, test_db):
         from backend.auth.repository import AuthRepository
 

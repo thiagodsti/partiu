@@ -138,9 +138,20 @@ Want to try it before self-hosting? A public demo is available at:
 - Admin: configure sync interval, max emails per sync, SMTP server, VAPID keys, airport data reload
 - Per-user locale (English / Portuguese Brazil)
 
+### Interface
+- **Five accent colours, picked in Settings → Appearance**: Sky (the default), Ocean, Dusk, Orchid, and Graphite for anyone who wants no hue at all. Each has its own light and dark cut
+- The accent is **saved to your account**, so it follows you to every browser and phone you sign in from, and two people sharing a computer keep their own. The light/dark theme stays per-device on purpose — wanting dark on a phone at night and light at a desk is about the device, not the person
+- **One accent, four places.** The accent is worn by a filled button, the active navigation item, the trip countdown, and a trip that is happening right now — nothing else is tinted with it
+- **Every other colour is a status**: green means done, red means trouble, amber means running late. That is the whole list. Nothing is tinted just to look less bare, which leaves the destination photographs and the airport codes as the most colourful things on screen
+- Trips read as luggage tags: a horizontal band with the destination photo printed down one edge, the name set large, and a status panel on the stub
+- Flights and ground legs render as lines on one departures board — departure time leading each row, the connecting leg drawn rather than typed
+- **Navigation adapts to the screen**: a fixed icon rail on desktop, a floating dock on phones — one shared list of destinations behind both
+- Barlow, a grotesk drawn from public-transport signage, self-hosted so the app keeps its type offline
+- Full light and dark themes, following the system or forced from Settings; print styles force light
+
 ### PWA
 - Installable on iOS and Android as a home screen app
-- Works as a PWA — offline-capable shell, mobile-first responsive design
+- Works as a PWA — offline-capable shell, responsive from phone to desktop
 
 ## Supported airlines
 

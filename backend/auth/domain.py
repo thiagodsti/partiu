@@ -20,6 +20,7 @@ class AuthUser:
     smtp_recipient_address: str | None
     totp_enabled: bool
     locale: str
+    accent: str = "sky"
     password_hash: str | None = None
     totp_secret: str | None = None
 
@@ -34,6 +35,7 @@ class UserSummary:
     smtp_recipient_address: str | None
     totp_enabled: bool
     locale: str
+    accent: str = "sky"
 
 
 @dataclass

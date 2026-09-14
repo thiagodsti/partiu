@@ -358,3 +358,39 @@ class TestUpdateMe:
         client.cookies.clear()
         r = client.patch("/api/auth/me", json={"locale": "pt-BR"})
         assert r.status_code == 401
+
+    def test_me_returns_accent(self, auth_client):
+        r = auth_client.get("/api/auth/me")
+        assert r.status_code == 200
+        assert r.json()["accent"] == "sky"
+
+    def test_update_accent(self, auth_client):
+        r = auth_client.patch("/api/auth/me", json={"accent": "ocean"})
+        assert r.status_code == 200
+
+        r2 = auth_client.get("/api/auth/me")
+        assert r2.json()["accent"] == "ocean"
+
+    def test_accent_follows_the_user_to_another_browser(self, auth_client, api_app):
+        """The whole point of moving this off localStorage: a fresh client with
+        no storage of its own gets the accent back from the session alone."""
+        auth_client.patch("/api/auth/me", json={"accent": "dusk"})
+        auth_client.post("/api/auth/logout")
+
+        from fastapi.testclient import TestClient
+
+        with TestClient(api_app, base_url="https://testserver") as c:
+            r = c.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+            assert r.json()["accent"] == "dusk"
+
+    def test_update_accent_invalid(self, auth_client):
+        r = auth_client.patch("/api/auth/me", json={"accent": "chartreuse"})
+        assert r.status_code == 422
+
+    def test_accent_and_locale_are_independent_over_the_api(self, auth_client):
+        auth_client.patch("/api/auth/me", json={"locale": "pt-BR"})
+        auth_client.patch("/api/auth/me", json={"accent": "graphite"})
+
+        r = auth_client.get("/api/auth/me")
+        assert r.json()["locale"] == "pt-BR"
+        assert r.json()["accent"] == "graphite"

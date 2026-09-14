@@ -48,6 +48,26 @@ export function formatDate(iso: string | null | undefined): string {
   }
 }
 
+/**
+ * Day and month, no year — for the clock column of a transport row.
+ *
+ * The full `formatDate` runs to "26 de set. de 2026" in pt-BR, which is nearly
+ * twice the width of "Sep 26, 2026" and overflowed the fixed-width column it
+ * sits in, painting the date across the leg beside it. The year is the part
+ * worth dropping: a row always sits inside a trip whose full dates are in the
+ * header, and a leg that crosses a day gets a DateDivider spelling it out.
+ */
+export function formatDayMonth(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  // Stricter than formatDate, which hands an unparseable value to
+  // toLocaleDateString and gets the literal string "Invalid Date" back —
+  // `new Date('nonsense')` does not throw, so its try/catch never fires.
+  // A row is better off showing nothing than showing those two words.
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(appLocale(), { month: 'short', day: 'numeric' });
+}
+
 export function formatDateLong(iso: string | null | undefined): string {
   if (!iso) return '—';
   try {

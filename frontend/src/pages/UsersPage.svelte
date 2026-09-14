@@ -274,14 +274,16 @@
     color: var(--text-muted);
   }
 
+  /* --accent is greyscale, so the label on top of it must be --accent-on;
+     a hardcoded #fff was white on white once the palette went dark. Sentence
+     case, like every other tag — capitals are reserved for IATA codes. */
   .badge-admin {
     font-size: 0.7rem;
     font-weight: 600;
     background: var(--accent);
-    color: #fff;
-    padding: 2px 6px;
-    border-radius: 10px;
-    text-transform: uppercase;
+    color: var(--accent-on);
+    padding: 2px 8px;
+    border-radius: 999px;
   }
 
   .badge-2fa {

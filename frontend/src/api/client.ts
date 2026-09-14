@@ -122,7 +122,8 @@ export const authApi = {
   disable2fa: (data: { code?: string; password?: string }) =>
     post<{ ok: boolean }>('/api/auth/2fa/disable', data),
   verify2fa: (code: string) => post<User>('/api/auth/2fa/verify', { code }),
-  updateMe: (data: { locale?: string }) => patch<{ ok: boolean }>('/api/auth/me', data),
+  updateMe: (data: { locale?: string; accent?: string }) =>
+    patch<{ ok: boolean }>('/api/auth/me', data),
 };
 
 // ---- Users ----

@@ -3,7 +3,9 @@ import type { Flight, TripSegment, TripStay } from '../api/types';
 import {
   escapeHtml,
   formatDuration,
+  formatDate,
   formatDateRange,
+  formatDayMonth,
   cabinLabel,
   flightStatus,
   inferTripStatus,
@@ -88,6 +90,35 @@ describe('formatDuration', () => {
 
   it('formats exact hours', () => {
     expect(formatDuration(120)).toBe('2h 0m');
+  });
+});
+
+// ---- formatDayMonth ----
+
+describe('formatDayMonth', () => {
+  it('returns empty string for a missing date', () => {
+    expect(formatDayMonth(null)).toBe('');
+    expect(formatDayMonth(undefined)).toBe('');
+  });
+
+  it('renders the day and month', () => {
+    const result = formatDayMonth('2026-09-26T07:25:00');
+    expect(result).toContain('26');
+  });
+
+  // The whole reason this exists: the full date runs to "26 de set. de 2026"
+  // in pt-BR and overflowed the fixed-width clock column of a transport row.
+  it('leaves the year out', () => {
+    expect(formatDayMonth('2026-09-26T07:25:00')).not.toContain('2026');
+  });
+
+  it('is shorter than the full date it replaces on a row', () => {
+    const iso = '2026-09-26T07:25:00';
+    expect(formatDayMonth(iso).length).toBeLessThan(formatDate(iso).length);
+  });
+
+  it('renders nothing for a value that cannot be parsed', () => {
+    expect(formatDayMonth('not-a-date')).toBe('');
   });
 });
 

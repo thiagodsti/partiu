@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TripSegment, SegmentType } from '../api/types';
-  import { formatTime, formatDate, formatDuration } from '../lib/utils';
+  import { formatTime, formatDayMonth, formatDuration } from '../lib/utils';
+  import { t } from '../lib/i18n';
 
   interface Props {
     segment: TripSegment;
@@ -24,35 +25,38 @@
 </script>
 
 <button type="button" class="flight-row segment-row-btn" onclick={() => onedit(s)}>
-  <div class="flight-row-route" style="flex:1">
+  <div class="flight-row-clock">
+    <span class="flight-row-dep">{formatTime(s.departure_datetime, s.departure.timezone)}</span>
+    <span class="flight-row-date">{formatDayMonth(s.departure_datetime)}</span>
+  </div>
+  <div class="flight-row-route">
     <div class="flight-route segment-route">
       <span>{s.departure.name}</span>
-      <span class="flight-route-arrow">→</span>
+      <span class="flight-route-arrow segment-arrow" aria-hidden="true">→</span>
       <span>{s.arrival.name}</span>
     </div>
     <div class="flight-time">
-      {formatTime(s.departure_datetime, s.departure.timezone)} → {formatTime(s.arrival_datetime, s.arrival.timezone)}
-      <span style="color:var(--text-muted);margin-left:4px">{formatDate(s.departure_datetime)}</span>
+      <span>{$t('flight.arrives_at', { values: { time: formatTime(s.arrival_datetime, s.arrival.timezone) } })}</span>
+      {#if duration}
+        <span class="text-muted">{duration}</span>
+      {/if}
     </div>
   </div>
   <div class="flight-meta">
     <span class="segment-type-badge">{TYPE_ICONS[s.type] ?? '🚆'}</span>
     {#if label}
-      <div style="margin-top:4px">{label}</div>
-    {/if}
-    {#if duration}
-      <div style="color:var(--text-muted)">{duration}</div>
+      <span>{label}</span>
     {/if}
     {#if s.seat}
-      <div style="color:var(--text-muted)">{s.seat}</div>
+      <span class="text-muted">{s.seat}</span>
     {/if}
   </div>
 </button>
 
 <style>
   /* Reuses .flight-row from app.css so ground legs sit flush with flights in
-     the same list. Only the button defaults are reset — notably NOT the border,
-     which .flight-row supplies and which is what makes the row read as a card. */
+     the same list — they are lines on the same board, and a train between two
+     flights is part of the same journey. Only the button defaults are reset. */
   .segment-row-btn {
     width: 100%;
     font: inherit;
@@ -61,9 +65,25 @@
     align-items: flex-start;
   }
 
-  /* Station names are far longer than IATA codes and must be allowed to wrap. */
+  /* Station names are far longer than IATA codes and must be allowed to wrap,
+     so the drawn connector a flight gets cannot stretch between them — and it
+     carries an aircraft glyph, which is wrong on a train. Plain arrow instead. */
   .segment-route {
     flex-wrap: wrap;
+    font-size: 0.98rem;
+  }
+
+  .segment-arrow {
+    flex: 0 0 auto;
+    max-width: none;
+    height: auto;
+    background: none;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .segment-arrow::after {
+    content: none;
   }
 
   .segment-type-badge {

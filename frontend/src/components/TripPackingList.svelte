@@ -2,6 +2,7 @@
   import { packingApi } from '../api/client';
   import type { PackingItem } from '../api/types';
   import { t } from '../lib/i18n';
+  import Checkbox from './Checkbox.svelte';
 
   interface Props {
     tripId: string;
@@ -139,22 +140,11 @@
     <ul class="packing-list">
       {#each items as item (item.id)}
         <li class="packing-item" class:is-checked={item.checked}>
-          <button
-            class="packing-checkbox"
-            aria-label={item.checked ? $t('packing.uncheck') : $t('packing.check')}
-            onclick={() => toggleChecked(item)}
-          >
-            {#if item.checked}
-              <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="16" height="16" rx="3" fill="var(--accent)"/>
-                <path d="M3.5 8L6.5 11L12.5 5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            {:else}
-              <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="0.5" y="0.5" width="15" height="15" rx="2.5" stroke="var(--border-strong, var(--border))"/>
-              </svg>
-            {/if}
-          </button>
+          <Checkbox
+            checked={!!item.checked}
+            label={item.checked ? $t('packing.uncheck') : $t('packing.check')}
+            onToggle={() => toggleChecked(item)}
+          />
 
           {#if editingId === item.id}
             <input
@@ -250,24 +240,14 @@
     min-height: 2.25rem;
   }
 
-  .packing-checkbox {
-    flex-shrink: 0;
-    width: 1.25rem;
-    height: 1.25rem;
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: inherit;
+  /* A finger needs more row than a cursor does. */
+  @media (pointer: coarse) {
+    .packing-item {
+      min-height: 2.75rem;
+    }
   }
 
-  .packing-checkbox svg {
-    width: 1rem;
-    height: 1rem;
-  }
+
 
   .packing-text {
     flex: 1;
@@ -284,7 +264,6 @@
 
   .packing-delete {
     flex-shrink: 0;
-    opacity: 0;
     padding: 2px;
     background: none;
     border: none;
@@ -292,6 +271,7 @@
     color: var(--text-muted);
     display: flex;
     align-items: center;
+    touch-action: manipulation;
     transition: opacity 0.15s, color 0.15s;
   }
 
@@ -300,9 +280,20 @@
     height: 1rem;
   }
 
-  .packing-item:hover .packing-delete,
-  .packing-item:focus-within .packing-delete {
-    opacity: 1;
+  /* Hidden until hover only where hovering exists — see the note on
+     .trip-card-img-refresh in app.css. On a phone this control was both
+     unreachable and the reason a checkbox needed tapping twice: the row's
+     appearance depended on :hover, so the first tap went to applying that
+     state rather than to the button under the finger. */
+  @media (hover: hover) {
+    .packing-delete {
+      opacity: 0;
+    }
+
+    .packing-item:hover .packing-delete,
+    .packing-item:focus-within .packing-delete {
+      opacity: 1;
+    }
   }
 
   .packing-delete:hover {

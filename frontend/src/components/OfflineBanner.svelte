@@ -16,8 +16,10 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 0.4rem var(--space-lg, 1rem);
-    background: #92400e;
-    color: #fef3c7;
+    /* One of the few places colour is the message: offline is a status, and
+       amber is what the palette reserves for "something needs attention". */
+    background: var(--warning);
+    color: var(--accent-on);
     font-size: 0.8125rem;
     text-align: center;
     position: sticky;

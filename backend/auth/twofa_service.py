@@ -55,6 +55,7 @@ class TwoFAService:
             smtp_recipient_address=user.smtp_recipient_address,
             totp_enabled=user.totp_enabled,
             locale=user.locale,
+            accent=user.accent,
         )
         return summary, session_token
 

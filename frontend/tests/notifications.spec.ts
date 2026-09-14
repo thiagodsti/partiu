@@ -19,10 +19,13 @@ test.beforeEach(async ({ page }) => {
   test.skip(!(await serverAvailable(page)), 'Server not available at http://localhost:8000');
 });
 
-test('notifications tab exists in tab bar', async ({ page }) => {
+test('notifications entry exists in the navigation', async ({ page }) => {
   await page.goto(BASE);
   await page.waitForLoadState('networkidle');
-  const notifTab = page.locator('.tab-bar a[href="#/notifications"]');
+  // `.nav-item` is on both navigation surfaces — the desktop rail and the
+  // mobile dock — and only one of them is on screen at any width, so the
+  // :visible filter is what picks the one this viewport is actually showing.
+  const notifTab = page.locator('.nav-item[href="#/notifications"]:visible');
   await expect(notifTab).toBeVisible();
 });
 
@@ -87,7 +90,7 @@ test('invitation cards show accept and reject buttons', async ({ page }) => {
 test('notifications tab badge reflects unread count', async ({ page }) => {
   await page.goto(BASE);
   await page.waitForLoadState('networkidle');
-  const badge = page.locator('.tab-bar a[href="#/notifications"] .tab-badge');
+  const badge = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
   // Badge is only visible when there are unread items — both states are valid
   const hasBadge = await badge.count() > 0;
   if (hasBadge) {
@@ -103,7 +106,7 @@ test('visiting notifications page clears unread badge', async ({ page }) => {
   await page.goto(BASE);
   await page.waitForLoadState('networkidle');
 
-  const badge = page.locator('.tab-bar a[href="#/notifications"] .tab-badge');
+  const badge = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
   test.skip(await badge.count() === 0, 'No unread notifications to test badge clearing');
 
   // Navigate to the notifications page
@@ -117,6 +120,6 @@ test('visiting notifications page clears unread badge', async ({ page }) => {
   await page.goto(`${BASE}/#/trips`);
   await page.waitForLoadState('networkidle');
 
-  const badgeAfter = page.locator('.tab-bar a[href="#/notifications"] .tab-badge');
+  const badgeAfter = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
   expect(await badgeAfter.count()).toBe(0);
 });

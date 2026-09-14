@@ -18,6 +18,12 @@ _DUMMY_HASH = "$2b$12$invalidhashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 VALID_LOCALES = {"en", "pt-BR"}
 
+# Must match ACCENTS in frontend/src/lib/accentStore.ts and the `data-accent`
+# blocks in app.css. A value the stylesheet has no block for matches no preset
+# and leaves the page on whatever the cascade fell back to, so it is rejected
+# here rather than stored and puzzled over later.
+VALID_ACCENTS = {"sky", "ocean", "dusk", "orchid", "graphite"}
+
 
 class AuthService:
     def __init__(self, repository: AuthRepository | None = None):
@@ -58,6 +64,7 @@ class AuthService:
             smtp_recipient_address=smtp_recipient_address,
             totp_enabled=False,
             locale="en",
+            accent="sky",
         )
         return summary, token
 
@@ -94,6 +101,7 @@ class AuthService:
             smtp_recipient_address=user.smtp_recipient_address,
             totp_enabled=user.totp_enabled,
             locale=user.locale,
+            accent=user.accent,
         )
         return LoginResult(requires_2fa=False, user=summary, session_token=session_token)
 
@@ -129,11 +137,15 @@ class AuthService:
             raise AuthError("User not found", 401)
         return user
 
-    def update_me(self, user_id: int, locale: str | None) -> None:
+    def update_me(self, user_id: int, locale: str | None, accent: str | None = None) -> None:
         if locale is not None and locale not in VALID_LOCALES:
             raise AuthError(f"Invalid locale. Valid values: {sorted(VALID_LOCALES)}", 422)
+        if accent is not None and accent not in VALID_ACCENTS:
+            raise AuthError(f"Invalid accent. Valid values: {sorted(VALID_ACCENTS)}", 422)
         if locale is not None:
             self._repository.update_locale(user_id, locale)
+        if accent is not None:
+            self._repository.update_accent(user_id, accent)
 
     # -- Change password -------------------------------------------------------
 

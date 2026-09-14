@@ -131,6 +131,7 @@
       {#each filtered as trip (trip.id)}
         <TripCard
           {trip}
+          status="completed"
           href="#/history/{trip.id}"
           imageUrl={tripImageBust.urlFor(trip.id, $tripImageBust)}
           imgFailed={imgRefresh.imgFailed[trip.id] ?? false}
@@ -164,11 +165,13 @@
 </div>
 
 <style>
+  /* Sticks directly under the page header, which is why the offset is the
+     header's own height plus the notch rather than a hand-tuned number. */
   .search-bar {
-    padding: var(--space-sm) var(--space-md);
     position: sticky;
-    top: 56px;
-    background: var(--bg);
+    top: calc(var(--nav-height) + env(safe-area-inset-top));
     z-index: 10;
+    padding: var(--space-sm) 0 var(--space-md);
+    background: var(--bg-primary);
   }
 </style>
