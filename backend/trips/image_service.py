@@ -1,6 +1,7 @@
 """Fetches and caches a trip's destination photo from Wikipedia — a distinct
 concern from trip CRUD, kept out of service.py."""
 
+import random
 from pathlib import Path
 
 from ..integrations.wikipedia.client import fetch_trip_image, find_trip_image
@@ -13,8 +14,28 @@ class TripImageService:
         self._repository = repository or TripRepository()
 
     def _resolve_destination_city(self, trip_id: str) -> str | None:
-        """Look up the destination city for a trip via its destination_airport,
-        falling back to the arrival airport of the trip's last flight."""
+        """The city whose photo becomes this trip's cover.
+
+        A **typed** destination wins: those are the only places a person chose,
+        they are already populated places (the picker filters to city/town/
+        village), and they are all a trip with no flights has. One is picked at
+        random, so "find a different image" on a multi-stop trip can move
+        between its cities rather than re-rolling photos of the first one.
+
+        Only when there are none does this fall back to the destination
+        airport's city, then to the last flight's arrival airport — which is why
+        a rail or road trip had no cover photo at all before: an IATA code was
+        the only handle.
+        """
+        destinations = self._repository.list_destinations([trip_id]).get(trip_id, [])
+        names = [
+            cleaned
+            for place in destinations
+            if (cleaned := place["name"].split("(")[0].split(",")[0].strip())
+        ]
+        if names:
+            return random.choice(names)
+
         iata = self._repository.get_destination_airport(trip_id)
         if not iata:
             iata = self._repository.get_last_flight_arrival_airport(trip_id)

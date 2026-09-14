@@ -68,11 +68,16 @@ class StatsRepository:
         entering the country. Changing trains puts you in the station, in the
         city, past no border fiction, so every endpoint counts.
 
-        `trip_segments` and `trip_stays` have no `user_id`; they hang off a trip,
-        so ownership comes from the join. Shared trips are excluded on purpose,
+        A trip's typed **destinations** count too: naming Rio as somewhere the
+        trip went is the same kind of evidence a stay there is, and a rail or
+        road trip may have no other record of the country at all.
+
+        `trip_segments`, `trip_stays` and `trip_destinations` have no `user_id`;
+        they hang off a trip, so ownership comes from the join. Shared trips are excluded on purpose,
         matching `list_completed_flights`, which scopes to `f.user_id`.
         """
-        # Three arms, each with the same (user_id[, year]) parameter shape.
+        # Three arms with the same (user_id[, year]) parameter shape; the trip's
+        # own destinations are a fourth, added below with its own date columns.
         arms = [
             ("trip_segments", "departure_country", "arrival_datetime", "departure_datetime"),
             ("trip_segments", "arrival_country", "arrival_datetime", "departure_datetime"),
@@ -93,6 +98,23 @@ class StatsRepository:
             params.append(user_id)
             if year:
                 params.append(str(year))
+
+        # The trip's own destinations, which have no dates of their own — a
+        # destination belongs to the trip, so the trip's span says when it
+        # happened. Completion is still required, for the same reason the other
+        # arms require it: a country you plan to visit is not one you have.
+        dest_year_clause = "AND strftime('%Y', t.start_date) = ?" if year else ""
+        selects.append(
+            f"""
+            SELECT d.country_code AS c FROM trip_destinations d
+              JOIN trips t ON t.id = d.trip_id
+             WHERE t.user_id = ? AND d.country_code IS NOT NULL
+               AND t.end_date IS NOT NULL AND t.end_date < date('now') {dest_year_clause}
+            """
+        )
+        params.append(user_id)
+        if year:
+            params.append(str(year))
 
         with db_conn() as conn:
             rows = conn.execute(" UNION ".join(selects), params).fetchall()

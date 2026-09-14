@@ -8,9 +8,11 @@ immich_service.py."""
 import json
 import unicodedata
 import uuid
+from collections.abc import Mapping
 
 from ..integrations.wikipedia.client import trip_image_path
 from .domain import Trip
+from .dto import PlaceFieldsDTO
 from .errors import TripError
 from .repository import TripRepository
 
@@ -33,6 +35,7 @@ class TripListItem:
         self.segment_types: list[str] = []
         self.expenses_total: dict[str, float] = {}
         self.immich_album_id: str | None = None
+        self.destinations: list[dict] = []
         self.search_index = ""
 
 
@@ -62,8 +65,8 @@ class TripService:
 
     def _attach_extras(self, items: list[TripListItem], user_id: int) -> None:
         """Mutate each item to add flight_count, segment_count, stay_count,
-        segment_types, owner_username, expenses_total, immich_album_id, and
-        search_index."""
+        segment_types, owner_username, expenses_total, immich_album_id,
+        destinations, and search_index."""
         trip_ids = [i.trip.id for i in items]
         if not trip_ids:
             return
@@ -98,10 +101,24 @@ class TripService:
 
         # Build a pre-normalised search index: trip name + booking refs + all flight
         # cities, country codes, IATA codes, airline names, and flight numbers.
+        # Booking references come from the legs as well as the trip: the trip-level
+        # list is written by auto-grouping, while a hand-added flight or ground leg
+        # carries its own, and both have to be findable by the same search.
+        destinations = self._repository.list_destinations(trip_ids)
+        for item in items:
+            item.destinations = destinations.get(item.trip.id, [])
+
         search_rows = self._repository.get_search_index_rows(trip_ids)
+        segment_refs = self._repository.get_segment_booking_refs(trip_ids)
         for item in items:
             fi = search_rows.get(item.trip.id)
-            parts = [item.trip.name or "", " ".join(item.trip.booking_refs)]
+            parts = [
+                item.trip.name or "",
+                " ".join(item.trip.booking_refs),
+                segment_refs.get(item.trip.id, ""),
+                item.trip.origin_place or "",
+                " ".join(place["name"] for place in item.destinations),
+            ]
             if fi:
                 parts += [
                     fi[c] or ""
@@ -114,16 +131,18 @@ class TripService:
                         "arr_countries",
                         "airlines",
                         "flight_nums",
+                        "booking_refs",
                     )
                 ]
             item.search_index = _norm(" ".join(filter(None, parts)))
 
     def get_trip(
         self, trip_id: str, user_id: int
-    ) -> tuple[Trip, bool, str | None, list[dict], dict, str | None]:
+    ) -> tuple[Trip, bool, str | None, list[dict], dict, str | None, list[dict]]:
         """Return a single trip with its flights.
 
-        Returns (trip, is_owner, owner_username, flights, expenses_total, immich_album_id).
+        Returns (trip, is_owner, owner_username, flights, expenses_total,
+        immich_album_id, destinations).
         """
         if not self._can_access(trip_id, user_id):
             raise TripError("Trip not found", 404)
@@ -137,8 +156,17 @@ class TripService:
         flights = self._repository.get_flights_for_trip(trip_id)
         expenses_total = self._repository.get_expenses_total(trip_id)
         immich_album_id = self._repository.get_immich_album_id(trip_id, user_id)
+        destinations = self._repository.list_destinations([trip_id]).get(trip_id, [])
 
-        return trip, is_owner, owner_username, flights, expenses_total, immich_album_id
+        return (
+            trip,
+            is_owner,
+            owner_username,
+            flights,
+            expenses_total,
+            immich_album_id,
+            destinations,
+        )
 
     # -- Create / update / delete --------------------------------------------
 
@@ -151,6 +179,8 @@ class TripService:
         end_date: str,
         origin_airport: str,
         destination_airport: str,
+        places: dict | None = None,
+        destinations: list | None = None,
     ) -> str:
         trip_id = str(uuid.uuid4())
         now = _now_iso()
@@ -165,7 +195,61 @@ class TripService:
             user_id,
             now,
         )
+        if places:
+            self._repository.update(trip_id, user_id, {**places, "updated_at": now})
+        if destinations:
+            self._repository.set_destinations(trip_id, self.destination_rows(destinations), now)
         return trip_id
+
+    @staticmethod
+    def destination_rows(places) -> list[dict]:
+        """Normalise the destination list to the rows the table takes.
+
+        Blank names are dropped rather than stored: an empty row is what a
+        half-filled form leaves behind, and a nameless destination would count
+        as a place the trip goes to.
+        """
+        rows: list[dict] = []
+        for place in places or []:
+            data = dict(place) if isinstance(place, Mapping) else place.model_dump()
+            name = str(data.get("name") or "").strip()
+            if not name:
+                continue
+            rows.append(
+                {
+                    "name": name,
+                    "lat": data.get("lat"),
+                    "lon": data.get("lon"),
+                    "country_code": (data.get("country_code") or None),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def place_columns(prefix: str, place: PlaceFieldsDTO | Mapping[str, object]) -> dict:
+        """Flatten a place into its `<prefix>_*` columns.
+
+        Takes the DTO *or* a plain mapping, because the two routes hand it over
+        differently: create passes the `PlaceFieldsDTO` straight through, while
+        update goes via `body.model_dump()`, which turns nested models into
+        dicts. Assuming the object form crashed every trip edit with a 500 —
+        the edit form always sends both places, so it was not only date changes.
+        """
+        data = dict(place) if isinstance(place, Mapping) else place.model_dump()
+        name = str(data.get("name") or "").strip()
+        if not name:
+            return {
+                f"{prefix}_place": None,
+                f"{prefix}_lat": None,
+                f"{prefix}_lon": None,
+                f"{prefix}_country": None,
+            }
+        return {
+            f"{prefix}_place": name,
+            f"{prefix}_lat": data.get("lat"),
+            f"{prefix}_lon": data.get("lon"),
+            f"{prefix}_country": (data.get("country_code") or None),
+        }
 
     def update_trip(self, trip_id: str, user_id: int, updates: dict) -> None:
         """``updates`` maps DTO field name to new value; ``booking_refs`` (a list)
@@ -174,14 +258,39 @@ class TripService:
             raise TripError("Trip not found", 404)
 
         column_updates = dict(updates)
+        # The form's date fields edit the *declared* span; `start_date`/`end_date`
+        # are derived and are rewritten by `recompute_span` from the contents
+        # unioned with this pair. Writing both keeps a trip with no legs showing
+        # the dates it was just given.
+        for field, planned in (
+            ("start_date", "planned_start_date"),
+            ("end_date", "planned_end_date"),
+        ):
+            if field in column_updates:
+                column_updates[planned] = column_updates[field] or None
+        # `origin` arrives as a nested place object; the table stores it
+        # flattened, and the nested key is not a column.
+        place = column_updates.pop("origin", None)
+        if place is not None:
+            column_updates.update(self.place_columns("origin", place))
+
+        # Destinations are rows, not columns — written after the trip row itself.
+        destinations = column_updates.pop("destinations", None)
         if "booking_refs" in column_updates:
             column_updates["booking_refs"] = json.dumps(column_updates["booking_refs"])
 
-        if not column_updates:
-            return
+        if destinations is not None:
+            self._repository.set_destinations(
+                trip_id, self.destination_rows(destinations), _now_iso()
+            )
 
         column_updates["updated_at"] = _now_iso()
         self._repository.update(trip_id, user_id, column_updates)
+
+        # Editing the declared span has to re-derive the real one: shortening a
+        # trip's dates is the only way its span ever shrinks.
+        if "planned_start_date" in column_updates or "planned_end_date" in column_updates:
+            self._repository.recompute_span(trip_id, _now_iso())
 
     def delete_trip(self, trip_id: str, user_id: int) -> None:
         if not self._is_owner(trip_id, user_id):

@@ -4,6 +4,7 @@
   import { dayNotesApi } from '../api/client';
   import { t } from '../lib/i18n';
   import TripDayCard, { type DayContent } from './TripDayCard.svelte';
+  import { legDateKeys, localDateKey } from '../lib/utils';
 
   interface Props {
     trip: Trip;
@@ -43,51 +44,40 @@
     return days;
   }
 
-  function flightLocalDate(f: Flight): string | null {
-    if (!f.departure_datetime) return null;
-    try {
-      return new Date(f.departure_datetime).toLocaleDateString('en-CA', {
-        timeZone: f.departure_timezone ?? undefined,
-      });
-    } catch {
-      return f.departure_datetime.slice(0, 10);
+  /* A leg goes on **every day it covers**, not only the day it departs. A drive
+   * leaving on the 31st and arriving on the 1st used to be filed on the 31st
+   * alone, so the day spent on the road had an empty card — and the planner
+   * draws one card per day precisely so no day of a trip is blank. Which part
+   * of the leg belongs to which day is `legRoleFor`'s job, in the card. */
+  function groupByCoveredDays<T>(
+    list: T[],
+    from: (item: T) => string | null,
+    to: (item: T) => string | null,
+  ): Map<string, T[]> {
+    const map = new Map<string, T[]>();
+    for (const item of list) {
+      for (const date of legDateKeys(from(item), to(item))) {
+        if (!map.has(date)) map.set(date, []);
+        map.get(date)!.push(item);
+      }
     }
+    return map;
   }
 
   function groupFlightsByDate(flights: Flight[]): Map<string, Flight[]> {
-    const map = new Map<string, Flight[]>();
-    for (const f of flights) {
-      const date = flightLocalDate(f);
-      if (!date) continue;
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(f);
-    }
-    return map;
-  }
-
-  /** A leg belongs to the day it departs *locally*, not in UTC — a 08:00
-   * Beijing departure is 00:00Z and would otherwise land on the right day only
-   * by luck. Mirrors flightLocalDate, but the zone comes from the station. */
-  function segmentLocalDate(s: TripSegment): string | null {
-    if (!s.departure_datetime) return null;
-    try {
-      return new Date(s.departure_datetime).toLocaleDateString('en-CA', {
-        timeZone: s.departure.timezone ?? undefined,
-      });
-    } catch {
-      return s.departure_datetime.slice(0, 10);
-    }
+    return groupByCoveredDays(
+      flights,
+      (f) => localDateKey(f.departure_datetime, f.departure_timezone),
+      (f) => localDateKey(f.arrival_datetime, f.arrival_timezone),
+    );
   }
 
   function groupSegmentsByDate(list: TripSegment[]): Map<string, TripSegment[]> {
-    const map = new Map<string, TripSegment[]>();
-    for (const s of list) {
-      const date = segmentLocalDate(s);
-      if (!date) continue;
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(s);
-    }
-    return map;
+    return groupByCoveredDays(
+      list,
+      (s) => localDateKey(s.departure_datetime, s.departure.timezone),
+      (s) => localDateKey(s.arrival_datetime, s.arrival.timezone),
+    );
   }
 
   function parseContent(raw: string): DayContent {

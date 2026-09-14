@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Flight, TripSegment, SegmentType, TripStay, StayKind } from '../api/types';
   import { dayNotesApi } from '../api/client';
-  import { staysForDay } from '../lib/utils';
+  import { staysForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
   import Checkbox from './Checkbox.svelte';
@@ -104,6 +104,8 @@
     icon: string;
     isFlight: boolean;
     title: string;
+    /** "arrives" / "in transit" on the days of a leg that are not its first. */
+    note?: string;
     route: string;
     at: number;
   }
@@ -123,31 +125,72 @@
    * flights, because that is the order the day actually happens in. */
   const stayDay = $derived(staysForDay(stays, date));
 
+  /* A leg reaches this card on every day it covers, so the same leg appears on
+   * the 31st and the 1st. Its role says which end of it belongs here, and that
+   * role also decides where it sorts: a leg you are *arriving* on sits at its
+   * arrival time, and a day spent entirely in transit leads the day rather than
+   * pretending to happen at the departure time of a previous day. */
+  function roleOf(from: string | null, to: string | null): LegRole | null {
+    return legRoleFor(date, from, to);
+  }
+
+  function roleLabel(role: LegRole): string {
+    if (role === 'arrives') return $t('planner.leg_arrives');
+    if (role === 'transit') return $t('planner.leg_transit');
+    return '';
+  }
+
   const entries = $derived.by((): DayEntry[] => {
-    const rows: DayEntry[] = flights.map((f) => ({
-      id: `flight-${f.id}`,
-      icon: '✈︎',
-      isFlight: true,
-      title: f.flight_number,
-      route:
-        `${f.departure_airport} ${formatFlightTime(f.departure_datetime, f.departure_timezone)}` +
-        ` → ${f.arrival_airport} ${formatFlightTime(f.arrival_datetime, f.arrival_timezone)}`,
-      at: instant(f.departure_datetime),
-    }));
+    const rows: DayEntry[] = [];
+
+    for (const f of flights) {
+      const role =
+        roleOf(
+          localDateKey(f.departure_datetime, f.departure_timezone),
+          localDateKey(f.arrival_datetime, f.arrival_timezone),
+        ) ?? 'departs';
+      rows.push({
+        id: `flight-${f.id}`,
+        icon: '✈︎',
+        isFlight: true,
+        title: f.flight_number,
+        note: roleLabel(role),
+        route:
+          `${f.departure_airport} ${formatFlightTime(f.departure_datetime, f.departure_timezone)}` +
+          ` → ${f.arrival_airport} ${formatFlightTime(f.arrival_datetime, f.arrival_timezone)}`,
+        at:
+          role === 'arrives'
+            ? instant(f.arrival_datetime)
+            : role === 'transit'
+              ? 0
+              : instant(f.departure_datetime),
+      });
+    }
 
     for (const seg of segments) {
       // Operator and number are both optional, so fall back to the transport
       // type rather than rendering a leg with no label at all.
       const label = [seg.operator, seg.number].filter(Boolean).join(' ');
+      const role =
+        roleOf(
+          localDateKey(seg.departure_datetime, seg.departure.timezone),
+          localDateKey(seg.arrival_datetime, seg.arrival.timezone),
+        ) ?? 'departs';
       rows.push({
         id: `segment-${seg.id}`,
         icon: SEGMENT_ICONS[seg.type] ?? '🚆',
         isFlight: false,
         title: label || $t(`segments.type_${seg.type}`),
+        note: roleLabel(role),
         route:
           `${seg.departure.name} ${formatFlightTime(seg.departure_datetime, seg.departure.timezone)}` +
           ` → ${seg.arrival.name} ${formatFlightTime(seg.arrival_datetime, seg.arrival.timezone)}`,
-        at: instant(seg.departure_datetime),
+        at:
+          role === 'arrives'
+            ? instant(seg.arrival_datetime)
+            : role === 'transit'
+              ? 0
+              : instant(seg.departure_datetime),
       });
     }
 
@@ -262,6 +305,7 @@
             <span class="day-flight-badge" class:is-flight={entry.isFlight}>{entry.icon}</span>
             <span class="day-flight-info">
               <strong>{entry.title}</strong>
+              {#if entry.note}<span class="day-flight-note">{entry.note}</span>{/if}
               {entry.route}
             </span>
           </div>
@@ -471,6 +515,14 @@
   /* Station names are far longer than IATA codes, so ground legs must wrap. */
   .day-flight-badge { flex-shrink: 0; }
   .day-flight-badge.is-flight { color: var(--primary, #3b82f6); }
+  /* The "arrives" / "in transit" marker on the days of a leg after its first —
+     muted, because the leg itself is the content and this only says which end
+     of it this day holds. */
+  .day-flight-note {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
   .day-flight-info { color: var(--text); }
 
   .note-textarea {

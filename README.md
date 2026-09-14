@@ -63,6 +63,7 @@ Want to try it before self-hosting? A public demo is available at:
 ### Ground transport (train, bus, ferry, car)
 - Add non-flight legs to a trip by hand — a train between two cities, an airport bus, a ferry — so a trip is not limited to the flights that bracket it
 - Station type-ahead backed by [Photon](https://photon.komoot.io) (OpenStreetMap): search "Xi'an North" and get the real station with coordinates
+- A **drive** looks up cities instead — Florianópolis → São Paulo — since a car journey has no station, and falls back to street addresses for a drive that starts at a door
 - Times are entered as local time at each station and stored as UTC, using the timezone derived from the station's coordinates — so durations across timezones are real elapsed time
 - Ground legs draw on the trip map as dashed straight lines, colour-coded per transport type (train, bus, ferry, car) and visually distinct from the great-circle flight arcs
 - They also show up in the day planner, interleaved with that day's flights in departure order, and extend the trip's date range so a day holding only a train still gets its own day card
@@ -145,6 +146,15 @@ Want to try it before self-hosting? A public demo is available at:
 - **Every other colour is a status**: green means done, red means trouble, amber means running late. That is the whole list. Nothing is tinted just to look less bare, which leaves the destination photographs and the airport codes as the most colourful things on screen
 - Trips read as luggage tags: a horizontal band with the destination photo printed down one edge, the name set large, and a status panel on the stub
 - Flights and ground legs render as lines on one departures board — departure time leading each row, the connecting leg drawn rather than typed
+- Inside a trip, a small line under the dates says what it holds — "2 voos · 1 balsa · 2 carros · 2 hospedagens · BRL 1.240" — so you can see the shape of it, and what it cost, without scrolling. The total updates as you add expenses rather than waiting for a reload
+- Shortening a trip past one of its own legs tells you which dates the legs are holding, rather than saving and appearing to do nothing
+- Adding a leg only offers dates inside the trip. The trip remembers the span you gave it when you created it, so the first leg you add does not shrink the trip down to its own day — and if you need a date outside, the form says so and points you at the trip's dates
+- A trip's origin and **destinations** are cities, picked with autocomplete — add as many as the trip visits. Each one counts toward the countries you have visited, and the cover photo picks one of them at random, so asking for a different image moves between the trip's cities
+- Creating a trip does not ask for booking references. A booking reference belongs to the flight or leg it was issued for, which is where you type it; search still finds a trip by any reference on any of its legs. Where a trip starts and ends comes from the legs you put in it, so there is nothing to fill in and nothing that is wrong for a rail trip
+- **On a wide screen the trip page reads as a spine and a margin**: the itinerary — transport, stays, the day planner, then documents — runs down the wide column, while the packing list, expenses, notes and rating sit in a narrower one beside it. The two columns flow independently, so a short card never leaves a blank hole under itself
+- A section with nothing in it explains what it is for on one line under its title, rather than drawing a card of empty space
+- **One button adds any leg.** Pick flight, train, bus, ferry or car and the form shows what that mode actually needs — an airport lookup for a flight, a station search for a train — instead of making you choose between "add flight" and "add ground transport" before you have described the trip. Times you have already typed survive changing your mind about the mode. Every field is on the page — nothing hidden behind a "more details" toggle — with the handful that are actually required marked in red
+- Expense descriptions wrap onto a second line instead of being cut off — in a narrow column the price still fits, and "Airport c…" tells you nothing about where the money went
 - **Navigation adapts to the screen**: a fixed icon rail on desktop, a floating dock on phones — one shared list of destinations behind both
 - Barlow, a grotesk drawn from public-transport signage, self-hosted so the app keeps its type offline
 - Full light and dark themes, following the system or forced from Settings; print styles force light

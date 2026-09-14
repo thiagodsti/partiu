@@ -67,7 +67,9 @@
   }
 </script>
 
-<TopNav title={$t('nav.notifications')} backHref="#/trips" />
+<!-- No back arrow: this is a nav destination, not a page you drilled into, and
+     the rail/dock is already the way back to anywhere. -->
+<TopNav title={$t('notifications.title')} />
 
 <div class="main-content">
   {#if loading}

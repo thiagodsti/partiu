@@ -6,9 +6,12 @@
   interface Props {
     tripId: string;
     defaultCurrency?: string;
+    /** Called after load and after every mutation, so the trip header can show
+     *  a total that is current rather than one fetched with the page. */
+    onchange?: (totals: Record<string, number>) => void;
   }
 
-  const { tripId, defaultCurrency = 'EUR' }: Props = $props();
+  const { tripId, defaultCurrency = 'EUR', onchange }: Props = $props();
 
   export const CURRENCIES = [
     'AED', 'ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP',
@@ -168,6 +171,18 @@
   const sortedTotals = $derived(
     Object.entries(totals).sort(([a], [b]) => a.localeCompare(b))
   );
+
+  /* Report upward whenever the totals move — the list is the only thing that
+   * knows an expense was added, edited or deleted.
+   *
+   * Gated on `loading`, because the effect runs once on mount with an empty
+   * list and an empty object is not nullish: the trip header, which seeds
+   * itself from the trip payload and falls back to it, would take `{}` as the
+   * real answer and show no total at all. A failed load is silent for the same
+   * reason: the seeded total is better than none. */
+  $effect(() => {
+    if (!loading && !loadError) onchange?.(totals);
+  });
 
   function formatAmount(n: number): string {
     return n % 1 === 0
@@ -613,6 +628,10 @@
     flex-direction: column;
     gap: var(--space-xs);
     margin-bottom: var(--space-sm);
+    /* The rows have to answer to the width they actually get, not the window's.
+       In the trip page's sidebar this list is ~380px wide on a 1400px screen,
+       where a viewport media query still thinks it is on a desktop. */
+    container-type: inline-size;
   }
 
   .expense-row {
@@ -633,9 +652,11 @@
   }
 
   .expense-desc {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wraps rather than truncating. The amount and the buttons are fixed-width,
+       so in a narrow column the description was the only thing that gave, and
+       it is the only part of the row that says what the money was for —
+       "Lunch in Rei..." and "Airport c..." are two lines of nothing. */
+    overflow-wrap: anywhere;
   }
 
   .expense-meta {
@@ -866,6 +887,10 @@
     gap: var(--space-xs);
   }
 
+  .expense-add-form {
+    container-type: inline-size;
+  }
+
   .expense-add-inputs {
     display: grid;
     grid-template-columns: 1fr auto auto;
@@ -887,38 +912,58 @@
     margin-top: var(--space-xs);
   }
 
-  @media (max-width: 540px) {
+  /* Narrow *container*, not narrow window: this is the phone layout, and the
+     sidebar column needs it too. Description keeps the first row to itself;
+     currency and amount drop below it; the buttons span both rows. */
+  @container (max-width: 480px) {
     .expense-row {
-      grid-template-columns: 1fr auto;
-      grid-template-rows: auto auto;
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas:
+        'main main main'
+        'currency amount actions';
+      align-items: center;
+      row-gap: var(--space-xs);
+    }
+
+    /* The description gets the full width of the row rather than sharing it
+       with the buttons — otherwise a four-word expense wraps to three lines
+       against a column of empty space. */
+    .expense-main {
+      grid-area: main;
     }
 
     .expense-currency {
-      grid-row: 2;
+      grid-area: currency;
       text-align: left;
+      min-width: 0;
     }
 
     .expense-amount {
-      grid-row: 2;
+      grid-area: amount;
+      text-align: left;
+      min-width: 0;
     }
 
     .expense-actions {
-      grid-column: 2;
-      grid-row: 1 / 3;
-      align-self: center;
+      grid-area: actions;
     }
 
     .expense-edit-row {
       grid-template-columns: 1fr;
     }
 
-    .expense-input-amount,
-    .expense-select-currency {
+    .expense-edit-row .expense-input-amount,
+    .expense-edit-row .expense-select-currency {
       width: 100%;
     }
 
     .expense-add-inputs {
       grid-template-columns: 1fr;
+    }
+
+    .expense-add-inputs .expense-input-amount,
+    .expense-add-inputs .expense-select-currency {
+      width: 100%;
     }
   }
 </style>

@@ -9,14 +9,30 @@ byte-for-byte rather than trimming it, since trimming is a separate decision.
 from pydantic import BaseModel
 
 
+class TripPlaceDTO(BaseModel):
+    """One place a trip goes to, as the traveller picked it."""
+
+    name: str
+    lat: float | None = None
+    lon: float | None = None
+    country_code: str | None = None
+
+
 class TripListItemDTO(BaseModel):
     id: str
     name: str
     booking_refs: list[str]
     start_date: str | None
     end_date: str | None
+    planned_start_date: str | None
+    planned_end_date: str | None
     origin_airport: str | None
     destination_airport: str | None
+    origin_place: str | None
+    origin_lat: float | None
+    origin_lon: float | None
+    origin_country: str | None
+    destinations: list["TripPlaceDTO"]
     is_auto_generated: int
     user_id: int | None
     created_at: str
@@ -44,8 +60,15 @@ class TripDetailDTO(BaseModel):
     booking_refs: list[str]
     start_date: str | None
     end_date: str | None
+    planned_start_date: str | None
+    planned_end_date: str | None
     origin_airport: str | None
     destination_airport: str | None
+    origin_place: str | None
+    origin_lat: float | None
+    origin_lon: float | None
+    origin_country: str | None
+    destinations: list["TripPlaceDTO"]
     is_auto_generated: int
     user_id: int | None
     created_at: str
@@ -64,13 +87,28 @@ class TripListResponseDTO(BaseModel):
     trips: list[TripListItemDTO]
 
 
+class PlaceFieldsDTO(BaseModel):
+    """A trip end as the user picked it: a name, optional coordinates, and the
+    geocoder's country code. Coordinates are optional because a hand-typed place
+    must still save — it simply contributes no country and no map position."""
+
+    name: str = ""
+    lat: float | None = None
+    lon: float | None = None
+    country_code: str | None = None
+
+
 class TripCreateDTO(BaseModel):
     name: str
     booking_refs: list[str] = []
+    # The dates the form asks for are the *declared* span; the stored
+    # `start_date`/`end_date` are recomputed from the trip's contents plus these.
     start_date: str = ""
     end_date: str = ""
     origin_airport: str = ""
     destination_airport: str = ""
+    origin: PlaceFieldsDTO | None = None
+    destinations: list[PlaceFieldsDTO] | None = None
 
 
 class TripCreateResponseDTO(BaseModel):
@@ -85,6 +123,21 @@ class TripUpdateDTO(BaseModel):
     end_date: str | None = None
     origin_airport: str | None = None
     destination_airport: str | None = None
+    origin: PlaceFieldsDTO | None = None
+    destinations: list[PlaceFieldsDTO] | None = None
+
+
+class CitySearchResultDTO(BaseModel):
+    """One populated-place candidate from `GET /api/cities/search`."""
+
+    name: str
+    city: str
+    address: str
+    country: str
+    countrycode: str
+    category: str
+    lat: float
+    lon: float
 
 
 class TripIdResponseDTO(BaseModel):

@@ -3,6 +3,7 @@ trip with flight counts, owner usernames, expense totals, Immich album links, an
 the pre-normalised search index."""
 
 import sqlite3
+import uuid
 
 from ..database import db_conn, db_write
 from .domain import Trip
@@ -179,7 +180,8 @@ class TripRepository:
                     GROUP_CONCAT(COALESCE(dep.country_code,    ''), ' ') AS dep_countries,
                     GROUP_CONCAT(COALESCE(arr.country_code,    ''), ' ') AS arr_countries,
                     GROUP_CONCAT(COALESCE(f.airline_name,      ''), ' ') AS airlines,
-                    GROUP_CONCAT(COALESCE(f.flight_number,     ''), ' ') AS flight_nums
+                    GROUP_CONCAT(COALESCE(f.flight_number,     ''), ' ') AS flight_nums,
+                    GROUP_CONCAT(COALESCE(f.booking_reference, ''), ' ') AS booking_refs
                 FROM flights f
                 LEFT JOIN airports dep ON dep.iata_code = f.departure_airport
                 LEFT JOIN airports arr ON arr.iata_code = f.arrival_airport
@@ -191,6 +193,81 @@ class TripRepository:
         return {r["trip_id"]: r for r in rows}
 
     # -- Writes: trip CRUD ---------------------------------------------------
+
+    def list_destinations(self, trip_ids: list[str]) -> dict[str, list[dict]]:
+        """trip_id -> its destinations, in the order the traveller listed them."""
+        if not trip_ids:
+            return {}
+        placeholders = ",".join("?" * len(trip_ids))
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"""SELECT trip_id, name, lat, lon, country_code
+                    FROM trip_destinations
+                    WHERE trip_id IN ({placeholders})
+                    ORDER BY trip_id, sort_order, rowid""",
+                trip_ids,
+            ).fetchall()
+        out: dict[str, list[dict]] = {}
+        for row in rows:
+            out.setdefault(row["trip_id"], []).append(
+                {
+                    "name": row["name"],
+                    "lat": row["lat"],
+                    "lon": row["lon"],
+                    "country_code": row["country_code"],
+                }
+            )
+        return out
+
+    def set_destinations(self, trip_id: str, places: list[dict], now: str) -> None:
+        """Replace a trip's destinations wholesale.
+
+        Delete-then-insert rather than a diff: the list is short, it is edited as
+        a whole on the form, and its *order* is part of what the user chose — a
+        diff would have to renumber `sort_order` anyway.
+        """
+        with db_write() as conn:
+            conn.execute("DELETE FROM trip_destinations WHERE trip_id = ?", (trip_id,))
+            conn.executemany(
+                """INSERT INTO trip_destinations
+                       (id, trip_id, name, lat, lon, country_code, sort_order, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        str(uuid.uuid4()),
+                        trip_id,
+                        place["name"],
+                        place.get("lat"),
+                        place.get("lon"),
+                        place.get("country_code"),
+                        index,
+                        now,
+                    )
+                    for index, place in enumerate(places)
+                ],
+            )
+
+    def get_segment_booking_refs(self, trip_ids: list[str]) -> dict[str, str]:
+        """trip_id -> its ground legs' booking references, space-joined.
+
+        A bulk sibling of ``get_search_index_rows`` rather than a join inside it:
+        that query is ``FROM flights``, so a rail-only trip produces no row there
+        at all. Searching a booking reference has to keep working now that the
+        reference is typed on the leg rather than on the trip.
+        """
+        if not trip_ids:
+            return {}
+        placeholders = ",".join("?" * len(trip_ids))
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"""SELECT trip_id,
+                           GROUP_CONCAT(COALESCE(booking_reference, ''), ' ') AS refs
+                    FROM trip_segments
+                    WHERE trip_id IN ({placeholders})
+                    GROUP BY trip_id""",
+                trip_ids,
+            ).fetchall()
+        return {row["trip_id"]: row["refs"] or "" for row in rows}
 
     def create(
         self,
@@ -208,14 +285,19 @@ class TripRepository:
         with db_write() as conn:
             conn.execute(
                 """INSERT INTO trips (id, name, booking_refs, start_date, end_date,
+                   planned_start_date, planned_end_date,
                    origin_airport, destination_airport, is_auto_generated, user_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     trip_id,
                     name,
                     booking_refs_json,
                     start_date,
                     end_date,
+                    # A trip created by hand declares its span; one built by
+                    # auto-grouping has no declaration, only its contents.
+                    start_date or None if not is_auto_generated else None,
+                    end_date or None if not is_auto_generated else None,
                     origin_airport,
                     destination_airport,
                     1 if is_auto_generated else 0,
@@ -293,6 +375,14 @@ class TripRepository:
         cards and the destination photo lookup; a train station has no code to
         put there.
 
+        The **declared** span (`planned_start_date` / `planned_end_date`, typed on
+        the trip form) is unioned in alongside the contents. Without it the span
+        of a hand-made trip collapses to its first leg's day the moment that leg
+        is added, which makes it useless as the bound on a date picker — the
+        return leg would already fall outside its own trip. Unioning means the
+        derived span can only grow past what was declared, and the declared pair
+        stays editable so it can still shrink when the traveller says so.
+
         MIN/MAX are the aggregate forms, not the two-argument scalar ones: the
         scalars return NULL when either side is NULL, which would blank the span
         of a trip that has flights but no segments (or the reverse).
@@ -306,6 +396,8 @@ class TripRepository:
                         SELECT DATE(departure_datetime) FROM trip_segments WHERE trip_id = ?
                         UNION ALL
                         SELECT check_in_date FROM trip_stays WHERE trip_id = ?
+                        UNION ALL
+                        SELECT planned_start_date FROM trips WHERE id = ?
                     )
                 ),
                 end_date = (
@@ -315,6 +407,8 @@ class TripRepository:
                         SELECT DATE(arrival_datetime) FROM trip_segments WHERE trip_id = ?
                         UNION ALL
                         SELECT check_out_date FROM trip_stays WHERE trip_id = ?
+                        UNION ALL
+                        SELECT planned_end_date FROM trips WHERE id = ?
                     )
                 ),
                 origin_airport = (
@@ -327,7 +421,7 @@ class TripRepository:
                 ),
                 updated_at = ?
             WHERE id = ?""",
-            (trip_id,) * 8 + (now, trip_id),
+            (trip_id,) * 10 + (now, trip_id),
         )
 
     # -- Flight assignment -----------------------------------------------------

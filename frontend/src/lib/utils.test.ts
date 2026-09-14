@@ -1,30 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import type { Flight, TripSegment, TripStay } from '../api/types';
 import {
+  accommodationGaps,
+  addDaysToDateKey,
+  cabinLabel,
+  connectionInfo,
+  dateDividerInfo,
+  daysBetweenDateKeys,
   escapeHtml,
-  formatDuration,
+  flightStatus,
+  flightToLeg,
+  formatCurrencyTotals,
   formatDate,
   formatDateRange,
   formatDayMonth,
-  cabinLabel,
-  flightStatus,
+  formatDuration,
   inferTripStatus,
-  timeUntilTrip,
-  seatMapUrl,
-  splitLegs,
-  connectionInfo,
+  legDateKeys,
+  legRoleFor,
   legStats,
-  dateDividerInfo,
-  toLocalInputValue,
-  flightToLeg,
+  localDateKey,
+  seatMapUrl,
   segmentToLeg,
+  splitLegs,
   splitTransport,
-  daysBetweenDateKeys,
-  addDaysToDateKey,
   stayNightCount,
-  staysForDay,
-  accommodationGaps,
   stayOutsideTravel,
+  staysForDay,
+  timeUntilTrip,
+  toLocalInputValue,
+  tripContents,
 } from './utils';
 
 // ---- helpers ----
@@ -870,5 +875,112 @@ describe('stayOutsideTravel', () => {
     // The overrun bound comes off the train too, not just off flights.
     const late = makeStay({ check_in_date: '2024-07-01', check_out_date: '2024-07-04', nights: 3 });
     expect(stayOutsideTravel(late, [], [segment])).toBe('overruns');
+  });
+});
+
+describe('legDateKeys / legRoleFor', () => {
+  // A drive from Florianópolis leaving on the 31st and arriving on the 1st was
+  // filed on the 31st alone, so the day spent on the road had an empty card.
+  it('covers every day from departure to arrival', () => {
+    expect(legDateKeys('2026-12-31', '2027-01-02')).toEqual([
+      '2026-12-31',
+      '2027-01-01',
+      '2027-01-02',
+    ]);
+  });
+
+  it('is a single day when the leg lands the same day', () => {
+    expect(legDateKeys('2026-12-31', '2026-12-31')).toEqual(['2026-12-31']);
+  });
+
+  it('degrades to one day when the arrival is missing or backwards', () => {
+    expect(legDateKeys('2026-12-31', null)).toEqual(['2026-12-31']);
+    // A mistyped year must not produce a backwards range, or decades of cards.
+    expect(legDateKeys('2026-12-31', '2025-12-31')).toEqual(['2026-12-31']);
+  });
+
+  it('has nothing to cover without a departure', () => {
+    expect(legDateKeys(null, '2027-01-02')).toEqual([]);
+  });
+
+  it('names which end of the leg belongs to a day', () => {
+    const from = '2026-12-31';
+    const to = '2027-01-02';
+    expect(legRoleFor('2026-12-31', from, to)).toBe('departs');
+    expect(legRoleFor('2027-01-01', from, to)).toBe('transit');
+    expect(legRoleFor('2027-01-02', from, to)).toBe('arrives');
+    expect(legRoleFor('2027-01-03', from, to)).toBeNull();
+  });
+
+  it('calls a same-day leg a departure, not an arrival', () => {
+    expect(legRoleFor('2026-12-31', '2026-12-31', '2026-12-31')).toBe('departs');
+  });
+});
+
+describe('localDateKey', () => {
+  it('uses the local date at the place, not UTC', () => {
+    // 23:40 in São Paulo on the 31st is 02:40Z on the 1st.
+    expect(localDateKey('2027-01-01T02:40:00Z', 'America/Sao_Paulo')).toBe('2026-12-31');
+  });
+
+  it('returns null for a missing instant', () => {
+    expect(localDateKey(null)).toBeNull();
+  });
+});
+
+describe('tripContents', () => {
+  // A trip of two trains reading "✈ 0 flights" is true and useless; a road trip
+  // reading "3 legs" on the page that lists them is no better.
+  it('names every kind separately', () => {
+    expect(tripContents(2, ['car', 'ferry', 'car'], 3)).toEqual([
+      { icon: '✈', labelKey: 'trips.flight_count', count: 2 },
+      { icon: '⛴️', labelKey: 'trips.segment_count_ferry', count: 1 },
+      { icon: '🚗', labelKey: 'trips.segment_count_car', count: 2 },
+      { icon: '🛏', labelKey: 'trips.stay_count', count: 3 },
+    ]);
+  });
+
+  it('orders kinds the same way regardless of row order', () => {
+    const a = tripContents(0, ['car', 'train', 'ferry', 'bus'], 0).map((p) => p.labelKey);
+    const b = tripContents(0, ['bus', 'ferry', 'train', 'car'], 0).map((p) => p.labelKey);
+    expect(a).toEqual(b);
+    expect(a).toEqual([
+      'trips.segment_count_train',
+      'trips.segment_count_bus',
+      'trips.segment_count_ferry',
+      'trips.segment_count_car',
+    ]);
+  });
+
+  it('omits what the trip does not have', () => {
+    expect(tripContents(0, ['car'], 0)).toEqual([
+      { icon: '🚗', labelKey: 'trips.segment_count_car', count: 1 },
+    ]);
+  });
+
+  it('returns nothing for an empty trip, rather than a row of noughts', () => {
+    expect(tripContents(0, [], 0)).toEqual([]);
+  });
+
+  it('gives an unrecognised kind a neutral glyph and the generic label', () => {
+    expect(tripContents(0, ['spaceship', 'spaceship'], 0)).toEqual([
+      { icon: '↔', labelKey: 'trips.segment_count', count: 2 },
+    ]);
+  });
+});
+
+describe('formatCurrencyTotals', () => {
+  it('sorts by currency so the order does not follow insertion', () => {
+    expect(formatCurrencyTotals({ SEK: 900, EUR: 420 })).toEqual(['EUR 420', 'SEK 900']);
+  });
+
+  it('keeps no decimals on a whole number and both on a fractional one', () => {
+    expect(formatCurrencyTotals({ EUR: 420 })).toEqual(['EUR 420']);
+    expect(formatCurrencyTotals({ EUR: 420.5 })[0]).toMatch(/^EUR 420[.,]50$/);
+  });
+
+  it('has nothing to show for a trip with no expenses', () => {
+    expect(formatCurrencyTotals(undefined)).toEqual([]);
+    expect(formatCurrencyTotals({})).toEqual([]);
   });
 });

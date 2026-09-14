@@ -435,8 +435,20 @@ a:hover {
 .nav-item:hover,
 .nav-back:hover,
 .flight-row:hover,
-.doc-thumb:hover {
+.doc-thumb:hover,
+.rail-mark:hover,
+.nav-action:hover,
+/* Every button, however it is marked up. Plenty of controls are anchors —
+   "Editar viagem", "Exportar para calendário", "Cancelar" on every form — and
+   the blanket `a:hover` underline made them read as body-text links. A button
+   already has a shape; nothing else in the app underlines on hover either. */
+.btn:hover {
   text-decoration: none;
+}
+
+/* The mark is a control, so it answers the pointer rather than sitting inert. */
+.rail-mark:hover {
+  opacity: 0.85;
 }
 
 button {
@@ -513,6 +525,9 @@ img {
 }
 
 .rail-mark {
+  display: block;
+  cursor: pointer;
+  text-decoration: none;
   width: 40px;
   height: 40px;
   border-radius: 12px;
@@ -1594,6 +1609,41 @@ img {
   margin-top: var(--space-xs);
 }
 
+/* An advisory under a form: something the save will not do, said before the
+   user wonders why nothing happened. Amber is the "running late / heads up"
+   status in this design language — not an error, which is red. */
+.form-warning {
+  font-size: 0.85rem;
+  color: var(--warning-text);
+  margin: 0 0 var(--space-sm);
+}
+
+/* A repeatable place row: the picker takes the line, the remove button sits
+   beside it. `align-items: start` because PlaceInput grows a dropdown and a
+   hint line underneath, and a centred button would drift down with them. */
+.destination-row {
+  display: flex;
+  align-items: start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.destination-row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.destination-remove {
+  flex: 0 0 auto;
+  /* Matches the input's height so the two read as one row. */
+  min-height: 38px;
+}
+
+.destination-add {
+  align-self: start;
+  margin-top: var(--space-xs);
+}
+
 .page-form {
   max-width: 560px;
   margin: 0 auto;
@@ -1622,8 +1672,13 @@ img {
   margin-bottom: var(--space-xs);
 }
 
+/* Two fields share a row while there is room for both, and stack once there
+   is not. Without the wrap a phone squeezed a datetime input down to about
+   100px — wide enough to show "yyy" of its own placeholder — because a flex
+   row with no basis shrinks its children instead of breaking the line. */
 .form-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
 }
 
@@ -1631,8 +1686,15 @@ img {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
   min-width: 0;
+}
+
+/* The wrap basis belongs to fields *in a row*. `.form-section` is itself a
+   column flex container, so putting `flex: 1 1 200px` on every field gave a
+   field standing on its own (notes, passenger name) a 200px basis on its
+   HEIGHT — a textarea followed by a hand's width of empty card. */
+.form-row > .form-field {
+  flex: 1 1 200px;
 }
 
 .form-actions {
@@ -1893,6 +1955,23 @@ img {
   flex-wrap: wrap;
 }
 
+/* The trip's inventory, under its dates: "✈ 2 flights · 🚗 2 drives · 🛏 3
+   stays". Small and muted — it answers "what is on this trip" at a glance,
+   and everything it names has its own section further down the page. */
+.trip-header-contents {
+  margin: var(--space-xs) 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--space-xs);
+  align-items: baseline;
+}
+
+.trip-header-sep {
+  color: var(--border-strong);
+}
+
 /* Sections are regions of a document, so they are quieter than the cards
    in the list: flatter background, heavier heading, no shadow. */
 .trip-section {
@@ -1908,6 +1987,71 @@ img {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-md);
+}
+
+/* A section whose whole body is a single line — an empty Documents card, the
+   rating stars — spent more height on padding than on content. Compact folds
+   that line onto the header row the card already draws. */
+.trip-section-compact {
+  padding: var(--space-md) var(--space-lg);
+}
+
+.trip-section-compact .trip-section-header {
+  margin-bottom: 0;
+}
+
+/* Title plus a muted aside on one line: "Documents  no documents yet". */
+/* An empty section's line is a sentence explaining what the section is for
+   ("Nenhum documento ainda. Adicione bilhetes de ônibus, vouchers…"), so it
+   wraps rather than truncating — half a sentence under an ellipsis teaches
+   nothing. It is a direct child of the header, ordered last and given a full
+   basis, so the title and the button keep the first line and the sentence runs
+   the width of the card underneath. Both locales' strings are long enough that
+   trying to seat them beside the title only ever produced a squeezed column. */
+.header-with-note {
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+}
+
+.section-note {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  min-width: 0;
+  flex-basis: 100%;
+  order: 3;
+}
+
+/* The stars are wide — on a touch profile each glyph grows to 2.75rem — so the
+   header row has to be allowed to wrap rather than squeeze the title. */
+.rating-header {
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* Below 640px each star grows to 2.75rem for touch, so the five of them plus a
+   "clear" button are wider than a phone's content column. Without wrapping here
+   the button pushed the whole page sideways. */
+.rating-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-md);
+  max-width: 100%;
+}
+
+/* On a phone the stars have already dropped below the title, so they lead their
+   own row from the left and the button follows underneath — right-aligning a
+   wrapped row here left the stars floating in the middle of the card. */
+@media (max-width: 640px) {
+  .rating-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+.trip-rating-stars {
+  max-width: 100%;
 }
 
 .trip-section-title {
@@ -2001,35 +2145,66 @@ img {
 
 .section-hidden { display: none; }
 
-/* Two columns from 1000px up. The page is a set of independent regions —
-   transport, stays, planner, expenses — and reading them one per screen
-   width was a phone layout stretched across a desktop. The header, the
-   map and any full-page state stay full width; only sections flow. */
+/* Spine + sidebar from 1000px up — laid out by role, not by width.
+   The spine is the itinerary (transport, stays, planner): the subject of the
+   page, read top to bottom in the wide column. The aside is the trip's desk
+   (packing, documents, expenses, notes, rating): short, glanceable cards.
+
+   The two wrappers matter. An earlier version dropped all eight sections into
+   one 2-column grid, and grid lays items out in *row bands*: a three-line
+   Documents card next to a tall Expenses card left a hole under Documents
+   until the band closed, which is what read as random blank space between
+   sections. Two independent flows cannot open that hole at all —
+   `grid-auto-flow: dense` does not fix it, since it only backfills spans. */
 @media (min-width: 1000px) {
   .main-content.trip-page {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
     gap: 0 var(--space-md);
     align-items: start;
-    grid-auto-flow: row dense;
   }
 
+  /* Full width by default: header, cover, map, loading and empty states. */
   .main-content.trip-page > * {
     grid-column: 1 / -1;
   }
 
-  .main-content.trip-page > .trip-section {
-    grid-column: auto;
+  .main-content.trip-page > .trip-spine {
+    grid-column: 1;
+  }
+
+  .main-content.trip-page > .trip-aside {
+    grid-column: 2;
+  }
+}
+
+/* Below the breakpoint the page is one flow again, and the wrappers step out of
+   the box tree (`display: contents`) so the sections can be sequenced without
+   regard to the column they live in on desktop. Documents rides at the foot of
+   the left column on a wide screen, but on a phone that would put it between
+   the day planner and the packing list — it belongs down with the notes, which
+   is where you go looking for it. Everything else keeps its DOM order. */
+@media (max-width: 999.98px) {
+  .main-content.trip-page {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-content.trip-page > .trip-spine,
+  .main-content.trip-page > .trip-aside {
+    display: contents;
+  }
+
+  .trip-page .trip-section-documents {
+    order: 1;
+  }
+
+  .trip-page .trip-section-tail {
+    order: 2;
   }
 }
 
 /* ---- Documents ---- */
-.doc-empty {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
 .doc-upload-error {
   font-size: 0.85rem;
   color: var(--danger-text);

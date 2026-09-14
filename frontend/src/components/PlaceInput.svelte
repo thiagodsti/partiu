@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { stationsApi, placesApi } from '../api/client';
+  import { stationsApi, placesApi, citiesApi } from '../api/client';
   import type { PlaceResult, PlaceInputKind, PickedPlace } from '../api/types';
   import { t } from '../lib/i18n';
 
@@ -9,8 +9,10 @@
     /** Coordinates of the picked place, or null when the name was typed by hand. */
     lat: number | null;
     lon: number | null;
-    /** A station kind ('train' | 'bus' | 'ferry' | 'car') or 'stay'. Selects
-     * both the endpoint and the OSM tags it filters on. */
+    /** A station kind ('train' | 'bus' | 'ferry'), 'car', 'stay' or 'city'.
+     * Selects both the endpoint and the OSM tags it filters on. 'car' and
+     * 'city' both search settlements — a drive has no station — and both fall
+     * back to plain addresses when the settlement pass comes back thin. */
     kind: PlaceInputKind;
     placeholder?: string;
     id?: string;
@@ -43,6 +45,17 @@
    * one, since that is what distinguishes two results with the same name, and
    * city/country otherwise. */
   function label(s: PlaceResult): string {
+    // A car's ends are cities too, so it reads the same way — but both pickers
+    // can also return plain addresses, and those still want their address line.
+    //
+    // Photon's `address` for a city is the city itself ("Oslo" under "Oslo"),
+    // which distinguishes nothing, while the one in Minnesota reads "Marshall" —
+    // its county, with no hint of which country it is in. So a city shows region
+    // + country, dropping the region when it merely repeats the name.
+    if ((kind === 'city' || kind === 'car') && s.category === 'place') {
+      const region = s.city && s.city !== s.name ? s.city : '';
+      return [region, s.country].filter(Boolean).join(', ');
+    }
     return s.address || [s.city, s.country].filter(Boolean).join(', ');
   }
 
@@ -59,6 +72,7 @@
   /** The station wording is wrong on an accommodation form, where the thing
    * being picked is a hotel or a street. */
   const isStay = $derived(kind === 'stay');
+  const isCity = $derived(kind === 'city');
 
   async function runSearch(q: string) {
     const seq = ++requestSeq;
@@ -77,7 +91,12 @@
     try {
       // Stays search accommodation *and* plain addresses; a private rental is
       // usually only findable as the latter. Stations stay tag-filtered.
-      const found = kind === 'stay' ? await placesApi.search(q) : await stationsApi.search(q, kind);
+      const found =
+        kind === 'stay'
+          ? await placesApi.search(q)
+          : kind === 'city'
+            ? await citiesApi.search(q)
+            : await stationsApi.search(q, kind);
       if (seq !== requestSeq) return;
       queryCache.set(q.toLowerCase(), found);
       results = found;
@@ -157,15 +176,21 @@
 
   <span class="station-status">
     {#if searching}
-      <span class="station-spinner" aria-label={isStay ? $t('places.searching') : $t('segments.searching')}></span>
+      <span class="station-spinner" aria-label={isStay || isCity ? $t('places.searching') : $t('segments.searching')}></span>
     {:else if lat != null && lon != null}
-      <span class="station-pin" title={isStay ? $t('places.located') : $t('segments.located')}>📍</span>
+      <span class="station-pin" title={isStay || isCity ? $t('places.located') : $t('segments.located')}>📍</span>
     {/if}
   </span>
 
   {#if open && results.length > 0}
     <ul class="station-results">
-      {#each grouped as s, i (`${s.lat},${s.lon}`)}
+      <!-- Keyed on the index, not the coordinate pair. These rows hold no state
+           worth preserving across a re-render, and the coordinates come from a
+           third-party geocoder that does repeat a point under two labels — a
+           duplicate key is a hard error in Svelte, which took the whole page
+           down behind the app's error boundary. The server collapses those
+           repeats too; this is the half that cannot be re-broken from outside. -->
+      {#each grouped as s, i (i)}
         {#if i > 0 && s.category === 'address' && grouped[i - 1].category !== 'address'}
           <li class="place-group">{$t('places.addresses')}</li>
         {/if}
@@ -187,11 +212,11 @@
 
   {#if searchFailed}
     <p class="station-hint">
-      {isStay ? $t('places.lookup_failed') : $t('segments.lookup_failed')}
+      {isStay || isCity ? $t('places.lookup_failed') : $t('segments.lookup_failed')}
     </p>
   {:else if value.trim() && lat == null}
     <p class="station-hint">
-      {isStay ? $t('places.no_coords_hint') : $t('segments.no_coords_hint')}
+      {isCity ? $t('cities.no_coords_hint') : isStay ? $t('places.no_coords_hint') : $t('segments.no_coords_hint')}
     </p>
   {/if}
 </div>

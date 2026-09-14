@@ -210,3 +210,83 @@ describe('TripCard contents line', () => {
     expect(container.textContent).toContain('trips.flight_count_plural');
   });
 });
+
+describe('routing line with several destinations', () => {
+  // One line high whatever the trip does — the full list is on the trip page.
+  it('prints the first destination and a count', () => {
+    const { container } = render(TripCard, {
+      props: {
+        ...defaultProps,
+        trip: makeTrip({
+          origin_place: 'Florianópolis',
+          destinations: [
+            { name: 'São Paulo', lat: null, lon: null, country_code: 'BR' },
+            { name: 'Rio de Janeiro', lat: null, lon: null, country_code: 'BR' },
+          ],
+        }),
+      },
+    });
+    expect(container.querySelector('.trip-card-route')?.textContent).toBe(
+      'Florianópolis → São Paulo +1',
+    );
+  });
+
+  it('omits the count for a single destination', () => {
+    const { container } = render(TripCard, {
+      props: {
+        ...defaultProps,
+        trip: makeTrip({
+          origin_place: 'Florianópolis',
+          destinations: [{ name: 'São Paulo', lat: null, lon: null, country_code: 'BR' }],
+        }),
+      },
+    });
+    expect(container.querySelector('.trip-card-route')?.textContent).toBe(
+      'Florianópolis → São Paulo',
+    );
+  });
+});
+
+describe('the ground-transport chip', () => {
+  const mixed = (types: string[], count: number) =>
+    makeTrip({ flight_count: 0, segment_count: count, segment_types: types });
+
+  // A ferry and two drives used to read "🚆 3 legs" — the count was right and
+  // the icon claimed a train the trip never took.
+  it('shows one glyph per kind on a mixed trip, never a train by default', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: mixed(['ferry', 'car'], 3) },
+    });
+    // The i18n mock returns keys, so assert on the glyphs rather than the count.
+    expect(container.textContent).toContain('⛴️');
+    expect(container.textContent).toContain('🚗');
+    expect(container.textContent).not.toContain('🚆');
+  });
+
+  it('orders the glyphs the same way regardless of row order', () => {
+    const forwards = render(TripCard, {
+      props: { ...defaultProps, trip: mixed(['car', 'ferry'], 3) },
+    }).container.textContent;
+    const backwards = render(TripCard, {
+      props: { ...defaultProps, trip: mixed(['ferry', 'car'], 3) },
+    }).container.textContent;
+    expect(forwards?.includes('⛴️🚗')).toBe(true);
+    expect(backwards?.includes('⛴️🚗')).toBe(true);
+  });
+
+  it('still names a single-kind trip by its kind', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: mixed(['car'], 2) },
+    });
+    expect(container.textContent).toContain('🚗');
+    expect(container.textContent).not.toContain('🚆');
+  });
+
+  it('falls back to a neutral glyph when the kinds are unrecognised', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: mixed(['spaceship'], 1) },
+    });
+    expect(container.textContent).toContain('↔');
+    expect(container.textContent).not.toContain('🚆');
+  });
+});

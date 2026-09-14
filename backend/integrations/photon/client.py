@@ -59,7 +59,33 @@ _OSM_TAGS: dict[str, tuple[str, ...]] = {
         "tourism:motel",
         "tourism:chalet",
     ),
+    # A trip's own ends: populated places, not venues. Filtered by OSM *key*
+    # rather than by key:value — see `_SETTLEMENT_VALUES` for why the obvious
+    # `place:city` list does not work.
+    "city": ("place",),
+    # A drive has no station. Its ends are cities, or an address when the drive
+    # starts at a door rather than a town — the same shape as "stay", which is
+    # why both get the untagged second pass below.
+    "car": ("place",),
 }
+
+# Kinds whose tagged results are settlements rather than venues.
+_CITY_KINDS = ("city", "car")
+
+# Which `place:*` values count as somewhere you would name as a trip's end.
+#
+# Filtering the query to `place:city|town|village` looked right and was wrong:
+# Brazil maps its cities as **`place:municipality`**, so "Florianópolis" matched
+# nothing at all, and Norway does the same (Oslo's own node is a municipality
+# under a county). The reliable shape is to ask Photon for the whole `place` key
+# — it already ranks the real settlement first — and drop the values that are not
+# somewhere you travel *to*: hamlets and farms (four "Florianópolis" hamlets
+# outranked nothing but cluttered the list), localities, islets, squares, and the
+# administrative wrappers (state, region, county) that share a city's name.
+#
+# Suburbs and neighbourhoods are excluded deliberately: "São Paulo" returns one
+# of each, and a district of a city is not the city.
+_SETTLEMENT_VALUES = frozenset({"city", "municipality", "town", "village", "borough"})
 
 # Station kinds only — `_ALL_TAGS` is the fallback for the station picker, and
 # folding hotels into it would put them in the train-station dropdown.
@@ -210,13 +236,23 @@ def _collect(features: list[dict], limit: int, into: list[dict], seen: set) -> N
         result = _to_result(feature)
         if result is None:
             continue
+        # Two collapses, because Photon repeats itself in two different ways.
+        #
         # Large venues are frequently mapped as several nodes a few metres apart
-        # (Xi'an North comes back twice); collapsing on name+city keeps the
-        # picker readable.
+        # (Xi'an North comes back twice), which name+city catches.
+        #
+        # The *same* node also comes back twice under different labels: querying
+        # "Rio de Janeiro" returns Itaboraí once as its own city and once with
+        # the state as its city, at byte-identical coordinates. Those are one
+        # place, and letting both through put two identical rows in the picker —
+        # and crashed the page, because the picker keys its list on the
+        # coordinate pair and Svelte refuses a duplicate key.
         key = (result["name"].casefold(), result["city"].casefold())
-        if key in seen:
+        point = (result["lat"], result["lon"])
+        if key in seen or point in seen:
             continue
         seen.add(key)
+        seen.add(point)
         into.append(result)
         if len(into) >= limit:
             return
@@ -226,7 +262,8 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
     """Type-ahead candidates for a place.
 
     ``kind`` selects the OSM tag filter: a station kind ("train"/"bus"/"ferry"),
-    "stay" for accommodation, or None to search every station kind.
+    "stay" for accommodation, "city" for a populated place, or None to search
+    every station kind.
 
     For "stay" this may issue a **second, untagged** call. Hotels are mapped in
     OSM and searchable by name, but a private rental usually is not — its
@@ -253,8 +290,9 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
         params: list[tuple[str, str | int | float | None]] = [
             ("q", query),
             ("lang", "en"),
-            # Over-fetch: deduplication can collapse several features into one.
-            ("limit", str(limit * 3)),
+            # Over-fetch: deduplication can collapse several features into one,
+            # and the city filter below discards most of a `place` key's hits.
+            ("limit", str(limit * (8 if kind in _CITY_KINDS else 3))),
         ]
         if with_tags:
             params.extend(("osm_tag", tag) for tag in tags)
@@ -262,9 +300,25 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
 
     results: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    _collect(_fetch(params_for(True), "/api/", f"lookup for {query!r}"), limit, results, seen)
+    features = _fetch(params_for(True), "/api/", f"lookup for {query!r}")
+    if kind in _CITY_KINDS:
+        features = [
+            f
+            for f in features
+            if (f.get("properties") or {}).get("osm_value") in _SETTLEMENT_VALUES
+        ]
+    _collect(features, limit, results, seen)
 
-    if kind == "stay" and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
+    if kind in _CITY_KINDS:
+        # Every hit here is already a populated place by construction (the tag
+        # filter is `place:*`), but OSM's `place` key is *also* how a street-like
+        # feature is tagged, so the shared classifier would file them under
+        # "Addresses" and give the picker a divider above every row. This runs
+        # *before* the address fallback appends, so those keep their own class.
+        for result in results:
+            result["category"] = "place"
+
+    if kind in ("stay", "car") and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
         _collect(
             _fetch(params_for(False), "/api/", f"address lookup for {query!r}"),
             limit,
@@ -281,7 +335,14 @@ def search_stations(query: str, kind: str | None = None, limit: int = 8) -> list
 
     Kept as its own name because `/api/stations/search` is an existing endpoint
     and a "stay" reaching it would put hotels in the train-station dropdown.
+
+    "car" is the exception the name does not cover: a drive has no station, so it
+    goes to the settlement search instead. Routed through here rather than given
+    its own endpoint because the picker sends whichever segment type it is
+    editing, and a car is one of those.
     """
+    if kind == "car":
+        return search_places(query, "car", limit)
     return search_places(query, kind if kind in _STATION_KINDS else None, limit)
 
 

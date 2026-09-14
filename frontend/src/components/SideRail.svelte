@@ -16,7 +16,17 @@
 </script>
 
 <nav class="rail" aria-label={$t('nav.trips')}>
-  <span class="rail-mark" aria-hidden="true">P</span>
+  <!-- The mark is the one place the app names itself, so it points at the
+       project. `rel="noreferrer"` alongside `noopener` because the target is a
+       third-party host and there is nothing for it to learn from the referrer. -->
+  <a
+    class="rail-mark"
+    href="https://github.com/thiagodsti/partiu"
+    target="_blank"
+    rel="noopener noreferrer"
+    title={$t('nav.project')}
+    aria-label={$t('nav.project')}
+  >P</a>
 
   {#each NAV_ITEMS as item (item.href)}
     <a

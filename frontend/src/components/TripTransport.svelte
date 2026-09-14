@@ -115,13 +115,6 @@
 
   load();
 
-  function openAdd() {
-    form = emptyForm();
-    editingId = null;
-    formError = null;
-    showForm = true;
-  }
-
   function openEdit(s: TripSegment) {
     form = formFromSegment(s);
     editingId = s.id;
@@ -145,7 +138,8 @@
       operator: form.operator.trim() || null,
       number: form.number.trim() || null,
       booking_reference: form.booking_reference.trim() || null,
-      seat: form.seat.trim() || null,
+      // A car has no seat to be assigned; see AddTransportPage for the same rule.
+      seat: form.type === 'car' ? null : form.seat.trim() || null,
     };
   }
 
@@ -285,11 +279,13 @@
     </div>
 
     <div class="segment-form-row">
-      <label class="segment-field">
-        <span class="segment-label">{$t('segments.seat')}</span>
-        <input class="form-input" type="text" bind:value={form.seat}
-               placeholder={$t('segments.seat_placeholder')} />
-      </label>
+      {#if form.type !== 'car'}
+        <label class="segment-field">
+          <span class="segment-label">{$t('segments.seat')}</span>
+          <input class="form-input" type="text" bind:value={form.seat}
+                 placeholder={$t('segments.seat_placeholder')} />
+        </label>
+      {/if}
       <label class="segment-field">
         <span class="segment-label">{$t('segments.booking_ref')}</span>
         <input class="form-input" type="text" bind:value={form.booking_reference} />
@@ -313,9 +309,11 @@
     </div>
   </div>
 {:else}
-  <button class="btn btn-secondary btn-sm transport-add" onclick={openAdd}>
-    + {$t('segments.add')}
-  </button>
+  <!-- Adding happens on its own page, where one type picker covers flights and
+       ground legs alike; this inline form is only ever an editor now. -->
+  <a href="#/trips/{trip.id}/add-transport" class="btn btn-secondary btn-sm transport-add">
+    + {$t('trip.add_transport')}
+  </a>
 {/if}
 
 <style>

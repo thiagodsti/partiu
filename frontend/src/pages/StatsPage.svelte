@@ -93,7 +93,7 @@
   }
 </script>
 
-<TopNav title={$t('nav.stats')} />
+<TopNav title={$t('stats.title')} />
 
 <div class="main-content stats-page">
   {#if loading}

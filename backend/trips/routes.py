@@ -2,12 +2,15 @@
 Trip CRUD routes.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from ..auth import get_current_user
+from ..integrations.photon import client as photon
+from ..limiter import limiter
 from . import ical_service, trip_image_service, trip_immich_service, trip_service
 from .dto import (
+    CitySearchResultDTO,
     ImmichAlbumResponseDTO,
     ImmichAlbumStatusDTO,
     MergeRequestDTO,
@@ -29,6 +32,33 @@ from .mappers import trip_to_detail_dto, trip_to_list_item_dto
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
+# `/api/cities/search` cannot hang off the prefixed router, so it gets its own —
+# the same shape `stays/` uses for `/api/places/search`. It lives here because a
+# trip is its only caller.
+cities_router = APIRouter(tags=["trips"])
+
+
+# Rate-limited because every keystroke in the picker reaches it and each request
+# is proxied to a public geocoder rather than served locally.
+@cities_router.get("/api/cities/search", response_model=list[CitySearchResultDTO])
+@limiter.limit("60/minute")
+def search_cities(
+    request: Request,
+    q: str = "",
+    limit: int = 8,
+    user: dict = Depends(get_current_user),
+):
+    """Populated-place type-ahead for a trip's origin and destination.
+
+    Filtered to cities, towns and villages: a trip's ends are places, not venues,
+    and the narrower filter is also what keeps the result specific enough for the
+    destination photo lookup. Returns [] when the geocoder is disabled or
+    unreachable — the form falls back to free-text entry, which saves fine and
+    simply contributes no country and no photo.
+    """
+    results = photon.search_places(q, "city", limit)
+    return [CitySearchResultDTO(**{k: v for k, v in r.items() if k != "osm_id"}) for r in results]
+
 
 @router.get("", response_model=TripListResponseDTO)
 def list_trips(user: dict = Depends(get_current_user)):
@@ -37,6 +67,7 @@ def list_trips(user: dict = Depends(get_current_user)):
     dtos = [
         trip_to_list_item_dto(
             item.trip,
+            destinations=item.destinations,
             is_owner=item.is_owner,
             owner_username=item.owner_username,
             flight_count=item.flight_count,
@@ -56,13 +87,14 @@ def list_trips(user: dict = Depends(get_current_user)):
 def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
     """Return a single trip with its flights."""
     try:
-        trip, is_owner, owner_username, flights, expenses_total, immich_album_id = (
+        trip, is_owner, owner_username, flights, expenses_total, immich_album_id, destinations = (
             trip_service.get_trip(trip_id, user["id"])
         )
     except TripError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return trip_to_detail_dto(
         trip,
+        destinations=destinations,
         is_owner=is_owner,
         owner_username=owner_username,
         flights=flights,
@@ -85,6 +117,13 @@ def export_trip_ical(trip_id: str, user: dict = Depends(get_current_user)):
     )
 
 
+def _place_columns(body) -> dict:
+    """The trip's typed origin, flattened to columns — empty when none was given.
+    Destinations are rows, not columns, and are passed separately."""
+    place = getattr(body, "origin", None)
+    return trip_service.place_columns("origin", place) if place is not None else {}
+
+
 @router.post("", status_code=201, response_model=TripCreateResponseDTO)
 def create_trip(body: TripCreateDTO, user: dict = Depends(get_current_user)):
     """Create a new trip manually."""
@@ -96,6 +135,8 @@ def create_trip(body: TripCreateDTO, user: dict = Depends(get_current_user)):
         body.end_date,
         body.origin_airport,
         body.destination_airport,
+        places=_place_columns(body),
+        destinations=body.destinations,
     )
     return TripCreateResponseDTO(id=trip_id, name=body.name)
 

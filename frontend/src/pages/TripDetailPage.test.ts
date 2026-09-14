@@ -31,6 +31,14 @@ vi.mock('../api/client', () => ({
     imageUrl: (id: string) => `/api/boarding-passes/${id}/image`,
     delete: vi.fn(),
   },
+  expensesApi: {
+    list: vi.fn().mockResolvedValue([]),
+    participants: vi.fn().mockResolvedValue([]),
+    balances: vi.fn().mockResolvedValue({ balances: {} }),
+  },
+  guestsApi: { list: vi.fn().mockResolvedValue([]) },
+  segmentsApi: { list: vi.fn().mockResolvedValue([]) },
+  staysApi: { list: vi.fn().mockResolvedValue([]) },
   sharesApi: {
     listTripShares: vi.fn().mockResolvedValue([]),
     shareTrip: vi.fn(),
@@ -143,17 +151,128 @@ describe('TripDetailPage', () => {
     );
   });
 
-  it('renders add flight link', async () => {
+  // One entry point for flights and ground legs alike — the old page had two
+  // buttons, and the split was never how anyone thinks about a trip.
+  it('renders add transport link', async () => {
     mockGet.mockResolvedValue(TRIP);
     const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
     await waitFor(() =>
-      expect(container.querySelector('a[href="#/trips/trip-1/add-flight"]')).toBeInTheDocument(),
+      expect(container.querySelector('a[href="#/trips/trip-1/add-transport"]')).toBeInTheDocument(),
     );
+    expect(container.querySelector('a[href="#/trips/trip-1/add-flight"]')).toBeNull();
+  });
+
+  // The header answers "what is on this trip" without scrolling: every kind it
+  // holds, named. The card can only manage a coarser version.
+  it('summarises what the trip holds under its dates', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-header-contents')).toBeInTheDocument(),
+    );
+    // One flight on the fixture trip, and no ground legs or stays to name.
+    expect(container.querySelector('.trip-header-contents')?.textContent).toContain('✈');
+  });
+
+  it('shows the expense total alongside what the trip holds', async () => {
+    mockGet.mockResolvedValue({ ...TRIP, expenses_total: { EUR: 420, SEK: 900 } });
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-header-contents')?.textContent).toContain('EUR 420'),
+    );
+    expect(container.querySelector('.trip-header-contents')?.textContent).toContain('SEK 900');
+  });
+
+  it('says nothing at all when the trip is empty', async () => {
+    mockGet.mockResolvedValue({ ...TRIP, flights: [] });
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() => expect(container.textContent).toContain('trip.empty'));
+    expect(container.querySelector('.trip-header-contents')).toBeNull();
+  });
+
+  // Adding a leg belongs beside the list it adds to. The header carried a second
+  // copy of the same button, which is one door too many to the same room.
+  it('keeps the add button out of the trip header', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+    await waitFor(() => expect(container.querySelector('.trip-actions')).toBeInTheDocument());
+    expect(container.querySelector('.trip-actions a[href*="add-transport"]')).toBeNull();
   });
 
   it('shows empty state when trip has no flights', async () => {
     mockGet.mockResolvedValue({ ...TRIP, flights: [] });
     const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
     await waitFor(() => expect(container.textContent).toContain('trip.empty'));
+  });
+
+  // The desktop layout is spine + sidebar rather than one balanced grid, so the
+  // two columns flow independently and a short card cannot open a row-band hole
+  // beneath itself. That only holds while each section sits in the right wrapper.
+  it('puts the itinerary in the spine and the ancillary cards in the aside', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+    await waitFor(() => expect(container.querySelector('.trip-spine')).toBeInTheDocument());
+
+    const titlesIn = (sel: string) =>
+      [...container.querySelectorAll(`${sel} .trip-section-title`)].map((el) => el.textContent);
+
+    // Documents rides at the foot of the spine: it is the least-used card on the
+    // page, and keeping it out of the aside stops that column becoming a stack
+    // of three things nobody opens.
+    expect(titlesIn('.trip-spine')).toEqual([
+      'trip.transport',
+      'stays.title',
+      'planner.title',
+      'trip.documents',
+    ]);
+    expect(titlesIn('.trip-aside')).toEqual([
+      'packing.title',
+      'expenses.title',
+      'trips.note_label',
+      'trips.rating_label',
+    ]);
+  });
+
+  it('compacts the documents section when there is nothing in it', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+    await waitFor(() => expect(container.querySelector('.trip-aside')).toBeInTheDocument());
+
+    const docs = [...container.querySelectorAll('.trip-section')].find(
+      (el) => el.querySelector('.trip-section-title')?.textContent === 'trip.documents',
+    );
+    expect(docs).toHaveClass('trip-section-compact');
+    // The empty line moved onto the header row instead of being a body of its own.
+    expect(docs?.querySelector('.trip-section-header .section-note')?.textContent).toBe(
+      'trip.doc_empty',
+    );
+    expect(docs?.querySelector('.doc-grid')).toBeNull();
+  });
+
+  it('drops the compact treatment once a document exists', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    mockDocList.mockResolvedValue([
+      { id: 'doc-1', trip_id: 'trip-1', filename: 'visa.pdf', page_count: 1 },
+    ]);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() => expect(container.querySelector('.doc-grid')).toBeInTheDocument());
+    const docs = container.querySelector('.doc-grid')?.closest('.trip-section');
+    expect(docs).not.toHaveClass('trip-section-compact');
+    expect(docs?.querySelector('.section-note')).toBeNull();
+  });
+
+  it('keeps the rating stars on the section header row', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+    await waitFor(() =>
+      expect(container.querySelector('.trip-rating-stars')).toBeInTheDocument(),
+    );
+    expect(
+      container.querySelector('.trip-section-header .trip-rating-stars'),
+    ).toBeInTheDocument();
   });
 });

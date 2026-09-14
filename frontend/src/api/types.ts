@@ -38,6 +38,14 @@ export interface Trip {
   end_date: string | null;
   origin_airport: string | null;
   destination_airport: string | null;
+  /** The ends as the traveller typed them. Independent of the airport pair
+   *  above, which is derived from the flights and rewritten on every change. */
+  origin_place?: string | null;
+  origin_lat?: number | null;
+  origin_lon?: number | null;
+  origin_country?: string | null;
+  /** Every city the trip goes to, in the order they were listed. */
+  destinations?: TripPlace[];
   booking_refs: string[];
   flight_count?: number;
   segment_count?: number;
@@ -53,6 +61,14 @@ export interface Trip {
   note?: string | null;
   expenses_total?: Record<string, number>;
   search_index?: string;
+}
+
+/** One place a trip goes to, as the traveller picked it. */
+export interface TripPlace {
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  country_code: string | null;
 }
 
 export type SegmentType = 'train' | 'bus' | 'ferry' | 'car';
@@ -155,7 +171,7 @@ export interface PlaceResult {
 /** Kept as the old name so existing station callers read unchanged. */
 export type StationResult = PlaceResult;
 
-export type PlaceInputKind = SegmentType | 'stay';
+export type PlaceInputKind = SegmentType | 'stay' | 'city';
 
 /** What PlaceInput hands back when the user picks a result or types freely. */
 export interface PickedPlace {

@@ -139,11 +139,30 @@ export const usersApi = {
 
 // ---- Trips ----
 
+/** A trip end as the picker hands it over. The backend flattens this into the
+ * `origin_*` / `destination_*` columns; an empty name clears the whole set. */
+export interface TripPlaceInput {
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  country_code: string | null;
+}
+
 export const tripsApi = {
   list: () => get<TripsListResponse>('/api/trips'),
   get: (id: number | string) => get<Trip>(`/api/trips/${id}`),
-  create: (data: { name: string; start_date?: string; end_date?: string; origin_airport?: string; destination_airport?: string; booking_refs?: string[] }) => post<{ id: string }>('/api/trips', data),
-  update: (id: number | string, data: Partial<Trip>) => patch<Trip>(`/api/trips/${id}`, data),
+  create: (data: {
+    name: string;
+    start_date?: string;
+    end_date?: string;
+    origin_airport?: string;
+    destination_airport?: string;
+    booking_refs?: string[];
+    origin?: TripPlaceInput;
+    destinations?: TripPlaceInput[];
+  }) => post<{ id: string }>('/api/trips', data),
+  update: (id: number | string, data: Partial<Trip> & { origin?: TripPlaceInput; destinations?: TripPlaceInput[] }) =>
+    patch<Trip>(`/api/trips/${id}`, data),
   delete: (id: number | string) => del<null>(`/api/trips/${id}`),
   addFlight: (tripId: number | string, flightId: number | string) =>
     post<null>(`/api/trips/${tripId}/flights/${flightId}`),
@@ -444,6 +463,13 @@ export const stationsApi = {
  * reaching it would land in the train-station dropdown. */
 export const placesApi = {
   search: (q: string) => get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}`),
+};
+
+/** Cities, towns and villages — a trip's own ends. Separate from placesApi
+ * because that one is tag-filtered to accommodation and addresses: a city
+ * reaching it would come back as a street. */
+export const citiesApi = {
+  search: (q: string) => get<PlaceResult[]>(`/api/cities/search?q=${encodeURIComponent(q)}`),
 };
 
 export const guestsApi = {

@@ -572,6 +572,160 @@ export interface StayDay {
  * October booking, and on the 8th you are already leaving. Check-out therefore
  * gets an entry on its own day without that day counting as a night.
  */
+/**
+ * Per-currency totals as display strings: `{ EUR: 420, SEK: 900 }` →
+ * `["EUR 420", "SEK 900"]`.
+ *
+ * Currencies are sorted so the order does not depend on insertion, and a whole
+ * number keeps no decimals — "EUR 420,00" is noise on a summary line, while
+ * "EUR 420,50" needs both places.
+ */
+export function formatCurrencyTotals(totals: Record<string, number> | undefined): string[] {
+  return Object.entries(totals ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, total]) => {
+      const amount =
+        total % 1 === 0
+          ? total.toLocaleString()
+          : total.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+      return `${currency} ${amount}`;
+    });
+}
+
+/** One line of a trip's inventory: a glyph, a count, and the key that names it. */
+export interface TripContentPart {
+  icon: string;
+  labelKey: string;
+  count: number;
+}
+
+const SEGMENT_ICONS: Record<string, string> = {
+  train: '🚆',
+  bus: '🚌',
+  ferry: '⛴️',
+  car: '🚗',
+};
+
+/** Fixed glyph order, so the summary reads the same between renders rather
+ *  than following whatever order the rows came back in. */
+const SEGMENT_ORDER = ['train', 'bus', 'ferry', 'car'];
+
+/**
+ * What a trip actually holds, broken down by kind: "2 flights · 1 ferry ·
+ * 2 drives · 3 stays".
+ *
+ * The trip card computes a coarser version of this — a mixed trip there says
+ * "3 legs", because the card is a glance and has only per-kind *counts*, not
+ * the rows. Inside the trip the rows are loaded, so each kind can be named:
+ * "0 flights" on a road trip is true and useless, and so is "3 legs" when you
+ * are looking at the page that lists them.
+ *
+ * Zero-count kinds are omitted entirely; an empty trip returns `[]` and the
+ * caller shows nothing rather than a row of noughts.
+ */
+export function tripContents(
+  flightCount: number,
+  segmentTypes: string[],
+  stayCount: number,
+): TripContentPart[] {
+  const parts: TripContentPart[] = [];
+
+  if (flightCount > 0) {
+    parts.push({ icon: '✈', labelKey: 'trips.flight_count', count: flightCount });
+  }
+
+  const counts = new Map<string, number>();
+  for (const type of segmentTypes) {
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  // Known kinds first, in their fixed order; anything unrecognised keeps a
+  // neutral glyph and the generic label rather than being guessed at.
+  for (const type of SEGMENT_ORDER) {
+    const count = counts.get(type);
+    if (count) {
+      parts.push({ icon: SEGMENT_ICONS[type], labelKey: `trips.segment_count_${type}`, count });
+    }
+    counts.delete(type);
+  }
+  const unknown = [...counts.values()].reduce((a, b) => a + b, 0);
+  if (unknown > 0) {
+    parts.push({ icon: '↔', labelKey: 'trips.segment_count', count: unknown });
+  }
+
+  if (stayCount > 0) {
+    parts.push({ icon: '🛏', labelKey: 'trips.stay_count', count: stayCount });
+  }
+
+  return parts;
+}
+
+/**
+ * The local calendar date at a place for an instant stored as UTC.
+ *
+ * A leg belongs to the day it happens *locally*, not in UTC: an 08:00 Beijing
+ * departure is 00:00Z and would land on the right day only by luck.
+ */
+export function localDateKey(
+  iso: string | null | undefined,
+  timezone?: string | null,
+): string | null {
+  if (!iso) return null;
+  try {
+    // en-CA gives ISO-ordered parts, so the result is already a sortable key.
+    return new Date(iso).toLocaleDateString('en-CA', {
+      timeZone: timezone ?? undefined,
+    });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+/** What a leg is doing on a given day. */
+export type LegRole = 'departs' | 'arrives' | 'transit';
+
+/**
+ * Where a day sits inside a leg that may span several of them.
+ *
+ * A drive leaving on the 31st and arriving on the 1st used to be filed on the
+ * 31st alone, so the day spent on the road showed nothing at all — and the
+ * planner draws one card per day precisely so no day of a trip is blank.
+ *
+ * `to` missing, or before `from` (which a mistyped year produces), degrades to
+ * a single-day leg rather than an empty or backwards range.
+ */
+export function legRoleFor(
+  date: string,
+  from: string | null,
+  to: string | null,
+): LegRole | null {
+  if (!from) return null;
+  const end = to && to > from ? to : from;
+  if (date === from) return 'departs';
+  if (date === end) return 'arrives';
+  return date > from && date < end ? 'transit' : null;
+}
+
+/** Every local date a leg touches, departure day through arrival day. */
+export function legDateKeys(from: string | null, to: string | null): string[] {
+  if (!from) return [];
+  const end = to && to > from ? to : from;
+  const keys: string[] = [];
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const cur = new Date(fy, fm - 1, fd);
+  // A leg longer than this is a data error, not a journey; the cap stops a
+  // mistyped year from generating decades of day cards.
+  for (let i = 0; i < 366; i++) {
+    const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    keys.push(key);
+    if (key >= end) break;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return keys;
+}
+
 export function staysForDay(stays: TripStay[], date: string): StayDay {
   const nights: StayNight[] = [];
   const checkIns: TripStay[] = [];

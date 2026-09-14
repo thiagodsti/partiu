@@ -150,3 +150,69 @@ class TestListYearsWithFlights:
         repo = StatsRepository()
         user_id = _seed_user(test_db)
         assert repo.list_years_with_flights(user_id) == []
+
+
+class TestDestinationCountries:
+    """A trip's typed destinations are evidence of a country visited — often the
+    only evidence, on a trip that was driven."""
+
+    @staticmethod
+    def _trip(conn, trip_id: str, user_id: int, start: str, end: str) -> None:
+        conn.execute(
+            """INSERT INTO trips (id, name, booking_refs, start_date, end_date,
+                   is_auto_generated, user_id, created_at, updated_at)
+               VALUES (?, ?, '[]', ?, ?, 0, ?, ?, ?)""",
+            (trip_id, "Brasil", start, end, user_id, "2020-01-01T00:00:00", "2020-01-01T00:00:00"),
+        )
+
+    @staticmethod
+    def _destination(conn, trip_id: str, name: str, country: str | None) -> None:
+        conn.execute(
+            """INSERT INTO trip_destinations (id, trip_id, name, lat, lon, country_code, sort_order, created_at)
+               VALUES (?, ?, ?, NULL, NULL, ?, 0, ?)""",
+            (f"{trip_id}-{name}", trip_id, name, country, "2020-01-01T00:00:00"),
+        )
+
+    def test_a_finished_trip_contributes_its_destinations(self, test_db):
+        from backend.database import db_write
+        from backend.stats.repository import StatsRepository
+
+        with db_write() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,?,?)",
+                ("statsuser", "x", 0, "2020-01-01T00:00:00"),
+            )
+            self._trip(conn, "t-done", 1, "2020-03-01", "2020-03-10")
+            self._destination(conn, "t-done", "São Paulo", "BR")
+            self._destination(conn, "t-done", "Lisboa", "PT")
+
+        assert set(StatsRepository().list_ground_countries(1)) == {"BR", "PT"}
+
+    def test_a_trip_still_to_come_contributes_nothing(self, test_db):
+        """A country you plan to visit is not a country you have visited."""
+        from backend.database import db_write
+        from backend.stats.repository import StatsRepository
+
+        with db_write() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,?,?)",
+                ("future", "x", 0, "2020-01-01T00:00:00"),
+            )
+            self._trip(conn, "t-future", 1, "2099-03-01", "2099-03-10")
+            self._destination(conn, "t-future", "Tóquio", "JP")
+
+        assert StatsRepository().list_ground_countries(1) == []
+
+    def test_a_hand_typed_destination_has_no_country_to_give(self, test_db):
+        from backend.database import db_write
+        from backend.stats.repository import StatsRepository
+
+        with db_write() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,?,?)",
+                ("typed", "x", 0, "2020-01-01T00:00:00"),
+            )
+            self._trip(conn, "t-typed", 1, "2020-03-01", "2020-03-10")
+            self._destination(conn, "t-typed", "Somewhere", None)
+
+        assert StatsRepository().list_ground_countries(1) == []

@@ -4,7 +4,7 @@ import json
 import sqlite3
 
 from .domain import Trip
-from .dto import TripDetailDTO, TripListItemDTO
+from .dto import TripDetailDTO, TripListItemDTO, TripPlaceDTO
 
 
 def row_to_trip(row: sqlite3.Row) -> Trip:
@@ -18,8 +18,14 @@ def row_to_trip(row: sqlite3.Row) -> Trip:
         booking_refs=booking_refs,
         start_date=row["start_date"],
         end_date=row["end_date"],
+        planned_start_date=_col(row, "planned_start_date"),
+        planned_end_date=_col(row, "planned_end_date"),
         origin_airport=row["origin_airport"],
         destination_airport=row["destination_airport"],
+        origin_place=_col(row, "origin_place"),
+        origin_lat=_col(row, "origin_lat"),
+        origin_lon=_col(row, "origin_lon"),
+        origin_country=_col(row, "origin_country"),
         is_auto_generated=row["is_auto_generated"],
         user_id=row["user_id"],
         created_at=row["created_at"],
@@ -33,6 +39,7 @@ def row_to_trip(row: sqlite3.Row) -> Trip:
 def trip_to_list_item_dto(
     trip: Trip,
     *,
+    destinations: list[dict],
     is_owner: bool,
     owner_username: str | None,
     flight_count: int,
@@ -49,8 +56,15 @@ def trip_to_list_item_dto(
         booking_refs=trip.booking_refs,
         start_date=trip.start_date,
         end_date=trip.end_date,
+        planned_start_date=trip.planned_start_date,
+        planned_end_date=trip.planned_end_date,
         origin_airport=trip.origin_airport,
         destination_airport=trip.destination_airport,
+        origin_place=trip.origin_place,
+        origin_lat=trip.origin_lat,
+        origin_lon=trip.origin_lon,
+        origin_country=trip.origin_country,
+        destinations=[TripPlaceDTO(**place) for place in destinations],
         is_auto_generated=trip.is_auto_generated,
         user_id=trip.user_id,
         created_at=trip.created_at,
@@ -73,6 +87,7 @@ def trip_to_list_item_dto(
 def trip_to_detail_dto(
     trip: Trip,
     *,
+    destinations: list[dict],
     is_owner: bool,
     owner_username: str | None,
     flights: list[dict],
@@ -85,8 +100,15 @@ def trip_to_detail_dto(
         booking_refs=trip.booking_refs,
         start_date=trip.start_date,
         end_date=trip.end_date,
+        planned_start_date=trip.planned_start_date,
+        planned_end_date=trip.planned_end_date,
         origin_airport=trip.origin_airport,
         destination_airport=trip.destination_airport,
+        origin_place=trip.origin_place,
+        origin_lat=trip.origin_lat,
+        origin_lon=trip.origin_lon,
+        origin_country=trip.origin_country,
+        destinations=[TripPlaceDTO(**place) for place in destinations],
         is_auto_generated=trip.is_auto_generated,
         user_id=trip.user_id,
         created_at=trip.created_at,
@@ -100,3 +122,15 @@ def trip_to_detail_dto(
         expenses_total=expenses_total,
         immich_album_id=immich_album_id,
     )
+
+
+def _col(row: sqlite3.Row, name: str):
+    """Read a column that may not exist on rows from older queries.
+
+    `row_to_trip` is fed by several SELECTs, not all of which list every column;
+    a missing one is None rather than an IndexError.
+    """
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None

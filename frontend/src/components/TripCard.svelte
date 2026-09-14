@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import type { Trip } from '../api/types';
-  import { formatDateRange } from '../lib/utils';
-  import { t } from '../lib/i18n';
+  import type { Snippet } from "svelte";
+  import type { Trip } from "../api/types";
+  import { formatCurrencyTotals, formatDateRange } from "../lib/utils";
+  import { t } from "../lib/i18n";
 
   /**
    * A trip, read as a luggage tag: the destination photo printed down the
@@ -21,14 +21,26 @@
     refreshing: boolean;
     showStars?: boolean;
     /** Drives the edge stripe's colour; the badge snippet still supplies the words. */
-    status?: 'upcoming' | 'ongoing' | 'completed';
+    status?: "upcoming" | "ongoing" | "completed";
     onImageError: (e: Event) => void;
     onRefreshImage: (e: MouseEvent) => void;
     badge: Snippet;
     footer?: Snippet;
   }
 
-  const { trip, href, imageUrl, imgFailed, refreshing, showStars = false, status = 'upcoming', onImageError, onRefreshImage, badge, footer }: Props = $props();
+  const {
+    trip,
+    href,
+    imageUrl,
+    imgFailed,
+    refreshing,
+    showStars = false,
+    status = "upcoming",
+    onImageError,
+    onRefreshImage,
+    badge,
+    footer,
+  }: Props = $props();
 
   const dateRange = $derived(formatDateRange(trip.start_date, trip.end_date));
   const flightCount = $derived(trip.flight_count ?? 0);
@@ -37,11 +49,15 @@
   const segmentTypes = $derived(trip.segment_types ?? []);
 
   const SEGMENT_ICONS: Record<string, string> = {
-    train: '🚆',
-    bus: '🚌',
-    ferry: '⛴️',
-    car: '🚗',
+    train: "🚆",
+    bus: "🚌",
+    ferry: "⛴️",
+    car: "🚗",
   };
+
+  /** Fixed glyph order for a mixed trip, so the chip reads the same every time
+   *  rather than following whatever order the rows came back in. */
+  const SEGMENT_ORDER = ["train", "bus", "ferry", "car"];
 
   function plural(key: string, n: number): string {
     return $t(n === 1 ? key : `${key}_plural`, { values: { n } });
@@ -63,51 +79,69 @@
     if (flightCount > 0 || (segmentCount === 0 && stayCount === 0)) {
       // The flight chip stays on an empty trip: "0 flights" is the right
       // prompt when a trip genuinely has nothing on it yet.
-      parts.push(`✈ ${plural('trips.flight_count', flightCount)}`);
+      parts.push(`✈ ${plural("trips.flight_count", flightCount)}`);
     }
     if (segmentCount > 0) {
-      const onlyType = segmentTypes.length === 1 ? segmentTypes[0] : null;
-      const icon = onlyType ? (SEGMENT_ICONS[onlyType] ?? '🚆') : '🚆';
+      /* A trip of one kind names that kind ("2 drives"); a mixed one falls back
+       * to the generic "3 legs", because no single word covers ferry-and-car.
+       *
+       * The **icon** has to keep the same promise. It used to default to the
+       * train glyph whenever the types were mixed — or unknown — so a ferry and
+       * two drives showed up as "🚆 3 legs", claiming a train the trip never
+       * took. A mixed trip now shows one glyph per kind it actually contains,
+       * in a fixed order so the chip does not reshuffle between renders. */
+      const kinds = SEGMENT_ORDER.filter((type) => segmentTypes.includes(type));
+      const onlyType = kinds.length === 1 && segmentTypes.length === 1 ? kinds[0] : null;
+      // Neutral when the types are unrecognised: a glyph we cannot map is not a
+      // train either, and guessing is what this whole branch exists to avoid.
+      const icon = kinds.length ? kinds.map((type) => SEGMENT_ICONS[type]).join("") : "↔";
       const label = onlyType
         ? plural(`trips.segment_count_${onlyType}`, segmentCount)
-        : plural('trips.segment_count', segmentCount);
+        : plural("trips.segment_count", segmentCount);
       parts.push(`${icon} ${label}`);
     }
     if (stayCount > 0) {
-      parts.push(`🛏 ${plural('trips.stay_count', stayCount)}`);
+      parts.push(`🛏 ${plural("trips.stay_count", stayCount)}`);
     }
     return parts;
   });
-  const refs = $derived((trip.booking_refs ?? []).join(', '));
+  const refs = $derived((trip.booking_refs ?? []).join(", "));
   const showStarRow = $derived(showStars || !!trip.rating);
 
   /**
-   * The routing line a bag tag prints. Only shown when the two ends differ:
-   * `_recompute_span` sets destination to the *final* arrival, so a round
-   * trip has origin === destination and "GRU → GRU" would be noise.
+   * The routing line a bag tag prints.
+   *
+   * The **typed** ends win over the flight-derived airport codes: they are the
+   * only ones a person chose, and they are all a trip that is driven or ridden
+   * has — the airport pair is empty for those, since `_recompute_span` fills it
+   * from the flights alone. Each end falls back independently, so a trip flown
+   * out and driven back still prints both.
+   *
+   * Only shown when the two ends differ: `_recompute_span` sets destination to
+   * the *final* arrival, so a round trip has origin === destination and
+   * "GRU → GRU" would be noise.
    */
+  const from = $derived(trip.origin_place || trip.origin_airport || null);
+  const listed = $derived(trip.destinations ?? []);
+  const to = $derived(listed[0]?.name || trip.destination_airport || null);
+  /* A multi-stop trip prints its first destination and a count. The bag-tag
+   * line stays one line high whatever the trip does; the full list lives on
+   * the trip page, which is where you go when you want it. */
+  const extra = $derived(Math.max(0, listed.length - 1));
   const routing = $derived(
-    trip.origin_airport && trip.destination_airport && trip.origin_airport !== trip.destination_airport
-      ? `${trip.origin_airport} → ${trip.destination_airport}`
-      : (trip.origin_airport ?? null),
+    from && to && from !== to ? `${from} → ${to}${extra ? ` +${extra}` : ''}` : from,
   );
 
-  const expenseTotals = $derived(
-    Object.entries(trip.expenses_total ?? {})
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([currency, total]) => {
-        const s = total % 1 === 0
-          ? total.toLocaleString()
-          : total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return `${currency} ${s}`;
-      })
-  );
+  const expenseTotals = $derived(formatCurrencyTotals(trip.expenses_total));
 
-  function starFill(star: number, rating: number | null | undefined): '100%' | '50%' | '0%' {
+  function starFill(
+    star: number,
+    rating: number | null | undefined,
+  ): "100%" | "50%" | "0%" {
     const r = rating ?? 0;
-    if (r >= star) return '100%';
-    if (r >= star - 0.5) return '50%';
-    return '0%';
+    if (r >= star) return "100%";
+    if (r >= star - 0.5) return "50%";
+    return "0%";
   }
 </script>
 
@@ -128,11 +162,11 @@
       {/if}
       <button
         class="trip-card-img-refresh"
-        title={$t('trips.refresh_image')}
+        title={$t("trips.refresh_image")}
         disabled={refreshing}
         onclick={onRefreshImage}
       >
-        {refreshing ? '…' : '↻'}
+        {refreshing ? "…" : "↻"}
       </button>
     </div>
 
@@ -156,12 +190,17 @@
 
         <div class="trip-card-footer">
           {#if refs}
-            <span class="text-sm text-muted">{$t('trips.ref', { values: { refs } })}</span>
+            <span class="text-sm text-muted"
+              >{$t("trips.ref", { values: { refs } })}</span
+            >
           {/if}
           {#if showStarRow}
-            <span class="trip-card-stars" aria-label={$t('trips.rating_label')}>
-              {#each [1,2,3,4,5] as star}
-                <span class="star-display" style="--fill: {starFill(star, trip.rating)}"></span>
+            <span class="trip-card-stars" aria-label={$t("trips.rating_label")}>
+              {#each [1, 2, 3, 4, 5] as star}
+                <span
+                  class="star-display"
+                  style="--fill: {starFill(star, trip.rating)}"
+                ></span>
               {/each}
             </span>
           {/if}

@@ -491,3 +491,244 @@ class TestResponseCache:
             assert client.reverse_country(0.0, 0.0) is None
 
         assert fetch.call_count == 1
+
+
+class TestCitySearch:
+    """A trip's ends. Filtering the *query* to `place:city|town|village` looked
+    right and found nothing: Brazil maps its cities as `place:municipality`, so
+    "Florianópolis" matched no tag at all. The query asks for the whole `place`
+    key and the settlement filter happens on the way back."""
+
+    @staticmethod
+    def _feature(name: str, value: str, city: str = "", country: str = "Brazil"):
+        return {
+            "properties": {
+                "name": name,
+                "city": city,
+                "country": country,
+                "countrycode": "BR",
+                "osm_key": "place",
+                "osm_value": value,
+            },
+            "geometry": {"coordinates": [-48.548, -27.5954]},
+        }
+
+    def test_a_municipality_is_a_city(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [self._feature("Florianópolis", "municipality")]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features),
+        ):
+            client.clear_cache()
+            results = client.search_places("Florianópolis", "city")
+
+        assert [r["name"] for r in results] == ["Florianópolis"]
+
+    def test_hamlets_farms_and_administrative_areas_are_dropped(self):
+        """Four "Florianópolis" hamlets and the state of São Paulo are all noise
+        in a picker whose job is to name where a trip starts and ends."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            self._feature("São Paulo", "state"),
+            self._feature("São Paulo", "municipality", city="São Paulo"),
+            self._feature("Vila Nova", "hamlet"),
+            self._feature("Fazenda Velha", "farm"),
+            self._feature("Centro", "suburb"),
+            self._feature("Ilha Grande", "island"),
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=features),
+        ):
+            client.clear_cache()
+            results = client.search_places("São Paulo", "city")
+
+        assert [r["name"] for r in results] == ["São Paulo"]
+        assert results[0]["city"] == "São Paulo"
+
+    def test_city_results_are_never_classified_as_addresses(self):
+        """OSM's `place` key is also how a street-like feature is tagged, so the
+        shared classifier would put a divider above every row of this picker."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(
+                client, "_fetch", return_value=[self._feature("Curitiba", "municipality")]
+            ),
+        ):
+            client.clear_cache()
+            results = client.search_places("Curitiba", "city")
+
+        assert results[0]["category"] == "place"
+
+
+class TestCarSearch:
+    """A drive has no station. `car` used to fall through `_OSM_TAGS` to the
+    all-stations fallback, so typing "Florianópolis" for a drive searched bus
+    stops and streets and offered the city nowhere."""
+
+    @staticmethod
+    def _feature(name: str, key: str, value: str, lon: float = -48.548, lat: float = -27.5954):
+        return {
+            "properties": {
+                "name": name,
+                "city": "",
+                "country": "Brazil",
+                "countrycode": "BR",
+                "osm_key": key,
+                "osm_value": value,
+            },
+            "geometry": {"coordinates": [lon, lat]},
+        }
+
+    def test_a_car_leg_searches_settlements_not_stations(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        tagged = [
+            self._feature("Florianópolis", "place", "municipality"),
+            self._feature("Terminal Urbano Cidade de Florianópolis", "highway", "bus_stop"),
+        ]
+        # Two calls: the tagged settlement pass, then the untagged address pass
+        # that fires because the first came back thin.
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", side_effect=[tagged, []]),
+        ):
+            client.clear_cache()
+            results = client.search_stations("Florianópolis", "car")
+
+        assert [r["name"] for r in results] == ["Florianópolis"]
+        assert results[0]["category"] == "place"
+
+    def test_a_drive_can_still_start_at_an_address(self):
+        """A drive that begins at a door rather than a town — the same untagged
+        second pass the stay picker uses, and those keep the address class so the
+        "Addresses" divider still means something."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        city = [self._feature("Ubatuba", "place", "municipality")]
+        # A different point from the city's own node — two results at byte-identical
+        # coordinates are now collapsed as one place, which is what stops Photon
+        # returning the same node twice under two labels.
+        address = [self._feature("Rua Guarani 120", "building", "yes", lon=-45.07, lat=-23.43)]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", side_effect=[city, address]),
+        ):
+            client.clear_cache()
+            results = client.search_stations("Ubatuba", "car")
+
+        assert [r["category"] for r in results] == ["place", "address"]
+
+    def test_a_train_leg_still_searches_stations(self):
+        """The car exception must not leak into the station kinds."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        station = self._feature("Estação da Luz", "railway", "station")
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[station]),
+        ):
+            client.clear_cache()
+            results = client.search_stations("Luz", "train")
+
+        assert [r["name"] for r in results] == ["Estação da Luz"]
+
+
+class TestRepeatedPoints:
+    """Photon returns the same node twice under different labels.
+
+    Querying "Rio de Janeiro" gives Itaboraí once as its own city and once with
+    the state as its city, at byte-identical coordinates. Two identical rows in
+    the picker is the visible half; the page crashing is the other, because the
+    picker keyed its list on the coordinate pair and Svelte refuses duplicates.
+    """
+
+    @staticmethod
+    def _feature(name: str, city: str, lat: float, lon: float):
+        return {
+            "properties": {
+                "name": name,
+                "city": city,
+                "country": "Brazil",
+                "countrycode": "BR",
+                "osm_key": "place",
+                "osm_value": "municipality",
+            },
+            "geometry": {"coordinates": [lon, lat]},
+        }
+
+    def test_the_same_point_is_returned_once(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            self._feature("Itaboraí", "Itaboraí", -22.7496231, -42.8557428),
+            self._feature("Itaboraí", "Rio de Janeiro", -22.7496231, -42.8557428),
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", side_effect=[features, []]),
+        ):
+            client.clear_cache()
+            results = client.search_places("Rio de Janeiro", "city")
+
+        assert len(results) == 1
+
+    def test_every_result_has_a_distinct_point(self):
+        """What the picker's list key depends on."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            self._feature("Itaboraí", "Itaboraí", -22.74, -42.85),
+            self._feature("Itaboraí", "Rio de Janeiro", -22.74, -42.85),
+            self._feature("Silva Jardim", "Silva Jardim", -22.65, -42.39),
+            self._feature("Silva Jardim", "Rio de Janeiro", -22.65, -42.39),
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", side_effect=[features, []]),
+        ):
+            client.clear_cache()
+            results = client.search_places("Rio de Janeiro", "city")
+
+        points = [(r["lat"], r["lon"]) for r in results]
+        assert len(points) == len(set(points)) == 2
+
+    def test_two_places_a_few_metres_apart_are_still_collapsed_by_name(self):
+        """The original dedupe still holds: one station mapped as several nodes."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        features = [
+            self._feature("Xi'an North", "Xi'an", 34.376, 108.925),
+            self._feature("Xi'an North", "Xi'an", 34.377, 108.926),
+        ]
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", side_effect=[features, []]),
+        ):
+            client.clear_cache()
+            results = client.search_places("Xi'an North", "city")
+
+        assert len(results) == 1
