@@ -252,6 +252,9 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 - Timezone-aware departure/arrival times (airport coords + TimezoneFinder)
 - Live flight status tracking (delays, cancellations, estimated times)
 
+- **Stats collapses duplicate legs before counting anything** (`stats/service.py::_dedupe`, keyed on route + both timestamps). Nobody flies the same route at the same minute twice, so a second identical row is a parsing artefact — a SAS confirmation printing "SK4698 | Airbus A320neo" has been read as two legs, the second numbered `A320`. It doubled the distance and the CO2, and worse: the phantom sat **between the two halves of a connection** and broke the adjacency the 24h layover rule walks, so a 1h05 change of planes in Oslo counted as having visited Norway. Note this also collapses codeshares, which is correct — one aircraft, one flight.
+- **Wrong countries in Stats are almost never a Stats bug.** A real report of "countries she never visited" came from two bad rows: the phantom above, and a Ryanair itinerary parsed to `YXU→FFA` (London **Ontario** → First Flight, North Carolina). The root cause was that the live instance's `airports.type` / `scheduled_service` were **NULL** — `backfill_rank_columns` had never completed there — so `resolve_iata` could not prefer Heathrow over London, Ontario. Check `SELECT COUNT(*) FROM airports WHERE type IS NULL` before suspecting the layover rule. `GET /api/settings/airports/count` now returns `ranked` alongside `count`, and Settings warns when they differ, because that degradation was otherwise a single startup log line nobody reads.
+
 ### Travel statistics (Stats page)
 - Total km, flights, hours in air, unique airports, unique countries, Earth laps
 - Longest flight, top 5 routes/airports/airlines

@@ -55,6 +55,9 @@ class OkMessageDTO(BaseModel):
 
 class AirportCountDTO(BaseModel):
     count: int
+    # How many of them carry the size/scheduled-service ranking that airport-name
+    # resolution needs. Short of `count` means names resolve without it.
+    ranked: int = 0
 
 
 class AirportReloadDTO(BaseModel):

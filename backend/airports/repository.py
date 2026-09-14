@@ -62,6 +62,22 @@ class AirportRepository:
         with db_conn() as conn:
             return conn.execute("SELECT COUNT(*) FROM airports").fetchone()[0]
 
+    def count_ranked(self) -> int:
+        """Airports carrying the `type` / `scheduled_service` ranking columns.
+
+        Name resolution leans on these to prefer a large scheduled airport over
+        a small one sharing its city's name. Without them "London" in a Ryanair
+        itinerary resolved to London, **Ontario** — which is how a Swedish
+        traveller's statistics came to claim Canada and the United States.
+
+        Reported so the gap is visible in Settings: it is otherwise a silent
+        degradation that only shows up as wrong data months later.
+        """
+        with db_conn() as conn:
+            return conn.execute("SELECT COUNT(*) FROM airports WHERE type IS NOT NULL").fetchone()[
+                0
+            ]
+
     def backfill_rank_columns(self) -> int:
         """Populate `type` / `scheduled_service` / folded search columns on databases
         seeded before those columns existed. No-op once done. Returns rows updated.

@@ -17,6 +17,30 @@ _CO2_FACTOR_LONG = 0.195  # flights  > 3 000 km
 _LAYOVER_THRESHOLD = timedelta(hours=24)
 
 
+def _dedupe(rows: list) -> list:
+    """Collapse rows describing the same leg twice.
+
+    Nobody flies the same route at the same minute twice, so a second row with
+    an identical route and identical times is a parsing artefact, not a flight.
+    They do occur: a SAS confirmation prints "SK4698 | Airbus A320neo" and has
+    been read as two legs, one of them numbered `A320`.
+
+    Leaving them in was not only a doubled distance and a doubled CO2 figure —
+    the phantom sat *between* the two halves of a connection and broke the
+    adjacency the layover rule below depends on, so a 1h05 change of planes in
+    Oslo counted as having visited Norway.
+    """
+    seen: set[tuple] = set()
+    out = []
+    for r in rows:
+        key = (r.departure_airport, r.arrival_airport, r.departure_datetime, r.arrival_datetime)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance in km between two lat/lon points."""
     R = 6_371
@@ -55,7 +79,7 @@ class StatsService:
         self._repository = repository or StatsRepository()
 
     def compute_stats(self, user_id: int, year: int | None = None) -> TravelStats:
-        rows = self._repository.list_completed_flights(user_id, year)
+        rows = _dedupe(self._repository.list_completed_flights(user_id, year))
         years = self._repository.list_years_with_flights(user_id)
         ground_countries = self._repository.list_ground_countries(user_id, year)
         ground_legs = self._repository.count_ground_legs(user_id, year)

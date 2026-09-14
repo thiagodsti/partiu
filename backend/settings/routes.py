@@ -81,8 +81,11 @@ async def test_immich(request: Request, user: dict = Depends(get_current_user)):
 
 @router.get("/airports/count", response_model=AirportCountDTO)
 def get_airport_count(user: dict = Depends(get_current_user)):
-    """Return the number of airports loaded in the database."""
-    return AirportCountDTO(count=settings_service.get_airport_count())
+    """Return the number of airports loaded, and how many are ranked."""
+    return AirportCountDTO(
+        count=settings_service.get_airport_count(),
+        ranked=settings_service.get_ranked_airport_count(),
+    )
 
 
 @router.get("/admin/non-flight-domains", response_model=list[NonFlightDomainDTO])

@@ -31,6 +31,11 @@ class SettingsRepository:
 
         return AirportRepository().count()
 
+    def get_ranked_airport_count(self) -> int:
+        from ..airports.repository import AirportRepository
+
+        return AirportRepository().count_ranked()
+
     def reload_airports(self) -> int:
         from ..airports.repository import AirportRepository
 

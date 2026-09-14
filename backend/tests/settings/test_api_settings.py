@@ -253,3 +253,47 @@ class TestNonFlightDomains:
         client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
         client.cookies.clear()
         assert client.get("/api/settings/admin/non-flight-domains").status_code == 401
+
+
+class TestAirportRankingVisibility:
+    """The ranking columns are what let name resolution prefer a large scheduled
+    airport over a small one sharing its city's name. Without them, "London" in
+    a Ryanair itinerary resolved to London **Ontario**, and a Swedish traveller's
+    statistics claimed Canada and the United States.
+
+    It was a startup log line and nothing else, which is why it went unnoticed
+    for months; the count is reported so Settings can say so.
+    """
+
+    def test_reports_how_many_airports_are_ranked(self, auth_client):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            conn.execute("DELETE FROM airports")
+            conn.execute(
+                """INSERT INTO airports (iata_code, name, city_name, country_code, type)
+                   VALUES ('LHR', 'Heathrow', 'London', 'GB', 'large_airport')"""
+            )
+            conn.execute(
+                """INSERT INTO airports (iata_code, name, city_name, country_code, type)
+                   VALUES ('YXU', 'London Intl', 'London', 'CA', NULL)"""
+            )
+
+        data = auth_client.get("/api/settings/airports/count").json()
+
+        assert data["count"] == 2
+        assert data["ranked"] == 1
+
+    def test_a_fully_ranked_table_reports_no_gap(self, auth_client):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            conn.execute("DELETE FROM airports")
+            conn.execute(
+                """INSERT INTO airports (iata_code, name, city_name, country_code, type)
+                   VALUES ('LHR', 'Heathrow', 'London', 'GB', 'large_airport')"""
+            )
+
+        data = auth_client.get("/api/settings/airports/count").json()
+
+        assert data["count"] == data["ranked"] == 1

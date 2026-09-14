@@ -343,6 +343,7 @@
   "settings.allowed_senders_hint": "Lista separada por vírgulas de endereços de e-mail com permissão para encaminhar para você. Deixe em branco para aceitar de qualquer pessoa.",
   "settings.airports": "Dados de Aeroportos",
   "settings.airports_loaded": "{n} aeroportos carregados.",
+  "settings.airports_unranked": "{n} aeroportos estão sem a classificação de porte, então nomes de aeroportos nos e-mails podem resolver para o aeroporto errado (um voo de “London” pode virar London, Ontário). Coloque um airports.csv atualizado em data/ e recarregue.",
   "settings.airports_none": "Nenhum aeroporto carregado.",
   "settings.airports_download": "Baixe o airports.csv de ourairports.com e coloque na pasta data/.",
   "settings.reload_airports": "↺ Recarregar Aeroportos",

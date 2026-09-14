@@ -343,6 +343,7 @@
   "settings.allowed_senders_hint": "Comma-separated list of email addresses allowed to forward to you. Leave blank to accept from anyone.",
   "settings.airports": "Airport Data",
   "settings.airports_loaded": "{n} airports loaded.",
+  "settings.airports_unranked": "{n} airports are missing their size ranking, so airport names in emails may resolve to the wrong airport (a flight from “London” can become London, Ontario). Put an up-to-date airports.csv in data/ and reload.",
   "settings.airports_none": "No airports loaded.",
   "settings.airports_download": "Download airports.csv from ourairports.com and place it in the data/ directory.",
   "settings.reload_airports": "↺ Reload Airports",

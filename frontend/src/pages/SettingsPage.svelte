@@ -26,6 +26,12 @@
   let currentSettings = $state<Settings | null>(null);
   let syncStatus = $state<SyncStatus | null>(null);
   let airportCount = $state(0);
+  /* Airports carrying the size/scheduled-service ranking that name resolution
+   * needs. Short of the total means "London" in an itinerary can resolve to
+   * London, Ontario — which is exactly how one account's statistics came to
+   * claim Canada. It was a startup log line and nothing else, which is why it
+   * went unnoticed for months; it belongs where an admin actually looks. */
+  let rankedAirports = $state(0);
 
   const IMAP_PRESETS = [
     { label: "Gmail", host: "imap.gmail.com", port: 993 },
@@ -180,6 +186,7 @@
       currentSettings = s;
       syncStatus = status;
       airportCount = airportData?.count ?? 0;
+      rankedAirports = airportData?.ranked ?? 0;
       if (status?.status === 'running') startSyncPoll();
       // Populate form
       gmailAddress = s.gmail_address ?? "";
@@ -318,6 +325,7 @@
     try {
       const result = await settingsApi.reloadAirports();
       airportCount = result?.count ?? 0;
+      rankedAirports = result?.ranked ?? 0;
       showMsg(
         $t("settings.airports_loaded", {
           values: { n: airportCount.toLocaleString() },
@@ -1255,6 +1263,13 @@
           and place it in the <code>data/</code> directory.
         {/if}
       </div>
+      {#if airportCount > 0 && rankedAirports < airportCount}
+        <p class="form-warning">
+          {$t("settings.airports_unranked", {
+            values: { n: (airportCount - rankedAirports).toLocaleString() },
+          })}
+        </p>
+      {/if}
       {#if airportCount > 0}
         <button
           class="btn btn-secondary"

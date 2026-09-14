@@ -195,8 +195,16 @@ class TestStatsWithFlights:
         assert len(data["years"]) >= 1
 
     def test_top_routes_and_airports(self, auth_client):
+        # A genuine repeat of the route, flown on different days. Two rows with
+        # the *same* route and the *same* times would be one flight recorded
+        # twice — see `_dedupe` — not a route flown twice.
         _create_flight(auth_client)
-        _create_flight(auth_client, flight_number="LA8095")
+        _create_flight(
+            auth_client,
+            flight_number="LA8095",
+            dep_dt=_past_dt(20),
+            arr_dt=_past_dt(19),
+        )
         r = auth_client.get("/api/stats")
         data = r.json()
         # GRU→LHR appeared twice

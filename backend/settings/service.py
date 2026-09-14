@@ -188,6 +188,9 @@ class SettingsService:
     def get_airport_count(self) -> int:
         return self._repository.get_airport_count()
 
+    def get_ranked_airport_count(self) -> int:
+        return self._repository.get_ranked_airport_count()
+
     def reload_airports(self) -> int:
         return self._repository.reload_airports()
 

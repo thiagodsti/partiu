@@ -146,6 +146,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Multi-user support with per-user Gmail/IMAP credentials
 - Admin: create, list, update, reset passwords, delete users
 - Admin: configure sync interval, max emails per sync, SMTP server, VAPID keys, airport data reload
+- Settings warns when the airport reference data is missing its size ranking — without it a flight from "London" can be filed under London, Ontario, and your visited-countries count quietly grows a country you have never been to
 - Per-user locale (English / Portuguese Brazil)
 
 ### Interface

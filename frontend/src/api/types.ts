@@ -413,6 +413,9 @@ export interface TripsListResponse {
 
 export interface AirportCountResponse {
   count: number;
+  /** How many carry the size/scheduled-service ranking that airport-name
+   *  resolution needs. Short of `count` means names resolve without it. */
+  ranked?: number;
 }
 
 
