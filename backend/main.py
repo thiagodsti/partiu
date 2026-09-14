@@ -179,6 +179,31 @@ app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 
 
+def _resolve_static_file(base: Path, full_path: str) -> Path | None:
+    """Resolve *full_path* beneath *base*, or None if it escapes the directory.
+
+    A bare ``base / full_path`` is an unauthenticated arbitrary file read, and
+    two separate vectors reach it. An **absolute** ``full_path`` makes pathlib
+    discard ``base`` entirely (``Path("dist") / "/etc/passwd"`` is
+    ``/etc/passwd``) and arrives from a request as plain as ``GET //etc/passwd``,
+    whose path parameter is ``/etc/passwd`` — no encoding needed. Separately,
+    percent-encoded traversal (``GET /..%2f..%2f.env``) is decoded into the path
+    parameter *after* the server's own normalisation, so ``..`` segments survive
+    to here. Resolving both sides and testing containment closes the two
+    together, and covers symlinks out of the tree as well.
+
+    A rejected path is not a 403: it falls through to the SPA shell like any
+    other unknown route, so this never reports whether a file exists.
+    """
+    try:
+        candidate = (base / full_path).resolve()
+        if not candidate.is_relative_to(base.resolve()):
+            return None
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return candidate if candidate.is_file() else None
+
+
 # Serve frontend static files if directory exists
 if _FRONTEND_DIR.exists():
 
@@ -221,8 +246,8 @@ if _FRONTEND_DIR.exists():
             raise HTTPException(status_code=404, detail="Not found")
         # Serve real static files (icons, manifest fall-through, etc.)
         for base in (_FRONTEND_DIR, _FRONTEND_PUBLIC):
-            candidate = base / full_path
-            if candidate.exists() and candidate.is_file():
+            candidate = _resolve_static_file(base, full_path)
+            if candidate is not None:
                 return FileResponse(str(candidate))
         # SPA: all other paths get index.html
         index = _FRONTEND_DIR / "index.html"
