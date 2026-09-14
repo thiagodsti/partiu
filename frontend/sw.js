@@ -4,15 +4,15 @@
  * Strategies:
  *   - GET /api/auth/*      → network-first (session state must always be fresh)
  *   - GET /api/*           → stale-while-revalidate (serve cache instantly, update in background)
- *   - non-GET /api/*       → pass-through, then wipe the API cache (mutations must never be
- *                            followed by a stale read — see purgeApiCache)
+ *   - non-GET /api/*       → pass-through, wiping the API cache *before* answering, so the
+ *                            re-read that follows a mutation cannot be served a stale copy
  *   - /assets/*            → cache-first (content-hashed filenames)
  *   - everything else      → network-first (app shell, always get latest deploy)
  *
  * Cross-origin requests are not handled at all — see the fetch listener.
  */
 
-const CACHE_VERSION = 'v20';
+const CACHE_VERSION = 'v21';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
 
@@ -56,12 +56,24 @@ self.addEventListener('fetch', (event) => {
     // Mutations pass through unchanged, but any successful one invalidates the
     // whole API cache — otherwise a GET right after a POST/PATCH/DELETE can be
     // served stale-while-revalidate's "stale" copy from before the mutation.
+    //
+    // The purge is **awaited before the response is handed back**, not run in
+    // `waitUntil`. `waitUntil` only keeps the worker alive; it makes no promise
+    // about finishing before the next fetch, so the page's re-read could — and
+    // did — race it and win, serving the pre-mutation copy. Saving a budget
+    // showed the old figure until you navigated away and back, because the GET
+    // that followed the PUT beat the purge to the cache.
+    //
+    // Awaiting costs one local CacheStorage sweep on the mutation's path and
+    // buys a real ordering guarantee: by the time the page sees the mutation
+    // resolve, there is nothing stale left to serve it.
     if (event.request.method !== 'GET') {
       event.respondWith(
-        fetch(event.request).then((response) => {
-          if (response.ok) event.waitUntil(purgeApiCache());
+        (async () => {
+          const response = await fetch(event.request);
+          if (response.ok) await purgeApiCache();
           return response;
-        })
+        })()
       );
       return;
     }

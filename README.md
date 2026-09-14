@@ -141,6 +141,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Login rate-limiting and TOTP lockout after repeated failures
 - Audit logging of auth events
 
+- Signing in or out clears the app's cached API responses, so two people sharing a phone never see each other's trips or statistics
 ### Multi-user & admin
 - Multi-user support with per-user Gmail/IMAP credentials
 - Admin: create, list, update, reset passwords, delete users

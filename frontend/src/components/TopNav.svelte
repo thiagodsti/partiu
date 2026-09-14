@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authApi } from "../api/client";
   import { currentUser } from "../lib/authStore";
+  import { purgeApiCache } from "../lib/apiCache";
   import { pendingInvitationCount } from "../lib/invitationStore";
   import { t } from "../lib/i18n";
 
@@ -28,6 +29,8 @@
     } catch {
       // ignore
     }
+    // Leave nothing of this account cached for whoever signs in next.
+    await purgeApiCache();
     currentUser.set(null);
     pendingInvitationCount.set(0);
     window.location.hash = "/login";

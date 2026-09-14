@@ -4,6 +4,7 @@
   import { refreshInvitationCount } from '../lib/invitationStore';
   import { t, applyUserLocale } from '../lib/i18n';
   import { applyUserAccent } from '../lib/accentStore';
+  import { purgeApiCache } from '../lib/apiCache';
   import type { User } from '../api/types';
 
   let username = $state('');
@@ -57,6 +58,8 @@
         // not remount the app, so without this the next person on a shared
         // browser keeps the previous one's colour until a reload.
         applyUserAccent(user.accent);
+        // Whoever used this install last must not leak into this session.
+        await purgeApiCache();
         refreshInvitationCount();
         window.location.hash = '/trips';
       }
@@ -89,6 +92,9 @@
       currentUser.set(user);
       applyUserLocale(user.locale);
       applyUserAccent(user.accent);
+      // The 2FA path signs in just as completely as the password-only one, so
+      // it has to drop the previous account's cache too.
+      await purgeApiCache();
       refreshInvitationCount();
       window.location.hash = '/trips';
     } catch (err) {
