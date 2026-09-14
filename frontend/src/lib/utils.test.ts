@@ -3,6 +3,7 @@ import type { Flight, TripSegment, TripStay } from '../api/types';
 import {
   accommodationGaps,
   addDaysToDateKey,
+  budgetLevel,
   cabinLabel,
   connectionInfo,
   dateDividerInfo,
@@ -982,5 +983,30 @@ describe('formatCurrencyTotals', () => {
   it('has nothing to show for a trip with no expenses', () => {
     expect(formatCurrencyTotals(undefined)).toEqual([]);
     expect(formatCurrencyTotals({})).toEqual([]);
+  });
+});
+
+describe('budgetLevel', () => {
+  it('is green while there is room', () => {
+    expect(budgetLevel(0, 800)).toBe('under');
+    expect(budgetLevel(639, 800)).toBe('under');
+  });
+
+  it('warns from 80%, before the limit rather than at it', () => {
+    expect(budgetLevel(640, 800)).toBe('near');
+    expect(budgetLevel(799, 800)).toBe('near');
+  });
+
+  // Spending exactly your budget is spending all of it.
+  it('is red at the limit, not one euro past it', () => {
+    expect(budgetLevel(800, 800)).toBe('over');
+    expect(budgetLevel(801, 800)).toBe('over');
+  });
+
+  it('has nothing to judge without a budget', () => {
+    expect(budgetLevel(100, null)).toBeNull();
+    expect(budgetLevel(100, undefined)).toBeNull();
+    // A budget of zero would divide.
+    expect(budgetLevel(100, 0)).toBeNull();
   });
 });

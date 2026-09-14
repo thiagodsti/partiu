@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Trip } from "../api/types";
-  import { formatCurrencyTotals, formatDateRange } from "../lib/utils";
+  import { budgetLevel, formatCurrencyTotals, formatDateRange } from "../lib/utils";
   import { t } from "../lib/i18n";
 
   /**
@@ -18,12 +18,10 @@
     href: string;
     imageUrl: string;
     imgFailed: boolean;
-    refreshing: boolean;
     showStars?: boolean;
     /** Drives the edge stripe's colour; the badge snippet still supplies the words. */
     status?: "upcoming" | "ongoing" | "completed";
     onImageError: (e: Event) => void;
-    onRefreshImage: (e: MouseEvent) => void;
     badge: Snippet;
     footer?: Snippet;
   }
@@ -33,11 +31,9 @@
     href,
     imageUrl,
     imgFailed,
-    refreshing,
     showStars = false,
     status = "upcoming",
     onImageError,
-    onRefreshImage,
     badge,
     footer,
   }: Props = $props();
@@ -134,6 +130,28 @@
 
   const expenseTotals = $derived(formatCurrencyTotals(trip.expenses_total));
 
+  /* The budget, but **only when it needs attention**. A card is a glance, and
+   * what an overview is for is spotting the one trip that wants looking at —
+   * the figures and the bar belong on the page you opened deliberately. Same
+   * reasoning as the status badge, which shows no dot for `upcoming` because
+   * nothing has happened yet.
+   *
+   * Note there is no check on whether the trip has started: a trip still weeks
+   * away has already bought its flights and booked its hotels, and that money
+   * is spent. */
+  const budgetAlarm = $derived.by(() => {
+    const level = budgetLevel(trip.budget_spent ?? 0, trip.budget_amount);
+    if (level !== 'near' && level !== 'over') return null;
+    const currency = trip.budget_currency;
+    if (!currency) return null;
+    return {
+      level,
+      label: `${formatCurrencyTotals({ [currency]: trip.budget_spent ?? 0 })[0]} / ${
+        formatCurrencyTotals({ [currency]: trip.budget_amount! })[0]
+      }`,
+    };
+  });
+
   function starFill(
     star: number,
     rating: number | null | undefined,
@@ -160,14 +178,6 @@
           onerror={onImageError}
         />
       {/if}
-      <button
-        class="trip-card-img-refresh"
-        title={$t("trips.refresh_image")}
-        disabled={refreshing}
-        onclick={onRefreshImage}
-      >
-        {refreshing ? "…" : "↻"}
-      </button>
     </div>
 
     <div class="trip-card-body">
@@ -210,6 +220,13 @@
                 <span class="trip-card-expense-pill">{label}</span>
               {/each}
             </div>
+          {/if}
+          {#if budgetAlarm}
+            <!-- Only when it needs attention; a budget with room left says
+                 nothing a card has space for. -->
+            <p class="trip-card-budget" data-level={budgetAlarm.level}>
+              🎯 {budgetAlarm.label}
+            </p>
           {/if}
         </div>
       </div>

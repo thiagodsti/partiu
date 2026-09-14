@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import TripDetailPage from './TripDetailPage.svelte';
 
-const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList, mockBpListForTrip } = vi.hoisted(() => ({
+const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList, mockBpListForTrip, mockBudgetGet } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSettingsGet: vi.fn(),
   mockRefreshImage: vi.fn(),
   mockCheckImmichAlbum: vi.fn(),
   mockDocList: vi.fn(),
   mockBpListForTrip: vi.fn(),
+  mockBudgetGet: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
@@ -31,6 +32,7 @@ vi.mock('../api/client', () => ({
     imageUrl: (id: string) => `/api/boarding-passes/${id}/image`,
     delete: vi.fn(),
   },
+  budgetApi: { get: mockBudgetGet, set: vi.fn(), clear: vi.fn() },
   expensesApi: {
     list: vi.fn().mockResolvedValue([]),
     participants: vi.fn().mockResolvedValue([]),
@@ -116,6 +118,7 @@ describe('TripDetailPage', () => {
     mockCheckImmichAlbum.mockResolvedValue({ exists: true });
     mockDocList.mockResolvedValue([]);
     mockBpListForTrip.mockResolvedValue([]);
+    mockBudgetGet.mockResolvedValue({ amount: null, currency: null, spent: 0, uncounted: {} });
   });
 
   it('shows loading screen initially', () => {
@@ -162,6 +165,35 @@ describe('TripDetailPage', () => {
     expect(container.querySelector('a[href="#/trips/trip-1/add-flight"]')).toBeNull();
   });
 
+  // The button lived on the trip page all along but was revealed by a selector
+  // naming only the card's cover class, so on a pointer device it sat at
+  // opacity 0 forever — present, positioned, and invisible.
+  it('offers the image refresh inside the trip, labelled', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-detail-cover .trip-card-img-refresh')).toBeInTheDocument(),
+    );
+    const btn = container.querySelector('.trip-card-img-refresh') as HTMLButtonElement;
+    // Localised, not the hardcoded English string it used to carry.
+    expect(btn.getAttribute('title')).toBe('trips.refresh_image');
+    expect(btn.getAttribute('aria-label')).toBe('trips.refresh_image');
+  });
+
+  it('asks the API for a different image when it is clicked', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    mockRefreshImage.mockResolvedValue({ ok: true });
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-card-img-refresh')).toBeInTheDocument(),
+    );
+    await fireEvent.click(container.querySelector('.trip-card-img-refresh')!);
+
+    await waitFor(() => expect(mockRefreshImage).toHaveBeenCalledWith('trip-1'));
+  });
+
   // The header answers "what is on this trip" without scrolling: every kind it
   // holds, named. The card can only manage a coarser version.
   it('summarises what the trip holds under its dates', async () => {
@@ -183,6 +215,38 @@ describe('TripDetailPage', () => {
       expect(container.querySelector('.trip-header-contents')?.textContent).toContain('EUR 420'),
     );
     expect(container.querySelector('.trip-header-contents')?.textContent).toContain('SEK 900');
+  });
+
+  /* Its own chip, not folded into the expense totals beside it: those are the
+   * *trip's* spend per currency, this is your share against your limit. Adding
+   * the two together would be a lie. */
+  it('shows the budget in the header summary, with its state', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    mockBudgetGet.mockResolvedValue({
+      amount: 800,
+      currency: 'EUR',
+      spent: 700,
+      uncounted: {},
+    });
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-header-budget')).toBeInTheDocument(),
+    );
+    const chip = container.querySelector('.trip-header-budget')!;
+    expect(chip.textContent).toContain('EUR 700');
+    expect(chip.textContent).toContain('EUR 800');
+    expect(chip.getAttribute('data-level')).toBe('near');
+  });
+
+  it('leaves the header alone when no budget is set', async () => {
+    mockGet.mockResolvedValue(TRIP);
+    const { container } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() =>
+      expect(container.querySelector('.trip-header-contents')).toBeInTheDocument(),
+    );
+    expect(container.querySelector('.trip-header-budget')).toBeNull();
   });
 
   it('says nothing at all when the trip is empty', async () => {

@@ -5,6 +5,7 @@
 
 import type {
   Trip,
+  TripBudget,
   PackingItem,
   TripExpense,
   Participant,
@@ -470,6 +471,15 @@ export const placesApi = {
  * reaching it would come back as a street. */
 export const citiesApi = {
   search: (q: string) => get<PlaceResult[]>(`/api/cities/search?q=${encodeURIComponent(q)}`),
+};
+
+/** A budget belongs to a person, not a trip: these read and write the caller's
+ * own row, so a collaborator's budget is never touched. */
+export const budgetApi = {
+  get: (tripId: string) => get<TripBudget>(`/api/trips/${tripId}/budget`),
+  set: (tripId: string, amount: number, currency: string) =>
+    put<{ ok: boolean }>(`/api/trips/${tripId}/budget`, { amount, currency }),
+  clear: (tripId: string) => del<{ ok: boolean }>(`/api/trips/${tripId}/budget`),
 };
 
 export const guestsApi = {

@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import EditTripPage from './EditTripPage.svelte';
 
-const { mockPush, mockGet, mockUpdate, mockSegments, mockStays } = vi.hoisted(() => ({
+const { mockPush, mockGet, mockUpdate, mockSegments, mockStays, mockAirportGet } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockGet: vi.fn(),
   mockUpdate: vi.fn(),
   mockSegments: vi.fn(),
   mockStays: vi.fn(),
+  mockAirportGet: vi.fn(),
 }));
 
 vi.mock('svelte-spa-router', () => ({ push: mockPush }));
@@ -16,8 +17,8 @@ vi.mock('../api/client', () => ({
     get: mockGet,
     update: mockUpdate,
   },
-  airportsApi: { search: vi.fn().mockResolvedValue([]) },
   citiesApi: { search: vi.fn().mockResolvedValue([]) },
+  airportsApi: { get: mockAirportGet, search: vi.fn().mockResolvedValue([]) },
   segmentsApi: { list: mockSegments },
   staysApi: { list: mockStays },
   stationsApi: { search: vi.fn().mockResolvedValue([]) },
@@ -57,6 +58,10 @@ describe('EditTripPage', () => {
     mockUpdate.mockResolvedValue({});
     mockSegments.mockResolvedValue([]);
     mockStays.mockResolvedValue([]);
+    mockAirportGet.mockResolvedValue({
+      iata_code: 'GRU', city_name: 'São Paulo', country_code: 'BR',
+      latitude: -23.43, longitude: -46.47,
+    });
   });
 
   it('shows loading state before trip loads', () => {
@@ -246,6 +251,64 @@ describe('EditTripPage', () => {
     await fireEvent.input(rows[rows.length - 1], { target: { value: 'Belém' } });
 
     expect((rows[rows.length - 1] as HTMLInputElement).value).toBe('Belém');
+  });
+
+  /* A trip built from email has airports but no typed cities, so this form used
+   * to open blank on exactly the trips that already knew where they went. The
+   * cities are seeded into the form — offered, not written behind your back. */
+  describe('seeding from the trip’s flights', () => {
+    const noPlaces = { ...TRIP, origin_place: null, destinations: [] };
+
+    it('fills the cities in from the airports', async () => {
+      mockGet.mockResolvedValue(noPlaces);
+      const { container } = render(EditTripPage, { props: { params: { id: 'trip-99' } } });
+
+      await waitFor(() =>
+        expect(
+          (container.querySelectorAll('.station-input input')[0] as HTMLInputElement).value,
+        ).toBe('São Paulo'),
+      );
+      // The airport's coordinates and country ride along, so the seeded place is
+      // complete rather than a bare label.
+      await fireEvent.submit(container.querySelector('form')!);
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      expect(mockUpdate.mock.calls[0][1].origin).toMatchObject({
+        name: 'São Paulo',
+        country_code: 'BR',
+        lat: -23.43,
+      });
+    });
+
+    it('says where the values came from', async () => {
+      mockGet.mockResolvedValue(noPlaces);
+      const { container } = render(EditTripPage, { props: { params: { id: 'trip-99' } } });
+
+      await waitFor(() => expect(container.textContent).toContain('trips.route_seeded'));
+    });
+
+    it('never overwrites what the traveller already typed', async () => {
+      mockGet.mockResolvedValue(TRIP); // already has Florianópolis / São Paulo, Rio
+      const { container } = render(EditTripPage, { props: { params: { id: 'trip-99' } } });
+      await waitFor(() => expect(container.querySelector('form')).toBeInTheDocument());
+
+      expect(
+        (container.querySelectorAll('.station-input input')[0] as HTMLInputElement).value,
+      ).toBe('Florianópolis');
+      expect(mockAirportGet).not.toHaveBeenCalled();
+      expect(container.textContent).not.toContain('trips.route_seeded');
+    });
+
+    it('leaves the field empty when the airport is unknown', async () => {
+      mockGet.mockResolvedValue(noPlaces);
+      mockAirportGet.mockRejectedValue(new Error('404'));
+      const { container } = render(EditTripPage, { props: { params: { id: 'trip-99' } } });
+      await waitFor(() => expect(container.querySelector('form')).toBeInTheDocument());
+
+      // An IATA code in a field that asks for a city would be worse than blank.
+      expect(
+        (container.querySelectorAll('.station-input input')[0] as HTMLInputElement).value,
+      ).toBe('');
+    });
   });
 
   it('leaves the derived origin alone when saving', async () => {

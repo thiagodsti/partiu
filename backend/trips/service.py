@@ -36,6 +36,9 @@ class TripListItem:
         self.expenses_total: dict[str, float] = {}
         self.immich_album_id: str | None = None
         self.destinations: list[dict] = []
+        self.budget_amount: float | None = None
+        self.budget_currency: str | None = None
+        self.budget_spent: float | None = None
         self.search_index = ""
 
 
@@ -104,6 +107,17 @@ class TripService:
         # Booking references come from the legs as well as the trip: the trip-level
         # list is written by auto-grouping, while a hand-added flight or ground leg
         # carries its own, and both have to be findable by the same search.
+        # One read for every card's budget rather than one per card.
+        from ..expenses.service import expense_service
+
+        budgets = expense_service.budgets_for_trips(user_id, trip_ids)
+        for item in items:
+            status = budgets.get(item.trip.id)
+            if status and status.budget:
+                item.budget_amount = status.budget.amount
+                item.budget_currency = status.budget.currency
+                item.budget_spent = status.spent
+
         destinations = self._repository.list_destinations(trip_ids)
         for item in items:
             item.destinations = destinations.get(item.trip.id, [])

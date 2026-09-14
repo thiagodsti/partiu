@@ -135,10 +135,8 @@
           href="#/history/{trip.id}"
           imageUrl={tripImageBust.urlFor(trip.id, $tripImageBust)}
           imgFailed={imgRefresh.imgFailed[trip.id] ?? false}
-          refreshing={imgRefresh.refreshingId === trip.id}
           showStars
           onImageError={(e) => imgRefresh.handleError(e, trip.id)}
-          onRefreshImage={(e) => imgRefresh.refresh(e, trip.id)}
         >
           {#snippet badge()}
             <span class="badge badge-completed">{$t('trips.completed')}</span>

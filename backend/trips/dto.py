@@ -50,6 +50,11 @@ class TripListItemDTO(BaseModel):
     # label when there are several.
     segment_types: list[str]
     expenses_total: dict[str, float]
+    # The caller's own budget for this trip, when they have set one. Absent for
+    # every trip that has none, which is most of them.
+    budget_amount: float | None
+    budget_currency: str | None
+    budget_spent: float | None
     immich_album_id: str | None
     search_index: str
 

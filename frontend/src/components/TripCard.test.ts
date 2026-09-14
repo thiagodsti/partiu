@@ -40,9 +40,7 @@ const defaultProps = {
   href: '#/trips/trip-1',
   imageUrl: '/api/trips/trip-1/image',
   imgFailed: false,
-  refreshing: false,
   onImageError: vi.fn(),
-  onRefreshImage: vi.fn(),
   badge: badgeSnippet,
 };
 
@@ -74,29 +72,19 @@ describe('TripCard', () => {
     expect(container.querySelector('.trip-card-cover-img')).toBeNull();
   });
 
-  it('refresh button is enabled when not refreshing', () => {
+  // The manual refresh lives inside the trip now: on a phone the control covered
+  // a third of the card's photo, and a card is too small to judge an image by.
+  it('offers no image refresh on the card', () => {
     const { container } = render(TripCard, { props: defaultProps });
-    const btn = container.querySelector('.trip-card-img-refresh') as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe('↻');
+    expect(container.querySelector('.trip-card-img-refresh')).toBeNull();
   });
 
-  it('refresh button is disabled and shows spinner when refreshing', () => {
-    const { container } = render(TripCard, {
-      props: { ...defaultProps, refreshing: true },
-    });
-    const btn = container.querySelector('.trip-card-img-refresh') as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toBe('…');
-  });
-
-  it('calls onRefreshImage when refresh button is clicked', async () => {
-    const onRefreshImage = vi.fn();
-    const { container } = render(TripCard, {
-      props: { ...defaultProps, onRefreshImage },
-    });
-    await fireEvent.click(container.querySelector('.trip-card-img-refresh')!);
-    expect(onRefreshImage).toHaveBeenCalledOnce();
+  // Auto-retry stays — a card whose photo 404s asks once for a different one.
+  it('still reports a failed image so it can be retried', async () => {
+    const onImageError = vi.fn();
+    const { container } = render(TripCard, { props: { ...defaultProps, onImageError } });
+    await fireEvent.error(container.querySelector('.trip-card-cover-img')!);
+    expect(onImageError).toHaveBeenCalledOnce();
   });
 
   it('calls onImageError when image fails to load', async () => {
@@ -288,5 +276,61 @@ describe('the ground-transport chip', () => {
     });
     expect(container.textContent).toContain('↔');
     expect(container.textContent).not.toContain('🚆');
+  });
+});
+
+describe('the budget alarm', () => {
+  const withBudget = (spent: number, amount: number | null = 800) =>
+    makeTrip({ budget_spent: spent, budget_amount: amount, budget_currency: 'EUR' });
+
+  /* Only when it needs attention. A card is a glance; the bar and the figures
+   * belong on the page you opened deliberately. */
+  it('says nothing while the budget has room', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: withBudget(200) },
+    });
+    expect(container.querySelector('.trip-card-budget')).toBeNull();
+  });
+
+  it('warns as the budget runs out', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: withBudget(700) },
+    });
+    const chip = container.querySelector('.trip-card-budget');
+    expect(chip?.getAttribute('data-level')).toBe('near');
+    expect(chip?.textContent).toContain('EUR 700');
+    expect(chip?.textContent).toContain('EUR 800');
+  });
+
+  it('goes red at the limit', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: withBudget(800) },
+    });
+    expect(container.querySelector('.trip-card-budget')?.getAttribute('data-level')).toBe('over');
+  });
+
+  it('says nothing when no budget is set', () => {
+    const { container } = render(TripCard, {
+      props: { ...defaultProps, trip: withBudget(500, null) },
+    });
+    expect(container.querySelector('.trip-card-budget')).toBeNull();
+  });
+
+  // An upcoming trip has already paid for its flights and hotels; that money is
+  // spent, so the alarm does not wait for departure.
+  it('warns on a trip that has not started yet', () => {
+    const { container } = render(TripCard, {
+      props: {
+        ...defaultProps,
+        trip: makeTrip({
+          start_date: '2099-06-01',
+          end_date: '2099-06-10',
+          budget_spent: 900,
+          budget_amount: 800,
+          budget_currency: 'EUR',
+        }),
+      },
+    });
+    expect(container.querySelector('.trip-card-budget')?.getAttribute('data-level')).toBe('over');
   });
 });

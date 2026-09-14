@@ -1,6 +1,7 @@
 <script lang="ts">
   import { expensesApi, guestsApi } from '../api/client';
   import type { TripExpense, Participant, BalanceEntry, Guest } from '../api/types';
+  import { CURRENCIES } from '../lib/currencies';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -12,14 +13,6 @@
   }
 
   const { tripId, defaultCurrency = 'EUR', onchange }: Props = $props();
-
-  export const CURRENCIES = [
-    'AED', 'ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'COP',
-    'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS',
-    'INR', 'ISK', 'JPY', 'KRW', 'MAD', 'MXN', 'MYR', 'NOK', 'NZD',
-    'PEN', 'PHP', 'PLN', 'QAR', 'RON', 'SAR', 'SEK', 'SGD', 'THB',
-    'TRY', 'TWD', 'UAH', 'USD', 'ZAR',
-  ];
 
   function key(p: { type: string; id: number }): string {
     return `${p.type}:${p.id}`;

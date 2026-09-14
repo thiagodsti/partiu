@@ -53,6 +53,11 @@ export interface Trip {
   /** Distinct ground-transport types on the trip; lets the card say
    * "2 trains" instead of the generic "2 legs" when there is only one. */
   segment_types?: string[];
+  /** The caller's own budget for this trip, when they have set one. Absent on
+   * every trip that has none, which is most of them. */
+  budget_amount?: number | null;
+  budget_currency?: string | null;
+  budget_spent?: number | null;
   flights?: Flight[];
   immich_album_id?: string | null;
   is_owner?: boolean;
@@ -61,6 +66,18 @@ export interface Trip {
   note?: string | null;
   expenses_total?: Record<string, number>;
   search_index?: string;
+}
+
+/** The caller's budget for a trip and their spend against it.
+ *
+ * `spent` is the caller's own *share*, not what they paid out, and `uncounted`
+ * is per-currency spend outside the budget's currency — reported rather than
+ * converted, since the app has no exchange rates. */
+export interface TripBudget {
+  amount: number | null;
+  currency: string | null;
+  spent: number;
+  uncounted: Record<string, number>;
 }
 
 /** One place a trip goes to, as the traveller picked it. */

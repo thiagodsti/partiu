@@ -907,11 +907,13 @@ img {
   pointer-events: none;
 }
 
+/* Top-right of the cover. It sat centred, which put it over the middle of the
+   photo — the part you are actually looking at. The corner is out of the way
+   and is where a control on an image is looked for. */
 .trip-card-img-refresh {
   position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 8px;
+  right: 8px;
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -938,14 +940,10 @@ img {
     opacity: 0;
   }
 
-  .trip-card-cover:hover .trip-card-img-refresh,
+  .trip-detail-cover:hover .trip-card-img-refresh,
   .trip-card-img-refresh:focus-visible {
     opacity: 1;
   }
-}
-
-.trip-card-cover.no-image .trip-card-img-refresh {
-  opacity: 1;
 }
 
 .trip-card-img-refresh:disabled {
@@ -1612,6 +1610,11 @@ img {
 /* An advisory under a form: something the save will not do, said before the
    user wonders why nothing happened. Amber is the "running late / heads up"
    status in this design language — not an error, which is red. */
+/* The budget's one-line explanation of what it counts, under the bar. */
+.budget-hint {
+  margin: var(--space-xs) 0 var(--space-md);
+}
+
 .form-warning {
   font-size: 0.85rem;
   color: var(--warning-text);
@@ -1966,6 +1969,32 @@ img {
   flex-wrap: wrap;
   gap: 4px var(--space-xs);
   align-items: baseline;
+}
+
+/* The budget chip carries its state in the summary line the same way the panel
+   does, so the header answers "am I over?" without scrolling to the bar. */
+/* The card's budget alarm. Present only when amber or red, so it is a signal
+   rather than a permanent row of numbers. */
+.trip-card-budget {
+  margin: var(--space-xs) 0 0;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+}
+
+.trip-card-budget[data-level='near'] {
+  color: var(--warning-text);
+}
+
+.trip-card-budget[data-level='over'] {
+  color: var(--danger-text);
+}
+
+.trip-header-budget[data-level='near'] {
+  color: var(--warning-text);
+}
+
+.trip-header-budget[data-level='over'] {
+  color: var(--danger-text);
 }
 
 .trip-header-sep {

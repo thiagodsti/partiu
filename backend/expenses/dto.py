@@ -64,3 +64,22 @@ class BalanceEntryDTO(BaseModel):
 
 class BalancesDTO(BaseModel):
     balances: dict[str, list[BalanceEntryDTO]]
+
+
+class BudgetDTO(BaseModel):
+    """The caller's budget for a trip and what they have spent against it.
+
+    `spent` is the caller's own share, not what they paid out. `uncounted` is
+    per-currency spend outside the budget's currency — reported, never
+    converted, because this app has no exchange rates to convert with.
+    """
+
+    amount: float | None = None
+    currency: str | None = None
+    spent: float
+    uncounted: dict[str, float]
+
+
+class SetBudgetDTO(BaseModel):
+    amount: float
+    currency: str

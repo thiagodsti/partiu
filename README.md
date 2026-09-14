@@ -60,6 +60,14 @@ Want to try it before self-hosting? A public demo is available at:
 - Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency
 - Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings
 
+### Trip budget
+- Set a spending limit per trip. The bar reads as a traffic light that deepens as it fills: pale green at the start, strong green as it runs on, then pale amber at 80% deepening to strong, then red the moment you reach the limit
+- It counts **your share**, not what you paid: a €100 dinner split four ways counts €25 towards your budget whoever picked up the bill, and paying for a friend's taxi you were not on counts nothing at all
+- On the trips list a trip only mentions its budget when it is **running out or spent** — an overview is for spotting what needs attention, not for repeating numbers. Trips still weeks away count too: the flights and hotels you have already paid for are already spent
+- The trip's summary line carries it too — `🎯 EUR 255 / EUR 800`, in the same colour as the bar — so you can see where you stand without scrolling
+- The budget is yours alone — two people sharing a trip each set their own
+- Spend in other currencies is listed beside the bar and never converted, because the app has no exchange rates and a converted figure would be a guess dressed as a fact
+
 ### Ground transport (train, bus, ferry, car)
 - Add non-flight legs to a trip by hand — a train between two cities, an airport bus, a ferry — so a trip is not limited to the flights that bracket it
 - Station type-ahead backed by [Photon](https://photon.komoot.io) (OpenStreetMap): search "Xi'an North" and get the real station with coordinates
@@ -110,7 +118,7 @@ Want to try it before self-hosting? A public demo is available at:
 
 ### Destination images
 - Auto-fetches a destination photo from Wikipedia for each trip
-- Manual refresh to cycle to a different image
+- Ask for a different image from the button in the top-right corner of the photo **inside a trip**; the trip cards stay clean, since a thumbnail is too small to judge an image by — and on a phone the control covered the part of it you were looking at
 
 ### Immich integration (optional)
 - Create a photo album in your Immich instance for any completed trip
@@ -149,6 +157,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Inside a trip, a small line under the dates says what it holds — "2 voos · 1 balsa · 2 carros · 2 hospedagens · BRL 1.240" — so you can see the shape of it, and what it cost, without scrolling. The total updates as you add expenses rather than waiting for a reload
 - Shortening a trip past one of its own legs tells you which dates the legs are holding, rather than saving and appearing to do nothing
 - Adding a leg only offers dates inside the trip. The trip remembers the span you gave it when you created it, so the first leg you add does not shrink the trip down to its own day — and if you need a date outside, the form says so and points you at the trip's dates
+- A trip imported from email arrives with its cities already filled in on the edit form, worked out from the airports its flights use — you just save to keep them
 - A trip's origin and **destinations** are cities, picked with autocomplete — add as many as the trip visits. Each one counts toward the countries you have visited, and the cover photo picks one of them at random, so asking for a different image moves between the trip's cities
 - Creating a trip does not ask for booking references. A booking reference belongs to the flight or leg it was issued for, which is where you type it; search still finds a trip by any reference on any of its legs. Where a trip starts and ends comes from the legs you put in it, so there is nothing to fill in and nothing that is wrong for a rail trip
 - **On a wide screen the trip page reads as a spine and a margin**: the itinerary — transport, stays, the day planner, then documents — runs down the wide column, while the packing list, expenses, notes and rating sit in a narrower one beside it. The two columns flow independently, so a short card never leaves a blank hole under itself

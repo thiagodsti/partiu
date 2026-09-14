@@ -7,6 +7,9 @@ Trip expenses API routes.
   DELETE /api/trips/{trip_id}/expenses/{expense_id}           — delete expense
   GET    /api/trips/{trip_id}/expenses/participants           — payer/split-between picker
   GET    /api/trips/{trip_id}/expenses/balances                — net balance per participant/currency
+  GET    /api/trips/{trip_id}/budget                          — the caller's budget + their spend
+  PUT    /api/trips/{trip_id}/budget                          — set it
+  DELETE /api/trips/{trip_id}/budget                          — clear it
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,12 +18,14 @@ from ..auth import get_current_user
 from . import expense_service
 from .dto import (
     BalancesDTO,
+    BudgetDTO,
     CreateExpenseDTO,
     CreateExpenseResponseDTO,
     ExpenseDTO,
     OkDTO,
     ParticipantDTO,
     ParticipantInputDTO,
+    SetBudgetDTO,
     UpdateExpenseDTO,
 )
 from .errors import ExpenseNotFoundError, TripAccessError
@@ -130,3 +135,39 @@ def delete_expense(trip_id: str, expense_id: str, user: dict = Depends(get_curre
     except ExpenseNotFoundError:
         raise HTTPException(status_code=404, detail="Expense not found")
     return None
+
+
+# A budget is personal: these read and write the *caller's* row for this trip,
+# so a collaborator setting theirs never touches anyone else's.
+@router.get("/api/trips/{trip_id}/budget", response_model=BudgetDTO)
+def get_budget(trip_id: str, user: dict = Depends(get_current_user)):
+    try:
+        status = expense_service.get_budget(trip_id, user["id"])
+    except TripAccessError:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return BudgetDTO(
+        amount=status.budget.amount if status.budget else None,
+        currency=status.budget.currency if status.budget else None,
+        spent=status.spent,
+        uncounted=status.uncounted,
+    )
+
+
+@router.put("/api/trips/{trip_id}/budget", response_model=OkDTO)
+def set_budget(trip_id: str, body: SetBudgetDTO, user: dict = Depends(get_current_user)):
+    try:
+        expense_service.set_budget(trip_id, user["id"], body.amount, body.currency)
+    except TripAccessError:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return OkDTO(ok=True)
+
+
+@router.delete("/api/trips/{trip_id}/budget", response_model=OkDTO)
+def clear_budget(trip_id: str, user: dict = Depends(get_current_user)):
+    try:
+        expense_service.clear_budget(trip_id, user["id"])
+    except TripAccessError:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return OkDTO(ok=True)

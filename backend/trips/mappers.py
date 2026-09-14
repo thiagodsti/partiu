@@ -47,6 +47,9 @@ def trip_to_list_item_dto(
     stay_count: int,
     segment_types: list[str],
     expenses_total: dict[str, float],
+    budget_amount: float | None,
+    budget_currency: str | None,
+    budget_spent: float | None,
     immich_album_id: str | None,
     search_index: str,
 ) -> TripListItemDTO:
@@ -79,6 +82,9 @@ def trip_to_list_item_dto(
         stay_count=stay_count,
         segment_types=segment_types,
         expenses_total=expenses_total,
+        budget_amount=budget_amount,
+        budget_currency=budget_currency,
+        budget_spent=budget_spent,
         immich_album_id=immich_album_id,
         search_index=search_index,
     )

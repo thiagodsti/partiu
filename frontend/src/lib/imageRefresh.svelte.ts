@@ -1,18 +1,22 @@
 /**
- * Reactive image refresh manager for trip cards.
- * Handles auto-retry on error and manual refresh via the trips API.
+ * Auto-retry for a trip card's cover image.
+ *
+ * A card whose photo 404s asks the server for a different one **once**, then
+ * gives up and shows the fallback glyph — retrying on every render would hammer
+ * Wikipedia for a trip that simply has no photo.
+ *
+ * Manual refresh is not here: that control lives inside the trip, where the
+ * image is large enough to judge. On a card it covered a third of the photo.
  *
  * Usage:
  *   const imgRefresh = new ImageRefreshManager();
  *   // in template: imgFailed={imgRefresh.imgFailed[trip.id] ?? false}
  *                  onImageError={(e) => imgRefresh.handleError(e, trip.id)}
- *                  onRefreshImage={(e) => imgRefresh.refresh(e, trip.id)}
  */
 import { tripsApi } from '../api/client';
 import { tripImageBust } from './tripImageStore';
 
 export class ImageRefreshManager {
-  refreshingId = $state<string | null>(null);
   imgFailed = $state<Record<string, boolean>>({});
   private retried = new Set<string>();
 
@@ -27,22 +31,6 @@ export class ImageRefreshManager {
       tripImageBust.bust(tripId);
     } catch {
       this.imgFailed = { ...this.imgFailed, [tripId]: true };
-    }
-  }
-
-  async refresh(e: MouseEvent, tripId: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    this.refreshingId = tripId;
-    try {
-      await tripsApi.refreshImage(tripId);
-      this.imgFailed = { ...this.imgFailed, [tripId]: false };
-      this.retried.delete(tripId);
-      tripImageBust.bust(tripId);
-    } catch {
-      // no image available — leave current state
-    } finally {
-      this.refreshingId = null;
     }
   }
 }

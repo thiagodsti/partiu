@@ -1,10 +1,10 @@
 <script lang="ts">
   import { push } from 'svelte-spa-router';
-  import { tripsApi, segmentsApi, staysApi } from '../api/client';
+  import { tripsApi, segmentsApi, staysApi, airportsApi } from '../api/client';
   import TopNav from '../components/TopNav.svelte';
   import FormSection from '../components/FormSection.svelte';
   import PlaceInput from '../components/PlaceInput.svelte';
-  import type { PickedPlace } from '../api/types';
+  import type { PickedPlace, Trip } from '../api/types';
   import { localDateKey } from '../lib/utils';
   import { t } from '../lib/i18n';
 
@@ -71,6 +71,7 @@
         address: null,
       }));
       destinations = listed.length ? listed : [emptyPlace()];
+      seedPlacesFromFlights(trip);
       loadContentSpan(trip.flights ?? []);
     } catch (err) {
       loadError = (err as Error).message;
@@ -80,6 +81,58 @@
   }
 
   loadTrip();
+
+  /* A trip built from email has airports but no typed cities, so this form
+   * opened blank on exactly the trips that already knew where they went.
+   *
+   * The airport pair is derived and cannot hold a city, so the cities are
+   * seeded into the *form* — offered as a filled-in default, saved only if the
+   * traveller saves. Nothing is written behind their back, and anything they
+   * already typed is left alone.
+   *
+   * The airport row carries coordinates and a country too, so the seed is a
+   * complete place rather than a bare label: the country is the airport's,
+   * which is a fact rather than a guess. */
+  let seededFromFlights = $state(false);
+
+  /** "Paris (Roissy-en-France)" → "Paris", "London, Essex" → "London". The same
+   *  trimming the cover-photo lookup does on an airport's city name. */
+  function cityOf(airport: { city_name?: string | null; iata_code: string }): string {
+    const city = (airport.city_name ?? '').split('(')[0].split(',')[0].trim();
+    return city || airport.iata_code;
+  }
+
+  async function placeFromAirport(iata: string): Promise<PickedPlace | null> {
+    try {
+      const airport = await airportsApi.get(iata);
+      return {
+        name: cityOf(airport),
+        lat: airport.latitude ?? null,
+        lon: airport.longitude ?? null,
+        country_code: airport.country_code ?? null,
+        address: null,
+      };
+    } catch {
+      // No airport row, or the lookup failed: leave the field empty rather than
+      // seeding an IATA code into a field that asks for a city.
+      return null;
+    }
+  }
+
+  async function seedPlacesFromFlights(trip: Trip) {
+    const wantOrigin = !origin.name && !!trip.origin_airport;
+    const wantDestination = !destinations.some((d) => d.name) && !!trip.destination_airport;
+    if (!wantOrigin && !wantDestination) return;
+
+    const [from, to] = await Promise.all([
+      wantOrigin ? placeFromAirport(trip.origin_airport!) : null,
+      wantDestination ? placeFromAirport(trip.destination_airport!) : null,
+    ]);
+
+    if (from) origin = from;
+    if (to) destinations = [to];
+    seededFromFlights = !!(from || to);
+  }
 
   /** Earliest departure and latest arrival across everything on the trip, as
    *  local calendar dates. Best-effort: a failed lookup just means no warning,
@@ -235,6 +288,11 @@
           >+ {$t('trips.destination_add')}</button>
         </div>
         <p class="form-hint">{$t('trips.route_hint')}</p>
+        {#if seededFromFlights}
+          <!-- Say where they came from: a field that fills itself is otherwise
+               indistinguishable from one the traveller filled and forgot. -->
+          <p class="form-hint">{$t('trips.route_seeded')}</p>
+        {/if}
       </FormSection>
 
       {#if spanWarning}

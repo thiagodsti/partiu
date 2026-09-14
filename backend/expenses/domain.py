@@ -5,6 +5,33 @@ from typing import Literal
 
 ParticipantType = Literal["user", "guest"]
 
+
+@dataclass
+class Budget:
+    """One person's spending limit for one trip, in one currency."""
+
+    amount: float
+    currency: str
+
+
+@dataclass
+class BudgetStatus:
+    """A budget alongside what the caller has actually committed to it.
+
+    `spent` counts **the caller's own share** of every expense they are tagged
+    in — an expense split four ways counts a quarter, whoever paid. A budget is
+    what the trip costs you, and that does not depend on who held the card.
+
+    `uncounted` is per-currency spend that falls outside the budget's currency.
+    It is reported rather than converted: there are no exchange rates here, and
+    a converted figure would be a guess wearing the clothes of a fact.
+    """
+
+    budget: Budget | None
+    spent: float
+    uncounted: dict[str, float]
+
+
 SUPPORTED_CURRENCIES = {
     "AED",
     "ARS",

@@ -75,6 +75,9 @@ def list_trips(user: dict = Depends(get_current_user)):
             stay_count=item.stay_count,
             segment_types=item.segment_types,
             expenses_total=item.expenses_total,
+            budget_amount=item.budget_amount,
+            budget_currency=item.budget_currency,
+            budget_spent=item.budget_spent,
             immich_album_id=item.immich_album_id,
             search_index=item.search_index,
         )

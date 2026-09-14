@@ -3,16 +3,27 @@ resolution and balance computation."""
 
 import uuid
 
-from .domain import SUPPORTED_CURRENCIES, BalanceEntry, Expense, ParticipantRef
+from .domain import (
+    SUPPORTED_CURRENCIES,
+    BalanceEntry,
+    BudgetStatus,
+    Expense,
+    ParticipantRef,
+)
 from .errors import ExpenseNotFoundError, TripAccessError
-from .repository import ExpenseRepository
+from .repository import BudgetRepository, ExpenseRepository
 
 __all__ = ["ExpenseNotFoundError", "ExpenseService", "TripAccessError", "expense_service"]
 
 
 class ExpenseService:
-    def __init__(self, repository: ExpenseRepository | None = None):
+    def __init__(
+        self,
+        repository: ExpenseRepository | None = None,
+        budget_repository: BudgetRepository | None = None,
+    ):
         self._repository = repository or ExpenseRepository()
+        self._budgets = budget_repository or BudgetRepository()
 
     def list_expenses(self, trip_id: str, user_id: int) -> list[Expense]:
         self._check_access(trip_id, user_id)
@@ -184,6 +195,93 @@ class ExpenseService:
             currency: sorted(entries.values(), key=lambda b: b.name.lower())
             for currency, entries in per_currency.items()
         }
+
+    # -- Budget ---------------------------------------------------------------
+
+    def get_budget(self, trip_id: str, user_id: int) -> BudgetStatus:
+        """The caller's budget for this trip, and what they have spent against it.
+
+        Spend is the caller's **own share**: an expense split four ways counts a
+        quarter of it, whoever paid. What you paid out is a cash-flow question
+        and the balances view already answers it; a budget is about what the
+        trip costs you.
+
+        Only expenses in the budget's own currency count. Anything else is
+        returned in `uncounted`, named rather than converted — there are no
+        exchange rates in this app. With no budget set, every currency the
+        caller has a share in lands in `uncounted`, so the UI can offer to set
+        one against a number the traveller already recognises.
+        """
+        self._check_access(trip_id, user_id)
+        budget = self._budgets.get(trip_id, user_id)
+        share = self._own_share_by_currency(trip_id, user_id)
+
+        if budget is None:
+            return BudgetStatus(budget=None, spent=0.0, uncounted=share)
+
+        spent = share.pop(budget.currency, 0.0)
+        return BudgetStatus(budget=budget, spent=spent, uncounted=share)
+
+    def set_budget(self, trip_id: str, user_id: int, amount: float, currency: str) -> None:
+        self._check_access(trip_id, user_id)
+        if amount <= 0:
+            raise ValueError("Budget must be greater than zero")
+        if currency not in SUPPORTED_CURRENCIES:
+            raise ValueError(f"Unsupported currency: {currency}")
+        self._budgets.set(trip_id, user_id, amount, currency)
+
+    def clear_budget(self, trip_id: str, user_id: int) -> None:
+        self._check_access(trip_id, user_id)
+        self._budgets.delete(trip_id, user_id)
+
+    def budgets_for_trips(self, user_id: int, trip_ids: list[str]) -> dict[str, BudgetStatus]:
+        """The caller's budget and spend for each of these trips, in two reads.
+
+        For the trips list, which renders a card per trip: fetching a budget per
+        card would be a request per row. Only trips the caller has actually set
+        a budget on come back — a card with no budget has nothing to show.
+
+        No access check here: the caller's own `trip_budgets` rows are scoped to
+        them by definition, and the list has already decided which trips they
+        may see.
+        """
+        budgets = self._budgets.list_for_user(user_id, trip_ids)
+        if not budgets:
+            return {}
+
+        shares = self._budgets.own_share_by_trip(user_id, list(budgets))
+        out: dict[str, BudgetStatus] = {}
+        for trip_id, budget in budgets.items():
+            uncounted = {
+                currency: amount
+                for (t, currency), amount in shares.items()
+                if t == trip_id and currency != budget.currency
+            }
+            out[trip_id] = BudgetStatus(
+                budget=budget,
+                spent=shares.get((trip_id, budget.currency), 0.0),
+                uncounted=uncounted,
+            )
+        return out
+
+    def _own_share_by_currency(self, trip_id: str, user_id: int) -> dict[str, float]:
+        """Per-currency total of the caller's equal share of what they are in.
+
+        An expense the caller is not a participant of contributes nothing, even
+        if they paid it — they are settling up for other people, not spending on
+        themselves. An expense with no participants at all contributes nothing
+        rather than dividing by zero.
+        """
+        share: dict[str, float] = {}
+        for expense in self._repository.list_for_trip(trip_id):
+            if not expense.participants:
+                continue
+            if not any(p.type == "user" and p.id == user_id for p in expense.participants):
+                continue
+            share[expense.currency] = share.get(expense.currency, 0.0) + expense.amount / len(
+                expense.participants
+            )
+        return share
 
     @staticmethod
     def _credit(

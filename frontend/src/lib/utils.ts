@@ -595,6 +595,29 @@ export function formatCurrencyTotals(totals: Record<string, number> | undefined)
     });
 }
 
+/** Where a budget stands: green while there is room, amber as it runs out, red
+ *  once it is gone. */
+export type BudgetLevel = 'under' | 'near' | 'over';
+
+/** Amber from here. Before the limit, not at it — a budget you are about to
+ *  break is the moment the number is worth knowing. */
+export const BUDGET_WARN_AT = 0.8;
+
+/**
+ * Red **at** the limit, not past it: spending exactly your budget is spending
+ * all of it, and a bar still amber while the money is gone reads as "nearly
+ * there".
+ *
+ * Returns null when there is nothing to judge — no budget, or one of zero,
+ * which would divide.
+ */
+export function budgetLevel(spent: number, amount: number | null | undefined): BudgetLevel | null {
+  if (!amount || amount <= 0) return null;
+  const ratio = spent / amount;
+  if (ratio >= 1) return 'over';
+  return ratio >= BUDGET_WARN_AT ? 'near' : 'under';
+}
+
 /** One line of a trip's inventory: a glyph, a count, and the key that names it. */
 export interface TripContentPart {
   icon: string;

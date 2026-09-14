@@ -8,6 +8,7 @@
     sharesApi,
     boardingPassesApi,
   } from "../api/client";
+  import TripBudget from "../components/TripBudget.svelte";
   import TripExpenses from "../components/TripExpenses.svelte";
   import TripPackingList from "../components/TripPackingList.svelte";
   import TripTransport from "../components/TripTransport.svelte";
@@ -21,8 +22,11 @@
     TripBoardingPass,
     TripSegment,
     TripStay,
+    // Aliased: `TripBudget` is the component imported above.
+    TripBudget as TripBudgetStatus,
   } from "../api/types";
   import {
+    budgetLevel,
     formatCurrencyTotals,
     formatDateRange,
     inferTripStatus,
@@ -210,6 +214,24 @@
    * current by the expenses section — which is the only thing that knows an
    * expense was just added. */
   let expenseTotals = $state<Record<string, number> | undefined>(undefined);
+  let budgetPanel = $state<{ reload: () => void } | null>(null);
+
+  /* The budget, reported by the panel below so the header does not fetch it a
+   * second time. Shown as its own chip rather than folded into the expense
+   * totals beside it: those are the *trip's* spend per currency, this is **your
+   * share** against **your** limit — two different figures that would be a lie
+   * if added together. */
+  let budgetStatus = $state<TripBudgetStatus | null>(null);
+  const budgetChip = $derived.by(() => {
+    const amount = budgetStatus?.amount;
+    const currency = budgetStatus?.currency;
+    if (amount == null || currency == null) return null;
+    const spent = budgetStatus!.spent;
+    return {
+      level: budgetLevel(spent, amount),
+      label: `${formatCurrencyTotals({ [currency]: spent })[0]} / ${formatCurrencyTotals({ [currency]: amount })[0]}`,
+    };
+  });
   const expenseLabels = $derived(
     formatCurrencyTotals(expenseTotals ?? trip?.expenses_total),
   );
@@ -516,7 +538,8 @@
         />
         <button
           class="trip-card-img-refresh"
-          title="Find a different image"
+          title={$t("trips.refresh_image")}
+          aria-label={$t("trips.refresh_image")}
           disabled={refreshingImage}
           onclick={refreshImage}
         >
@@ -539,6 +562,12 @@
             <span class="trip-header-sep" aria-hidden="true">·</span>
             <span>💰 {label}</span>
           {/each}
+          {#if budgetChip}
+            <span class="trip-header-sep" aria-hidden="true">·</span>
+            <span class="trip-header-budget" data-level={budgetChip.level} title={$t('budget.hint')}>
+              🎯 {budgetChip.label}
+            </span>
+          {/if}
         </p>
       {/if}
       <div
@@ -914,10 +943,24 @@
         <div class="trip-section-header">
           <h3 class="trip-section-title">{$t("expenses.title")}</h3>
         </div>
+        <!-- The budget reads its spend from the same expenses listed below, so a
+             new expense has to nudge it — see `TripBudget.reload` for why this
+             is a call rather than a prop the list can bump. -->
+        <TripBudget
+          bind:this={budgetPanel}
+          tripId={params.id}
+          {defaultCurrency}
+          onchange={(status) => (budgetStatus = status)}
+        />
+        <p class="form-hint budget-hint">{$t('budget.hint')}</p>
+
         <TripExpenses
           tripId={params.id}
           {defaultCurrency}
-          onchange={(totals) => (expenseTotals = totals)}
+          onchange={(totals) => {
+            expenseTotals = totals;
+            budgetPanel?.reload();
+          }}
         />
       </div>
 
