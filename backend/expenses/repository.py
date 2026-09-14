@@ -137,16 +137,77 @@ class ExpenseRepository:
 
 
 class BudgetRepository:
-    """The `trip_budgets` table. Keyed on (trip_id, user_id): a budget belongs
-    to a person, not to a trip, so two collaborators each keep their own."""
+    """The `trip_budgets` table and its `trip_budget_members` rows.
+
+    A budget is still stored per owner — keyed on (trip_id, user_id) — but it
+    belongs to everyone in its member list, which is how two people travelling
+    on one purse share a limit. The owner is always among the members, stored as
+    a row like any other so the share query is one uniform join.
+    """
 
     def get(self, trip_id: str, user_id: int) -> Budget | None:
+        """The budget this user *owns* on this trip, if any. Resolution for
+        display goes through `resolve` — a member who owns nothing still has a
+        budget to look at."""
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT amount, currency FROM trip_budgets WHERE trip_id = ? AND user_id = ?",
+                """SELECT b.amount, b.currency, b.user_id, u.username
+                     FROM trip_budgets b
+                     LEFT JOIN users u ON u.id = b.user_id
+                    WHERE b.trip_id = ? AND b.user_id = ?""",
                 (trip_id, user_id),
             ).fetchone()
-        return Budget(amount=row["amount"], currency=row["currency"]) if row else None
+        return self._row_to_budget(row) if row else None
+
+    def resolve(self, trip_id: str, user_id: int) -> Budget | None:
+        """The budget that applies to this user on this trip: their own if they
+        have one, otherwise one that names them as a member.
+
+        Their own wins because setting a budget is a deliberate act and must not
+        be overridden by someone adding you to theirs. `ORDER BY b.user_id` only
+        keeps the answer stable if two different people have both named you;
+        nothing in the UI creates that, but an arbitrary winner would make the
+        figure flicker between reads.
+        """
+        own = self.get(trip_id, user_id)
+        if own is not None:
+            return own
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT b.amount, b.currency, b.user_id, u.username
+                     FROM trip_budgets b
+                     JOIN trip_budget_members m
+                       ON m.trip_id = b.trip_id AND m.owner_user_id = b.user_id
+                     LEFT JOIN users u ON u.id = b.user_id
+                    WHERE b.trip_id = ? AND m.member_type = 'user' AND m.member_id = ?
+                    ORDER BY b.user_id
+                    LIMIT 1""",
+                (trip_id, user_id),
+            ).fetchone()
+        return self._row_to_budget(row) if row else None
+
+    @staticmethod
+    def _row_to_budget(row) -> Budget:
+        return Budget(
+            amount=row["amount"],
+            currency=row["currency"],
+            owner_user_id=row["user_id"],
+            owner_username=row["username"],
+        )
+
+    def list_members(self, trip_id: str, owner_user_id: int) -> list[tuple[str, int]]:
+        """The (type, id) pairs a budget is shared with, owner included. Names
+        are not joined here: the service already has the trip's participant list
+        and resolves them against that, which is also what keeps a member who
+        has since left the trip from being printed as a bare id."""
+        with db_conn() as conn:
+            rows = conn.execute(
+                """SELECT member_type, member_id FROM trip_budget_members
+                    WHERE trip_id = ? AND owner_user_id = ?
+                    ORDER BY member_type, member_id""",
+                (trip_id, owner_user_id),
+            ).fetchall()
+        return [(row["member_type"], row["member_id"]) for row in rows]
 
     def set(self, trip_id: str, user_id: int, amount: float, currency: str) -> None:
         now = now_iso()
@@ -161,57 +222,122 @@ class BudgetRepository:
                 (trip_id, user_id, amount, currency, now, now),
             )
 
+    def replace_members(
+        self, trip_id: str, owner_user_id: int, members: list[tuple[str, int]]
+    ) -> None:
+        """Wholesale, not a diff — the member list is a set the user chose, and
+        the rows carry nothing else worth preserving."""
+        with db_write() as conn:
+            conn.execute(
+                "DELETE FROM trip_budget_members WHERE trip_id = ? AND owner_user_id = ?",
+                (trip_id, owner_user_id),
+            )
+            conn.executemany(
+                """INSERT OR IGNORE INTO trip_budget_members
+                       (trip_id, owner_user_id, member_type, member_id)
+                   VALUES (?, ?, ?, ?)""",
+                [(trip_id, owner_user_id, m_type, m_id) for m_type, m_id in members],
+            )
+
     def delete(self, trip_id: str, user_id: int) -> None:
         with db_write() as conn:
+            # The FK cascades, but only while `PRAGMA foreign_keys` is on; the
+            # member rows are dropped explicitly so the table cannot be left
+            # holding rows for a budget that no longer exists.
+            conn.execute(
+                "DELETE FROM trip_budget_members WHERE trip_id = ? AND owner_user_id = ?",
+                (trip_id, user_id),
+            )
             conn.execute(
                 "DELETE FROM trip_budgets WHERE trip_id = ? AND user_id = ?", (trip_id, user_id)
             )
 
-    def list_for_user(self, user_id: int, trip_ids: list[str]) -> dict[str, Budget]:
-        """Every budget this user has set across these trips, in one read.
+    def resolve_for_trips(self, user_id: int, trip_ids: list[str]) -> dict[str, Budget]:
+        """The budget that applies to this user on each of these trips, in one
+        read — the bulk twin of `resolve`.
 
         The trips list renders dozens of cards; a budget fetched per card would
-        be a request per row.
+        be a request per row. Own-before-shared is expressed as `ORDER BY` plus
+        a first-wins loop rather than two queries: `is_own` sorts a budget the
+        user owns ahead of one that merely names them, and `b.user_id` keeps the
+        loser deterministic when two people have both named them.
         """
         if not trip_ids:
             return {}
         placeholders = ",".join("?" * len(trip_ids))
         with db_conn() as conn:
             rows = conn.execute(
-                f"""SELECT trip_id, amount, currency FROM trip_budgets
-                    WHERE user_id = ? AND trip_id IN ({placeholders})""",
-                [user_id, *trip_ids],
+                f"""SELECT b.trip_id, b.amount, b.currency, b.user_id, u.username,
+                           (b.user_id = ?) AS is_own
+                      FROM trip_budgets b
+                      LEFT JOIN trip_budget_members m
+                        ON m.trip_id = b.trip_id AND m.owner_user_id = b.user_id
+                       AND m.member_type = 'user' AND m.member_id = ?
+                      LEFT JOIN users u ON u.id = b.user_id
+                     WHERE b.trip_id IN ({placeholders})
+                       AND (m.member_id IS NOT NULL OR b.user_id = ?)
+                     ORDER BY b.trip_id, is_own DESC, b.user_id""",
+                [user_id, user_id, *trip_ids, user_id],
             ).fetchall()
-        return {
-            row["trip_id"]: Budget(amount=row["amount"], currency=row["currency"]) for row in rows
-        }
+        out: dict[str, Budget] = {}
+        for row in rows:
+            out.setdefault(row["trip_id"], self._row_to_budget(row))
+        return out
 
-    def own_share_by_trip(self, user_id: int, trip_ids: list[str]) -> dict[tuple[str, str], float]:
-        """(trip_id, currency) -> the user's equal share of what they are in.
+    def share_by_trip(self, owners: list[tuple[str, int]]) -> dict[tuple[str, str], float]:
+        """(trip_id, currency) -> the combined share of the named budget's members.
 
-        The bulk twin of `ExpenseService._own_share_by_currency`, which walks
-        expense objects one trip at a time. Same rule in SQL: join the caller's
-        participant rows, divide each expense by how many participants it has.
-        An expense the caller is not tagged in never joins, so paying for other
-        people does not count — and `COUNT(*)` cannot be zero inside a group
-        that exists, so the division is safe.
+        The bulk twin of `ExpenseService._share_by_currency`, which walks expense
+        objects one trip at a time. Same rule in SQL: join each expense's
+        participant rows to the budget's member rows and divide by how many
+        participants the expense has, so an expense split four ways between four
+        people contributes one quarter per member of the budget. An expense no
+        member is tagged in never joins, so paying for other people still counts
+        nothing — and `COUNT(*)` cannot be zero inside a group that exists, so
+        the division is safe.
+
+        `owners` is (trip_id, owner_user_id) pairs rather than a single user,
+        because the budget that applies on each trip may belong to a different
+        person — a shared one is owned by whoever created it.
         """
-        if not trip_ids:
+        if not owners:
             return {}
-        placeholders = ",".join("?" * len(trip_ids))
+        values = ",".join(["(?, ?)"] * len(owners))
+        params: list[object] = []
+        for trip_id, owner_user_id in owners:
+            params.extend((trip_id, owner_user_id))
         with db_conn() as conn:
             rows = conn.execute(
-                f"""SELECT e.trip_id, e.currency, SUM(e.amount * 1.0 / pc.n) AS share
+                f"""WITH sel(trip_id, owner_user_id) AS (VALUES {values}),
+                         -- The owner is unioned in rather than assumed present:
+                         -- `set_budget` always writes their row and migration
+                         -- 0031 backfills it, so this changes nothing in
+                         -- practice — but an inner join on the members table
+                         -- alone would silently value a memberless budget at
+                         -- zero, while the single-trip path re-adds the owner
+                         -- and reports the real figure. The two must not be
+                         -- able to disagree.
+                         mem(trip_id, owner_user_id, member_type, member_id) AS (
+                             SELECT trip_id, owner_user_id, member_type, member_id
+                               FROM trip_budget_members
+                             UNION
+                             SELECT trip_id, owner_user_id, 'user', owner_user_id FROM sel
+                         )
+                    SELECT e.trip_id, e.currency, SUM(e.amount * 1.0 / pc.n) AS share
                       FROM trip_expenses e
-                      JOIN trip_expense_participants p
-                        ON p.expense_id = e.id AND p.user_id = ?
+                      JOIN sel ON sel.trip_id = e.trip_id
+                      JOIN trip_expense_participants p ON p.expense_id = e.id
+                      JOIN mem m
+                        ON m.trip_id = sel.trip_id
+                       AND m.owner_user_id = sel.owner_user_id
+                       AND ((m.member_type = 'user' AND m.member_id = p.user_id)
+                            OR (m.member_type = 'guest' AND m.member_id = p.guest_id))
                       JOIN (
                             SELECT expense_id, COUNT(*) AS n
                               FROM trip_expense_participants
                              GROUP BY expense_id
                            ) pc ON pc.expense_id = e.id
-                     WHERE e.trip_id IN ({placeholders})
                      GROUP BY e.trip_id, e.currency""",
-                [user_id, *trip_ids],
+                params,
             ).fetchall()
         return {(row["trip_id"], row["currency"]): row["share"] for row in rows}

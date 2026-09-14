@@ -199,12 +199,19 @@ class ExpenseService:
     # -- Budget ---------------------------------------------------------------
 
     def get_budget(self, trip_id: str, user_id: int) -> BudgetStatus:
-        """The caller's budget for this trip, and what they have spent against it.
+        """The budget that applies to the caller on this trip, and what has been
+        spent against it.
 
-        Spend is the caller's **own share**: an expense split four ways counts a
-        quarter of it, whoever paid. What you paid out is a cash-flow question
-        and the balances view already answers it; a budget is about what the
-        trip costs you.
+        Spend is the **members' combined share**: an expense split four ways
+        counts a quarter to a solo budget and a half to one shared by two of
+        those four, whoever paid. What you paid out is a cash-flow question and
+        the balances view already answers it; a budget is what the trip costs
+        the people it belongs to.
+
+        A budget applies to the caller if they own it or if it names them — so
+        both halves of a couple sharing one purse open the trip and read the
+        same bar. With no budget at all, the caller is their own member set,
+        which is the pre-0031 behaviour and the right default.
 
         Only expenses in the budget's own currency count. Anything else is
         returned in `uncounted`, named rather than converted — there are no
@@ -213,43 +220,120 @@ class ExpenseService:
         one against a number the traveller already recognises.
         """
         self._check_access(trip_id, user_id)
-        budget = self._budgets.get(trip_id, user_id)
-        share = self._own_share_by_currency(trip_id, user_id)
+        budget = self._budgets.resolve(trip_id, user_id)
 
         if budget is None:
+            share = self._share_by_currency(trip_id, {("user", user_id)})
             return BudgetStatus(budget=None, spent=0.0, uncounted=share)
 
+        budget.members = self._member_refs(trip_id, user_id, budget.owner_user_id)
+        share = self._share_by_currency(trip_id, {(m.type, m.id) for m in budget.members})
         spent = share.pop(budget.currency, 0.0)
         return BudgetStatus(budget=budget, spent=spent, uncounted=share)
 
-    def set_budget(self, trip_id: str, user_id: int, amount: float, currency: str) -> None:
+    def _member_refs(self, trip_id: str, user_id: int, owner_user_id: int) -> list[ParticipantRef]:
+        """Named member references for display.
+
+        Names come from the trip's participant list plus the caller's own
+        guests, the same pool the picker offers — a member who has since left
+        the trip is dropped rather than printed as a bare id, and the owner is
+        re-added afterwards so a budget can never end up belonging to nobody.
+        """
+        stored = self._budgets.list_members(trip_id, owner_user_id)
+        known: dict[tuple[str, int], ParticipantRef] = {
+            (p.type, p.id): p
+            for p in self._acceptable_choices(
+                trip_id, user_id, self.list_participants_for_trip(trip_id, user_id)
+            )
+        }
+        members = [known[key] for key in stored if key in known]
+        if not any(m.type == "user" and m.id == owner_user_id for m in members):
+            owner = known.get(("user", owner_user_id))
+            if owner is not None:
+                members.insert(0, owner)
+        return members
+
+    def set_budget(
+        self,
+        trip_id: str,
+        user_id: int,
+        amount: float,
+        currency: str,
+        members: list[tuple[str, int]] | None = None,
+    ) -> None:
+        """Set the budget that applies to the caller.
+
+        A member editing a shared budget edits **that** budget rather than
+        starting a private one beside it — otherwise "we share a budget" would
+        quietly become two budgets the moment the other person adjusted it. The
+        owner therefore does not change when a member saves, and is always kept
+        in the member list: a budget belongs to at least the person who made it.
+
+        `members=None` leaves an existing member list alone and starts a new
+        budget as the caller's own.
+        """
         self._check_access(trip_id, user_id)
         if amount <= 0:
             raise ValueError("Budget must be greater than zero")
         if currency not in SUPPORTED_CURRENCIES:
             raise ValueError(f"Unsupported currency: {currency}")
-        self._budgets.set(trip_id, user_id, amount, currency)
+
+        existing = self._budgets.resolve(trip_id, user_id)
+        owner_id = existing.owner_user_id if existing is not None else user_id
+
+        if members is None:
+            resolved = self._budgets.list_members(trip_id, owner_id) if existing is not None else []
+        else:
+            valid = self._acceptable_choices(
+                trip_id, user_id, self.list_participants_for_trip(trip_id, user_id)
+            )
+            allowed = {(p.type, p.id) for p in valid}
+            resolved = []
+            for member in members:
+                if member not in allowed:
+                    raise ValueError(f"Not on this trip: {member[0]} {member[1]}")
+                if member not in resolved:
+                    resolved.append(member)
+
+        if ("user", owner_id) not in resolved:
+            resolved.insert(0, ("user", owner_id))
+
+        self._budgets.set(trip_id, owner_id, amount, currency)
+        self._budgets.replace_members(trip_id, owner_id, resolved)
 
     def clear_budget(self, trip_id: str, user_id: int) -> None:
+        """Clear the budget that applies to the caller.
+
+        A shared budget is cleared for everyone it belongs to, the same way a
+        member editing it edits it for everyone — it is one object, and leaving
+        half of it behind would be stranger than removing it. The UI names whose
+        budget it is before offering the button.
+        """
         self._check_access(trip_id, user_id)
-        self._budgets.delete(trip_id, user_id)
+        existing = self._budgets.resolve(trip_id, user_id)
+        owner_id = existing.owner_user_id if existing is not None else user_id
+        self._budgets.delete(trip_id, owner_id)
 
     def budgets_for_trips(self, user_id: int, trip_ids: list[str]) -> dict[str, BudgetStatus]:
-        """The caller's budget and spend for each of these trips, in two reads.
+        """The budget applying to the caller on each of these trips, and its
+        spend, in two reads.
 
         For the trips list, which renders a card per trip: fetching a budget per
-        card would be a request per row. Only trips the caller has actually set
-        a budget on come back — a card with no budget has nothing to show.
+        card would be a request per row. Only trips with a budget the caller
+        owns or is named in come back — a card with no budget has nothing to
+        show. Members are not resolved to names here: the card prints a figure,
+        not a list.
 
-        No access check here: the caller's own `trip_budgets` rows are scoped to
-        them by definition, and the list has already decided which trips they
-        may see.
+        No access check here: the list has already decided which trips the
+        caller may see.
         """
-        budgets = self._budgets.list_for_user(user_id, trip_ids)
+        budgets = self._budgets.resolve_for_trips(user_id, trip_ids)
         if not budgets:
             return {}
 
-        shares = self._budgets.own_share_by_trip(user_id, list(budgets))
+        shares = self._budgets.share_by_trip(
+            [(trip_id, budget.owner_user_id) for trip_id, budget in budgets.items()]
+        )
         out: dict[str, BudgetStatus] = {}
         for trip_id, budget in budgets.items():
             uncounted = {
@@ -264,22 +348,25 @@ class ExpenseService:
             )
         return out
 
-    def _own_share_by_currency(self, trip_id: str, user_id: int) -> dict[str, float]:
-        """Per-currency total of the caller's equal share of what they are in.
+    def _share_by_currency(self, trip_id: str, members: set[tuple[str, int]]) -> dict[str, float]:
+        """Per-currency total of `members`' combined equal share of what they are in.
 
-        An expense the caller is not a participant of contributes nothing, even
-        if they paid it — they are settling up for other people, not spending on
-        themselves. An expense with no participants at all contributes nothing
-        rather than dividing by zero.
+        An expense none of them is a participant of contributes nothing, even if
+        one of them paid it — they are settling up for other people, not
+        spending on themselves. An expense with no participants at all
+        contributes nothing rather than dividing by zero. Two members tagged in
+        the same expense contribute two shares of it, which is the whole point
+        of a shared budget: the pair's half of a four-way split.
         """
         share: dict[str, float] = {}
         for expense in self._repository.list_for_trip(trip_id):
             if not expense.participants:
                 continue
-            if not any(p.type == "user" and p.id == user_id for p in expense.participants):
+            tagged = sum(1 for p in expense.participants if (p.type, p.id) in members)
+            if not tagged:
                 continue
-            share[expense.currency] = share.get(expense.currency, 0.0) + expense.amount / len(
-                expense.participants
+            share[expense.currency] = share.get(expense.currency, 0.0) + (
+                expense.amount / len(expense.participants) * tagged
             )
         return share
 

@@ -260,3 +260,340 @@ class TestBulkBudgetsForTheTripsList:
         service.set_budget("t1", user_id, 500.0, "EUR")
 
         assert service.budgets_for_trips(other, ["t1"]) == {}
+
+
+def _guest(owner_id: int, name: str) -> int:
+    with db_write() as conn:
+        cur = conn.execute(
+            "INSERT INTO guests (owner_id, name, created_at) VALUES (?, ?, ?)",
+            (owner_id, name, "2026-01-01T00:00:00"),
+        )
+        return cur.lastrowid
+
+
+class TestASharedBudget:
+    """Two people travelling on one purse. Spend is their *combined* share, so
+    it makes no difference which of them held the card — which is the whole
+    reason the member list exists."""
+
+    def test_both_halves_of_a_split_count_against_a_shared_budget(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            300.0,
+            "EUR",
+            participants=[("user", user_id), ("user", partner)],
+        )
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        assert service.get_budget("t1", user_id).spent == 300.0
+
+    def test_a_third_person_on_the_bill_still_only_costs_the_pair_their_share(self, setup):
+        """A three-way split costs a two-person budget two thirds, not all of it."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        friend = _collaborator("t1", user_id, "friend")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Dinner",
+            90.0,
+            "EUR",
+            participants=[("user", user_id), ("user", partner), ("user", friend)],
+        )
+        service.set_budget(
+            "t1", user_id, 500.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        assert service.get_budget("t1", user_id).spent == 60.0
+
+    def test_an_expense_neither_member_is_in_counts_nothing(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        friend = _collaborator("t1", user_id, "friend")
+        service.create_expense(
+            "t1", user_id, "Their taxi", 40.0, "EUR", participants=[("user", friend)]
+        )
+        service.set_budget(
+            "t1", user_id, 500.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        assert service.get_budget("t1", user_id).spent == 0.0
+
+    def test_the_member_sees_the_same_budget_and_the_same_bar(self, setup):
+        """The point of sharing: the partner opens the trip and reads the same
+        figures, without having set anything up themselves."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            300.0,
+            "EUR",
+            participants=[("user", user_id), ("user", partner)],
+        )
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        theirs = service.get_budget("t1", partner)
+        assert theirs.budget is not None
+        assert theirs.budget.amount == 1000.0
+        assert theirs.spent == 300.0
+        assert theirs.budget.owner_user_id == user_id
+        assert theirs.budget.owner_username == "budgeter"
+
+    def test_a_companion_without_an_account_can_be_a_member(self, setup):
+        """The common case is a spouse with no Partiu login — that is what
+        guests are for, so a guest has to be shareable with."""
+        service, user_id = setup
+        wife = _guest(user_id, "Barbara")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            200.0,
+            "EUR",
+            participants=[("user", user_id), ("guest", wife)],
+        )
+        service.set_budget(
+            "t1", user_id, 800.0, "EUR", members=[("user", user_id), ("guest", wife)]
+        )
+
+        assert service.get_budget("t1", user_id).spent == 200.0
+
+    def test_a_budget_you_already_had_wins_over_one_shared_with_you(self, setup):
+        """Setting a budget is a deliberate act; being added to someone else's
+        is not, so it must not silently replace what you chose.
+
+        Note the ordering: once you *are* in a shared budget, saving edits that
+        one — there is no second gesture meaning "and also start a private one".
+        Unchecking yourself from its member list is how you leave, and the save
+        after that is your own again.
+        """
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget("t1", partner, 250.0, "EUR")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        assert service.get_budget("t1", partner).budget.amount == 250.0
+        assert service.get_budget("t1", user_id).budget.amount == 1000.0
+
+    def test_leaving_a_shared_budget_frees_you_to_set_your_own(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        service.set_budget("t1", partner, 1000.0, "EUR", members=[("user", user_id)])
+        service.set_budget("t1", partner, 250.0, "EUR")
+
+        assert service.get_budget("t1", partner).budget.amount == 250.0
+        assert service.get_budget("t1", partner).budget.owner_user_id == partner
+        assert service.get_budget("t1", user_id).budget.amount == 1000.0
+
+    def test_a_member_editing_edits_the_shared_budget_not_a_private_copy(self, setup):
+        """Otherwise "we share a budget" becomes two budgets the moment the
+        other person adjusts the amount."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        service.set_budget("t1", partner, 1200.0, "EUR")
+
+        owner_view = service.get_budget("t1", user_id)
+        assert owner_view.budget.amount == 1200.0
+        assert owner_view.budget.owner_user_id == user_id
+
+    def test_the_owner_is_always_a_member(self, setup):
+        """A budget belongs to at least the person who made it, whatever the
+        member list leaves out."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget("t1", user_id, 500.0, "EUR", members=[("user", partner)])
+
+        members = service.get_budget("t1", user_id).budget.members
+        assert ("user", user_id) in [(m.type, m.id) for m in members]
+
+    def test_members_default_to_you_alone(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            300.0,
+            "EUR",
+            participants=[("user", user_id), ("user", partner)],
+        )
+        service.set_budget("t1", user_id, 1000.0, "EUR")
+
+        status = service.get_budget("t1", user_id)
+        assert [(m.type, m.id) for m in status.budget.members] == [("user", user_id)]
+        assert status.spent == 150.0
+
+    def test_saving_without_a_member_list_keeps_the_one_it_has(self, setup):
+        """A client that predates sharing must not silently un-share a budget by
+        saving a new amount."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        service.set_budget("t1", user_id, 1100.0, "EUR")
+
+        members = service.get_budget("t1", user_id).budget.members
+        assert ("user", partner) in [(m.type, m.id) for m in members]
+
+    def test_someone_not_on_the_trip_cannot_be_a_member(self, setup):
+        service, user_id = setup
+        stranger = _user("stranger")
+        with pytest.raises(ValueError):
+            service.set_budget("t1", user_id, 500.0, "EUR", members=[("user", stranger)])
+
+    def test_clearing_a_shared_budget_clears_it_for_everyone(self, setup):
+        """It is one object — leaving half of it behind would be stranger than
+        removing it, and the UI names whose budget it is first."""
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        service.clear_budget("t1", partner)
+
+        assert service.get_budget("t1", user_id).budget is None
+        assert service.get_budget("t1", partner).budget is None
+
+    def test_a_member_who_left_the_trip_is_not_printed_as_a_bare_id(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        with db_write() as conn:
+            conn.execute("DELETE FROM trip_shares WHERE trip_id = 't1' AND user_id = ?", (partner,))
+
+        members = service.get_budget("t1", user_id).budget.members
+        assert [(m.type, m.id) for m in members] == [("user", user_id)]
+
+
+class TestSharedBudgetsInBulk:
+    """The trips list reads budgets in bulk; the two paths must agree, sharing
+    and all."""
+
+    def test_bulk_matches_the_single_trip_answer_for_a_shared_budget(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            300.0,
+            "EUR",
+            participants=[("user", user_id), ("user", partner)],
+        )
+        service.create_expense(
+            "t1", user_id, "Their taxi", 40.0, "EUR", participants=[("user", partner)]
+        )
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        single = service.get_budget("t1", user_id)
+        bulk = service.budgets_for_trips(user_id, ["t1"])["t1"]
+        assert bulk.spent == single.spent == 340.0
+
+    def test_a_guest_members_share_counts_in_bulk_too(self, setup):
+        service, user_id = setup
+        wife = _guest(user_id, "Barbara")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Hotel",
+            200.0,
+            "EUR",
+            participants=[("user", user_id), ("guest", wife)],
+        )
+        service.set_budget(
+            "t1", user_id, 800.0, "EUR", members=[("user", user_id), ("guest", wife)]
+        )
+
+        assert service.budgets_for_trips(user_id, ["t1"])["t1"].spent == 200.0
+
+    def test_the_card_shows_a_budget_shared_with_you(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+
+        theirs = service.budgets_for_trips(partner, ["t1"])
+        assert theirs["t1"].budget.amount == 1000.0
+        assert theirs["t1"].budget.owner_user_id == user_id
+
+    def test_your_own_budget_wins_in_bulk_as_well(self, setup):
+        service, user_id = setup
+        partner = _collaborator("t1", user_id, "partner")
+        service.set_budget(
+            "t1", user_id, 1000.0, "EUR", members=[("user", user_id), ("user", partner)]
+        )
+        service.set_budget("t1", partner, 250.0, "EUR")
+
+        assert service.budgets_for_trips(partner, ["t1"])["t1"].budget.amount == 250.0
+
+
+class TestABudgetWithNoMemberRows:
+    """Migration 0031 backfills an owner row for every budget that predates it,
+    and `set_budget` has written one ever since — so this state should not
+    exist. It is covered anyway because the single-trip and bulk paths reach the
+    member list differently, and a divergence there would value a trip's budget
+    at zero on the list while the trip page showed the real figure."""
+
+    def _memberless_budget(self, trip_id: str, user_id: int, amount: float) -> None:
+        with db_write() as conn:
+            conn.execute(
+                """INSERT INTO trip_budgets (trip_id, user_id, amount, currency, created_at, updated_at)
+                   VALUES (?, ?, ?, 'EUR', ?, ?)""",
+                (trip_id, user_id, amount, "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+            )
+
+    def test_it_still_resolves_and_counts_the_owners_share(self, setup):
+        service, user_id = setup
+        other = _collaborator("t1", user_id, "companion")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Lunch",
+            100.0,
+            "EUR",
+            participants=[("user", user_id), ("user", other)],
+        )
+        self._memberless_budget("t1", user_id, 500.0)
+
+        assert service.get_budget("t1", user_id).spent == 50.0
+
+    def test_the_bulk_path_gives_the_same_answer(self, setup):
+        service, user_id = setup
+        other = _collaborator("t1", user_id, "companion")
+        service.create_expense(
+            "t1",
+            user_id,
+            "Lunch",
+            100.0,
+            "EUR",
+            participants=[("user", user_id), ("user", other)],
+        )
+        self._memberless_budget("t1", user_id, 500.0)
+
+        bulk = service.budgets_for_trips(user_id, ["t1"])
+        assert bulk["t1"].budget.amount == 500.0
+        assert bulk["t1"].spent == service.get_budget("t1", user_id).spent

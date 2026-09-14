@@ -477,8 +477,10 @@ export const citiesApi = {
  * own row, so a collaborator's budget is never touched. */
 export const budgetApi = {
   get: (tripId: string) => get<TripBudget>(`/api/trips/${tripId}/budget`),
-  set: (tripId: string, amount: number, currency: string) =>
-    put<{ ok: boolean }>(`/api/trips/${tripId}/budget`, { amount, currency }),
+  /** `members` omitted leaves an existing budget's member list alone, so
+   *  saving an amount can never silently un-share it. */
+  set: (tripId: string, amount: number, currency: string, members?: { type: 'user' | 'guest'; id: number }[]) =>
+    put<{ ok: boolean }>(`/api/trips/${tripId}/budget`, { amount, currency, members }),
   clear: (tripId: string) => del<{ ok: boolean }>(`/api/trips/${tripId}/budget`),
 };
 

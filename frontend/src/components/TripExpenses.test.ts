@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import TripExpenses from './TripExpenses.svelte';
+import { currentUser } from '../lib/authStore';
 
 const {
   mockList,
@@ -118,9 +119,9 @@ describe('TripExpenses', () => {
     await fireEvent.input(desc, { target: { value: 'Taxi' } });
     await fireEvent.input(amount, { target: { value: '40' } });
 
-    const chips = container.querySelectorAll('.expense-participant-chip');
-    expect(chips.length).toBe(2);
-    chips.forEach((chip) => expect(chip.getAttribute('aria-pressed')).toBe('true'));
+    // Everyone on the trip starts selected, which the picker shows as tokens.
+    const tokens = container.querySelectorAll('.people-token');
+    expect(tokens.length).toBe(2);
 
     await fireEvent.click(getByText('expenses.save'));
 
@@ -133,6 +134,72 @@ describe('TripExpenses', () => {
       { type: 'user', id: 1 },
       { type: 'user', id: 2 },
     ]);
+  });
+
+  /* You are already in the trip's participant list — the owner and every
+   * accepted collaborator are — so a separate "Me" option on top of it offered
+   * the same person twice under two names. */
+  describe('the payer picker does not offer you twice', () => {
+    beforeEach(() => {
+      currentUser.set({ id: '1', username: 'me', is_admin: false, smtp_recipient_address: null });
+    });
+
+    it('has one option per person and no extra "Me"', async () => {
+      const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+      await fireEvent.click(getByText('+ expenses.add'));
+
+      const options = container.querySelectorAll('#new-paid-by option');
+      expect(options.length).toBe(2);
+      expect([...options].map((o) => (o as HTMLOptionElement).value)).toEqual([
+        'user:1',
+        'user:2',
+      ]);
+    });
+
+    it('marks your own row rather than renaming it', async () => {
+      const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+      await fireEvent.click(getByText('+ expenses.add'));
+
+      const options = [...container.querySelectorAll('#new-paid-by option')];
+      expect(options[0].textContent).toContain('expenses.you');
+      expect(options[1].textContent?.trim()).toBe('spouse');
+    });
+
+    it('preselects you, and sends you explicitly', async () => {
+      const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+      await fireEvent.click(getByText('+ expenses.add'));
+
+      const select = container.querySelector('#new-paid-by') as HTMLSelectElement;
+      expect(select.value).toBe('user:1');
+
+      await fireEvent.input(container.querySelector('.expense-input-desc')!, {
+        target: { value: 'Taxi' },
+      });
+      await fireEvent.input(container.querySelector('.expense-input-amount')!, {
+        target: { value: '40' },
+      });
+      await fireEvent.click(getByText('expenses.save'));
+
+      await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+      expect(mockCreate.mock.calls[0][1].paid_by).toEqual({ type: 'user', id: 1 });
+    });
+
+    /* The fallback the "Me" option still exists for: with no list to pick
+     * yourself out of, the payer is omitted and the backend defaults to the
+     * creator, which is you. */
+    it('falls back to the "Me" option when the list is unavailable', async () => {
+      mockParticipants.mockResolvedValue([]);
+      const { container, getByText } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+      await fireEvent.click(getByText('+ expenses.add'));
+
+      const options = container.querySelectorAll('#new-paid-by option');
+      expect(options.length).toBe(1);
+      expect((options[0] as HTMLOptionElement).value).toBe('');
+    });
   });
 
   it('still shows a newly added expense even if the balances refresh fails', async () => {
@@ -163,8 +230,9 @@ describe('TripExpenses', () => {
     await fireEvent.input(desc, { target: { value: 'Taxi' } });
     await fireEvent.input(amount, { target: { value: '40' } });
 
-    const chips = container.querySelectorAll('.expense-participant-chip');
-    await fireEvent.click(chips[1]);
+    // Dropping someone from the split is removing their token.
+    const remove = container.querySelectorAll('.people-token-remove');
+    await fireEvent.click(remove[1]);
 
     await fireEvent.click(getByText('expenses.save'));
 
@@ -183,9 +251,9 @@ describe('TripExpenses', () => {
     await fireEvent.input(desc, { target: { value: 'Taxi' } });
     await fireEvent.input(amount, { target: { value: '40' } });
 
-    const chips = container.querySelectorAll('.expense-participant-chip');
-    await fireEvent.click(chips[0]);
-    await fireEvent.click(chips[1]);
+    // Removing every token leaves nobody to split between.
+    await fireEvent.click(container.querySelectorAll('.people-token-remove')[1]);
+    await fireEvent.click(container.querySelectorAll('.people-token-remove')[0]);
 
     const saveButton = getByText('expenses.save') as HTMLButtonElement;
     expect(saveButton.disabled).toBe(true);
@@ -205,13 +273,15 @@ describe('TripExpenses', () => {
     await fireEvent.click(getByText('+ expenses.add_guest'));
 
     await waitFor(() => expect(mockGuestCreate).toHaveBeenCalledWith('Grandma'));
+    // The new guest joins the split immediately, as a third token.
     await waitFor(() => {
-      const chips = container.querySelectorAll('.expense-participant-chip');
-      expect(chips.length).toBe(3);
+      const tokens = container.querySelectorAll('.people-token');
+      expect(tokens.length).toBe(3);
     });
-    const guestChips = Array.from(container.querySelectorAll('.expense-participant-chip'));
-    const guestChip = guestChips.find((c) => c.textContent?.includes('Grandma'));
-    expect(guestChip?.getAttribute('aria-pressed')).toBe('true');
+    const names = [...container.querySelectorAll('.people-token')].map((el) =>
+      el.textContent?.replace('×', '').trim(),
+    );
+    expect(names).toContain('Grandma');
   });
 
   it('typing a name matching a guest from another trip offers it as a reuse suggestion', async () => {
@@ -230,9 +300,10 @@ describe('TripExpenses', () => {
 
     // Reusing an existing guest must not create a new one.
     expect(mockGuestCreate).not.toHaveBeenCalled();
-    const chips = Array.from(container.querySelectorAll('.expense-participant-chip'));
-    const alexChip = chips.find((c) => c.textContent?.includes('Alex'));
-    expect(alexChip?.getAttribute('aria-pressed')).toBe('true');
+    const names = [...container.querySelectorAll('.people-token')].map((el) =>
+      el.textContent?.replace('×', '').trim(),
+    );
+    expect(names).toContain('Alex');
 
     const desc = container.querySelector('.expense-input-desc') as HTMLInputElement;
     const amount = container.querySelector('.expense-input-amount') as HTMLInputElement;

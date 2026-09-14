@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { budgetApi } from '../api/client';
-  import type { TripBudget } from '../api/types';
+  import { budgetApi, expensesApi } from '../api/client';
+  import type { Participant, TripBudget } from '../api/types';
+  import PeoplePicker from './PeoplePicker.svelte';
+  import { currentUser } from '../lib/authStore';
   import { CURRENCIES } from '../lib/currencies';
   import { BUDGET_WARN_AT, budgetLevel, formatCurrencyTotals } from '../lib/utils';
   import { t } from '../lib/i18n';
@@ -16,6 +18,11 @@
    * 2. **Only the budget's currency counts.** Spend in any other currency is
    *    listed beside the bar and never converted — there are no exchange rates
    *    in this app, and a converted figure would be a guess presented as a fact.
+   *
+   * A budget can name more than one person, and then "your share" becomes
+   * *their combined share* — two people travelling on one purse want one bar,
+   * not two half-budgets filling in lockstep. A member can be a guest, because
+   * the companion you share a purse with usually has no account of their own.
    */
   interface Props {
     tripId: string;
@@ -44,6 +51,21 @@
   // Seeded when the form opens rather than at init, so a later
   // `defaultCurrency` is not ignored.
   let currencyInput = $state('');
+  /** Everyone who could share this budget. Fetched lazily when the form first
+   *  opens — most visits only read the bar, and this is the expense picker's
+   *  list, not something the panel needs to render a figure. */
+  let candidates = $state<Participant[]>([]);
+  let memberKeys = $state<Set<string>>(new Set());
+
+  /* `User.id` is a string on the wire and a participant's is a number, so the
+   * two are compared through Number() rather than ===. */
+  const ownUserId = $derived($currentUser ? Number($currentUser.id) : null);
+
+  const key = (p: { type: string; id: number }) => `${p.type}:${p.id}`;
+  const parseKey = (k: string) => {
+    const [type, id] = k.split(':');
+    return { type: type as 'user' | 'guest', id: Number(id) };
+  };
 
   async function load() {
     try {
@@ -101,11 +123,39 @@
   const remaining = $derived(hasBudget ? budget!.amount! - budget!.spent : 0);
   const uncounted = $derived(formatCurrencyTotals(budget?.uncounted));
 
-  function openEdit() {
+  /* Everyone the budget belongs to besides you. One name here is the whole
+   * difference between "my budget" and "our budget", so it is printed next to
+   * the bar rather than hidden behind the edit form. */
+  const companions = $derived(
+    (budget?.members ?? []).filter((m) => !(m.type === 'user' && m.id === ownUserId)),
+  );
+  /* Whose budget you are looking at, when it is not yours. A member may edit
+   * and clear a shared budget, so the panel says whose it is first. */
+  const borrowed = $derived(
+    budget?.owner_user_id != null && ownUserId != null && budget.owner_user_id !== ownUserId
+      ? (budget.owner_username ?? null)
+      : null,
+  );
+
+  async function openEdit() {
     amountInput = budget?.amount != null ? String(budget.amount) : '';
     currencyInput = budget?.currency ?? defaultCurrency;
+    memberKeys = new Set((budget?.members ?? []).map(key));
     formError = null;
     editing = true;
+    if (candidates.length === 0) {
+      // A failed load leaves the sharing row empty rather than blocking the
+      // form: setting an amount is the point, choosing who shares it is not.
+      candidates = await expensesApi.participants(tripId).catch(() => []);
+    }
+  }
+
+  function toggleMember(participant: Participant) {
+    const next = new Set(memberKeys);
+    const k = key(participant);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    memberKeys = next;
   }
 
   async function save() {
@@ -117,7 +167,7 @@
     saving = true;
     formError = null;
     try {
-      await budgetApi.set(tripId, amount, currencyInput);
+      await budgetApi.set(tripId, amount, currencyInput, Array.from(memberKeys).map(parseKey));
       editing = false;
       await load();
     } catch (err) {
@@ -168,6 +218,19 @@
       </select>
     </label>
 
+    {#if candidates.length > 1}
+      <PeoplePicker
+        people={candidates}
+        selected={memberKeys}
+        onToggle={toggleMember}
+        label={$t('budget.shared_with')}
+        hint={$t('budget.shared_hint')}
+        display={(p) => (p.type === 'user' && p.id === ownUserId
+          ? $t('expenses.you', { values: { name: p.name } })
+          : p.name)}
+      />
+    {/if}
+
     {#if formError}
       <p class="budget-error">{formError}</p>
     {/if}
@@ -195,6 +258,19 @@
       </span>
       <button class="btn btn-secondary btn-sm" onclick={openEdit}>{$t('budget.edit')}</button>
     </div>
+
+    {#if companions.length > 0}
+      <!-- One shared bar, not two half-budgets: the figure above is the whole
+           group's share, so the panel has to name the group. -->
+      <p class="budget-shared-line">
+        {$t('budget.shared_with_names', {
+          values: { names: companions.map((m) => m.name).join(', ') },
+        })}
+        {#if borrowed}
+          <span class="budget-owner">{$t('budget.owned_by', { values: { name: borrowed } })}</span>
+        {/if}
+      </p>
+    {/if}
 
     <div
       class="budget-track"
@@ -331,6 +407,19 @@
 
   .budget-uncounted-pill {
     font-family: var(--font-mono);
+  }
+
+  /* Sits directly under the figures, before the bar's own note, because it
+     changes what the figure above *means* — "EUR 512" is a different number
+     when it is two people's spending than when it is one person's. */
+  .budget-shared-line {
+    margin: 2px 0 var(--space-xs);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .budget-owner {
+    margin-left: var(--space-xs);
   }
 
   .budget-empty-row {

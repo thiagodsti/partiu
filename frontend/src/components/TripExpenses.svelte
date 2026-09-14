@@ -2,6 +2,8 @@
   import { expensesApi, guestsApi } from '../api/client';
   import type { TripExpense, Participant, BalanceEntry, Guest } from '../api/types';
   import { CURRENCIES } from '../lib/currencies';
+  import PeoplePicker from './PeoplePicker.svelte';
+  import { currentUser } from '../lib/authStore';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -38,6 +40,18 @@
     for (const p of expense.participants) map.set(key(p), p);
     return Array.from(map.values());
   }
+
+  /* `User.id` is a string on the wire while a participant's is a number, so
+   * the two are compared through Number(). */
+  const ownUserId = $derived($currentUser ? Number($currentUser.id) : null);
+  const isMe = (p: Participant) => p.type === 'user' && p.id === ownUserId;
+  /* You appear in the participant list like everyone else — the trip owner and
+   * every accepted collaborator are in it — so your own row is marked rather
+   * than offered a second time under a different name. The payer select used to
+   * carry a separate "Me" option on top of it, which meant picking yourself was
+   * two identically-meant choices. */
+  const displayName = (p: Participant) =>
+    isMe(p) ? $t('expenses.you', { values: { name: p.name } }) : p.name;
 
   let expenses = $state<TripExpense[]>([]);
   let participants = $state<Participant[]>([]);
@@ -303,11 +317,21 @@
 
   function openAddForm() {
     newCurrency = defaultCurrency;
-    newPaidByKey = '';
+    // Yourself, by key, rather than an empty "default to the creator" value:
+    // the two rendered as two separate options for the same person.
+    newPaidByKey = ownParticipantKey();
     newParticipantKeys = new Set(participants.map(key));
     newGuestName = '';
     showAddForm = true;
     editingId = null;
+  }
+
+  /** Your own row in the trip's participant list, or '' if the list has not
+   *  loaded — in which case the payer is omitted and the backend falls back to
+   *  the creator, which is you. */
+  function ownParticipantKey(): string {
+    const me = participants.find(isMe);
+    return me ? key(me) : '';
   }
 
   function handleAddKeydown(e: KeyboardEvent) {
@@ -325,7 +349,9 @@
   {#if checked}
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect width="16" height="16" rx="3" fill="var(--accent)"/>
-      <path d="M3.5 8L6.5 11L12.5 5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- `--accent-on`, never a hardcoded white: on the paler presets the
+           fill is near-white and a white tick disappears into it. -->
+      <path d="M3.5 8L6.5 11L12.5 5" stroke="var(--accent-on)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   {:else}
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -401,25 +427,18 @@
               <label class="expense-split-label" for="edit-paid-by-{expense.id}">{$t('expenses.paid_by')}</label>
               <select id="edit-paid-by-{expense.id}" class="form-input" bind:value={editPaidByKey}>
                 {#each editOptions as p (key(p))}
-                  <option value={key(p)}>{p.name}</option>
+                  <option value={key(p)}>{displayName(p)}</option>
                 {/each}
               </select>
             </div>
             <div class="expense-split-row">
-              <span class="expense-split-label">{$t('expenses.split_between')}</span>
-              <div class="expense-participants-list">
-                {#each editOptions as p (key(p))}
-                  <button
-                    type="button"
-                    class="expense-participant-chip"
-                    aria-pressed={editParticipantKeys.has(key(p))}
-                    onclick={() => editParticipantKeys = toggleKey(editParticipantKeys, key(p))}
-                  >
-                    <span class="mini-checkbox">{@render checkboxIcon(editParticipantKeys.has(key(p)))}</span>
-                    {p.name}
-                  </button>
-                {/each}
-              </div>
+              <PeoplePicker
+                people={editOptions}
+                selected={editParticipantKeys}
+                onToggle={(p) => (editParticipantKeys = toggleKey(editParticipantKeys, key(p)))}
+                label={$t('expenses.split_between')}
+                display={displayName}
+              />
               <div class="expense-add-guest-inline">
                 <input
                   class="form-input"
@@ -546,27 +565,24 @@
       <div class="expense-split-row">
         <label class="expense-split-label" for="new-paid-by">{$t('expenses.paid_by')}</label>
         <select id="new-paid-by" class="form-input" bind:value={newPaidByKey}>
-          <option value="">{$t('expenses.paid_by_me')}</option>
+          {#if participants.length === 0}
+            <!-- Only when the list is unavailable: with it loaded you are in it,
+                 and a separate "Me" would be the same person offered twice. -->
+            <option value="">{$t('expenses.paid_by_me')}</option>
+          {/if}
           {#each participants as p (key(p))}
-            <option value={key(p)}>{p.name}</option>
+            <option value={key(p)}>{displayName(p)}</option>
           {/each}
         </select>
       </div>
       <div class="expense-split-row">
-        <span class="expense-split-label">{$t('expenses.split_between')}</span>
-        <div class="expense-participants-list">
-          {#each participants as p (key(p))}
-            <button
-              type="button"
-              class="expense-participant-chip"
-              aria-pressed={newParticipantKeys.has(key(p))}
-              onclick={() => newParticipantKeys = toggleKey(newParticipantKeys, key(p))}
-            >
-              <span class="mini-checkbox">{@render checkboxIcon(newParticipantKeys.has(key(p)))}</span>
-              {p.name}
-            </button>
-          {/each}
-        </div>
+        <PeoplePicker
+          people={participants}
+          selected={newParticipantKeys}
+          onToggle={(p) => (newParticipantKeys = toggleKey(newParticipantKeys, key(p)))}
+          label={$t('expenses.split_between')}
+          display={displayName}
+        />
         <div class="expense-add-guest-inline">
           <input
             class="form-input"
@@ -716,25 +732,6 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     font-weight: 500;
-  }
-
-  .expense-participants-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-  }
-
-  .expense-participant-chip {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.85rem;
-    background: none;
-    border: none;
-    padding: 0;
-    color: inherit;
-    font-family: inherit;
-    cursor: pointer;
   }
 
   .mini-checkbox {

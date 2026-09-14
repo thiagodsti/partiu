@@ -218,9 +218,9 @@
 
   /* The budget, reported by the panel below so the header does not fetch it a
    * second time. Shown as its own chip rather than folded into the expense
-   * totals beside it: those are the *trip's* spend per currency, this is **your
-   * share** against **your** limit — two different figures that would be a lie
-   * if added together. */
+   * totals beside it: those are the *trip's* spend per currency, this is the
+   * share of whoever the budget belongs to against **their** limit — two
+   * different figures that would be a lie if added together. */
   let budgetStatus = $state<TripBudgetStatus | null>(null);
   const budgetChip = $derived.by(() => {
     const amount = budgetStatus?.amount;
@@ -232,6 +232,10 @@
       label: `${formatCurrencyTotals({ [currency]: spent })[0]} / ${formatCurrencyTotals({ [currency]: amount })[0]}`,
     };
   });
+  /* A budget naming more than one person measures their combined share, not
+   * yours, so the sentence under the panel and the chip's tooltip both have to
+   * say so. */
+  const budgetIsShared = $derived((budgetStatus?.members?.length ?? 0) > 1);
   const expenseLabels = $derived(
     formatCurrencyTotals(expenseTotals ?? trip?.expenses_total),
   );
@@ -564,7 +568,11 @@
           {/each}
           {#if budgetChip}
             <span class="trip-header-sep" aria-hidden="true">·</span>
-            <span class="trip-header-budget" data-level={budgetChip.level} title={$t('budget.hint')}>
+            <span
+              class="trip-header-budget"
+              data-level={budgetChip.level}
+              title={$t(budgetIsShared ? 'budget.hint_shared' : 'budget.hint')}
+            >
               🎯 {budgetChip.label}
             </span>
           {/if}
@@ -952,7 +960,9 @@
           {defaultCurrency}
           onchange={(status) => (budgetStatus = status)}
         />
-        <p class="form-hint budget-hint">{$t('budget.hint')}</p>
+        <!-- A shared budget counts more than your own share, so the sentence
+             explaining what the bar measures has to change with it. -->
+        <p class="form-hint budget-hint">{$t(budgetIsShared ? 'budget.hint_shared' : 'budget.hint')}</p>
 
         <TripExpenses
           tripId={params.id}

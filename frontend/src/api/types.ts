@@ -76,8 +76,18 @@ export interface Trip {
 export interface TripBudget {
   amount: number | null;
   currency: string | null;
+  /** The combined share of everyone in `members` — not what any one of them
+   *  paid out. A bill split four ways costs a solo budget a quarter and a
+   *  budget shared by two of those four a half, whoever held the card. */
   spent: number;
   uncounted: Record<string, number>;
+  /** Who the budget belongs to, owner included. One name means it is yours
+   *  alone, which is every budget written before sharing existed. */
+  members: Participant[];
+  /** Its creator. A member may edit the budget, so the panel says whose it is
+   *  before offering to clear it. */
+  owner_user_id: number | null;
+  owner_username: string | null;
 }
 
 /** One place a trip goes to, as the traveller picked it. */

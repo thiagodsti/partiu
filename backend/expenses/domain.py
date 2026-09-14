@@ -1,26 +1,52 @@
 """Domain object + shared constants for the trip-expenses feature."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 ParticipantType = Literal["user", "guest"]
 
 
 @dataclass
+class ParticipantRef:
+    """A reference to whoever is involved in an expense — a real user or a guest."""
+
+    type: ParticipantType
+    id: int
+    name: str
+
+
+@dataclass
 class Budget:
-    """One person's spending limit for one trip, in one currency."""
+    """A spending limit for one trip, in one currency, belonging to the people
+    named in `members`.
+
+    Usually that is one person — the owner alone, which is what every budget
+    written before migration 0031 is. When it names more, the budget is a shared
+    purse: spend is the **sum of every member's share**, so it makes no
+    difference which of them held the card. A member can be a `guest`, since the
+    companion you share a budget with often has no account of their own.
+
+    `owner_user_id` is who created it. It matters only for storage and for
+    saying whose budget a member is looking at — a member may edit it, and the
+    owner never changes when they do.
+    """
 
     amount: float
     currency: str
+    owner_user_id: int = 0
+    owner_username: str | None = None
+    members: list[ParticipantRef] = field(default_factory=list)
 
 
 @dataclass
 class BudgetStatus:
     """A budget alongside what the caller has actually committed to it.
 
-    `spent` counts **the caller's own share** of every expense they are tagged
-    in — an expense split four ways counts a quarter, whoever paid. A budget is
-    what the trip costs you, and that does not depend on who held the card.
+    `spent` counts the **budget members'** combined share of every expense any
+    of them is tagged in — an expense split four ways between four people counts
+    a quarter to a solo budget and a half to one shared by two of them, whoever
+    paid. A budget is what the trip costs the people it belongs to, and that
+    does not depend on who held the card.
 
     `uncounted` is per-currency spend that falls outside the budget's currency.
     It is reported rather than converted: there are no exchange rates here, and
@@ -75,15 +101,6 @@ SUPPORTED_CURRENCIES = {
     "USD",
     "ZAR",
 }
-
-
-@dataclass
-class ParticipantRef:
-    """A reference to whoever is involved in an expense — a real user or a guest."""
-
-    type: ParticipantType
-    id: int
-    name: str
 
 
 @dataclass

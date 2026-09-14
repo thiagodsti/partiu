@@ -7,8 +7,8 @@ Trip expenses API routes.
   DELETE /api/trips/{trip_id}/expenses/{expense_id}           — delete expense
   GET    /api/trips/{trip_id}/expenses/participants           — payer/split-between picker
   GET    /api/trips/{trip_id}/expenses/balances                — net balance per participant/currency
-  GET    /api/trips/{trip_id}/budget                          — the caller's budget + their spend
-  PUT    /api/trips/{trip_id}/budget                          — set it
+  GET    /api/trips/{trip_id}/budget                          — the budget applying to the caller + its spend
+  PUT    /api/trips/{trip_id}/budget                          — set it (amount, currency, who it is shared with)
   DELETE /api/trips/{trip_id}/budget                          — clear it
 """
 
@@ -137,26 +137,41 @@ def delete_expense(trip_id: str, expense_id: str, user: dict = Depends(get_curre
     return None
 
 
-# A budget is personal: these read and write the *caller's* row for this trip,
-# so a collaborator setting theirs never touches anyone else's.
+# A budget belongs to the people it names, not to the trip: these read and write
+# the one that applies to the *caller* — their own if they have one, otherwise
+# one a companion shares with them. A collaborator with neither sets their own
+# and never touches anyone else's.
 @router.get("/api/trips/{trip_id}/budget", response_model=BudgetDTO)
 def get_budget(trip_id: str, user: dict = Depends(get_current_user)):
     try:
         status = expense_service.get_budget(trip_id, user["id"])
     except TripAccessError:
         raise HTTPException(status_code=404, detail="Trip not found")
+    budget = status.budget
     return BudgetDTO(
-        amount=status.budget.amount if status.budget else None,
-        currency=status.budget.currency if status.budget else None,
+        amount=budget.amount if budget else None,
+        currency=budget.currency if budget else None,
         spent=status.spent,
         uncounted=status.uncounted,
+        owner_user_id=budget.owner_user_id if budget else None,
+        owner_username=budget.owner_username if budget else None,
+        members=[
+            ParticipantDTO(type=m.type, id=m.id, name=m.name)
+            for m in (budget.members if budget else [])
+        ],
     )
 
 
 @router.put("/api/trips/{trip_id}/budget", response_model=OkDTO)
 def set_budget(trip_id: str, body: SetBudgetDTO, user: dict = Depends(get_current_user)):
     try:
-        expense_service.set_budget(trip_id, user["id"], body.amount, body.currency)
+        expense_service.set_budget(
+            trip_id,
+            user["id"],
+            body.amount,
+            body.currency,
+            members=_list_to_tuples(body.members),
+        )
     except TripAccessError:
         raise HTTPException(status_code=404, detail="Trip not found")
     except ValueError as e:

@@ -57,7 +57,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Add notes per flight (up to 10,000 chars)
 - Calendar-style day notes per trip
 - Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency
-- Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency
+- Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency. You appear in the payer list under your own name, marked "(you)" — you are on the trip like everyone else, so there is no separate "Me" entry offering the same person twice
 - Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings
 
 ### Trip budget
@@ -65,7 +65,11 @@ Want to try it before self-hosting? A public demo is available at:
 - It counts **your share**, not what you paid: a €100 dinner split four ways counts €25 towards your budget whoever picked up the bill, and paying for a friend's taxi you were not on counts nothing at all
 - On the trips list a trip only mentions its budget when it is **running out or spent** — an overview is for spotting what needs attention, not for repeating numbers. Trips still weeks away count too: the flights and hotels you have already paid for are already spent
 - The trip's summary line carries it too — `🎯 EUR 255 / EUR 800`, in the same colour as the bar — so you can see where you stand without scrolling
-- The budget is yours alone — two people sharing a trip each set their own
+- The people picker (shared with expense splitting) is a type-ahead: chosen companions show as removable tags, and typing a name offers the rest — so a trip with twenty companions takes up no more of the form than a trip with two. Focusing the box lists everyone, and accents are optional (`joao` finds `João`). It only ever offers people actually on *that* trip: its collaborators and the guests already tagged on it
+- **Share it with whoever you're travelling with.** Two people on one purse want one bar, not two half-budgets filling in lockstep — so a budget can name several people and then counts their **combined** share. Every bill split between the two of you comes off it in full, whoever paid; a dinner split three ways with a friend still only costs the pair their two thirds
+- A companion with no Partiu account can share a budget too — add them as a guest, the same way you split a bill with them
+- Someone you share a budget with opens the trip and sees the same bar and the same numbers, without setting anything up. They can adjust it, and the panel says whose budget it is. A budget you set yourself always wins over one shared with you
+- Not shared by default: a budget you set alone is yours alone, and two people sharing a trip who want separate limits each keep their own
 - Spend in other currencies is listed beside the bar and never converted, because the app has no exchange rates and a converted figure would be a guess dressed as a fact
 
 ### Ground transport (train, bus, ferry, car)
