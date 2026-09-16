@@ -216,3 +216,76 @@ class TestDestinationCountries:
             self._destination(conn, "t-typed", "Somewhere", None)
 
         assert StatsRepository().list_ground_countries(1) == []
+
+
+class TestCancelledFlightsAreNotStatistics:
+    """A cancelled flight is one that did not happen.
+
+    Without this filter it still contributed its distance, its CO2 and both
+    airports' countries — and, worse, sat between the two halves of a connection
+    and broke the adjacency the 24h layover rule walks, exactly the way the
+    duplicate legs `_dedupe` exists to collapse did.
+    """
+
+    @staticmethod
+    def _set_status(db_path: str, flight_id: str, status) -> None:
+        import sqlite3
+
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE flights SET status = ? WHERE id = ?", (status, flight_id))
+        conn.commit()
+        conn.close()
+
+    def test_a_cancelled_flight_is_excluded(self, test_db):
+        from backend.stats.repository import StatsRepository
+
+        repo = StatsRepository()
+        user_id = _seed_user(test_db)
+        now = datetime.now(UTC)
+        flown = _seed_flight(
+            test_db, user_id, now - timedelta(days=5), now - timedelta(days=5, hours=-2)
+        )
+        cancelled = _seed_flight(
+            test_db,
+            user_id,
+            now - timedelta(days=4),
+            now - timedelta(days=4, hours=-2),
+            flight_number="LA999",
+        )
+        self._set_status(test_db, flown, "completed")
+        self._set_status(test_db, cancelled, "cancelled")
+
+        numbers = {r.flight_number for r in repo.list_completed_flights(user_id)}
+        assert numbers == {"LA800"}
+
+    def test_a_null_status_is_still_counted(self, test_db):
+        """The trap in the filter itself: `status` is nullable and in SQL
+        `NULL != 'cancelled'` is NULL, not true. A bare `!=` would drop every
+        flight whose status was never written — a filter silently becoming data
+        loss."""
+        from backend.stats.repository import StatsRepository
+
+        repo = StatsRepository()
+        user_id = _seed_user(test_db)
+        now = datetime.now(UTC)
+        flight_id = _seed_flight(
+            test_db, user_id, now - timedelta(days=3), now - timedelta(days=3, hours=-2)
+        )
+        self._set_status(test_db, flight_id, None)
+
+        assert len(repo.list_completed_flights(user_id)) == 1
+
+    def test_a_year_of_only_cancelled_flights_is_not_offered(self, test_db):
+        from backend.stats.repository import StatsRepository
+
+        repo = StatsRepository()
+        user_id = _seed_user(test_db)
+        cancelled = _seed_flight(
+            test_db,
+            user_id,
+            datetime(2019, 5, 1, 10, tzinfo=UTC),
+            datetime(2019, 5, 1, 12, tzinfo=UTC),
+        )
+        self._set_status(test_db, cancelled, "cancelled")
+
+        assert "2019" not in repo.list_years_with_flights(user_id)

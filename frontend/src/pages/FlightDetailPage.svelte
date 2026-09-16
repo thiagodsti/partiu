@@ -11,6 +11,10 @@
     formatDuration,
     cabinLabel,
     seatMapUrl,
+    isFlightCancelled,
+    isFlightRescheduled,
+    hasScheduleChangeNotice,
+    formatDayMonth,
   } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -229,7 +233,12 @@
   );
 
   // Live status
-  const liveIsCancelled = $derived(flight?.live_status === 'cancelled');
+  // `isFlightCancelled` rather than `live_status` alone: an airline's own
+  // cancellation email writes `status`, arrives days before any tracker knows,
+  // and is the only source at all on an install with no AviationStack key.
+  const liveIsCancelled = $derived(flight != null && isFlightCancelled(flight));
+  const wasRescheduled = $derived(flight != null && isFlightRescheduled(flight));
+  const hasChangeNotice = $derived(flight != null && hasScheduleChangeNotice(flight));
   const liveIsDiverted = $derived(flight?.live_status === 'diverted');
   const liveIsIncident = $derived(flight?.live_status === 'incident');
   const liveDepDelay = $derived((flight?.live_departure_delay ?? 0) > 0 ? flight!.live_departure_delay : null);
@@ -389,6 +398,24 @@
         </div>
       {:else if liveIsOnTime}
         <div class="live-status-banner live-status-ontime">✓ {$t("flight.live_on_time")}</div>
+      {/if}
+
+      <!-- Schedule changes from the airline's own mail. Separate from the
+           live chain above: a rescheduled flight can still be on time. -->
+      {#if wasRescheduled}
+        <div class="live-status-banner live-status-delayed schedule-banner">
+          ⏱ {$t("flight.rescheduled_banner", {
+            values: {
+              date: formatDayMonth(flight.rescheduled_at!),
+              dep: `${formatDayMonth(flight.rescheduled_from_departure!)} ${formatTime(flight.rescheduled_from_departure!, flight.departure_timezone)}`,
+              arr: `${formatDayMonth(flight.rescheduled_from_arrival!)} ${formatTime(flight.rescheduled_from_arrival!, flight.arrival_timezone)}`,
+            },
+          })}
+        </div>
+      {:else if hasChangeNotice}
+        <div class="live-status-banner live-status-delayed schedule-banner">
+          ⏱ {$t("flight.schedule_change_notice", { values: { date: formatDayMonth(flight.schedule_change_notice_at!) } })}
+        </div>
       {/if}
     </div>
 

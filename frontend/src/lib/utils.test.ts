@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Flight, TripSegment, TripStay } from '../api/types';
+import type { Flight, TripSegment, TripStay, TripCarRental } from '../api/types';
 import {
   accommodationGaps,
   addDaysToDateKey,
@@ -10,6 +10,10 @@ import {
   daysBetweenDateKeys,
   escapeHtml,
   flightStatus,
+  isFlightCancelled,
+  isFlightRescheduled,
+  hasScheduleChangeNotice,
+  rentalsForDay,
   flightToLeg,
   formatCurrencyTotals,
   formatDate,
@@ -199,6 +203,149 @@ describe('flightStatus', () => {
     const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const f = makeFlight({ departure_datetime: future, arrival_datetime: undefined });
     expect(flightStatus(f)).toBe('upcoming');
+  });
+});
+
+// ---- rentalsForDay / tripContents (car rentals) ----
+
+function makeRental(over: Partial<TripCarRental> = {}): TripCarRental {
+  return {
+    id: 'r1',
+    trip_id: 't1',
+    vendor: 'Hertz',
+    pickup: { name: 'Vienna Airport', address: null, lat: null, lon: null, timezone: null, country_code: 'AT' },
+    pickup_datetime: '2026-03-29T07:30:00+00:00',
+    pickup_date: '2026-03-29',
+    dropoff: { name: 'Vienna Airport', address: null, lat: null, lon: null, timezone: null, country_code: 'AT' },
+    dropoff_datetime: '2026-04-01T21:00:00+00:00',
+    dropoff_date: '2026-04-01',
+    days: 3,
+    is_one_way: false,
+    booking_reference: null,
+    vehicle: null,
+    driver_name: null,
+    notes: null,
+    created_by: null,
+    created_by_username: null,
+    created_at: '',
+    updated_at: '',
+    ...over,
+  };
+}
+
+describe('rentalsForDay', () => {
+  it('holds the car on the pick-up day', () => {
+    const day = rentalsForDay([makeRental()], '2026-03-29');
+    expect(day.pickups).toHaveLength(1);
+    expect(day.held[0]).toMatchObject({ day: 1, days: 4 });
+  });
+
+  it('holds the car on the drop-off day too', () => {
+    // The deliberate difference from staysForDay, which excludes the check-out
+    // day: you do not sleep at the property on the morning you leave, but you
+    // do still have the car on the morning you return it.
+    const day = rentalsForDay([makeRental()], '2026-04-01');
+    expect(day.dropoffs).toHaveLength(1);
+    expect(day.held[0]).toMatchObject({ day: 4, days: 4 });
+  });
+
+  it('holds the car on the days in between', () => {
+    const day = rentalsForDay([makeRental()], '2026-03-31');
+    expect(day.pickups).toHaveLength(0);
+    expect(day.dropoffs).toHaveLength(0);
+    expect(day.held[0]).toMatchObject({ day: 3, days: 4 });
+  });
+
+  it('holds nothing outside the hire', () => {
+    expect(rentalsForDay([makeRental()], '2026-04-02').held).toHaveLength(0);
+    expect(rentalsForDay([makeRental()], '2026-03-28').held).toHaveLength(0);
+  });
+
+  it('a same-day hire is one day, not zero', () => {
+    const sameDay = makeRental({ pickup_date: '2019-08-24', dropoff_date: '2019-08-24' });
+    expect(rentalsForDay([sameDay], '2019-08-24').held[0]).toMatchObject({ day: 1, days: 1 });
+  });
+});
+
+describe('tripContents with car rentals', () => {
+  it('counts rentals apart from ground legs', () => {
+    // Folding a hire into the leg count would claim a drive that may never
+    // have happened.
+    const parts = tripContents(0, ['car'], 0, 2);
+    expect(parts.map((p) => p.labelKey)).toEqual([
+      'trips.segment_count_car',
+      'trips.car_rental_count',
+    ]);
+    expect(parts[1]).toMatchObject({ icon: '🚗', count: 2 });
+  });
+
+  it('omits the chip when there is no rental', () => {
+    expect(tripContents(2, [], 0).map((p) => p.labelKey)).toEqual(['trips.flight_count']);
+  });
+});
+
+// ---- isFlightRescheduled / hasScheduleChangeNotice ----
+
+describe('isFlightRescheduled', () => {
+  const base = { status: 'upcoming', live_status: null } as unknown as Flight;
+
+  it('is true when the row carries a reschedule stamp', () => {
+    expect(isFlightRescheduled({ ...base, rescheduled_at: '2026-09-01T10:00:00+00:00' })).toBe(true);
+  });
+
+  it('is false without one', () => {
+    expect(isFlightRescheduled({ ...base, rescheduled_at: null })).toBe(false);
+    expect(isFlightRescheduled(base)).toBe(false);
+  });
+
+  it('yields to a cancellation', () => {
+    expect(
+      isFlightRescheduled({ ...base, status: 'cancelled', rescheduled_at: '2026-09-01T10:00:00+00:00' }),
+    ).toBe(false);
+  });
+});
+
+describe('hasScheduleChangeNotice', () => {
+  const base = { status: 'upcoming', live_status: null } as unknown as Flight;
+
+  it('is true when the airline announced a change without an itinerary', () => {
+    expect(hasScheduleChangeNotice({ ...base, schedule_change_notice_at: '2024-12-07T07:21:34+00:00' })).toBe(true);
+  });
+
+  it('yields to a cancellation', () => {
+    expect(
+      hasScheduleChangeNotice({ ...base, live_status: 'cancelled', schedule_change_notice_at: '2024-12-07T07:21:34+00:00' }),
+    ).toBe(false);
+  });
+});
+
+// ---- isFlightCancelled ----
+
+describe('isFlightCancelled', () => {
+  it('reads the airline-sourced status, not only the live tracker', () => {
+    // The whole reason this helper exists: `_apply_cancellations` writes
+    // `status`, and the UI used to read `live_status` alone — so a flight the
+    // airline had cancelled in writing still rendered as a normal leg.
+    const f = makeFlight({ status: 'cancelled', live_status: null });
+    expect(isFlightCancelled(f)).toBe(true);
+  });
+
+  it('still reads the live tracker', () => {
+    const f = makeFlight({ status: 'upcoming', live_status: 'cancelled' });
+    expect(isFlightCancelled(f)).toBe(true);
+  });
+
+  it('an ordinary flight is not cancelled', () => {
+    const f = makeFlight({ status: 'completed', live_status: 'landed' });
+    expect(isFlightCancelled(f)).toBe(false);
+  });
+
+  it('is independent of where the flight sits in time', () => {
+    // A cancelled flight still has timestamps in the past, which is why this is
+    // deliberately not folded into flightStatus.
+    const f = makeFlight({ status: 'cancelled', arrival_datetime: '2020-01-01T10:00:00Z' });
+    expect(isFlightCancelled(f)).toBe(true);
+    expect(flightStatus(f)).toBe('completed');
   });
 });
 

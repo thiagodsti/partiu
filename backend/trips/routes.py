@@ -73,6 +73,7 @@ def list_trips(user: dict = Depends(get_current_user)):
             flight_count=item.flight_count,
             segment_count=item.segment_count,
             stay_count=item.stay_count,
+            car_rental_count=item.car_rental_count,
             segment_types=item.segment_types,
             expenses_total=item.expenses_total,
             budget_amount=item.budget_amount,

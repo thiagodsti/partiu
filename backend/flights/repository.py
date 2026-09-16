@@ -180,6 +180,54 @@ class FlightRepository:
                 "SELECT COUNT(*) FROM flights WHERE trip_id = ?", (trip_id,)
             ).fetchone()[0]
 
+    def find_moved_leg(
+        self,
+        flight_number: str,
+        booking_reference: str,
+        departure_airport: str,
+        arrival_airport: str,
+        departure_date: str,
+        user_id: int,
+        window_days: int = 3,
+    ) -> Flight | None:
+        """The stored leg a rescheduled flight is the new version of.
+
+        `find_by_number_and_date` keys on the departure *date*, which is exactly
+        the thing a schedule change can move. Under one booking reference, the
+        same flight number on the same route within a few days is that leg, not
+        a second booking of it — nobody holds two tickets for the same flight
+        on consecutive days under one PNR. All four have to agree, the window is
+        deliberately narrow, and a leg without a reference never matches: a
+        wrong join here would overwrite a real flight with another's times.
+        """
+        if not (flight_number and booking_reference and departure_airport and arrival_airport):
+            return None
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM flights
+                   WHERE flight_number = ?
+                   AND booking_reference = ?
+                   AND departure_airport = ?
+                   AND arrival_airport = ?
+                   AND is_manually_added = 0
+                   AND user_id = ?
+                   AND (status IS NULL OR status != 'cancelled')
+                   AND abs(julianday(substr(departure_datetime, 1, 10)) - julianday(?)) <= ?
+                   ORDER BY abs(julianday(substr(departure_datetime, 1, 10)) - julianday(?))
+                   LIMIT 1""",
+                (
+                    flight_number,
+                    booking_reference,
+                    departure_airport,
+                    arrival_airport,
+                    user_id,
+                    departure_date,
+                    window_days,
+                    departure_date,
+                ),
+            ).fetchone()
+        return row_to_flight(row) if row else None
+
     def find_by_number_and_date(
         self, flight_number: str, departure_date: str, user_id: int
     ) -> Flight | None:
@@ -196,6 +244,42 @@ class FlightRepository:
                 (flight_number, departure_date, user_id),
             ).fetchone()
         return row_to_flight(row) if row else None
+
+    def find_cancellable_by_booking_reference(self, booking_reference: str, user_id: int):
+        """Every not-yet-cancelled flight held under this booking reference.
+
+        Unlike `find_by_number_and_date` this does **not** filter out manually
+        added flights. A cancellation is a fact about the world, not about how
+        the row reached the database — a leg typed in by hand is just as
+        cancelled as one parsed from a confirmation.
+        """
+        with db_conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM flights
+                   WHERE booking_reference = ?
+                   AND user_id = ?
+                   AND status != 'cancelled'""",
+                (booking_reference, user_id),
+            ).fetchall()
+        return [row_to_flight(r) for r in rows]
+
+    def find_cancellable_by_number_and_date(
+        self, flight_number: str, departure_date: str, user_id: int
+    ):
+        """Every not-yet-cancelled instance of this flight number on this local
+        departure date — normally exactly one, but a booking made twice can
+        leave two rows, and cancelling only the first would be worse than
+        cancelling neither."""
+        with db_conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM flights
+                   WHERE flight_number = ?
+                   AND substr(departure_datetime, 1, 10) = ?
+                   AND user_id = ?
+                   AND status != 'cancelled'""",
+                (flight_number, departure_date, user_id),
+            ).fetchall()
+        return [row_to_flight(r) for r in rows]
 
     def find_latest_by_number(self, flight_number: str, user_id: int) -> Flight | None:
         """Find the most recent flight matching a flight number, regardless of date

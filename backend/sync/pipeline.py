@@ -25,6 +25,7 @@ from ..parsers.gds_eticket import extract_gds_eticket
 from ..parsers.validation import validate_flights
 from ..settings.repository import SettingsRepository
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
+from .car_rentals_import import import_car_rentals_from_email
 from .grouping import auto_group_flights
 from .repository import SyncRepository
 from .stays_import import import_lodging_from_email
@@ -252,6 +253,266 @@ def _apply_boarding_pass_details(rule, email_msg, user_id: int) -> int:
     return updated
 
 
+def _apply_cancellations(rule, email_msg, user_id: int) -> int:
+    """Mark stored flights cancelled when an airline says a booking or leg is off.
+
+    The counterpart to `_apply_boarding_pass_details`, and built the same way:
+    an airline opts in by exporting `extract_cancellations`, everyone else has
+    no attribute and is skipped. Both describe flights the traveller *already*
+    has rather than producing new ones, which is why they run whether or not the
+    email yielded an itinerary — a cancellation mail never does.
+
+    **A cancellation marks, it never deletes.** See `parsers/cancellations.py`
+    for why; the short version is that `status = 'cancelled'` is reversible,
+    visible and honest, and a delete is none of those.
+
+    **A cancellation older than the flight it names is ignored.** A booking
+    reference outlives a cancellation — an airline that cancels and rebooks
+    often reissues under the same PNR — so a stored leg whose source email is
+    *newer* than this one describes the rebooking, and cancelling it would undo
+    a fact the traveller received later. This is the same "newer email wins"
+    rule `_process_emails` already applies when a restated itinerary updates a
+    stored flight, and a flight with no source email at all (typed by hand)
+    fails the comparison and is cancelled, which is correct: nothing about it
+    postdates the airline's notice.
+    """
+    extractor = getattr(rule, "cancellation_extractor", None)
+    if extractor is None:
+        return 0
+
+    try:
+        records = extractor(email_msg) or []
+    except Exception as e:  # noqa: BLE001 - a bad cancellation must not fail a sync
+        logger.warning("User %d: cancellation extraction failed: %s", user_id, e)
+        return 0
+    if not records:
+        return 0
+
+    email_date = dt_to_iso(email_msg.date) if email_msg.date else None
+    cancelled = 0
+    for record in records:
+        if ref := record.get("booking_reference"):
+            matches = _flight_repository.find_cancellable_by_booking_reference(ref, user_id)
+            described = f"booking {ref}"
+        else:
+            matches = _flight_repository.find_cancellable_by_number_and_date(
+                record["flight_number"], record["departure_date"], user_id
+            )
+            described = f"{record['flight_number']} on {record['departure_date']}"
+
+        if not matches:
+            logger.debug(
+                "User %d: cancellation for %s matches no stored flight", user_id, described
+            )
+            continue
+
+        for flight in matches:
+            if email_date and flight.email_date and flight.email_date > email_date:
+                logger.info(
+                    "User %d: ignoring cancellation of %s — stored flight %s comes from a "
+                    "later email (%s > %s), so it was rebooked after this notice",
+                    user_id,
+                    described,
+                    flight.flight_number,
+                    flight.email_date,
+                    email_date,
+                )
+                continue
+            _flight_repository.update(
+                flight.id, user_id, {"status": "cancelled", "updated_at": now_iso()}
+            )
+            cancelled += 1
+            logger.info(
+                "User %d: cancelled flight %s %s→%s (%s)",
+                user_id,
+                flight.flight_number,
+                flight.departure_airport,
+                flight.arrival_airport,
+                described,
+            )
+            _send_cancellation_notification(flight, user_id)
+
+    return cancelled
+
+
+def _send_cancellation_notification(flight, user_id: int) -> None:
+    """Tell the traveller a flight they had is off.
+
+    Rides on the `delay_alert` preference rather than a new one: that is the
+    preference `integrations/aircraft/status_sync.py` already sends its own
+    `delay_alert_cancelled` under, and a reader who turned delay alerts off has
+    said what they think of schedule-disruption notices. `already_sent` keys on
+    the same event name, so a full rescan re-reading the cancellation mail does
+    not notify twice.
+    """
+    try:
+        from ..notifications import push_service
+
+        if not push_service.is_preference_enabled(user_id, "delay_alert"):
+            return
+        if push_service.already_sent(user_id, flight.id, "delay_alert_cancelled"):
+            return
+        route = f"{flight.departure_airport} → {flight.arrival_airport}"
+        sent = push_service.send_push(
+            user_id,
+            {
+                "title": f"Flight {flight.flight_number} cancelled",
+                "body": route,
+                "url": f"/#/flights/{flight.id}",
+            },
+        )
+        if sent:
+            push_service.log_sent(user_id, flight.id, "delay_alert_cancelled")
+    except Exception as e:  # noqa: BLE001 - notification failure must not fail a sync
+        logger.warning("User %d: failed to send cancellation notification: %s", user_id, e)
+
+
+def _local_clock(iso: str | None, tz_name: str | None) -> str:
+    """ "10 Nov 19:30" in the airport's own zone, for a notification body."""
+    if not iso:
+        return "?"
+    try:
+        from zoneinfo import ZoneInfo
+
+        dt = datetime.fromisoformat(iso)
+        if tz_name:
+            dt = dt.astimezone(ZoneInfo(tz_name))
+        return dt.strftime("%d %b %H:%M")
+    except Exception:  # noqa: BLE001 - a bad zone name must not lose the notification
+        return iso[:16].replace("T", " ")
+
+
+def _record_reschedule(existing, flight_data: dict, email_msg, user_id: int) -> bool:
+    """After a newer itinerary has overwritten a stored leg, keep what it moved from.
+
+    `update_synced` has always applied the new times silently — right data, no
+    trace. This runs beside it: when either instant changed, the previous pair
+    goes into `rescheduled_from_*` (previous, not original — a notification
+    reports the move that just happened), the row is stamped, and any pending
+    schedule-change notice on it is cleared, because an itinerary newer than the
+    notice *is* the itinerary the notice pointed at. Returns whether times moved.
+    """
+    new_dep = dt_to_iso(flight_data.get("departure_datetime"))
+    new_arr = dt_to_iso(flight_data.get("arrival_datetime"))
+    if new_dep == existing.departure_datetime and new_arr == existing.arrival_datetime:
+        return False
+    _flight_repository.update(
+        existing.id,
+        user_id,
+        {
+            "rescheduled_from_departure": existing.departure_datetime,
+            "rescheduled_from_arrival": existing.arrival_datetime,
+            "rescheduled_at": dt_to_iso(email_msg.date) or now_iso(),
+            "schedule_change_notice_at": None,
+        },
+    )
+    logger.info(
+        "User %d: flight %s rescheduled %s -> %s by newer email",
+        user_id,
+        existing.flight_number,
+        existing.departure_datetime,
+        new_dep,
+    )
+    _send_reschedule_notification(existing, new_dep, flight_data.get("departure_timezone"), user_id)
+    return True
+
+
+def _send_reschedule_notification(
+    flight, new_dep_iso: str | None, tz_name: str | None, user_id: int
+) -> None:
+    """In-app plus push, under the delay-alert preference like cancellations.
+
+    `already_sent` keys on the new departure, so re-reading the same change mail
+    on a full rescan cannot notify twice, while a second, later move can.
+    """
+    try:
+        from ..notifications import notification_service, push_service
+        from ..utils.i18n import t
+
+        if not push_service.is_preference_enabled(user_id, "delay_alert"):
+            return
+        event = f"rescheduled:{(new_dep_iso or '')[:16]}"
+        if push_service.already_sent(user_id, flight.id, event):
+            return
+        locale = push_service.get_locale(user_id)
+        zone = tz_name or flight.departure_timezone
+        title = t("notif.rescheduled_title", locale, flight=flight.flight_number)
+        body = t(
+            "notif.rescheduled_body",
+            locale,
+            **{"from": flight.departure_airport, "to": flight.arrival_airport},
+            new=_local_clock(new_dep_iso, zone),
+            old=_local_clock(flight.departure_datetime, zone),
+        )
+        url = f"/#/flights/{flight.id}"
+        notification_service.create_notification(user_id, "rescheduled", title, body, url)
+        if push_service.send_push(user_id, {"title": title, "body": body, "url": url}):
+            push_service.log_sent(user_id, flight.id, event)
+    except Exception as e:  # noqa: BLE001 - notification failure must not fail a sync
+        logger.warning("User %d: failed to send reschedule notification: %s", user_id, e)
+
+
+def _apply_schedule_change_notices(rule, email_msg, user_id: int) -> int:
+    """Flag the stored legs of a booking an airline says it has moved.
+
+    For the mail that announces a change and prints *no* itinerary (SAS). There
+    is nothing to update from it, so the legs are stamped with the notice date
+    and the traveller is pointed at the airline. Two guards: a leg whose own
+    email is newer than the notice was already re-read from the itinerary the
+    notice refers to, and a leg already stamped with this notice is left alone,
+    which is what makes a full rescan a no-op — a notice creates no flight, so
+    it is never marked processed.
+    """
+    extractor = getattr(rule, "schedule_change_extractor", None)
+    if extractor is None:
+        return 0
+    try:
+        records = extractor(email_msg) or []
+    except Exception as e:  # noqa: BLE001 - a bad notice must not fail a sync
+        logger.warning("User %d: schedule-change extraction failed: %s", user_id, e)
+        return 0
+    notice_at = dt_to_iso(email_msg.date) or now_iso()
+    flagged = 0
+    for record in records:
+        ref = record.get("booking_reference")
+        if not ref:
+            continue
+        for flight in _flight_repository.find_cancellable_by_booking_reference(ref, user_id):
+            if flight.email_date and flight.email_date > notice_at:
+                continue
+            if flight.schedule_change_notice_at and flight.schedule_change_notice_at >= notice_at:
+                continue
+            _flight_repository.update(flight.id, user_id, {"schedule_change_notice_at": notice_at})
+            _send_schedule_change_notice_notification(
+                flight, ref, rule.airline_name, notice_at, user_id
+            )
+            flagged += 1
+    return flagged
+
+
+def _send_schedule_change_notice_notification(
+    flight, ref: str, airline: str, notice_at: str, user_id: int
+) -> None:
+    try:
+        from ..notifications import notification_service, push_service
+        from ..utils.i18n import t
+
+        if not push_service.is_preference_enabled(user_id, "delay_alert"):
+            return
+        event = f"schedule_change_notice:{notice_at[:16]}"
+        if push_service.already_sent(user_id, flight.id, event):
+            return
+        locale = push_service.get_locale(user_id)
+        title = t("notif.schedule_change_notice_title", locale, ref=ref)
+        body = t("notif.schedule_change_notice_body", locale, airline=airline)
+        url = f"/#/flights/{flight.id}"
+        notification_service.create_notification(user_id, "schedule_change", title, body, url)
+        if push_service.send_push(user_id, {"title": title, "body": body, "url": url}):
+            push_service.log_sent(user_id, flight.id, event)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("User %d: failed to send schedule-change notification: %s", user_id, e)
+
+
 def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
     """
     Scan email plain-text body for BCBP boarding pass strings.
@@ -453,7 +714,10 @@ def _process_emails(
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
+    flights_cancelled = 0
+    flights_rescheduled = 0
     stays_created = 0
+    car_rentals_created = 0
     new_flight_ids: list[str] = []
     errors = []
 
@@ -476,6 +740,20 @@ def _process_emails(
             stays_created += len(stay_ids)
         except Exception as e:  # noqa: BLE001 - never let accommodation stop the sync
             logger.error("User %d: Lodging import error: %s", user_id, e, exc_info=True)
+
+        # --- Car rentals, from the three vendors we can read -----------------
+        # Also ahead of the blocked-domain skip, and for exactly the reason the
+        # lodging import is: hertz, sixt and europcar are on that list because
+        # they never contain *flights*, and `extract_car_rentals` is gated on
+        # the sender and on the vendor's own labels rather than guessing — it
+        # finds the booking it knows how to read or returns nothing. Idempotency
+        # lives in the importer, not the processed-email ledger, because a
+        # rental confirmation is often re-read by a full rescan.
+        try:
+            rental_ids = import_car_rentals_from_email(email_msg, user_id)
+            car_rentals_created += len(rental_ids)
+        except Exception as e:  # noqa: BLE001 - never let a rental stop the sync
+            logger.error("User %d: Car rental import error: %s", user_id, e, exc_info=True)
 
         if is_non_flight_domain(email_msg.sender or ""):
             logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
@@ -508,6 +786,16 @@ def _process_emails(
             # usually yields none, which is the point.
             if rule is not None:
                 flights_updated += _apply_boarding_pass_details(rule, email_msg, user_id)
+                # Also a statement about flights already stored, and the only
+                # path by which a cancellation ever reaches one. Every parser
+                # here refuses to *create* a cancelled leg; nothing until now
+                # went back to the leg the booking confirmation created weeks
+                # earlier, so a cancelled flight sat in its trip for ever.
+                flights_cancelled += _apply_cancellations(rule, email_msg, user_id)
+                # And the third kind of statement about stored flights: "we moved
+                # this booking, see the new itinerary elsewhere". Nothing to
+                # update from, so the legs are flagged and the traveller told.
+                flights_rescheduled += _apply_schedule_change_notices(rule, email_msg, user_id)
 
             # 2. GDS e-ticket receipt. Reads the receipt's own structure — a
             #    table cell's column, or a whole matched line — instead of
@@ -571,6 +859,18 @@ def _process_emails(
 
                 if dep_date:
                     existing = _flight_repository.find_by_number_and_date(fn, dep_date, user_id)
+                    if not existing:
+                        # A schedule change can move the *date*, which is the
+                        # key above. Same number, route and booking within a
+                        # few days is that leg moved, not a second one.
+                        existing = _flight_repository.find_moved_leg(
+                            fn,
+                            flight_data.get("booking_reference") or "",
+                            flight_data.get("departure_airport") or "",
+                            flight_data.get("arrival_airport") or "",
+                            dep_date,
+                            user_id,
+                        )
                     if existing:
                         new_email_date = dt_to_iso(email_msg.date) if email_msg.date else None
                         existing_email_date = existing.email_date
@@ -583,6 +883,8 @@ def _process_emails(
                             _flight_repository.update_synced(existing.id, fields, now_iso())
                             flights_updated += 1
                             logger.info("User %d: Updated flight %s with newer email", user_id, fn)
+                            if _record_reschedule(existing, flight_data, email_msg, user_id):
+                                flights_rescheduled += 1
                         else:
                             logger.debug("User %d: Skipping older email for flight %s", user_id, fn)
                         continue
@@ -637,7 +939,10 @@ def _process_emails(
         "emails_processed": emails_processed,
         "flights_created": flights_created,
         "flights_updated": flights_updated,
+        "flights_cancelled": flights_cancelled,
+        "flights_rescheduled": flights_rescheduled,
         "stays_created": stays_created,
+        "car_rentals_created": car_rentals_created,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,

@@ -36,6 +36,18 @@ class StatsRepository:
                 LEFT JOIN trips t ON t.id = f.trip_id
                 WHERE f.user_id = ? {year_clause}
                   AND f.arrival_datetime < datetime('now')
+                  -- A cancelled flight is one that did not happen. Without this
+                  -- it still contributes its distance, its CO2 and both its
+                  -- airports' countries, and — worse — it sits between the two
+                  -- halves of a connection and breaks the adjacency the 24h
+                  -- layover rule walks, exactly as the duplicate legs
+                  -- `_dedupe` exists to collapse did.
+                  -- `IS NULL OR` rather than a bare `!=`: the column is
+                  -- nullable, and in SQL `NULL != 'cancelled'` is NULL, which
+                  -- is falsy — a bare comparison would silently drop every
+                  -- flight whose status was never written, turning a filter
+                  -- into a data loss.
+                  AND (f.status IS NULL OR f.status != 'cancelled')
                 ORDER BY f.departure_datetime
                 """,
                 params,
@@ -49,6 +61,10 @@ class StatsRepository:
                 SELECT DISTINCT strftime('%Y', departure_datetime) AS y
                 FROM flights
                 WHERE user_id = ? AND departure_datetime IS NOT NULL
+                  -- Same reason as above: a year whose only flights were
+                  -- cancelled is not a year the traveller flew, and offering it
+                  -- in the filter leads to an empty page.
+                  AND (status IS NULL OR status != 'cancelled')
                 ORDER BY y DESC
                 """,
                 [user_id],
@@ -56,7 +72,8 @@ class StatsRepository:
         return [r["y"] for r in rows if r["y"]]
 
     def list_ground_countries(self, user_id: int, year: int | None = None) -> list[str]:
-        """Country codes recorded on the user's completed ground legs and stays.
+        """Country codes recorded on the user's completed ground legs, stays and
+        car rentals.
 
         Only countries — deliberately. Distance, hours and the flight count stay
         flight-only, so a train does not inflate "hours in air"; but being in
@@ -72,16 +89,24 @@ class StatsRepository:
         trip went is the same kind of evidence a stay there is, and a rail or
         road trip may have no other record of the country at all.
 
-        `trip_segments`, `trip_stays` and `trip_destinations` have no `user_id`;
+        `trip_segments`, `trip_stays`, `trip_car_rentals` and `trip_destinations`
+        have no `user_id`;
         they hang off a trip, so ownership comes from the join. Shared trips are excluded on purpose,
         matching `list_completed_flights`, which scopes to `f.user_id`.
         """
-        # Three arms with the same (user_id[, year]) parameter shape; the trip's
-        # own destinations are a fourth, added below with its own date columns.
+        # Arms with the same (user_id[, year]) parameter shape; the trip's own
+        # destinations are added below with their own date columns.
         arms = [
             ("trip_segments", "departure_country", "arrival_datetime", "departure_datetime"),
             ("trip_segments", "arrival_country", "arrival_datetime", "departure_datetime"),
             ("trip_stays", "country", "check_out_datetime", "check_in_datetime"),
+            # Both ends of a hired car, because a one-way rental crosses a
+            # border on purpose — two of the three measured bookings were
+            # one-way. Same terms as the arms above: the country counts once the
+            # rental is over, and a counter with no geocoded country
+            # contributes nothing rather than a guess.
+            ("trip_car_rentals", "pickup_country", "dropoff_datetime", "pickup_datetime"),
+            ("trip_car_rentals", "dropoff_country", "dropoff_datetime", "pickup_datetime"),
         ]
         selects: list[str] = []
         params: list = []

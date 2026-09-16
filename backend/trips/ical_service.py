@@ -4,6 +4,8 @@ kept out of service.py (which owns trip CRUD, not calendar formatting).
 The export covers everything on the trip's timeline:
 
 * **flights** and **ground segments** as timed events, both with a 1h alarm;
+* **car rentals** as both counter appointments (each with an alarm), plus an
+  all-day context block when the hire spans more than one day
 * **stays** as an all-day block covering the nights, plus a timed check-out
   reminder — see `_stay_events` for why it is split in two;
 * **day-planner content** as all-day events, one per day that has a note or a
@@ -168,6 +170,7 @@ class IcalService:
         if trip is None:
             raise TripError("Trip not found", 404)
 
+        from ..car_rentals.repository import CarRentalRepository
         from ..day_notes.repository import DayNoteRepository
         from ..segments.repository import SegmentRepository
         from ..stays.repository import StayRepository
@@ -175,6 +178,7 @@ class IcalService:
         flights = self._repository.get_flights_for_trip(trip_id)
         segments = SegmentRepository().list_for_trip(trip_id)
         stays = StayRepository().list_for_trip(trip_id)
+        car_rentals = CarRentalRepository().list_for_trip(trip_id)
         day_notes = DayNoteRepository().list_for_trip(trip_id)
 
         now_utc = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -214,6 +218,8 @@ class IcalService:
         all_dates += [s.arrival_datetime for s in segments if s.arrival_datetime]
         all_dates += [s.check_in_datetime for s in stays if s.check_in_datetime]
         all_dates += [s.check_out_datetime for s in stays if s.check_out_datetime]
+        all_dates += [r.pickup_datetime for r in car_rentals if r.pickup_datetime]
+        all_dates += [r.dropoff_datetime for r in car_rentals if r.dropoff_datetime]
         if all_dates:
             try:
                 parsed = [datetime.fromisoformat(d) for d in all_dates]
@@ -285,6 +291,7 @@ class IcalService:
 
         lines += self._segment_events(segments, now_utc, _timed)
         lines += self._stay_events(stays, now_utc, _timed)
+        lines += self._car_rental_events(car_rentals, now_utc, _timed)
         lines += self._day_note_events(trip_id, day_notes, now_utc)
 
         lines.append("END:VCALENDAR")
@@ -407,6 +414,114 @@ class IcalService:
                     "TRIGGER:-PT1H",
                     "ACTION:DISPLAY",
                     f"DESCRIPTION:{_escape(f'Check out of {stay.place.name} in 1 hour')}",
+                    "END:VALARM",
+                    "END:VEVENT",
+                ]
+        return lines
+
+    @staticmethod
+    def _car_rental_events(rentals, now_utc: str, timed) -> list[str]:
+        """Up to three events per rental: both counter appointments, and — only
+        when the rental spans more than one day — an all-day context block.
+
+        **Both ends get a timed event with an alarm**, which is where this
+        differs from a stay. A stay gets one, for check-out, because check-in has
+        no hard deadline: the property holds the room. A rental counter has a
+        deadline at each end — Sixt's own confirmation says the agreed pickup
+        time is binding with sixty minutes of courtesy, and a late return is
+        charged — so both are appointments worth an alarm.
+
+        The all-day block is **suppressed for a same-day rental**. One of the
+        three measured bookings was collected at 08:00 and returned at 12:30 the
+        same day, and an all-day band over a four-hour hire says nothing the two
+        timed events have not already said. It is TRANSP:TRANSPARENT when drawn,
+        because holding a car does not make you busy.
+
+        ``LOCATION`` prefers the counter's street address over its name, for the
+        reason `_stay_events` gives: it is what makes the entry tappable through
+        to a maps app.
+        """
+        lines: list[str] = []
+        for rental in rentals:
+            pickup_where = rental.pickup.address or rental.pickup.name
+            dropoff_where = rental.dropoff.address or rental.dropoff.name
+            route = (
+                f"{rental.pickup.name} → {rental.dropoff.name}"
+                if rental.is_one_way
+                else rental.pickup.name
+            )
+
+            desc_parts = [f"Vendor: {rental.vendor}"]
+            if rental.days is not None:
+                desc_parts.append(f"Days: {rental.days}")
+            for field_label, value in (
+                ("Vehicle", rental.vehicle),
+                ("Pick-up", pickup_where),
+                ("Drop-off", dropoff_where),
+                ("Booking Ref", rental.booking_reference),
+                ("Driver", rental.driver_name),
+                ("Notes", rental.notes),
+            ):
+                if value:
+                    desc_parts.append(f"{field_label}: {value}")
+            description = _escape(chr(10).join(desc_parts))
+
+            try:
+                pickup_day = date.fromisoformat(rental.pickup_date)
+                dropoff_day = date.fromisoformat(rental.dropoff_date)
+            except (ValueError, TypeError):
+                continue
+
+            if dropoff_day > pickup_day:
+                block = [
+                    "BEGIN:VEVENT",
+                    f"UID:{rental.id}@partiu",
+                    f"DTSTAMP:{now_utc}",
+                    f"DTSTART;VALUE=DATE:{pickup_day.strftime('%Y%m%d')}",
+                    # DTEND is exclusive on an all-day event, so the day the car
+                    # is handed back needs the extra day to be inside the block.
+                    f"DTEND;VALUE=DATE:{(dropoff_day + timedelta(days=1)).strftime('%Y%m%d')}",
+                    f"SUMMARY:{_escape(f'{rental.vendor}: {route}')}",
+                    f"LOCATION:{_escape(pickup_where)}",
+                    f"DESCRIPTION:{description}",
+                ]
+                if rental.pickup.lat is not None and rental.pickup.lon is not None:
+                    block.append(f"GEO:{rental.pickup.lat};{rental.pickup.lon}")
+                block += ["TRANSP:TRANSPARENT", "END:VEVENT"]
+                lines += block
+
+            for suffix, summary, when, tz_name, where in (
+                (
+                    "pickup",
+                    f"Pick up car: {rental.vendor}",
+                    rental.pickup_datetime,
+                    rental.pickup.timezone,
+                    pickup_where,
+                ),
+                (
+                    "dropoff",
+                    f"Return car: {rental.vendor}",
+                    rental.dropoff_datetime,
+                    rental.dropoff.timezone,
+                    dropoff_where,
+                ),
+            ):
+                if not when:
+                    continue
+                at = timed(when, tz_name)
+                lines += [
+                    "BEGIN:VEVENT",
+                    f"UID:{rental.id}-{suffix}@partiu",
+                    f"DTSTAMP:{now_utc}",
+                    f"DTSTART:{at}",
+                    f"DTEND:{_plus_minutes(at, 30)}",
+                    f"SUMMARY:{_escape(summary)}",
+                    f"LOCATION:{_escape(where)}",
+                    f"DESCRIPTION:{description}",
+                    "BEGIN:VALARM",
+                    "TRIGGER:-PT1H",
+                    "ACTION:DISPLAY",
+                    f"DESCRIPTION:{_escape(f'{summary} in 1 hour')}",
                     "END:VALARM",
                     "END:VEVENT",
                 ]

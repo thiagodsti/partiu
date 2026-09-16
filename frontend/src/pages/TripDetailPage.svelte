@@ -13,6 +13,7 @@
   import TripPackingList from "../components/TripPackingList.svelte";
   import TripTransport from "../components/TripTransport.svelte";
   import TripStays from "../components/TripStays.svelte";
+  import TripCarRentals from "../components/TripCarRentals.svelte";
   import { tripImageBust } from "../lib/tripImageStore";
   import type {
     Trip,
@@ -22,6 +23,7 @@
     TripBoardingPass,
     TripSegment,
     TripStay,
+    TripCarRental,
     // Aliased: `TripBudget` is the component imported above.
     TripBudget as TripBudgetStatus,
   } from "../api/types";
@@ -195,6 +197,10 @@
   // ground legs alongside the flight arcs.
   let segments = $state<TripSegment[]>([]);
   let stays = $state<TripStay[]>([]);
+  /* Reported by the section below so the header's inventory line and the day
+   * planner both see the rentals without a second fetch — the same contract
+   * `stays` has. */
+  let carRentals = $state<TripCarRental[]>([]);
   /* What the trip actually holds, next to its dates. The card carries a coarser
    * version — it only has per-kind counts, so a mixed trip there says "3 legs".
    * Here the rows are loaded, so each kind can be named. */
@@ -203,6 +209,7 @@
       flightList.length,
       segments.map((s) => s.type),
       stays.length,
+      carRentals.length,
     ),
   );
 
@@ -388,6 +395,7 @@
   // ---- Collapsible sections ----
   let flightsCollapsed = $state(false);
   let staysCollapsed = $state(false);
+  let carRentalsCollapsed = $state(false);
   let plannerCollapsed = $state(false);
   let packingCollapsed = $state(false);
   let printing = $state(false);
@@ -825,6 +833,28 @@
         </div>
       </div>
 
+      <!-- Car rental: the hired vehicle, not the drives taken in it. Sits after
+           Stays and before the planner, continuing the section order — how you
+           move, where you sleep, what you drove, what you did each day. -->
+      <div class="trip-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="trip-section-header section-toggle"
+          onclick={() => (carRentalsCollapsed = !carRentalsCollapsed)}
+        >
+          <div class="section-header-inner">
+            <div class="section-title-row">
+              <h3 class="trip-section-title">{$t("car_rentals.title")}</h3>
+              <span class="section-chevron">{carRentalsCollapsed ? "▼" : "▲"}</span>
+            </div>
+          </div>
+        </div>
+        <div class:section-hidden={carRentalsCollapsed}>
+          <TripCarRentals {trip} onchange={(list) => (carRentals = list)} />
+        </div>
+      </div>
+
       <!-- Day Planner -->
       {#if trip.start_date && trip.end_date}
         <div class="trip-section">
@@ -846,6 +876,7 @@
           <TripDayPlanner
             {segments}
             {stays}
+            {carRentals}
             {trip}
             forceExpanded={printing}
             onlyDate={plannerCollapsed

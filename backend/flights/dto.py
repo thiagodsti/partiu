@@ -1,6 +1,6 @@
 """Request/response DTOs for the flights HTTP API (routes.py).
 
-FlightDTO mirrors the `flights` table 1:1 (43 columns), matching the original
+FlightDTO mirrors the `flights` table 1:1 (47 columns), matching the original
 route's unfiltered ``dict(row)`` response shape exactly. The aircraft-info
 endpoint deliberately has no response_model — its shape comes from an external
 module (backend.integrations.aircraft.client) that this refactor doesn't touch.
@@ -53,6 +53,10 @@ class FlightDTO(BaseModel):
     live_arrival_estimated: str | None
     live_status_fetched_at: str | None
     aircraft_confirmed: int
+    rescheduled_from_departure: str | None = None
+    rescheduled_from_arrival: str | None = None
+    rescheduled_at: str | None = None
+    schedule_change_notice_at: str | None = None
 
 
 class FlightListResponseDTO(BaseModel):

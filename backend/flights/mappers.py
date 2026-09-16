@@ -51,6 +51,10 @@ def row_to_flight(row: sqlite3.Row) -> Flight:
         live_arrival_estimated=row["live_arrival_estimated"],
         live_status_fetched_at=row["live_status_fetched_at"],
         aircraft_confirmed=row["aircraft_confirmed"],
+        rescheduled_from_departure=row["rescheduled_from_departure"],
+        rescheduled_from_arrival=row["rescheduled_from_arrival"],
+        rescheduled_at=row["rescheduled_at"],
+        schedule_change_notice_at=row["schedule_change_notice_at"],
     )
 
 

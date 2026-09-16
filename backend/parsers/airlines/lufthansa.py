@@ -23,6 +23,7 @@ from datetime import date, timedelta
 
 from bs4 import BeautifulSoup
 
+from ..cancellations import booking_cancellation
 from ..engine import parse_flight_date
 from ..shared import (
     _build_datetime,
@@ -30,6 +31,7 @@ from ..shared import (
     extract_booking_reference,
     extract_passenger,
     fix_overnight,
+    get_email_text,
     html_to_text,
     is_valid_iata,
     make_flight_dict,
@@ -433,3 +435,36 @@ def extract(email_msg, rule) -> list[dict]:
     if email_msg.html_body:
         return extract_bs4(email_msg.html_body, rule, email_msg)
     return []
+
+
+# ---------------------------------------------------------------------------
+# Cancellations
+# ---------------------------------------------------------------------------
+
+# "we had to cancel your booking" is Lufthansa's own wording on the cancellation
+# confirmation; the German and Portuguese stems cover the same mail in the other
+# locales the rest of this module already handles (`_itin_cancelled_re`).
+_lh_cancelled_re = re.compile(
+    r"had\s+to\s+cancel\s+your\s+booking"
+    r"|cancellation\s+confirmation"
+    r"|stornierungsbest[äa]tigung"
+    r"|confirma[çc][ãa]o\s+de\s+cancelamento",
+    re.IGNORECASE,
+)
+
+
+def extract_cancellations(email_msg) -> list[dict]:
+    """Lufthansa cancels a whole booking and names it by its booking code.
+
+    The mail prints "Lufthansa booking code: PKMV4L" and the passengers, and
+    lists no legs at all — so like SAS this is a booking-level record. Note the
+    itinerary-level `Estatuto: Cancelada` marker `extract` already honours is a
+    different thing: that one appears on a *schedule change* that reprints the
+    dropped leg beside the surviving ones, and is handled by not extracting it.
+    """
+    text = get_email_text(email_msg)
+    subject = email_msg.subject or ""
+    if not _lh_cancelled_re.search(f"{subject}\n{text}"):
+        return []
+    record = booking_cancellation(extract_booking_reference(text, subject))
+    return [record] if record else []

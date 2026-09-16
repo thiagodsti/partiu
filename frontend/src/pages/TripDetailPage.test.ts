@@ -286,9 +286,12 @@ describe('TripDetailPage', () => {
     // Documents rides at the foot of the spine: it is the least-used card on the
     // page, and keeping it out of the aside stops that column becoming a stack
     // of three things nobody opens.
+    // The spine reads as the trip in order: how you move, where you sleep,
+    // what you drove, what you did each day.
     expect(titlesIn('.trip-spine')).toEqual([
       'trip.transport',
       'stays.title',
+      'car_rentals.title',
       'planner.title',
       'trip.documents',
     ]);

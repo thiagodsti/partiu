@@ -50,6 +50,7 @@ export interface Trip {
   flight_count?: number;
   segment_count?: number;
   stay_count?: number;
+  car_rental_count?: number;
   /** Distinct ground-transport types on the trip; lets the card say
    * "2 trains" instead of the generic "2 legs" when there is only one. */
   segment_types?: string[];
@@ -172,6 +173,54 @@ export interface TripStay {
   contact: string | null;
   room_type: string | null;
   guests: number | null;
+  notes: string | null;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One end of a car rental — where the car is collected, or handed back.
+ *
+ * Two of these on a rental rather than one, because one-way hires are ordinary.
+ * `lat`/`lon` are null for a counter typed by hand: it saves, it just gets no
+ * map pin and no timezone conversion. */
+export interface RentalPlace {
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lon: number | null;
+  timezone: string | null;
+  /** ISO-3166-1 alpha-2 from the geocoder; null when typed by hand. */
+  country_code: string | null;
+}
+
+/** A hired vehicle held over a span of the trip.
+ *
+ * Deliberately not a `TripSegment`: a segment is a *drive* (two places, a
+ * direction, time spent travelling), while a rental is a contract over days
+ * with several drives or none inside it. See migration 0032.
+ *
+ * `pickup_date` / `dropoff_date` are the local calendar dates at each counter,
+ * computed by the backend. Prefer them over slicing the datetimes, for the same
+ * reason `TripStay` does: the instants are UTC and band onto the wrong day. */
+export interface TripCarRental {
+  id: string;
+  trip_id: string;
+  vendor: string;
+  pickup: RentalPlace;
+  pickup_datetime: string;
+  pickup_date: string;
+  dropoff: RentalPlace;
+  dropoff_datetime: string;
+  dropoff_date: string;
+  /** Days the car is held, on local calendar dates. Not the billed period. */
+  days: number | null;
+  /** Whether the car is handed back somewhere other than where it was collected. */
+  is_one_way: boolean;
+  booking_reference: string | null;
+  vehicle: string | null;
+  driver_name: string | null;
   notes: string | null;
   created_by: number | null;
   created_by_username: string | null;
@@ -312,6 +361,12 @@ export interface Flight {
   live_departure_actual: string | null;
   live_arrival_estimated: string | null;
   live_status_fetched_at: string | null;
+  // Migration 0034: an airline moved this flight (previous times kept), or
+  // announced a move to its booking without printing the new itinerary.
+  rescheduled_from_departure?: string | null;
+  rescheduled_from_arrival?: string | null;
+  rescheduled_at?: string | null;
+  schedule_change_notice_at?: string | null;
 }
 
 export interface Airport {

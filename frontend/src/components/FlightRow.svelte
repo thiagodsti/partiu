@@ -1,6 +1,14 @@
 <script lang="ts">
   import type { Flight } from '../api/types';
-  import { formatTime, formatDayMonth, formatDuration, flightStatus } from '../lib/utils';
+  import {
+    formatTime,
+    formatDayMonth,
+    formatDuration,
+    flightStatus,
+    isFlightCancelled,
+    isFlightRescheduled,
+    hasScheduleChangeNotice,
+  } from '../lib/utils';
   import { t } from '../lib/i18n';
 
   interface Props {
@@ -12,7 +20,12 @@
   const status = $derived(flightStatus(f));
   const duration = $derived(formatDuration(f.duration_minutes));
 
-  const isCancelled = $derived(f.live_status === 'cancelled');
+  const isCancelled = $derived(isFlightCancelled(f));
+  // A move is worth a badge until the flight has flown; afterwards the times
+  // on the row are simply the times it flew at.
+  const isRescheduled = $derived(
+    status !== 'completed' && (isFlightRescheduled(f) || hasScheduleChangeNotice(f)),
+  );
   const isDiverted = $derived(f.live_status === 'diverted');
   const depDelay = $derived((f.live_departure_delay ?? 0) > 0 ? f.live_departure_delay : null);
 </script>
@@ -47,6 +60,8 @@
       <span class="flight-status-badge flight-status-diverted">{$t('flight.live_status_diverted')}</span>
     {:else if depDelay}
       <span class="flight-status-badge flight-status-delayed">+{depDelay}min</span>
+    {:else if isRescheduled}
+      <span class="flight-status-badge flight-status-rescheduled">{$t('flight.rescheduled')}</span>
     {:else if status === 'completed'}
       <span class="flight-status-badge flight-status-completed">✓</span>
     {:else if status === 'active'}

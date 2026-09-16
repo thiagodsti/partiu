@@ -1248,6 +1248,7 @@ img {
 .flight-status-cancelled { color: var(--danger-text); }
 .flight-status-diverted { color: var(--warning-text); }
 .flight-status-delayed { color: var(--warning-text); }
+.flight-status-rescheduled { color: var(--warning-text); }
 
 @media (max-width: 520px) {
   .flight-row {

@@ -21,6 +21,7 @@ from .airports import routes as airports_routes
 from .auth import routes as auth_routes
 from .auth import validate_secret_key
 from .boarding_passes import routes as boarding_passes_routes
+from .car_rentals import routes as car_rentals_routes
 from .database import init_database
 from .day_notes import routes as day_notes_routes
 from .expenses import guests_routes
@@ -175,6 +176,7 @@ app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
 app.include_router(segments_routes.router)
 app.include_router(stays_routes.router)
+app.include_router(car_rentals_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 

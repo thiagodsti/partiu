@@ -1,6 +1,6 @@
 """Domain object for the flights feature.
 
-Field set mirrors the `flights` table 1:1 (43 columns) — the original routes
+Field set mirrors the `flights` table 1:1 (47 columns) — the original routes
 returned ``dict(row)`` unfiltered, so this preserves that contract exactly.
 """
 
@@ -52,3 +52,8 @@ class Flight:
     live_arrival_estimated: str | None
     live_status_fetched_at: str | None
     aircraft_confirmed: int
+    # Migration 0034 — see its docstring for what each records.
+    rescheduled_from_departure: str | None = None
+    rescheduled_from_arrival: str | None = None
+    rescheduled_at: str | None = None
+    schedule_change_notice_at: str | None = None

@@ -413,3 +413,97 @@ class TestIataPairCorroboration:
         from backend.parsers.gds_eticket import _pick_corroborated_route
 
         assert _pick_corroborated_route("ARN", "LIS", [("GRU", "CPH")]) == ("ARN", "LIS")
+
+
+# ---------------------------------------------------------------------------
+# Amadeus fixed-column layout (the ITR as plain text in a <pre>)
+# ---------------------------------------------------------------------------
+# Fixture: tap_eticket_columnar_anonymized.json
+#   TP783  ARN→LIS, 10 Nov 2023 19:05 → 22:35   (terminals 5 / 1)
+#   TP780  LIS→ARN, 18 Nov 2023 08:05 → 13:30   (terminals 1 / 5)
+#   Issued 09 Aug 2023; booking reference TESTRF ("BOOKING REF : AMADEUS: TESTRF")
+# Place names are truncated to the column ("STOCKHOLM ARLAN"), so the route
+# is settled by the baggage block's bare pairs (ARNLIS / LISARN).
+
+
+@pytest.fixture(scope="module")
+def columnar_email():
+    return load_anonymized_fixture("tap_eticket_columnar_anonymized.json")
+
+
+@pytest.fixture(scope="module")
+def columnar_flights(columnar_email, seeded_airports_db):
+    from backend.parsers.gds_eticket import extract_gds_eticket
+
+    return extract_gds_eticket(columnar_email)
+
+
+class TestColumnarLayout:
+    def test_both_legs(self, columnar_flights):
+        assert [
+            (f["flight_number"], f["departure_airport"], f["arrival_airport"])
+            for f in columnar_flights
+        ] == [
+            ("TP783", "ARN", "LIS"),
+            ("TP780", "LIS", "ARN"),
+        ]
+
+    def test_times_and_forward_resolved_dates(self, columnar_flights):
+        assert columnar_flights[0]["departure_datetime"] == dt(2023, 11, 10, 19, 5)
+        assert columnar_flights[0]["arrival_datetime"] == dt(2023, 11, 10, 22, 35)
+        assert columnar_flights[1]["departure_datetime"] == dt(2023, 11, 18, 8, 5)
+        assert columnar_flights[1]["arrival_datetime"] == dt(2023, 11, 18, 13, 30)
+
+    def test_terminals(self, columnar_flights):
+        assert (
+            columnar_flights[0]["departure_terminal"],
+            columnar_flights[0]["arrival_terminal"],
+        ) == ("5", "1")
+        assert (
+            columnar_flights[1]["departure_terminal"],
+            columnar_flights[1]["arrival_terminal"],
+        ) == ("1", "5")
+
+    def test_booking_reference_is_the_locator_not_the_gds_name(self, columnar_flights):
+        assert {f["booking_reference"] for f in columnar_flights} == {"TESTRF"}
+
+    def test_reaches_the_same_result_through_the_tap_rule(self, columnar_email, seeded_airports_db):
+        from backend.parsers.builtin_rules import get_builtin_rules
+        from backend.parsers.engine import extract_flights_from_email, match_rule_to_email
+
+        rules = sorted(get_builtin_rules(), key=lambda r: r.priority, reverse=True)
+        rule = match_rule_to_email(columnar_email, rules)
+        assert rule is not None and rule.airline_code == "TP"
+        assert [f["flight_number"] for f in extract_flights_from_email(columnar_email, rule)] == [
+            "TP783",
+            "TP780",
+        ]
+
+    def test_a_repeated_block_is_read_once(self, columnar_email, seeded_airports_db):
+        """The real mail carries the receipt twice — fixed-width text and a
+        whitespace-collapsed copy of the HTML — in one body."""
+        import re as _re
+
+        from backend.parsers.email_connector import EmailMessage
+        from backend.parsers.gds_eticket import extract_gds_eticket
+
+        collapsed = _re.sub(r"[ \t]+", " ", columnar_email.body)
+        doubled = EmailMessage(
+            message_id="x",
+            sender=columnar_email.sender,
+            subject=columnar_email.subject,
+            body=columnar_email.body + "\n" + collapsed,
+            date=columnar_email.date,
+            html_body=None,
+        )
+        assert [f["flight_number"] for f in extract_gds_eticket(doubled)] == ["TP783", "TP780"]
+
+    def test_header_line_is_not_a_leg(self):
+        from backend.parsers.gds_eticket import _COLUMNAR_LEG_RE
+
+        assert (
+            _COLUMNAR_LEG_RE.search(
+                "FROM /TO        FLIGHT  CL DATE  DEP      FARE BASIS    NVB   NVA   BAG ST\n"
+            )
+            is None
+        )

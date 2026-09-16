@@ -282,3 +282,47 @@ class TestMinorFacilityDetection:
         from backend.parsers.shared import _is_minor_facility
 
         assert not _is_minor_facility("stockholm-arlanda airport")
+
+
+class TestBookingReferenceLabels:
+    """Regressions for label shapes the corpus turned up."""
+
+    def test_swedish_label_with_its_connecting_word(self):
+        from backend.parsers.shared import extract_booking_reference
+
+        assert extract_booking_reference("DIN BOKNINGSREFERENS ÄR: KSXOOZ\n") == "KSXOOZ"
+
+    def test_a_hotel_under_hotellbokning_is_not_a_reference(self):
+        from backend.parsers.shared import extract_booking_reference
+
+        text = "Få rabatter och tjäna 5 % CashPoints på din hotellbokning\n\nCABINN Copenhagen\n"
+        assert extract_booking_reference(text) != "CABINN"
+
+    def test_receipt_heading_does_not_donate_the_next_lines_first_word(self):
+        from backend.parsers.shared import extract_booking_reference
+
+        text = "ELECTRONIC TICKET RECEIPT\nBOOKING REF: RESCH1\n"
+        assert extract_booking_reference(text) == "RESCH1"
+
+    def test_ba_receipt_reference_on_the_same_line_still_reads(self):
+        from backend.parsers.shared import extract_booking_reference
+
+        assert (
+            extract_booking_reference("", "Your e-ticket receipt J9CRT8: 23 Dec 2024") == "J9CRT8"
+        )
+
+    def test_amadeus_locator_not_the_gds_name(self):
+        from backend.parsers.shared import extract_booking_reference
+
+        assert (
+            extract_booking_reference("BOOKING REF : AMADEUS: OP2NJ2, AIRLINE: 1A/OP2NJ2\n")
+            == "OP2NJ2"
+        )
+
+
+class TestPassengerLabels:
+    def test_swedish_passengers_heading_is_not_a_name(self):
+        from backend.parsers.shared import extract_passenger
+
+        # "passager" used to match inside "Passagerare" and return "are".
+        assert extract_passenger("Passagerare\n\nDOE/JOHN\n") != "are"

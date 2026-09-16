@@ -77,6 +77,13 @@ class TripRepository:
         """Stays per trip, for the trips-list card."""
         return self._count_by_trip("trip_stays", trip_ids)
 
+    def get_car_rental_counts(self, trip_ids: list[str]) -> dict[str, int]:
+        """Car rentals per trip, for the trips-list card. Counted separately
+        from segments for the same reason stays are: a hired car is not a leg,
+        and "3 legs" on a trip whose only ground entry is a rental would be a
+        count of something that never happened."""
+        return self._count_by_trip("trip_car_rentals", trip_ids)
+
     @staticmethod
     def _count_by_trip(table: str, trip_ids: list[str]) -> dict[str, int]:
         if not trip_ids:
@@ -358,12 +365,17 @@ class TripRepository:
         """Recalculate start/end dates and airports from everything now in the
         trip. start_date = earliest departure; end_date = latest arrival.
 
-        Dates span **flights, ground segments and stays** together: a trip whose
+        Dates span **flights, ground segments, stays and car rentals** together:
+        a trip whose
         middle days are a train leg would otherwise end on its last flight, and
         the day planner — which renders one card per day in the trip's range —
         would have no card for those days to appear in. Stays count for the same
         reason and one more: accommodation is frequently booked before any
-        transport is, so a stays-only trip must still have a span.
+        transport is, so a stays-only trip must still have a span. Car rentals
+        count for the same two reasons — the days a car is held are days of the
+        trip, and a driving holiday can be nothing but a rental — and they
+        contribute their denormalised local `pickup_date` / `dropoff_date` for
+        exactly the reason stays do.
 
         Stays contribute their pre-computed local `check_in_date` /
         `check_out_date` columns rather than `DATE(check_in_datetime)`. The
@@ -420,6 +432,8 @@ class TripRepository:
                         UNION ALL
                         SELECT check_in_date FROM trip_stays WHERE trip_id = ?
                         UNION ALL
+                        SELECT pickup_date FROM trip_car_rentals WHERE trip_id = ?
+                        UNION ALL
                         SELECT planned_start_date FROM trips WHERE id = ?
                     )
                 ),
@@ -431,6 +445,8 @@ class TripRepository:
                         UNION ALL
                         SELECT check_out_date FROM trip_stays WHERE trip_id = ?
                         UNION ALL
+                        SELECT dropoff_date FROM trip_car_rentals WHERE trip_id = ?
+                        UNION ALL
                         SELECT planned_end_date FROM trips WHERE id = ?
                     )
                 )"""
@@ -438,7 +454,7 @@ class TripRepository:
             + """,
                 updated_at = ?
             WHERE id = ?""",
-            (trip_id,) * (10 if include_airports else 8) + (now, trip_id),
+            (trip_id,) * (12 if include_airports else 10) + (now, trip_id),
         )
 
     # -- Flight assignment -----------------------------------------------------

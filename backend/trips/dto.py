@@ -45,6 +45,7 @@ class TripListItemDTO(BaseModel):
     flight_count: int
     segment_count: int
     stay_count: int
+    car_rental_count: int = 0
     # Distinct ground-transport types on the trip, so the card can name the
     # kind ('2 trains') when there is only one and fall back to a generic
     # label when there are several.

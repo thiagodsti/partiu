@@ -11,11 +11,11 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "32"  # SAS false-date block split fixed; LH boarding-pass enrichment
-# Bumped for two behaviour changes that only reach already-synced mail through the
-# full rescan a version mismatch triggers: SAS itineraries whose block split was
-# broken by a terminal number now parse, and Lufthansa mobile boarding passes now
-# fill in seat/gate/terminal on flights that were stored before this existed.
+PARSER_VERSION = "34"  # Norwegian 2023+ rendering, Austrian booking/rebooking, Amadeus columnar ITR
+# Every one of these is a mail that already matched its rule and was marked
+# processed after yielding nothing, so only the full rescan a bump triggers
+# walks back over them. ("33" added the cancellation extractors, for the same
+# reason: the mail that strikes a flight off had usually been synced already.)
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -250,6 +250,18 @@ class BuiltinAirlineRule:
     # seat/gate/terminal for a leg the pipeline has already stored rather than
     # a flight of its own. Absent on most airlines, and absence is not an error.
     boarding_pass_extractor: object = field(default=None, repr=False)
+    # Optional third entry point: an airline that confirms cancellations by
+    # email may export `extract_cancellations`, which names flights the
+    # traveller already has and says they are off. Like the boarding-pass
+    # extractor it describes *stored* rows rather than producing new ones, and
+    # absence is not an error.
+    cancellation_extractor: object = field(default=None, repr=False)
+    # Optional fourth entry point: an airline that *announces* a schedule change
+    # without printing the new itinerary may export `extract_schedule_changes`,
+    # naming the booking so its stored legs can be flagged and the traveller
+    # told. A change mail that does reprint the itinerary needs none of this —
+    # it goes through `extract` and the pipeline's "newer email wins" update.
+    schedule_change_extractor: object = field(default=None, repr=False)
 
 
 def _resolve_extractor(name: str):
@@ -283,6 +295,32 @@ def _resolve_boarding_pass_extractor(name: str):
         return None
 
 
+def _resolve_cancellation_extractor(name: str):
+    """Return the optional ``extract_cancellations()`` callable, if any.
+
+    Same dynamic-import contract as the other two resolvers: an airline opts in
+    by defining the function, and needs no change here.
+    """
+    if not name:
+        return None
+    try:
+        module = importlib.import_module(f".airlines.{name}", package="backend.parsers")
+        return getattr(module, "extract_cancellations", None)
+    except ImportError:
+        return None
+
+
+def _resolve_schedule_change_extractor(name: str):
+    """Return the optional ``extract_schedule_changes()`` callable, if any."""
+    if not name:
+        return None
+    try:
+        module = importlib.import_module(f".airlines.{name}", package="backend.parsers")
+        return getattr(module, "extract_schedule_changes", None)
+    except ImportError:
+        return None
+
+
 def get_builtin_rules() -> list[BuiltinAirlineRule]:
     """Return all built-in airline rules as in-memory objects (no DB query)."""
     rules = []
@@ -290,5 +328,7 @@ def get_builtin_rules() -> list[BuiltinAirlineRule]:
         rule = BuiltinAirlineRule(**rule_dict)  # type: ignore[arg-type]
         rule.extractor = _resolve_extractor(rule.custom_extractor)
         rule.boarding_pass_extractor = _resolve_boarding_pass_extractor(rule.custom_extractor)
+        rule.cancellation_extractor = _resolve_cancellation_extractor(rule.custom_extractor)
+        rule.schedule_change_extractor = _resolve_schedule_change_extractor(rule.custom_extractor)
         rules.append(rule)
     return rules

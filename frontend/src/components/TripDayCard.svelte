@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Flight, TripSegment, SegmentType, TripStay, StayKind } from '../api/types';
+  import type { Flight, TripSegment, SegmentType, TripStay, StayKind, TripCarRental } from '../api/types';
   import { dayNotesApi } from '../api/client';
-  import { staysForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
+  import { staysForDay, rentalsForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
   import Checkbox from './Checkbox.svelte';
@@ -24,6 +24,7 @@
     /** Every stay on the trip, not just this day's — the card works out which
      * of them cover this night itself, since a stay spans days. */
     stays?: TripStay[];
+    carRentals?: TripCarRental[];
     initialContent: DayContent;
     initiallyExpanded: boolean;
     forceExpanded?: boolean;
@@ -35,6 +36,7 @@
     flights,
     segments = [],
     stays = [],
+    carRentals = [],
     initialContent,
     initiallyExpanded,
     forceExpanded = false,
@@ -124,6 +126,11 @@
    * Its check-in and check-out rows below sort on the real instant, alongside
    * flights, because that is the order the day actually happens in. */
   const stayDay = $derived(staysForDay(stays, date));
+
+  /* Same two-key split as stays: the car is *banded* onto a day by local
+   * calendar date, while the counter appointments below sort on the real
+   * instant alongside everything else in the day. */
+  const rentalDay = $derived(rentalsForDay(carRentals, date));
 
   /* A leg reaches this card on every day it covers, so the same leg appears on
    * the 31st and the 1st. Its role says which end of it belongs here, and that
@@ -219,6 +226,33 @@
       });
     }
 
+    /* Both counter appointments are real events of the day, and both are
+     * deadlines — the collection time is binding at most vendors and a late
+     * return is charged. The days in between are a state and show in the header
+     * band instead, exactly as a stay's nights do. */
+    for (const rental of rentalDay.pickups) {
+      rows.push({
+        id: `rental-in-${rental.id}`,
+        icon: '🚗',
+        isFlight: false,
+        title: $t('car_rentals.pickup_entry', { values: { vendor: rental.vendor } }),
+        route:
+          `${rental.pickup.name} ${formatFlightTime(rental.pickup_datetime, rental.pickup.timezone)}`,
+        at: instant(rental.pickup_datetime),
+      });
+    }
+    for (const rental of rentalDay.dropoffs) {
+      rows.push({
+        id: `rental-out-${rental.id}`,
+        icon: '🚗',
+        isFlight: false,
+        title: $t('car_rentals.dropoff_entry', { values: { vendor: rental.vendor } }),
+        route:
+          `${rental.dropoff.name} ${formatFlightTime(rental.dropoff_datetime, rental.dropoff.timezone)}`,
+        at: instant(rental.dropoff_datetime),
+      });
+    }
+
     return rows.sort((a, b) => a.at - b.at);
   });
 
@@ -282,6 +316,15 @@
           {n.stay.place.name}
           <span class="day-stay-night">
             {$t('stays.night_of', { values: { night: n.night, nights: n.nights } })}
+          </span>
+        </span>
+      {/each}
+      {#each rentalDay.held as h (h.rental.id)}
+        <span class="day-stay-band">
+          🚗
+          {h.rental.vendor}
+          <span class="day-stay-night">
+            {$t('car_rentals.day_of', { values: { day: h.day, days: h.days } })}
           </span>
         </span>
       {/each}

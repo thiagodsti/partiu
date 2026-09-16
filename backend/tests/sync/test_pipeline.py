@@ -367,3 +367,183 @@ class TestProcessBcbpEmail:
         legs, updated = _process_bcbp_email(email_msg, 1)
         assert legs == 0
         assert updated == 0
+
+
+class TestApplyCancellations:
+    """`_apply_cancellations` is the only path by which a cancellation email
+    ever reaches a flight that is already stored. Every parser in the package
+    refuses to *create* a cancelled leg; until this existed, nothing went back
+    to the leg the booking confirmation had created weeks earlier."""
+
+    @staticmethod
+    def _user(username):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            return conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, 'h', 1)",
+                (username,),
+            ).lastrowid
+
+    @staticmethod
+    def _flight(user_id, *, number, ref, email_date, status="upcoming", manual=0):
+        import uuid as _uuid
+
+        from backend.database import db_write
+
+        flight_id = str(_uuid.uuid4())
+        with db_write() as conn:
+            conn.execute(
+                """INSERT INTO flights (
+                       id, flight_number, booking_reference,
+                       departure_airport, departure_datetime,
+                       arrival_airport, arrival_datetime,
+                       status, email_date, is_manually_added,
+                       user_id, created_at, updated_at
+                   ) VALUES (?, ?, ?, 'ARN', '2024-03-29T07:15:00+00:00',
+                             'VIE', '2024-03-29T09:15:00+00:00', ?, ?, ?, ?, 'x', 'x')""",
+                (flight_id, number, ref, status, email_date, manual, user_id),
+            )
+        return flight_id
+
+    @staticmethod
+    def _status(flight_id):
+        from backend.database import db_conn
+
+        with db_conn() as conn:
+            return conn.execute("SELECT status FROM flights WHERE id = ?", (flight_id,)).fetchone()[
+                "status"
+            ]
+
+    @staticmethod
+    def _rule(records):
+        rule = MagicMock()
+        rule.cancellation_extractor = lambda email_msg: records
+        return rule
+
+    def test_a_booking_cancellation_marks_every_leg_under_that_reference(self, test_db):
+        from backend.sync.pipeline import _apply_cancellations
+
+        user_id = self._user("cancel_u1")
+        out = self._flight(
+            user_id, number="SK1", ref="QQ7RTX", email_date="2024-01-01T00:00:00+00:00"
+        )
+        back = self._flight(
+            user_id, number="SK2", ref="QQ7RTX", email_date="2024-01-01T00:00:00+00:00"
+        )
+        other = self._flight(
+            user_id, number="SK3", ref="OTHER1", email_date="2024-01-01T00:00:00+00:00"
+        )
+
+        email = _make_email_msg(subject="Cancellation Confirmation")
+        n = _apply_cancellations(self._rule([{"booking_reference": "QQ7RTX"}]), email, user_id)
+
+        assert n == 2
+        assert self._status(out) == "cancelled"
+        assert self._status(back) == "cancelled"
+        assert self._status(other) == "upcoming"
+
+    def test_a_leg_cancellation_leaves_its_siblings_alone(self, test_db):
+        """Austrian cancels one flight out of a booking that holds the return
+        too. Widening that to the booking would strike off a leg the traveller
+        is still flying."""
+        from backend.sync.pipeline import _apply_cancellations
+
+        user_id = self._user("cancel_u2")
+        outbound = self._flight(
+            user_id, number="OS318", ref="SAMEREF", email_date="2024-01-01T00:00:00+00:00"
+        )
+        ret = self._flight(
+            user_id, number="OS319", ref="SAMEREF", email_date="2024-01-01T00:00:00+00:00"
+        )
+
+        email = _make_email_msg(subject="Cancellation of your flight OS318")
+        n = _apply_cancellations(
+            self._rule([{"flight_number": "OS318", "departure_date": "2024-03-29"}]),
+            email,
+            user_id,
+        )
+
+        assert n == 1
+        assert self._status(outbound) == "cancelled"
+        assert self._status(ret) == "upcoming"
+
+    def test_a_cancellation_older_than_the_flight_is_ignored(self, test_db):
+        """An airline that cancels and rebooks often reissues under the same
+        PNR, so a stored leg whose source email is *newer* than the cancellation
+        describes the rebooking. Same "newer email wins" rule the pipeline
+        already applies when a restated itinerary updates a stored flight."""
+        from backend.sync.pipeline import _apply_cancellations
+
+        user_id = self._user("cancel_u3")
+        rebooked = self._flight(
+            user_id, number="SK1", ref="QQ7RTX", email_date="2030-01-01T00:00:00+00:00"
+        )
+
+        email = _make_email_msg(subject="Cancellation Confirmation")
+        n = _apply_cancellations(self._rule([{"booking_reference": "QQ7RTX"}]), email, user_id)
+
+        assert n == 0
+        assert self._status(rebooked) == "upcoming"
+
+    def test_a_hand_typed_flight_is_still_cancellable(self, test_db):
+        """A cancellation is a fact about the world, not about how the row
+        reached the database. A manual flight has no source email to compare
+        against, which must not exempt it."""
+        from backend.sync.pipeline import _apply_cancellations
+
+        user_id = self._user("cancel_u4")
+        manual = self._flight(user_id, number="SK1", ref="QQ7RTX", email_date=None, manual=1)
+
+        email = _make_email_msg(subject="Cancellation Confirmation")
+        n = _apply_cancellations(self._rule([{"booking_reference": "QQ7RTX"}]), email, user_id)
+
+        assert n == 1
+        assert self._status(manual) == "cancelled"
+
+    def test_re_reading_the_same_mail_changes_nothing(self, test_db):
+        """A cancellation email is never marked processed (it creates no flight),
+        so every incremental sync reads it again. The already-cancelled filter is
+        what keeps that a no-op instead of a repeated write and a repeated push."""
+        from backend.sync.pipeline import _apply_cancellations
+
+        user_id = self._user("cancel_u5")
+        self._flight(user_id, number="SK1", ref="QQ7RTX", email_date="2024-01-01T00:00:00+00:00")
+
+        email = _make_email_msg(subject="Cancellation Confirmation")
+        rule = self._rule([{"booking_reference": "QQ7RTX"}])
+        assert _apply_cancellations(rule, email, user_id) == 1
+        assert _apply_cancellations(rule, email, user_id) == 0
+
+    def test_another_users_booking_is_untouched(self, test_db):
+        from backend.sync.pipeline import _apply_cancellations
+
+        mine = self._user("cancel_u6")
+        theirs = self._user("cancel_u7")
+        their_flight = self._flight(
+            theirs, number="SK1", ref="QQ7RTX", email_date="2024-01-01T00:00:00+00:00"
+        )
+
+        email = _make_email_msg(subject="Cancellation Confirmation")
+        n = _apply_cancellations(self._rule([{"booking_reference": "QQ7RTX"}]), email, mine)
+
+        assert n == 0
+        assert self._status(their_flight) == "upcoming"
+
+    def test_an_airline_that_does_not_opt_in_is_skipped(self, test_db):
+        from backend.sync.pipeline import _apply_cancellations
+
+        rule = MagicMock()
+        rule.cancellation_extractor = None
+        assert _apply_cancellations(rule, _make_email_msg(), 1) == 0
+
+    def test_a_failing_extractor_does_not_break_the_sync(self, test_db):
+        from backend.sync.pipeline import _apply_cancellations
+
+        rule = MagicMock()
+
+        def _boom(email_msg):
+            raise ValueError("bad mail")
+
+        rule.cancellation_extractor = _boom
+        assert _apply_cancellations(rule, _make_email_msg(), 1) == 0

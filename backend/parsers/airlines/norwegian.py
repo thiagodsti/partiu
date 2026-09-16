@@ -40,24 +40,58 @@ _travel_docs_marker_re = re.compile(
     re.IGNORECASE,
 )
 
-# Per-flight block pattern (applied to whitespace-collapsed text):
-#   DY4371\n-\n14 Aug 2019\n17:10\nStockholm-Arlanda\n20:45\nSicily-Catania\n
-# The Scandinavian renderings put the year first ("2019 aug 14"), so both
-# orderings are accepted and normalised by _parse_travel_docs_date.
+# Per-flight block pattern (applied to whitespace-collapsed text). Two
+# renderings of the same template, and the regex has to read both:
+#
+#   2019 (one field per line):      2023+ (dash inline, time glued to place):
+#     DY4371                          D82603-2024 jul 29
+#     -
+#     14 Aug 2019                     07:45Stockholm-Arlanda
+#     17:10
+#     Stockholm-Arlanda               09:40Helsingfors
+#     20:45
+#     Sicily-Catania
+#
+# The newer shape went unread for three bookings before anyone noticed, because
+# the mail still matched the rule and the marker — it just yielded nothing.
+# The Scandinavian renderings also put the year first ("2024 jul 29"), so both
+# date orders are accepted and normalised by _parse_travel_docs_date. D8 is
+# Norwegian Air International's code and appears on the same itineraries.
 _flight_block_re = re.compile(
-    r"(DY\d{4,5}|D8\d{4,5})\n"  # flight number
-    r"-\n"  # separator
+    r"(DY\d{4,5}|D8\d{4,5})"  # flight number
+    r"[ \t]*\n?[ \t]*-[ \t]*\n?[ \t]*"  # separator, on its own line or inline
     r"(\d{1,2}\s+\w{3,}\s+\d{4}|\d{4}\s+\w{3,}\s+\d{1,2})\n"  # date, either order
     r"\n?"  # optional blank line
-    r"(\d{2}:\d{2})\n"  # departure time
+    r"(\d{2}:\d{2})[ \t]*\n?[ \t]*"  # departure time; place follows inline or next line
     r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ -]+)\n"  # departure city/airport name
     r"\n?"  # optional blank line
-    r"(\d{2}:\d{2})\n"  # arrival time
+    r"(\d{2}:\d{2})[ \t]*\n?[ \t]*"  # arrival time
     r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ -]+)\n",  # arrival city/airport name
     re.MULTILINE,
 )
 
 _year_first_date_re = re.compile(r"^(\d{4})\s+(\w{3,})\s+(\d{1,2})$")
+
+# The passenger list: a heading in the market language, then one line per
+# traveller as SURNAME/FIRST NAMES. The shared passenger heuristics cannot read
+# this shape (and one of them matched *inside* the Swedish heading), so it is
+# read here and handed to enrich_flights already filled.
+_passengers_heading_re = re.compile(
+    r"^(?:Passengers?|Passagerare|Passasjerer|Passagerer)\s*$", re.MULTILINE | re.IGNORECASE
+)
+_passenger_line_re = re.compile(r"^([A-ZÀ-Ö][A-ZÀ-Ö' -]*)/([A-ZÀ-Ö][A-ZÀ-Ö' -]*)$", re.MULTILINE)
+
+
+def _first_passenger(collapsed: str) -> str:
+    heading = _passengers_heading_re.search(collapsed)
+    if not heading:
+        return ""
+    m = _passenger_line_re.search(collapsed, heading.end())
+    if not m:
+        return ""
+    # Names print without spaces between surname parts, so only the first-name
+    # side can be word-cased honestly; "DINIZDASILVEIRA/THIAGO" is as printed.
+    return f"{m.group(2).strip().title()} {m.group(1).strip().title()}"
 
 
 def _parse_travel_docs_date(raw: str):
@@ -127,6 +161,10 @@ def _extract_travel_documents(email_msg, rule) -> list[dict]:
         if flight:
             flights.append(flight)
 
+    passenger = _first_passenger(collapsed)
+    if passenger:
+        for flight in flights:
+            flight["passenger_name"] = passenger
     return enrich_flights(flights, collapsed, email_msg.subject)
 
 

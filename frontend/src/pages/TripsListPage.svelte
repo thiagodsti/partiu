@@ -113,7 +113,8 @@
     try {
       const result = await syncApi.uploadEml(files);
       const stays = result.stays_created ?? 0;
-      if (result.flights_created === 0 && result.flights_updated === 0 && stays === 0) {
+      const cancelled = result.flights_cancelled ?? 0;
+      if (result.flights_created === 0 && result.flights_updated === 0 && stays === 0 && cancelled === 0) {
         toasts.show($t("trips.eml_none_found"), "info");
       } else {
         // Accommodation is reported alongside the flights rather than instead
@@ -125,6 +126,10 @@
           parts.push($t("trips.eml_result", { values: { created: result.flights_created, updated: result.flights_updated } }));
         }
         if (stays > 0) parts.push($t("trips.eml_stays", { values: { count: stays } }));
+        // A cancellation mail creates nothing and updates nothing, so without
+        // its own clause an upload that correctly struck a flight off would
+        // report "nothing found".
+        if (cancelled > 0) parts.push($t("trips.eml_cancelled", { values: { count: cancelled } }));
         toasts.show(parts.join(" · "), "success");
         const data = await tripsApi.list();
         tripsList = data?.trips ?? [];

@@ -3,7 +3,7 @@
  * Ported from the vanilla JS page files.
  */
 
-import type { Flight, TripSegment, TripStay } from '../api/types';
+import type { Flight, TripCarRental, TripSegment, TripStay } from '../api/types';
 
 /** Read the app locale persisted in localStorage (set by i18n module). */
 function appLocale(): string | undefined {
@@ -170,6 +170,42 @@ export function cabinLabel(cls: string | null | undefined): string {
     first: 'First Class',
   };
   return map[cls ?? ''] ?? cls ?? '—';
+}
+
+/** Whether this flight is off.
+ *
+ * Two fields can say so and they mean different things, so both are read. `status`
+ * is the **authoritative** state, written when an airline's cancellation email
+ * names the booking or the leg (`sync/pipeline.py::_apply_cancellations`);
+ * `live_status` is what the live tracker last reported and is owned by the
+ * AviationStack sync. An email cancellation typically arrives days before any
+ * tracker knows, and on an install with no AviationStack key the tracker never
+ * knows at all — so reading only `live_status`, as this UI used to, meant a
+ * flight the airline had cancelled in writing still rendered as a normal leg.
+ *
+ * Deliberately *not* folded into `flightStatus`, which answers a different
+ * question — where the flight sits in time — and is derived purely from its two
+ * timestamps. A cancelled flight still has a departure that is in the past.
+ */
+export function isFlightCancelled(f: Flight): boolean {
+  return f.status === 'cancelled' || f.live_status === 'cancelled';
+}
+
+/**
+ * The airline moved this flight and the row still carries the times it moved
+ * from. Cancelled wins: a cancelled leg's old times are no longer of interest.
+ */
+export function isFlightRescheduled(f: Flight): boolean {
+  return !!f.rescheduled_at && !isFlightCancelled(f);
+}
+
+/**
+ * The airline announced a schedule change to this booking without printing the
+ * new itinerary (SAS does this). The row cannot be updated from such a mail, so
+ * the only honest thing to show is that the airline should be checked.
+ */
+export function hasScheduleChangeNotice(f: Flight): boolean {
+  return !!f.schedule_change_notice_at && !isFlightCancelled(f);
 }
 
 export function flightStatus(f: Flight): 'completed' | 'active' | 'upcoming' {
@@ -653,6 +689,7 @@ export function tripContents(
   flightCount: number,
   segmentTypes: string[],
   stayCount: number,
+  carRentalCount = 0,
 ): TripContentPart[] {
   const parts: TripContentPart[] = [];
 
@@ -680,6 +717,15 @@ export function tripContents(
 
   if (stayCount > 0) {
     parts.push({ icon: '🛏', labelKey: 'trips.stay_count', count: stayCount });
+  }
+
+  // Counted apart from the ground legs above, not folded into them: a hired car
+  // is a contract over days, not a journey, so adding it to the leg count would
+  // report a drive that may never have happened. Last in the line because it is
+  // the least load-bearing thing on the trip — you can read the itinerary
+  // without it.
+  if (carRentalCount > 0) {
+    parts.push({ icon: '🚗', labelKey: 'trips.car_rental_count', count: carRentalCount });
   }
 
   return parts;
@@ -747,6 +793,47 @@ export function legDateKeys(from: string | null, to: string | null): string[] {
     cur.setDate(cur.getDate() + 1);
   }
   return keys;
+}
+
+export interface RentalDay {
+  /** Rentals the car is held on this day, with a 1-based day number. */
+  held: { rental: TripCarRental; day: number; days: number }[];
+  pickups: TripCarRental[];
+  dropoffs: TripCarRental[];
+}
+
+/**
+ * What a given planner day should show for a hired car.
+ *
+ * Deliberately **inclusive of the drop-off day**, where `staysForDay` excludes
+ * the check-out day. The two differ because they count different things: a stay
+ * counts *nights*, and you do not sleep at the property on the morning you
+ * leave — but you do still have the car on the morning you return it, often all
+ * the way to the airport. So a 29 March to 1 April hire is held on all four
+ * days, and its last day reads "day 4 of 4" rather than disappearing.
+ *
+ * Banded on the backend's local `pickup_date` / `dropoff_date` for the same
+ * reason stays are banded on theirs: the stored instants are UTC and would put
+ * a counter far enough west on the wrong day.
+ */
+export function rentalsForDay(rentals: TripCarRental[], date: string): RentalDay {
+  const held: RentalDay['held'] = [];
+  const pickups: TripCarRental[] = [];
+  const dropoffs: TripCarRental[] = [];
+
+  for (const rental of rentals) {
+    if (rental.pickup_date === date) pickups.push(rental);
+    if (rental.dropoff_date === date) dropoffs.push(rental);
+    if (date >= rental.pickup_date && date <= rental.dropoff_date) {
+      held.push({
+        rental,
+        day: daysBetweenDateKeys(rental.pickup_date, date) + 1,
+        days: daysBetweenDateKeys(rental.pickup_date, rental.dropoff_date) + 1,
+      });
+    }
+  }
+
+  return { held, pickups, dropoffs };
 }
 
 export function staysForDay(stays: TripStay[], date: string): StayDay {

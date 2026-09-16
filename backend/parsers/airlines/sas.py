@@ -14,6 +14,7 @@ import re
 
 from bs4 import BeautifulSoup
 
+from ..cancellations import booking_cancellation
 from ..engine import parse_flight_date
 from ..shared import (
     _build_datetime,
@@ -21,6 +22,7 @@ from ..shared import (
     extract_booking_reference,
     extract_passenger,
     fix_overnight,
+    get_email_text,
     get_ref_year,
     make_flight_dict,
     normalize_fn,
@@ -350,3 +352,68 @@ def extract(email_msg, rule) -> list[dict]:
                 return flights
 
     return []
+
+
+# ---------------------------------------------------------------------------
+# Cancellations
+# ---------------------------------------------------------------------------
+
+# Past tense, deliberately. SAS's *schedule change* mail (subject "Schedule
+# change from SAS - Booking reference WD7WYD") lists "Cancel your booking" as
+# one of three options the traveller may choose, alongside its own booking
+# reference — matching the word "cancel" there would cancel a booking that is
+# merely being moved. The confirmation says the deed is done, and only that
+# phrasing is accepted. `test_cancellations.py` pins the schedule-change mail as
+# a negative case.
+_sas_cancelled_re = re.compile(
+    r"you\s+have\s+now\s+cancelled\s+your\s+trip"
+    r"|cancellation\s+and\s+refund\s+confirmation"
+    r"|du\s+har\s+nu\s+avbokat\s+din\s+resa"
+    r"|avbokningsbekr[äa]ftelse",
+    re.IGNORECASE,
+)
+
+
+def extract_cancellations(email_msg) -> list[dict]:
+    """SAS confirms a cancellation by booking reference and lists no legs.
+
+    Both renderings in the corpus ("Cancellation Confirmation" from sas.se and
+    "Cancellation and refund confirmation" from flysas.com) carry the same two
+    lines — the past-tense sentence and `Booking reference: KORU3W` — and
+    nothing else identifying the trip, so the reference is the whole answer.
+    """
+    text = get_email_text(email_msg)
+    subject = email_msg.subject or ""
+    if not _sas_cancelled_re.search(f"{subject}\n{text}"):
+        return []
+    record = booking_cancellation(extract_booking_reference(text, subject))
+    return [record] if record else []
+
+
+# ---------------------------------------------------------------------------
+# Schedule-change notices
+# ---------------------------------------------------------------------------
+
+# "Unfortunately, we've had to change our flight schedule which has impacted
+# your trip with booking reference WD7WYD. Please see our suggested new
+# itinerary in [the app]." — the mail names the booking and prints no leg, so
+# the only honest thing to do with it is flag the booking's stored flights and
+# point the traveller at it. Both the subject and the body sentence are matched;
+# five of these sat unread in the corpus.
+_sas_schedule_change_re = re.compile(
+    r"schedule\s+change\s+from\s+sas"
+    r"|had\s+to\s+change\s+our\s+flight\s+schedule"
+    r"|tidtabells[äa]ndring"
+    r"|[äa]ndrat\s+(?:v[åa]r\s+)?tidtabell",
+    re.IGNORECASE,
+)
+
+
+def extract_schedule_changes(email_msg) -> list[dict]:
+    """SAS announces a schedule change by booking reference and lists no legs."""
+    text = get_email_text(email_msg)
+    subject = email_msg.subject or ""
+    if not _sas_schedule_change_re.search(f"{subject}\n{text}"):
+        return []
+    ref = extract_booking_reference(text, subject)
+    return [{"booking_reference": ref}] if ref else []

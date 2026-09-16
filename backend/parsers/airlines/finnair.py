@@ -28,9 +28,12 @@ import re
 
 from bs4 import BeautifulSoup
 
+from ..cancellations import booking_cancellation
 from ..shared import (
     _build_datetime,
     enrich_flights,
+    extract_booking_reference,
+    get_email_text,
     make_flight_dict,
     parse_date,
     resolve_iata,
@@ -304,3 +307,38 @@ def extract(email_msg, rule) -> list[dict]:
             return enrich_flights(flights, html_text, subject)
 
     return _parse_booking_confirmation(body, rule) if body else []
+
+
+# ---------------------------------------------------------------------------
+# Cancellations
+# ---------------------------------------------------------------------------
+
+# Finnair's cancellation notice reprints the entire itinerary in the
+# confirmation layout, which is why `extract` bails on it (`_cancellation_re`).
+# That guard keeps the dead legs from being created; this one reports them so
+# the legs stored from the original confirmation can be marked.
+_fi_cancelled_ref_re = re.compile(
+    r"(?:cancelled|peruutettu|avbokad)\s+booking\s+reference"
+    r"|din\s+bokning\s+har\s+avbokats"
+    r"|your\s+booking\s+has\s+been\s+cancelled"
+    r"|bekr[äa]ftelse\s+p[åa]\s+din\s+avbokning",
+    re.IGNORECASE,
+)
+
+
+def extract_cancellations(email_msg) -> list[dict]:
+    """Finnair names the cancelled booking and then lists its legs.
+
+    The legs are here — "Inställda flyg:" followed by AY806 and AY813 with their
+    dates — but the booking reference above them covers exactly the same set and
+    survives the layout changing, so it is what gets reported. Reading the legs
+    as well would add nothing and could subtract: a leg block that failed to
+    parse would narrow a whole-booking cancellation to the legs that happened to
+    read cleanly.
+    """
+    text = get_email_text(email_msg)
+    subject = email_msg.subject or ""
+    if not _fi_cancelled_ref_re.search(f"{subject}\n{text}"):
+        return []
+    record = booking_cancellation(extract_booking_reference(text, subject))
+    return [record] if record else []

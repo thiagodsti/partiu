@@ -37,6 +37,7 @@ import type {
   TripSegment,
   SegmentType,
   TripStay,
+  TripCarRental,
   StayKind,
   StationResult,
   IntegrationStatus,
@@ -281,7 +282,7 @@ export const syncApi = {
   now: () => post<null>('/api/sync/now'),
   regroup: () => post<null>('/api/sync/regroup'),
   fullSync: () => post<null>('/api/sync/full-sync'),
-  uploadEml: async (files: File[]): Promise<{ emails_processed: number; flights_created: number; flights_updated: number; stays_created: number }> => {
+  uploadEml: async (files: File[]): Promise<{ emails_processed: number; flights_created: number; flights_updated: number; stays_created: number; flights_cancelled: number }> => {
     const form = new FormData();
     for (const f of files) form.append('files', f);
     const res = await fetch('/api/sync/upload-eml', { method: 'POST', body: form, credentials: 'include' });
@@ -450,6 +451,39 @@ export const staysApi = {
   update: (tripId: string, stayId: string, data: Partial<StayWriteData>) =>
     patch<{ ok: boolean }>(`/api/trips/${tripId}/stays/${stayId}`, data),
   delete: (tripId: string, stayId: string) => del<null>(`/api/trips/${tripId}/stays/${stayId}`),
+};
+
+/** One end of a rental as the form submits it. `timezone` is never sent — the
+ * backend derives it from the coordinates, as it does for a stay's property. */
+export interface RentalPlaceInput {
+  name: string;
+  address?: string | null;
+  lat: number | null;
+  lon: number | null;
+  country_code: string | null;
+}
+
+export interface CarRentalWriteData {
+  vendor: string;
+  pickup: RentalPlaceInput;
+  dropoff: RentalPlaceInput;
+  /** Naive local time at the counter, e.g. "2026-03-29T09:30". */
+  pickup_datetime: string;
+  dropoff_datetime: string;
+  booking_reference?: string | null;
+  vehicle?: string | null;
+  driver_name?: string | null;
+  notes?: string | null;
+}
+
+export const carRentalsApi = {
+  list: (tripId: string) => get<TripCarRental[]>(`/api/trips/${tripId}/car-rentals`),
+  create: (tripId: string, data: CarRentalWriteData) =>
+    post<{ id: string; ok: boolean }>(`/api/trips/${tripId}/car-rentals`, data),
+  update: (tripId: string, rentalId: string, data: Partial<CarRentalWriteData>) =>
+    patch<{ ok: boolean }>(`/api/trips/${tripId}/car-rentals/${rentalId}`, data),
+  delete: (tripId: string, rentalId: string) =>
+    del<null>(`/api/trips/${tripId}/car-rentals/${rentalId}`),
 };
 
 export const stationsApi = {

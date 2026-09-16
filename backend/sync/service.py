@@ -130,6 +130,8 @@ class SyncService:
             "flights_created": result["flights_created"],
             "flights_updated": result["flights_updated"],
             "stays_created": result["stays_created"],
+            "flights_cancelled": result["flights_cancelled"],
+            "car_rentals_created": result["car_rentals_created"],
         }
 
 

@@ -32,9 +32,16 @@ Want to try it before self-hosting? A public demo is available at:
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
 - Built-in parser rules for 19 airlines (see [Supported airlines](#supported-airlines))
 - **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, or the shared GDS receipt parser. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
-- **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — both the HTML table form and the compact one-line-per-leg form found in PDF attachments, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
+- **Boarding-pass mails enrich the leg you already have**: Lufthansa and LATAM passes fill seat, gate, terminal, cabin, booking reference and passenger on the stored flight — only fields that are still empty, and never a new flight, since a pass carries no arrival time
+- **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — the HTML table form, the compact one-line-per-leg form found in PDF attachments, and the fixed-column plain-text form some airlines send in a monospace body, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
 - **Turkish Airlines ticket mails**: TK sends its own branded "Ticket Details" document rather than a GDS receipt, so it gets a dedicated parser that reads both of its renderings — the HTML itinerary and, if that is missing, the attached `TicketDetails.pdf` — including connections, overnight arrivals and the Turkish-language version
 - **Pegasus Airlines confirmations**: PC's Turkish-language booking mail carries no attachment at all, so its dedicated parser reads the HTML leg blocks directly, taking each leg's date from the header above it (never from the "check-in opens" date at the top of the mail) and picking up per-leg terminals along the way
+- **Schedule changes reach flights you already have.** A change mail that reprints the itinerary updates the stored leg and keeps the times it moved from, so the flight shows "Rescheduled" with the previous departure and arrival and you get a notification; a leg moved to another day is recognised as the same leg rather than added beside it; and an airline's notice that a booking has changed without listing the new times (SAS) flags every leg of that booking and points you at the airline
+- **Cancellations reach flights you already have.** Every parser refuses to *create* a cancelled leg, which was only half the job: the flight is normally already stored from its booking confirmation weeks earlier, and nothing ever went back to it. A cancellation mail from SAS, Lufthansa, Finnair or Austrian now marks the legs it names as cancelled — by booking reference where the airline cancels the whole booking, or by flight number and date where it cancels one leg, which must not take the return with it
+- A cancelled flight is **marked, never deleted**: the row stays on the trip so the history is honest and you can undo it by hand, but it stops counting toward your travel statistics — it did not happen
+- A **schedule change is not a cancellation**, and is deliberately not read as one: those mails carry the same booking reference and offer cancelling as one of three options, while reprinting no new itinerary — so treating one as a cancellation would strike off a trip that is still going ahead, with nothing left to restore it
+- A cancellation **older** than the flight it names is ignored, because an airline that cancels and rebooks often reissues under the same reference
+- **Car rental confirmations import themselves** for Hertz, Sixt and Europcar (see [Car rental](#car-rental))
 - **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
 - **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
@@ -46,7 +53,7 @@ Want to try it before self-hosting? A public demo is available at:
 
 ### Trip & flight management
 - Auto-groups flights into trips by booking reference, then 48h time proximity
-- Trip cards name what a trip is made of — "2 trains", "2 flights · 1 stay" — rather than always counting flights
+- Trip cards name what a trip is made of — "2 trains", "2 flights · 1 stay · 1 car rental" — rather than always counting flights
 - Create and edit trips and flights manually — every field of a flight (route, times, terminals, gates, seat, cabin, booking reference, passenger, notes) is editable from **Edit Flight** on the flight's page, with times entered as local time at each airport
 - One **Transport** list per trip holding flights and ground legs together, grouped into Outbound / Getting around / Return — the middle group is where trains, buses and ferries live on a longer trip
 - Connection badges and layover times span both, so the wait between landing and boarding a train is visible
@@ -96,6 +103,18 @@ Want to try it before self-hosting? A public demo is available at:
 - Accommodation and address autocomplete via Photon/OpenStreetMap; a hand-typed place saves fine, it just gets no map pin
 - **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
 
+### Car rental
+- Record a hired car on a trip, in its own section: company, vehicle, the two counters, when you collect it and when it goes back, booking reference and driver
+- **Not a ground-transport leg, and deliberately so.** A "drive" is a journey between two places; a rental is a *contract over days*, with several drives inside it or none. Recording it as a leg would report four days of travelling and draw a line between two points you never travelled between at those times — so it gets its own section, and a trip can hold both
+- One-way hires are ordinary here — collect in Munich, hand it back in Vienna — and each end keeps its own timezone, so the two times read as the counters print them
+- The day planner bands the car across every day you have it, including the day it goes back, and lists both counter appointments as entries in that day's time order
+- Times are entered as local time at each counter and stored as UTC, from the timezone derived from the counter's coordinates; a counter typed by hand saves fine, it just gets no map pin and no conversion
+- Rentals **extend** the trip's date range rather than being validated against it, exactly as stays do
+- Exported to iCalendar with **both** counter appointments carrying a 1h alarm — unlike a stay, where only check-out does, because collection times are binding at most vendors and a late return is charged. A multi-day hire also gets an all-day band; a same-day hire doesn't, since the two events already say everything
+- **Confirmation emails import themselves** for Hertz, Sixt and Europcar: company, booking reference, both counters, both times and the vehicle, read from each vendor's own layout. The booking joins the trip its flights *or stays* fall inside, and opens a trip of its own when there are none — a driving holiday is often built out of accommodation, not flights
+- Like stays, imports only ever **add**: no vendor in the measured mail sends a parseable cancellation
+- **Countries count toward travel statistics**, from both ends — a one-way hire across a border is exactly the case that matters
+
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
 - Mobile boarding passes (currently Lufthansa) fill in the seat, gate, terminal and cabin on a flight you already have — they never create one, since a boarding pass carries no arrival time
@@ -117,6 +136,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Earth circumference laps
 - Longest flight, top routes, top airports, top airlines
 - Year filter with available-years selector
+- **Cancelled flights count for nothing** — not their distance, not their CO2, not their countries, and a year whose only flights were cancelled is not offered in the filter. The rows stay on their trips; they just stop being statistics
 
 ### Aircraft & flight enrichment
 - Looks up aircraft type (Boeing 737-800, Airbus A320, …) while a flight is airborne
@@ -170,7 +190,7 @@ Want to try it before self-hosting? A public demo is available at:
 - A trip imported from email arrives with its cities already filled in on the edit form, worked out from the airports its flights use — you just save to keep them
 - A trip's origin and **destinations** are cities, picked with autocomplete — add as many as the trip visits. Each one counts toward the countries you have visited, and the cover photo picks one of them at random, so asking for a different image moves between the trip's cities
 - Creating a trip does not ask for booking references. A booking reference belongs to the flight or leg it was issued for, which is where you type it; search still finds a trip by any reference on any of its legs. Where a trip starts and ends comes from the legs you put in it, so there is nothing to fill in and nothing that is wrong for a rail trip
-- **On a wide screen the trip page reads as a spine and a margin**: the itinerary — transport, stays, the day planner, then documents — runs down the wide column, while the packing list, expenses, notes and rating sit in a narrower one beside it. The two columns flow independently, so a short card never leaves a blank hole under itself
+- **On a wide screen the trip page reads as a spine and a margin**: the itinerary — transport, stays, car rental, the day planner, then documents — runs down the wide column, while the packing list, expenses, notes and rating sit in a narrower one beside it. The two columns flow independently, so a short card never leaves a blank hole under itself
 - A section with nothing in it explains what it is for on one line under its title, rather than drawing a card of empty space
 - **One button adds any leg.** Pick flight, train, bus, ferry or car and the form shows what that mode actually needs — an airport lookup for a flight, a station search for a train — instead of making you choose between "add flight" and "add ground transport" before you have described the trip. Times you have already typed survive changing your mind about the mode. Every field is on the page — nothing hidden behind a "more details" toggle — with the handful that are actually required marked in red
 - Expense descriptions wrap onto a second line instead of being cut off — in a narrow column the price still fits, and "Airport c…" tells you nothing about where the money went
@@ -391,6 +411,17 @@ uv run pytest frontend/tests/ -v
 ## CLI tools
 
 Several developer tools live in `backend/tools/` for working with the parser pipeline and the LLM fallback.
+
+### corpus_report — measure parser coverage
+
+Runs every extraction tier over a cached email corpus (`data/email_cache.json`, as written by the sync) and prints, per airline rule, how many mails matched, how many produced flights, how many legs, and — the useful part — which matched mails produced nothing, by subject. Run it before and after a parser change and diff the two.
+
+```bash
+uv run python -m backend.tools.corpus_report
+uv run python -m backend.tools.corpus_report --quiet --json data/corpus_rows.json
+```
+
+Name resolution needs a populated `airports` table, so point `--db` at a real database (default `data/partiu.db`).
 
 ### eval_eml_files — test models against .eml files
 

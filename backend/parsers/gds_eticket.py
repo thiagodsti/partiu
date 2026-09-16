@@ -79,6 +79,12 @@ _TERMINAL_RE = re.compile(r"Terminal\s*:\s*([A-Za-z0-9-]{1,4})\b", re.IGNORECASE
 _TERMINAL_LABEL_RE = re.compile(r"\bTerminal\b.*$", re.IGNORECASE | re.DOTALL)
 # Bare airport pairs as they appear in the baggage sections: "ARNLIS", "FLNGRU"
 _IATA_PAIR_RE = re.compile(r"\b([A-Z]{3})([A-Z]{3})\b")
+# The same pairs when they stand alone on a line, or head one ("ARNLIS: MAX 1PC").
+# _IATA_PAIR_RE also matches any six-capital word — "LISBON" is (LIS, BON) and
+# BON is Bonaire — and on the columnar layout that phantom sat beside the real
+# "LISARN" and made the corroboration ambiguous, so the leg was dropped. A pair
+# on its own line is the baggage block's restatement and nothing else.
+_STANDALONE_PAIR_RE = re.compile(r"^[^\S\n]*([A-Z]{3})([A-Z]{3})[^\S\n]*(?::|$)", re.MULTILINE)
 
 # Compact layout, one line per leg:
 #   "AF 871 / 12NOV Cape Town - Paris CDG 07:55 19:15 07:15 1PC"
@@ -94,6 +100,31 @@ _COMPACT_LEG_RE = re.compile(
 )
 # "Terminal 2F" trailing a compact leg line — belongs to the *arrival* airport.
 _COMPACT_TERMINAL_RE = re.compile(r"\bTerminal\s+([A-Za-z0-9]{1,3})\b", re.IGNORECASE)
+
+# Amadeus fixed-column layout — the classic ITR as plain text, one departure
+# line per leg with the arrival on the next line and the terminals between:
+#
+#   FROM /TO        FLIGHT  CL DATE  DEP      FARE BASIS    NVB   NVA   BAG ST
+#   STOCKHOLM ARLAN TP 783  T  10NOV 1905     TF0DSC02                  0PC OK
+#   TERMINAL:5
+#   LISBON AIRPORT                   ARRIVAL TIME: 2235     ARRIVAL DATE: 10NOV
+#   TERMINAL:1         LATEST CHECK-IN:1820
+#
+# Place names are truncated to the column width ("STOCKHOLM ARLAN"), so name
+# resolution is expected to fail on some of them; the baggage block's bare pairs
+# ("ARNLIS") are what settles those, through _pick_corroborated_route. Times
+# are four bare digits. Dates carry no year, like the compact layout.
+_COLUMNAR_LEG_RE = re.compile(
+    r"^[^\S\n]*(?P<dep>[A-Z][A-Z0-9 .'/-]{1,24}?)[^\S\n]+"
+    r"(?P<code>[A-Z0-9]{2})[^\S\n]?(?P<num>\d{1,4})[^\S\n]+"
+    r"(?P<cl>[A-Z])[^\S\n]+(?P<date>\d{1,2}[A-Z]{3})[^\S\n]+(?P<time>\d{4})\b[^\n]*\n"
+    r"(?:[^\S\n]*TERMINAL:[^\S\n]*(?P<dep_term>[A-Za-z0-9]{1,4})[^\n]*\n)?"
+    r"[^\S\n]*(?P<arr>[A-Z][A-Z0-9 .'/-]{1,24}?)[^\S\n]+ARRIVAL TIME:[^\S\n]*"
+    r"(?P<arr_time>\d{4})\b"
+    r"(?:[^\S\n]+ARRIVAL DATE:[^\S\n]*(?P<arr_date>\d{1,2}[A-Z]{3}))?[^\n]*\n"
+    r"(?:[^\S\n]*TERMINAL:[^\S\n]*(?P<arr_term>[A-Za-z0-9]{1,4}))?",
+    re.MULTILINE,
+)
 
 
 class _SimpleRule:
@@ -131,6 +162,15 @@ def collect_iata_pairs(text: str) -> list[tuple[str, str]]:
         if dep != arr:
             pairs.append((dep, arr))
     return pairs
+
+
+def collect_standalone_iata_pairs(text: str) -> list[tuple[str, str]]:
+    """Like ``collect_iata_pairs`` but only pairs standing alone on a line."""
+    return [
+        (m.group(1), m.group(2))
+        for m in _STANDALONE_PAIR_RE.finditer(text)
+        if m.group(1) != m.group(2)
+    ]
 
 
 def _pick_corroborated_route(dep: str, arr: str, pairs: list[tuple[str, str]]) -> tuple[str, str]:
@@ -311,6 +351,48 @@ def _legs_from_text(text: str, ref_date) -> list[dict]:
     return legs
 
 
+def _legs_from_columnar_text(text: str, ref_date) -> list[dict]:
+    """Extract raw leg records from the Amadeus fixed-column layout.
+
+    The same receipt is often present twice in one email — the fixed-width
+    text and a whitespace-collapsed copy of the HTML ``<pre>`` — so legs are
+    deduplicated on (flight number, date, departure time).
+    """
+    legs: list[dict] = []
+    seen: set[tuple[str, date_type | None, str]] = set()
+    for m in _COLUMNAR_LEG_RE.finditer(text):
+        dep_date = _resolve_receipt_date(m.group("date"), ref_date)
+        if not dep_date:
+            continue
+        arr_token = m.group("arr_date")
+        arr_date = _resolve_receipt_date(arr_token, ref_date) if arr_token else None
+        fn = f"{m.group('code')}{m.group('num')}"
+        dep_time = _hhmm(m.group("time"))
+        key = (fn, dep_date, dep_time)
+        if key in seen:
+            continue
+        seen.add(key)
+        legs.append(
+            {
+                "flight_number": fn,
+                "dep_iata": resolve_iata(m.group("dep").strip()),
+                "arr_iata": resolve_iata(m.group("arr").strip()),
+                "dep_terminal": m.group("dep_term") or "",
+                "arr_terminal": m.group("arr_term") or "",
+                "dep_time": dep_time,
+                "dep_date": dep_date,
+                "arr_time": _hhmm(m.group("arr_time")),
+                "arr_date": arr_date,
+            }
+        )
+    return legs
+
+
+def _hhmm(four_digits: str) -> str:
+    """ "1905" → "19:05"."""
+    return f"{four_digits[:2]}:{four_digits[2:]}"
+
+
 def _pdf_text(email_msg) -> str:
     """Text of any PDF attachments, extracted defensively.
 
@@ -358,16 +440,24 @@ def extract_gds_eticket(email_msg, rule=None) -> list[dict]:
             text = f"{text}\n{pdf}" if text else pdf
         if looks_like_gds_eticket(text) or looks_like_gds_eticket(html):
             legs = _legs_from_text(text, email_msg.date)
+            if not legs:
+                legs = _legs_from_columnar_text(text, email_msg.date)
 
     if not legs:
         return []
 
-    # Ground-truth routing restated elsewhere in the receipt
+    # Ground-truth routing restated elsewhere in the receipt. Pairs on their
+    # own line are tried first; the looser scan only when those settle nothing.
+    standalone_pairs = collect_standalone_iata_pairs(text)
     pairs = collect_iata_pairs(text)
 
     flights: list[dict] = []
     for leg in legs:
-        dep_iata, arr_iata = _pick_corroborated_route(leg["dep_iata"], leg["arr_iata"], pairs)
+        dep_iata, arr_iata = _pick_corroborated_route(
+            leg["dep_iata"], leg["arr_iata"], standalone_pairs
+        )
+        if not dep_iata or not arr_iata:
+            dep_iata, arr_iata = _pick_corroborated_route(dep_iata, arr_iata, pairs)
         if not dep_iata or not arr_iata:
             logger.debug(
                 "GDS e-ticket: unresolved route for %s (%r -> %r)",

@@ -794,3 +794,74 @@ def extract(email_msg, rule) -> list[dict]:
         if result:
             return result
     return extract_regex(email_msg, rule)
+
+
+# ---------------------------------------------------------------------------
+# Boarding-pass enrichment ("Aqui está o cartão de embarque para …")
+# ---------------------------------------------------------------------------
+# The pass mail prints, one field per line once the HTML is flattened:
+#
+#     Código de reserva:
+#     MJGZWO
+#     Voo LA8072
+#     …
+#     do seu voo de São Paulo a Milão que parte 16/03/26 às 06:00 PM.
+#     Batman
+#     da Silva
+#     Assento
+#     14L
+#
+# No arrival time anywhere, so — like every boarding pass — it enriches the leg
+# the booking confirmation already created and never builds one (extract()
+# finds nothing in it, which is correct). Only the 2024+ template carries a
+# seat; the older "Cartão de embarque atualizado" mails print flight and date
+# alone and yield nothing here either.
+_bp_marker_re = re.compile(r"cart[aã]o de embarque", re.IGNORECASE)
+_bp_flight_re = re.compile(r"^Voo\s+(LA[\s\xa0]?\d{3,4})\s*$", re.MULTILINE)
+# Consumes the rest of its line (" PM.") so the name block starts on the next one.
+_bp_departure_re = re.compile(r"que parte\s+(\d{2}/\d{2}/\d{2})\s+às\s+\d{1,2}:\d{2}[^\n]*")
+_bp_seat_re = re.compile(r"^Assento\n(\d{1,3}[A-Z])\s*$", re.MULTILINE)
+_bp_booking_ref_re = re.compile(r"^C[óo]digo de reserva:\n([A-Z0-9]{6})\s*$", re.MULTILINE)
+_bp_name_line_re = re.compile(r"^[A-Za-zÀ-ÿ'-]+(?:\s+[A-Za-zÀ-ÿ'-]+)*$")
+
+
+def extract_boarding_pass_details(email_msg) -> list[dict]:
+    """Seat, booking reference and passenger from a LATAM boarding-pass mail.
+
+    Returns enrichment records keyed on ``flight_number`` + ``departure_date``,
+    the contract ``_apply_boarding_pass_details`` matches stored flights on.
+    """
+    from ..shared import html_to_text
+
+    html = getattr(email_msg, "html_body", None)
+    text = html_to_text(html) if html else (getattr(email_msg, "body", "") or "")
+    if not _bp_marker_re.search(text):
+        return []
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+
+    fn_m = _bp_flight_re.search(text)
+    dep_m = _bp_departure_re.search(text)
+    if not fn_m or not dep_m:
+        return []
+    dep_date = _parse_ddmmyy(dep_m.group(1))
+    if not dep_date:
+        return []
+
+    record = {
+        "flight_number": fn_m.group(1).replace(" ", "").replace("\xa0", ""),
+        "departure_date": dep_date.isoformat(),
+    }
+    seat_m = _bp_seat_re.search(text)
+    if seat_m:
+        record["seat"] = seat_m.group(1)
+    ref_m = _bp_booking_ref_re.search(text)
+    if ref_m:
+        record["booking_reference"] = ref_m.group(1)
+    # The traveller's name is the run of bare name lines between the departure
+    # sentence and the "Assento" label — nothing else is printed there.
+    if seat_m:
+        between = text[dep_m.end() : seat_m.start()].splitlines()
+        name_lines = [ln for ln in between if ln and _bp_name_line_re.match(ln)]
+        if name_lines and len(name_lines) == len([ln for ln in between if ln]):
+            record["passenger_name"] = " ".join(name_lines)
+    return [record]

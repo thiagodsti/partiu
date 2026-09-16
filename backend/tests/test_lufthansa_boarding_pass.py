@@ -123,7 +123,9 @@ class TestOptInContract:
         assert callable(rule.boarding_pass_extractor)
 
     def test_airlines_without_one_are_not_an_error(self):
-        others = [r for r in get_builtin_rules() if r.airline_name != "Lufthansa"]
+        # Opting in is exporting the function; every other airline simply has None.
+        opted_in = {"Lufthansa", "LATAM Airlines"}
+        others = [r for r in get_builtin_rules() if r.airline_name not in opted_in]
         assert others, "expected other airline rules to exist"
         assert all(r.boarding_pass_extractor is None for r in others)
 

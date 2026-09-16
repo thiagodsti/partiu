@@ -5,6 +5,15 @@ Fixture: tests/fixtures/norwegian_travel_docs_anonymized.json
   DY4371  ARN→CTA  14 Aug 2019  17:10→20:45
   DY4372  CTA→ARN  24 Aug 2019  14:45→18:25
   Booking reference: QAJV6E
+
+Fixture: tests/fixtures/norwegian_resehandlingar_2024_anonymized.json
+  The same template as rendered from 2023 on — dash inline with the flight
+  number, time glued to the place name, Swedish exonyms ("Helsingfors") — which
+  matched the rule and the marker and still yielded nothing for three bookings.
+  D82603  ARN→HEL  29 Jul 2024  07:45→09:40
+  D82614  HEL→ARN  31 Jul 2024  15:40→15:40  (equal local times: a real 1h flight
+                                             across a 1h offset, see CLAUDE.md)
+  Booking reference: TESTRF; first passenger DOE/JOHN
 """
 
 from datetime import UTC, datetime
@@ -44,6 +53,7 @@ def norwegian_airports_db(tmp_path_factory):
         ("OSL", "Oslo Gardermoen Airport", "Oslo", "NO"),
         ("CPH", "Copenhagen Airport", "Copenhagen", "DK"),
         ("LHR", "London Heathrow Airport", "London", "GB"),
+        ("HEL", "Helsinki-Vantaa Airport", "Helsinki", "FI"),
     ]
     with db_write() as conn:
         conn.executemany(
@@ -208,3 +218,61 @@ class TestTravelDocumentsExtractorDirect:
         assert "line1\n" in result
         # Multiple blank lines collapsed to one
         assert "\n\n\n" not in result
+
+
+# ---------------------------------------------------------------------------
+# 2023+ rendering: "Resehandlingar" (Swedish market)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def norwegian_2024_email():
+    return load_anonymized_fixture("norwegian_resehandlingar_2024_anonymized.json")
+
+
+@pytest.fixture(scope="module")
+def norwegian_2024_flights(norwegian_2024_email, norwegian_airports_db):
+    from backend.parsers.builtin_rules import get_builtin_rules
+    from backend.parsers.engine import extract_flights_from_email, match_rule_to_email
+
+    rules = sorted(get_builtin_rules(), key=lambda r: r.priority, reverse=True)
+    rule = match_rule_to_email(norwegian_2024_email, rules)
+    assert rule is not None and rule.airline_code == "DY"
+    return extract_flights_from_email(norwegian_2024_email, rule)
+
+
+class TestNorwegian2024Rendering:
+    def test_both_legs_extracted(self, norwegian_2024_flights):
+        assert len(norwegian_2024_flights) == 2
+
+    def test_outbound(self, norwegian_2024_flights):
+        f = norwegian_2024_flights[0]
+        assert f["flight_number"] == "D82603"
+        assert (f["departure_airport"], f["arrival_airport"]) == ("ARN", "HEL")
+        assert f["departure_datetime"] == dt(2024, 7, 29, 7, 45)
+        assert f["arrival_datetime"] == dt(2024, 7, 29, 9, 40)
+
+    def test_return_with_equal_local_times_is_kept(self, norwegian_2024_flights):
+        f = norwegian_2024_flights[1]
+        assert f["flight_number"] == "D82614"
+        assert (f["departure_airport"], f["arrival_airport"]) == ("HEL", "ARN")
+        assert f["departure_datetime"] == dt(2024, 7, 31, 15, 40)
+        assert f["arrival_datetime"] == dt(2024, 7, 31, 15, 40)
+
+    def test_booking_reference_comes_from_the_swedish_label(self, norwegian_2024_flights):
+        # "DIN BOKNINGSREFERENS ÄR: TESTRF" — not the hotel name printed under
+        # "hotellbokning" further down, which is what the old label regex found.
+        assert {f["booking_reference"] for f in norwegian_2024_flights} == {"TESTRF"}
+
+    def test_passenger_from_the_surname_slash_first_name_list(self, norwegian_2024_flights):
+        assert {f["passenger_name"] for f in norwegian_2024_flights} == {"John Doe"}
+
+    def test_swedish_exonym_resolves(self, norwegian_airports_db):
+        from backend.parsers.shared import resolve_iata
+
+        resolve_iata.cache_clear()
+        assert resolve_iata("Helsingfors") == "HEL"
+
+    def test_2019_rendering_still_parses(self, norwegian_flights):
+        # The widened block regex must keep reading the one-field-per-line shape.
+        assert [f["flight_number"] for f in norwegian_flights] == ["DY4371", "DY4372"]

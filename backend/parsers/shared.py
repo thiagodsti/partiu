@@ -755,8 +755,11 @@ def _extract_booking_ref_text(text: str) -> str:
       lowercase English words like "details", "secure", "price" are never captured
       — airline booking references are always uppercase alphanumeric.
     """
-    # BA: "e-ticket receipt J9CRT8:" — check first so subject beats body fallback
-    m = re.search(r"\breceipt\s+(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
+    # BA: "e-ticket receipt J9CRT8:" — check first so subject beats body fallback.
+    # Same line only: with \s+ the match crossed the newline after a receipt's
+    # "ELECTRONIC TICKET RECEIPT" heading and took the first word of the next
+    # line — "BOOKING REF: X" gave "BOOKING" as the reference.
+    m = re.search(r"\breceipt[ \t]+(?-i:([A-Z0-9]{5,8}))\b", text, re.IGNORECASE)
     if m:
         return m.group(1).strip()
     m = re.search(
@@ -766,7 +769,12 @@ def _extract_booking_ref_text(text: str) -> str:
         r"|booking\s*(?:ref(?:erence)?|code|number)"  # EN: all variants
         r"|Reserv\w{1,12}\b(?:\s*(?:code|number|no\.?))?"  # Reservation (code), Reserva…
         r"|Rezervasyon(?:\s*kodu)?"  # TR (Turkish Airlines)
-        r"|Bokning(?:snummer)?"  # SV
+        # SV/NO/DA "booking reference" — listed before the bare "Bokning" so the
+        # label wins, and anchored with \b so "hotellbokning" in a marketing
+        # block cannot stand in for it: on one Norwegian mail that read the
+        # hotel name on the next line ("CABINN") as the booking reference.
+        r"|\bBokningsreferens|\bBookingsreferanse|\bBookingreferanse|\bBookingreference"
+        r"|\bBokning(?:snummer)?"  # SV
         r"|PNR\b(?:\s*(?:no\.?|nr\.?|number))?"  # Universal; "PNR No:" (Pegasus)
         r"|Buchungscode|Buchungsnummer|Reservierungscode|Buchungsreferenz"  # DE
         r"|confirmation\s*(?:code|number)"  # EN
@@ -776,7 +784,10 @@ def _extract_booking_ref_text(text: str) -> str:
         r"|Order\s+(?:number|no\.?)"  # EN — sub-keyword required
         r")"
         r"[:\s\[\#\n]+"  # separator (colon / spaces / newlines)
-        r"(?:is\b[:\s\n]*)?"  # optional connecting word "IS" (Norwegian format)
+        r"(?:(?:is|är|er)\b[:\s\n]*)?"  # optional connecting word: "IS", "ÄR" (SV), "ER" (NO/DA)
+        # Amadeus receipts print the GDS name before the locator ("BOOKING REF :
+        # AMADEUS: OP2NJ2") — the name is seven capitals and was being returned.
+        r"(?:(?:AMADEUS|SABRE|GALILEO|TRAVELPORT|WORLDSPAN)\s*:\s*)?"
         r"(?-i:([A-Z0-9]{5,8}))\b",  # code must be uppercase — filters out common words
         text,
         re.IGNORECASE,
@@ -848,8 +859,10 @@ def _extract_passenger_text(text: str) -> str:
         return m.group(1).strip()
 
     # "Passagier / Reisender / passager / passasjer: NAME" (DE/FR/NO/SV)
+    # \b after the label: without it "passager" matches inside the Swedish
+    # "Passagerare" and the captured "name" is the word's tail, "are".
     m = re.search(
-        r"(?:Passagier|Reisender|passager|passasjer)"
+        r"(?:Passagier|Reisender|passager|passasjer)\b"
         r"[\s:]*[-•·]?\s*"
         r"([A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+(?:[ \t]+[A-ZÀ-ÿ][a-zA-ZÀ-ÿ]+)*)",
         text,

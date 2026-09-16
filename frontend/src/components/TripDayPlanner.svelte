@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Trip, Flight, TripSegment, TripStay, TripDayNote } from '../api/types';
+  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote } from '../api/types';
   import { dayNotesApi } from '../api/client';
   import { t } from '../lib/i18n';
   import TripDayCard, { type DayContent } from './TripDayCard.svelte';
@@ -13,6 +13,9 @@
     /** Stays likewise. Unlike flights and segments these are NOT grouped by day
      * here: a stay spans days, so each card picks out the ones covering it. */
     stays?: TripStay[];
+    /** Car rentals likewise, and for the same reason: a hire spans days, so
+     * each card picks out the ones covering it. */
+    carRentals?: TripCarRental[];
     onLoaded?: (contentByDate: Record<string, DayContent>) => void;
     forceExpanded?: boolean;
     onlyDate?: string;
@@ -22,6 +25,7 @@
     trip,
     segments = [],
     stays = [],
+    carRentals = [],
     onLoaded,
     forceExpanded = false,
     onlyDate,
@@ -145,6 +149,7 @@
         flights={flightMap.get(date) ?? []}
         segments={segmentMap.get(date) ?? []}
         {stays}
+        {carRentals}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}

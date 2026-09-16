@@ -42,6 +42,7 @@
   const flightCount = $derived(trip.flight_count ?? 0);
   const segmentCount = $derived(trip.segment_count ?? 0);
   const stayCount = $derived(trip.stay_count ?? 0);
+  const carRentalCount = $derived(trip.car_rental_count ?? 0);
   const segmentTypes = $derived(trip.segment_types ?? []);
 
   const SEGMENT_ICONS: Record<string, string> = {
@@ -72,7 +73,10 @@
    */
   const contents = $derived.by((): string[] => {
     const parts: string[] = [];
-    if (flightCount > 0 || (segmentCount === 0 && stayCount === 0)) {
+    if (
+      flightCount > 0 ||
+      (segmentCount === 0 && stayCount === 0 && carRentalCount === 0)
+    ) {
       // The flight chip stays on an empty trip: "0 flights" is the right
       // prompt when a trip genuinely has nothing on it yet.
       parts.push(`✈ ${plural("trips.flight_count", flightCount)}`);
@@ -98,6 +102,14 @@
     }
     if (stayCount > 0) {
       parts.push(`🛏 ${plural("trips.stay_count", stayCount)}`);
+    }
+    /* Its own chip rather than part of the leg count: a hired car is a contract
+     * over days, not a journey, so folding it in would claim a drive that may
+     * never have happened. A trip whose only entry is a rental is a real trip
+     * and must not read "✈ 0 flights", which is why it joins stays and segments
+     * in suppressing the flight chip above. */
+    if (carRentalCount > 0) {
+      parts.push(`🚗 ${plural("trips.car_rental_count", carRentalCount)}`);
     }
     return parts;
   });
