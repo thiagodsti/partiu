@@ -8,6 +8,8 @@
   import EmptyState from "../components/EmptyState.svelte";
   import TopNav from "../components/TopNav.svelte";
   import SyncStatusBar from "../components/SyncStatusBar.svelte";
+  import TrashPanel from "../components/TrashPanel.svelte";
+  import ActivityPanel from "../components/ActivityPanel.svelte";
   import { currentUser } from "../lib/authStore";
   import { theme } from "../lib/themeStore";
   import { accent, setAccent, ACCENTS, DEFAULT_ACCENT } from "../lib/accentStore";
@@ -1749,6 +1751,11 @@
     </div>
 
     <!-- Guests -->
+    <!-- Trash and activity: what was deleted, and what happened. Own components
+         so they load and fail on their own, without touching this page's state. -->
+    <TrashPanel />
+    <ActivityPanel />
+
     <div class="settings-section">
       <div class="settings-section-title">{$t('settings.guests')}</div>
       <div class="form-hint" style="margin-bottom:var(--space-sm)">{$t('settings.guests_desc')}</div>

@@ -14,6 +14,7 @@ _STATE_COLUMNS = frozenset(
         "last_synced_at",
         "emails_processed",
         "emails_total",
+        "parser_version",
     }
 )
 
@@ -55,9 +56,28 @@ class SyncRepository:
         return int(get_global_setting("sync_interval_minutes", "10"))
 
     def reset_last_synced(self, user_id: int) -> None:
+        """Forget where the last sync got to *and* which mails it has read.
+
+        A full sync that kept the processed-mail ledger only re-fetched mail it
+        then refused to look at, so a booking deleted by mistake — or read wrongly
+        by an older parser — could never come back through it. Duplicates are
+        prevented by the unique key on `flights.email_message_id`, not by the
+        ledger, so clearing it costs a re-parse and nothing else.
+        """
         with db_write() as conn:
             conn.execute(
                 "UPDATE email_sync_state SET last_synced_at = NULL WHERE user_id = ?", (user_id,)
+            )
+            conn.execute("DELETE FROM processed_emails WHERE user_id = ?", (user_id,))
+
+    def forget_emails(self, user_id: int, message_ids: list[str]) -> None:
+        """Drop specific mails from the ledger — the ones behind a trashed flight."""
+        if not message_ids:
+            return
+        with db_write() as conn:
+            conn.executemany(
+                "DELETE FROM processed_emails WHERE user_id = ? AND email_message_id = ?",
+                [(user_id, mid) for mid in message_ids],
             )
 
     def get_sync_credentials(self, user_id: int) -> sqlite3.Row | None:

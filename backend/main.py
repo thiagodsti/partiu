@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from .activity import routes as activity_routes
 from .airports import routes as airports_routes
 from .auth import routes as auth_routes
 from .auth import validate_secret_key
@@ -39,6 +40,7 @@ from .smtp_server import start_smtp_server, stop_smtp_server
 from .stats import routes as stats_routes
 from .stays import routes as stays_routes
 from .sync import routes as sync_routes
+from .trash import routes as trash_routes
 from .trip_documents import routes as trip_documents_routes
 from .trips import routes as trips_routes
 from .trips import sharing_routes
@@ -179,6 +181,8 @@ app.include_router(stays_routes.router)
 app.include_router(car_rentals_routes.router)
 app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
+app.include_router(trash_routes.router)
+app.include_router(activity_routes.router)
 
 
 def _resolve_static_file(base: Path, full_path: str) -> Path | None:

@@ -510,3 +510,44 @@ export interface IntegrationStatus {
   state: 'set' | 'unset' | 'public_instance' | 'self_hosted' | 'disabled';
   env_var: string | null;
 }
+
+// ---- Trash & activity log (migration 0035) ----
+
+export interface TrashItem {
+  id: number;
+  kind: 'trip' | 'flight';
+  entity_id: string;
+  label: string;
+  summary: {
+    start_date?: string | null;
+    end_date?: string | null;
+    flight_count?: number;
+    stay_count?: number;
+    segment_count?: number;
+    expense_count?: number;
+    rating?: number | null;
+    has_notes?: boolean;
+    departure_datetime?: string | null;
+    trip_id?: string | null;
+    booking_reference?: string | null;
+  };
+  deleted_at: string;
+}
+
+export interface RestoreResult {
+  kind: 'trip' | 'flight';
+  entity_id: string;
+  label: string;
+  restored: Record<string, number>;
+  skipped: Record<string, number>;
+}
+
+export interface ActivityEntry {
+  id: number;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  label: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}

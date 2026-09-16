@@ -311,14 +311,18 @@ class TripService:
             self._repository.recompute_span(trip_id, _now_iso())
 
     def delete_trip(self, trip_id: str, user_id: int) -> None:
+        """Move the trip and everything on it to the trash.
+
+        The live rows are deleted as before — the trash keeps a snapshot, and
+        the cover image stays on disk until the trash entry is purged. See
+        `trash.service` for why the delete still has to be a real delete.
+        """
         if not self._is_owner(trip_id, user_id):
             raise TripError("Trip not found", 404)
 
-        self._repository.delete_owned(trip_id, user_id)
+        from ..trash.service import trash_service
 
-        webp = trip_image_path(trip_id)
-        webp.unlink(missing_ok=True)
-        webp.with_suffix(".jpg").unlink(missing_ok=True)
+        trash_service.trash_trip(trip_id, user_id)
 
     def merge_trip(self, trip_id: str, target_trip_id: str, user_id: int) -> None:
         if trip_id == target_trip_id:
@@ -329,7 +333,19 @@ class TripService:
             raise TripError("Target trip not found", 404)
 
         now = _now_iso()
+        source = self._repository.get_by_id(trip_id)
+        target = self._repository.get_by_id(target_trip_id)
         self._repository.merge_trips(trip_id, target_trip_id, user_id, now)
+        from ..activity.service import activity_service
+
+        activity_service.record(
+            user_id,
+            "trips.merged",
+            entity_type="trip",
+            entity_id=target_trip_id,
+            label=target.name if target else target_trip_id,
+            details={"source_trip_id": trip_id, "source_name": source.name if source else None},
+        )
 
         webp = trip_image_path(trip_id)
         webp.unlink(missing_ok=True)

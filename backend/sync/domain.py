@@ -12,6 +12,7 @@ class SyncStateRow:
     last_error: str | None
     emails_processed: int | None
     emails_total: int | None
+    parser_version: str = ""
 
 
 @dataclass

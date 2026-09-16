@@ -69,6 +69,7 @@ def api_app(test_db):
     """Create a minimal FastAPI app with all API routers for integration testing."""
     from fastapi import FastAPI
 
+    from backend.activity import routes as activity_routes
     from backend.airports import routes as airports_routes
     from backend.auth import routes as auth_routes
     from backend.boarding_passes import routes as bp_routes
@@ -84,6 +85,7 @@ def api_app(test_db):
     from backend.stats import routes as stats_routes
     from backend.stays import routes as stays_routes
     from backend.sync import routes as sync_routes
+    from backend.trash import routes as trash_routes
     from backend.trip_documents import routes as trip_documents_routes
     from backend.trips import routes as trips_routes
     from backend.trips import sharing_routes
@@ -110,6 +112,8 @@ def api_app(test_db):
     app.include_router(segments_routes.router)
     app.include_router(stays_routes.router)
     app.include_router(car_rentals_routes.router)
+    app.include_router(trash_routes.router)
+    app.include_router(activity_routes.router)
     app.include_router(stats_routes.router)
     return app
 

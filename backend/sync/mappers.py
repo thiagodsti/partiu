@@ -13,6 +13,7 @@ def row_to_sync_state(row: sqlite3.Row) -> SyncStateRow:
         last_error=row["last_error"],
         emails_processed=row["emails_processed"],
         emails_total=row["emails_total"],
+        parser_version=row["parser_version"] if "parser_version" in row.keys() else "",
     )
 
 

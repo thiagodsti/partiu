@@ -4,6 +4,9 @@
  */
 
 import type {
+  TrashItem,
+  RestoreResult,
+  ActivityEntry,
   Trip,
   TripBudget,
   PackingItem,
@@ -565,4 +568,16 @@ export const settingsApi = {
   testImmich: () => post<{ ok: boolean; message: string }>('/api/settings/test-immich'),
   airportCount: () => get<AirportCountResponse>('/api/settings/airports/count'),
   reloadAirports: () => post<AirportCountResponse>('/api/settings/airports/reload'),
+};
+
+// ---- Trash & activity ----
+
+export const trashApi = {
+  list: () => get<TrashItem[]>('/api/trash'),
+  restore: (id: number) => post<RestoreResult>(`/api/trash/${id}/restore`),
+  purge: (id: number) => del<null>(`/api/trash/${id}`),
+};
+
+export const activityApi = {
+  list: (limit = 100) => get<ActivityEntry[]>(`/api/activity?limit=${limit}`),
 };

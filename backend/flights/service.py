@@ -238,10 +238,13 @@ class FlightService:
             TripRepository().recompute_span(trip_id, now)
 
     def delete_flight(self, flight_id: str, user_id: int) -> None:
+        """Move the flight (and its boarding passes) to the trash — see `trash.service`."""
         existing = self._repository.get_owned(flight_id, user_id)
         if existing is None:
             raise FlightError("Flight not found", 404)
-        self._repository.delete_owned(flight_id, user_id)
+        from ..trash.service import trash_service
+
+        trash_service.trash_flight(flight_id, user_id)
 
     # -- Ungroup ---------------------------------------------------------------
 

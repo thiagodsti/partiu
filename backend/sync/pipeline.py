@@ -109,11 +109,14 @@ def _set_sync_status(user_id: int, status: str, error: str = ""):
 
 
 def _set_sync_complete(user_id: int, last_synced_at: str):
+    from ..parsers.builtin_rules import PARSER_VERSION
+
     _sync_repository.upsert_state(
         user_id,
         last_synced_at=last_synced_at,
         status="idle",
         last_error="",
+        parser_version=PARSER_VERSION,
     )
 
 
@@ -997,8 +1000,20 @@ def run_email_sync_for_user(user: dict) -> dict:
     try:
         last_synced_at = sync_state.last_synced_at if sync_state else None
 
+        # The rescan a PARSER_VERSION bump has always promised and never done:
+        # when the version this user last synced under differs, this one run
+        # looks back over the full lookback window and re-parses every mail it
+        # fetches, ledger or not. Everything downstream is idempotent (unique
+        # mail key on flights, "newer email wins", fill-only-empty enrichment,
+        # stamped cancellations and notices), so the cost is a re-parse and the
+        # gain is every template a newer parser learned to read.
+        from ..parsers.builtin_rules import PARSER_VERSION
+
+        synced_version = sync_state.parser_version if sync_state else ""
+        rescan = bool(last_synced_at) and synced_version != PARSER_VERSION
+
         since_date = None
-        if last_synced_at:
+        if last_synced_at and not rescan:
             try:
                 since_date = datetime.fromisoformat(last_synced_at)
                 since_date = since_date - timedelta(days=1)
@@ -1008,6 +1023,26 @@ def run_email_sync_for_user(user: dict) -> dict:
         if since_date is None:
             first_sync_days = int(get_global_setting("first_sync_days", "90"))
             since_date = datetime.now(UTC) - timedelta(days=first_sync_days)
+
+        if rescan:
+            logger.info(
+                "User %d: parser version %r -> %r, rescanning mail since %s",
+                user_id,
+                synced_version,
+                PARSER_VERSION,
+                since_date.date(),
+            )
+            from ..activity.service import activity_service
+
+            activity_service.record(
+                user_id,
+                "sync.rescan",
+                details={
+                    "from_version": synced_version,
+                    "to_version": PARSER_VERSION,
+                    "since": since_date.date().isoformat(),
+                },
+            )
 
         rules = get_builtin_rules()
         sender_patterns = [r.sender_pattern for r in rules if r.sender_pattern]
@@ -1047,6 +1082,7 @@ def run_email_sync_for_user(user: dict) -> dict:
             user_id,
             use_llm=True,
             progress_callback=lambda n: _sync_repository.upsert_state(user_id, emails_processed=n),
+            skip_dedup=rescan,
         )
 
         if result["new_flight_ids"]:
