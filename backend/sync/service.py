@@ -129,6 +129,7 @@ class SyncService:
             "emails_processed": result["emails_processed"],
             "flights_created": result["flights_created"],
             "flights_updated": result["flights_updated"],
+            "stays_created": result["stays_created"],
         }
 
 

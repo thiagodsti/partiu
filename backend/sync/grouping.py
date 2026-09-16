@@ -9,10 +9,11 @@ import json
 import logging
 import uuid
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from ..database import db_conn, db_write
 from ..utils import now_iso
+from .stays_import import STAY_TRIP_WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,90 @@ def _build_trip_name(flights: list[dict], booking_ref: str = "") -> str:
     return name
 
 
+def _recompute_trip_dates(trip_id: str) -> None:
+    """Widen a trip's span to cover everything now in it, leaving its ends alone."""
+    from ..trips.repository import TripRepository
+
+    try:
+        TripRepository().recompute_span(trip_id, now_iso(), include_airports=False)
+    except Exception as e:  # noqa: BLE001 - a stale span must not fail the grouping run
+        logger.warning("Grouping: span recompute failed for trip %s: %s", trip_id, e)
+
+
+def _flight_countries(flights: list[dict]) -> set[str]:
+    """Every country the itinerary touches, from the airports table."""
+    codes = {f.get("departure_airport", "") for f in flights} | {
+        f.get("arrival_airport", "") for f in flights
+    }
+    codes = {c for c in codes if c}
+    if not codes:
+        return set()
+    with db_conn() as conn:
+        rows = conn.execute(
+            f"SELECT country_code FROM airports WHERE iata_code IN ({','.join('?' * len(codes))})",
+            tuple(codes),
+        ).fetchall()
+    return {r["country_code"] for r in rows if r["country_code"]}
+
+
+def _find_stay_trip_for_flights(flights: list[dict], user_id: int) -> str | None:
+    """An already-open trip holding only imported accommodation these flights belong to.
+
+    Accommodation is routinely booked before the flights are — two of the six
+    bookings measured for `stays_import` were confirmed four and seven months
+    ahead of their tickets — so by the time an itinerary syncs there may already
+    be a trip built from the hotel alone, complete with a name, a cover photo and
+    whatever the traveller has since added to it. Reusing its id here is the same
+    move `_create_trip_for_flights` already makes for a known booking reference,
+    and for the same reason: creating a second trip beside the first splits one
+    journey in two and strands everything hung off the original.
+
+    The test mirrors `stays_import._find_trip_for_stay` exactly — a flight dated
+    inside the stay's span plus `STAY_TRIP_WINDOW_DAYS`, gated on the stay's
+    country being one the itinerary touches — because a booking that finds a trip
+    in one direction must find it in the other. Only flightless auto-generated
+    trips are eligible: one that already has flights was grouped on its own
+    evidence, and a hand-made trip is never touched by grouping at all.
+    """
+    dates = {
+        (f.get("departure_datetime") or "")[:10] for f in flights if f.get("departure_datetime")
+    }
+    if not dates:
+        return None
+    countries = _flight_countries(flights)
+
+    with db_conn() as conn:
+        rows = conn.execute(
+            """SELECT t.id AS trip_id, s.check_in_date AS ci, s.check_out_date AS co,
+                      s.country AS country
+                 FROM trips t
+                 JOIN trip_stays s ON s.trip_id = t.id
+                WHERE t.user_id = ?
+                  AND t.is_auto_generated = 1
+                  AND NOT EXISTS (SELECT 1 FROM flights f WHERE f.trip_id = t.id)""",
+            (user_id,),
+        ).fetchall()
+
+    hits: dict[str, int] = defaultdict(int)
+    for row in rows:
+        if row["country"] and countries and row["country"] not in countries:
+            continue
+        try:
+            lo = (date.fromisoformat(row["ci"]) - timedelta(days=STAY_TRIP_WINDOW_DAYS)).isoformat()
+            hi = (date.fromisoformat(row["co"]) + timedelta(days=STAY_TRIP_WINDOW_DAYS)).isoformat()
+        except (TypeError, ValueError):
+            continue
+        matched = sum(1 for d in dates if lo <= d <= hi)
+        if matched:
+            hits[row["trip_id"]] += matched
+
+    if not hits:
+        return None
+    trip_id = max(hits, key=lambda k: (hits[k], k))
+    logger.info("Grouping: flights joining stay-created trip %s", trip_id)
+    return trip_id
+
+
 def _create_trip_for_flights(
     flights: list[dict],
     booking_ref: str = "",
@@ -253,6 +338,12 @@ def _create_trip_for_flights(
             if row:
                 trip_id = row["id"]
 
+    # No booking reference matched. Accommodation for this journey may still
+    # have arrived first and opened a trip of its own — join that rather than
+    # building a second trip over the same days.
+    if trip_id is None and effective_user_id is not None:
+        trip_id = _find_stay_trip_for_flights(sorted_flights, effective_user_id)
+
     if trip_id:
         # Update the existing trip in place — trip_id (and its image file) is preserved
         try:
@@ -276,6 +367,13 @@ def _create_trip_for_flights(
                     "UPDATE flights SET trip_id = ?, updated_at = ? WHERE id = ?",
                     [(trip_id, now, fid) for fid in flight_ids],
                 )
+            # The trip may already hold an imported stay whose nights fall
+            # outside the flights' own range, so the dates written just above
+            # are a floor rather than the answer. Airports are left alone:
+            # `_find_trip_destination` has already named the destination better
+            # than the span recompute can, which on a round trip would overwrite
+            # it with the final arrival — the traveller's own origin.
+            _recompute_trip_dates(trip_id)
             logger.info("Reused trip '%s' (id=%s) with %d flights", name, trip_id, len(flights))
             return trip_id
         except Exception as e:

@@ -90,11 +90,15 @@ Want to try it before self-hosting? A public demo is available at:
 - Stays **extend** the trip's date range rather than being validated against it, so the airport hotel booked for the night before an early departure is a normal thing to record, and accommodation can be booked before any transport is
 - Nights with nothing booked are listed under the Stays section; a stay that does not overlap the trip's transport at all is flagged as a warning, never rejected
 - Exported to iCalendar as one all-day block covering the nights (ending after check-out, not before it) plus a timed check-out reminder with a 1h alarm; the address rides along in `LOCATION` so the calendar entry opens in a maps app
-- No email parsing yet, and no accommodation autocomplete yet — a hand-typed place saves fine
+- **Booking emails import themselves** when the platform ships schema.org markup: the property, its address, country, check-in/check-out, booking reference and host phone are read straight out of the typed block rather than guessed from the layout. Airbnb is the platform this was measured against; Booking.com, Hotels.com and Trip.com are covered by the same reader the moment they emit the markup, since nothing here is keyed to a sender
+- An imported booking **joins the trip its flights belong to**, and opens a trip of its own when there are none — a drive to the coast gets a trip built from the hotel alone, and flights booked months later join *that* trip rather than starting a second one
+- Imports only ever **add** a stay. No platform in the measured mail sends a parseable cancellation, so a booking you cancelled and rebooked shows up as two stays on one trip for you to delete — a visible row rather than a silent wrong one
+- Accommodation and address autocomplete via Photon/OpenStreetMap; a hand-typed place saves fine, it just gets no map pin
 - **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
 
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
+- Mobile boarding passes (currently Lufthansa) fill in the seat, gate, terminal and cabin on a flight you already have — they never create one, since a boarding pass carries no arrival time
 - Manual upload of boarding pass images (PNG, JPEG, WebP)
 - Upload trip documents: PDFs and images, up to 20 MB each, with multi-page PDF viewer
 - Passenger name and seat parsed from BCBP data

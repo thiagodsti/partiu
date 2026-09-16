@@ -63,15 +63,23 @@ def extract_bs4(html: str, rule, email_msg) -> list[dict]:
     time_re = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
     flight_num_re = re.compile(rf"({_FLIGHT_NUM_BOUNDED})")
 
-    date_matches = list(date_re.finditer(text))
+    # Blocks are split on the *parseable* dates only, not on everything that is
+    # shaped like one. `date_re` accepts "<1-2 digits> <word> <4 digits>", and
+    # SAS flattens a leg to "... Avgångsterminal 5 SK 2601 | Canadair ...", in
+    # which "5 SK 2601" matches perfectly: 5 the day, SK the month, 2601 the
+    # year. Splitting there strands the route and times in one block and the
+    # flight number in the next, so the leg silently vanishes — which is why
+    # every SAS leg with a four-digit flight number and no *arrival* terminal
+    # was lost, while a three-digit one (SK 525, too short for \d{4}) survived
+    # by luck. Filtering first is better than tightening the regex with a month
+    # list: `parse_flight_date` is already the multilingual authority on what a
+    # date is, and it rejects "5 SK 2601" outright.
+    date_matches = [(m, parse_flight_date(m.group(1))) for m in date_re.finditer(text)]
+    date_matches = [(m, d) for m, d in date_matches if d]
     flights = []
 
-    for i, date_m in enumerate(date_matches):
-        dep_date = parse_flight_date(date_m.group(1))
-        if not dep_date:
-            continue
-
-        block_end = date_matches[i + 1].start() if i + 1 < len(date_matches) else len(text)
+    for i, (date_m, dep_date) in enumerate(date_matches):
+        block_end = date_matches[i + 1][0].start() if i + 1 < len(date_matches) else len(text)
         block = text[date_m.start() : block_end]
 
         fn_matches = list(flight_num_re.finditer(block))

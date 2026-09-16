@@ -25,3 +25,8 @@ class UploadEmlResponseDTO(BaseModel):
     emails_processed: int
     flights_created: int
     flights_updated: int
+    # Accommodation read out of schema.org markup. Reported separately because
+    # an upload can legitimately contain no flights at all and still have done
+    # something — without this the toast reads "nothing found" over an imported
+    # hotel booking.
+    stays_created: int = 0

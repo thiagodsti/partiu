@@ -112,13 +112,20 @@
     emlUploading = true;
     try {
       const result = await syncApi.uploadEml(files);
-      if (result.flights_created === 0 && result.flights_updated === 0) {
+      const stays = result.stays_created ?? 0;
+      if (result.flights_created === 0 && result.flights_updated === 0 && stays === 0) {
         toasts.show($t("trips.eml_none_found"), "info");
       } else {
-        toasts.show(
-          $t("trips.eml_result", { values: { created: result.flights_created, updated: result.flights_updated } }),
-          "success",
-        );
+        // Accommodation is reported alongside the flights rather than instead
+        // of them: a single upload can carry both, and an .eml holding only a
+        // hotel booking would otherwise report "nothing found" over a stay it
+        // had just imported.
+        const parts = [];
+        if (result.flights_created > 0 || result.flights_updated > 0) {
+          parts.push($t("trips.eml_result", { values: { created: result.flights_created, updated: result.flights_updated } }));
+        }
+        if (stays > 0) parts.push($t("trips.eml_stays", { values: { count: stays } }));
+        toasts.show(parts.join(" · "), "success");
         const data = await tripsApi.list();
         tripsList = data?.trips ?? [];
       }

@@ -27,6 +27,7 @@ from ..settings.repository import SettingsRepository
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 from .grouping import auto_group_flights
 from .repository import SyncRepository
+from .stays_import import import_lodging_from_email
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,74 @@ def _update_flight_from_bcbp(existing_id: str, user_id: int, bcbp_leg: dict):
         return
     updates["updated_at"] = now_iso()
     _flight_repository.update(existing_id, user_id, updates)
+
+
+def _apply_boarding_pass_details(rule, email_msg, user_id: int) -> int:
+    """Patch stored flights with seat/gate/terminal from a boarding-pass email.
+
+    A boarding pass names a leg the traveller already has — it carries no
+    arrival time, so it cannot describe a flight on its own (the same reason
+    `_process_bcbp_email` only ever updates). An airline opts in by exporting
+    `extract_boarding_pass_details`; everyone else has no attribute and is
+    skipped.
+
+    Only empty fields are filled. The booking confirmation is the authority on
+    where and when the flight goes, and a boarding pass reprinted after a gate
+    change should not be able to overwrite a seat the traveller has since
+    edited by hand.
+    """
+    extractor = getattr(rule, "boarding_pass_extractor", None)
+    if extractor is None:
+        return 0
+
+    try:
+        records = extractor(email_msg) or []
+    except Exception as e:  # noqa: BLE001 - enrichment must never fail a sync
+        logger.warning("User %d: boarding-pass detail extraction failed: %s", user_id, e)
+        return 0
+
+    updated = 0
+    for record in records:
+        fn = record.get("flight_number")
+        dep_date = record.get("departure_date")
+        if not fn or not dep_date:
+            continue
+        existing = _flight_repository.find_by_number_and_date(fn, dep_date, user_id)
+        if not existing:
+            logger.debug(
+                "User %d: boarding pass for %s on %s matches no stored flight",
+                user_id,
+                fn,
+                dep_date,
+            )
+            continue
+        updates = {
+            key: record[key]
+            for key in (
+                "seat",
+                "cabin_class",
+                "passenger_name",
+                "booking_reference",
+                "departure_terminal",
+                "departure_gate",
+            )
+            if record.get(key) and not getattr(existing, key, None)
+        }
+        if record.get("gate") and not getattr(existing, "departure_gate", None):
+            updates["departure_gate"] = record["gate"]
+        if not updates:
+            continue
+        updates["updated_at"] = now_iso()
+        _flight_repository.update(existing.id, user_id, updates)
+        updated += 1
+        logger.info(
+            "User %d: enriched flight %s on %s from boarding pass (%s)",
+            user_id,
+            fn,
+            dep_date,
+            ", ".join(sorted(k for k in updates if k != "updated_at")),
+        )
+    return updated
 
 
 def _process_bcbp_email(email_msg, user_id: int) -> tuple[int, int]:
@@ -384,6 +453,7 @@ def _process_emails(
     emails_processed = 0
     flights_created = 0
     flights_updated = 0
+    stays_created = 0
     new_flight_ids: list[str] = []
     errors = []
 
@@ -391,6 +461,22 @@ def _process_emails(
     sorted_rules = sorted(rules, key=lambda r: (-r.priority, r.airline_name))
 
     for email_msg in emails:
+        # --- Accommodation, from schema.org markup only -------------------
+        # Deliberately ahead of the blocked-domain skip. That list exists
+        # because *heuristic* parsing of accommodation mail produced junk, and
+        # the booking platforms on it (Airbnb, Booking.com) are exactly the
+        # senders that ship typed reservation markup. A structural reader
+        # cannot invent a booking: it finds a typed LodgingReservation or
+        # returns nothing, so the reason for the block does not apply to it.
+        # Idempotency lives in the importer rather than the processed-email
+        # ledger below, because a lodging email is often the same email a
+        # flight was already read from.
+        try:
+            stay_ids = import_lodging_from_email(email_msg, user_id)
+            stays_created += len(stay_ids)
+        except Exception as e:  # noqa: BLE001 - never let accommodation stop the sync
+            logger.error("User %d: Lodging import error: %s", user_id, e, exc_info=True)
+
         if is_non_flight_domain(email_msg.sender or ""):
             logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
             continue
@@ -416,6 +502,12 @@ def _process_emails(
             #    cannot (boarding-pass microdata, check-in mails, seat/cabin).
             rule = match_rule_to_email(email_msg, sorted_rules)
             flights_data = extract_flights_from_email(email_msg, rule) if rule else []
+
+            # A boarding pass enriches a leg rather than describing one. Run it
+            # whether or not the rule yielded flights: the email it belongs to
+            # usually yields none, which is the point.
+            if rule is not None:
+                flights_updated += _apply_boarding_pass_details(rule, email_msg, user_id)
 
             # 2. GDS e-ticket receipt. Reads the receipt's own structure — a
             #    table cell's column, or a whole matched line — instead of
@@ -545,6 +637,7 @@ def _process_emails(
         "emails_processed": emails_processed,
         "flights_created": flights_created,
         "flights_updated": flights_updated,
+        "stays_created": stays_created,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,

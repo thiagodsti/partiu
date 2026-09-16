@@ -281,30 +281,87 @@ def _extract_itinerary(text_nl: str, rule, booking_ref: str) -> list[dict]:
 
 
 def _extract_f3(text: str, rule, booking_ref: str) -> list[dict]:
-    """Format 3: Lufthansa mobile boarding pass / check-in confirmed."""
-    flights = []
+    """Format 3: Lufthansa mobile boarding pass — yields **no flights**, by design.
+
+    This layout prints the flight number, route, date and *departure* time, and
+    no arrival time at all. It used to stand the departure in for the arrival,
+    which produced a zero-length leg that `validation.py` then discarded on
+    every sync — the flight was never stored, and the only trace was a log line
+    reading like a parse failure rather than a format missing a field.
+
+    A boarding pass is not how a flight is learned; it is how a flight already
+    known is enriched. That is the rule `_process_bcbp_email` has always
+    followed ("we don't have enough info to create a complete flight from BCBP
+    alone"), and a mobile boarding pass carries strictly less than a BCBP
+    barcode does. The seat, gate, terminal and cabin it *does* carry are read by
+    `extract_boarding_pass_details` below and patched onto the stored flight.
+
+    Measured against the 372-email corpus: all three emails in this format were
+    for legs already stored from their booking confirmations, with real arrival
+    times. Nothing is lost by refusing to invent one.
+    """
+    return []
+
+
+# Value-then-label is how this layout prints every field ("19B\nSeat",
+# "A20\nGate"), which is why these read backwards compared with the itinerary
+# formats above.
+_bp_seat_re = re.compile(r"([0-9]{1,3}[A-Z])\n(?:Seat|Assento|Sitzplatz|Platz)\b", re.IGNORECASE)
+_bp_gate_re = re.compile(r"([A-Z]?[0-9]{1,3}[A-Z]?)\n(?:Gate|Porta|Flugsteig)\b", re.IGNORECASE)
+_bp_terminal_re = re.compile(r"(?:Terminal)\s*:?\s*(\S+)", re.IGNORECASE)
+_bp_cabin_re = re.compile(r"([A-Z][A-Z ]{2,20})\n(?:Class|Classe|Klasse)\b")
+_bp_passenger_re = re.compile(
+    r"^(.+)\n(?:Passenger name|Nome do passageiro|Passagiername)\b", re.MULTILINE
+)
+
+
+def extract_boarding_pass_details(email_msg) -> list[dict]:
+    """Seat/gate/terminal/cabin from a Lufthansa mobile boarding pass.
+
+    Returns *enrichment* records, not flights: each names the leg it belongs to
+    by ``flight_number`` plus ``departure_date`` so the caller can find the
+    stored flight, and carries only the fields this email adds. An airline
+    module exposing this function opts into the pipeline's boarding-pass
+    enrichment step; one that does not is simply skipped.
+    """
+    html = getattr(email_msg, "html_body", None)
+    if not html:
+        return []
+    soup = BeautifulSoup(html, "lxml")
+    text = soup.get_text(separator="\n", strip=True)
+
+    details = []
     for m in _boarding_pass_flight_date_re.finditer(text):
         fn = normalize_fn(m.group(1))
         dep_date = parse_flight_date(m.group(2))
-        if not dep_date:
+        if not fn or not dep_date:
             continue
-        # Departure time appears later: "14:00\nPartida"
-        chunk = text[m.end() :]
-        dep_time_m = _boarding_pass_departure_time_re.search(chunk[:2000])
-        if not dep_time_m:
-            continue
-        dep_dt = _build_datetime(dep_date, dep_time_m.group(1))
-        if not dep_dt:
-            continue
-        # No arrival time in this format — use dep_dt as placeholder
-        ref = booking_ref
-        if not ref:
-            ref_m = _boarding_pass_booking_ref_re.search(chunk[:500])
-            ref = ref_m.group(1) if ref_m else ""
-        flight = make_flight_dict(rule, fn, m.group(3), m.group(4), dep_dt, dep_dt, ref)
-        if flight:
-            flights.append(flight)
-    return flights
+        # Scope every field to this leg's own block so a second boarding pass
+        # further down the mail cannot donate its seat to the first.
+        block = text[m.end() : m.end() + 1200]
+        record = {
+            "flight_number": fn,
+            "departure_date": dep_date.isoformat(),
+            "departure_airport": m.group(3),
+            "arrival_airport": m.group(4),
+        }
+        for key, pattern in (
+            ("seat", _bp_seat_re),
+            ("gate", _bp_gate_re),
+            ("departure_terminal", _bp_terminal_re),
+            ("cabin_class", _bp_cabin_re),
+        ):
+            found = pattern.search(block)
+            if found:
+                record[key] = found.group(1).strip()
+        ref_m = _boarding_pass_booking_ref_re.search(block)
+        if ref_m:
+            record["booking_reference"] = ref_m.group(1)
+        pax_m = _bp_passenger_re.search(text[: m.start()])
+        if pax_m:
+            record["passenger_name"] = pax_m.group(1).strip()
+        details.append(record)
+    return details
 
 
 def _extract_f4(text: str, rule, booking_ref: str) -> list[dict]:

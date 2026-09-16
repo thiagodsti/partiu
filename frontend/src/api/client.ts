@@ -281,7 +281,7 @@ export const syncApi = {
   now: () => post<null>('/api/sync/now'),
   regroup: () => post<null>('/api/sync/regroup'),
   fullSync: () => post<null>('/api/sync/full-sync'),
-  uploadEml: async (files: File[]): Promise<{ emails_processed: number; flights_created: number; flights_updated: number }> => {
+  uploadEml: async (files: File[]): Promise<{ emails_processed: number; flights_created: number; flights_updated: number; stays_created: number }> => {
     const form = new FormData();
     for (const f of files) form.append('files', f);
     const res = await fetch('/api/sync/upload-eml', { method: 'POST', body: form, credentials: 'include' });

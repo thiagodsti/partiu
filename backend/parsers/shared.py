@@ -1004,6 +1004,14 @@ def make_flight_dict(
             arr_airport,
         )
         return None
+    # Deliberately **no** check that the arrival differs from the departure.
+    # It looks like an obvious guard and it is wrong here: these are naive local
+    # times at each end, so AY813 departing Helsinki 14:00 and reaching
+    # Stockholm 14:00 is a real one-hour flight across a one-hour offset. Only
+    # after `apply_airport_timezones` are the two instants comparable, which is
+    # why `validation.py` owns that judgement. A parser that has no arrival time
+    # to report must return nothing rather than stand the departure in for it —
+    # see `lufthansa._extract_f3`.
     return {
         "airline_name": rule.airline_name,
         "airline_code": rule.airline_code,

@@ -346,15 +346,15 @@ class TripRepository:
             )
             self._recompute_span(conn, target_trip_id, now)
 
-    def recompute_span(self, trip_id: str, now: str) -> None:
+    def recompute_span(self, trip_id: str, now: str, include_airports: bool = True) -> None:
         """Standalone version of the span recompute, for callers (e.g. the flights
         feature, after creating/updating a flight) that aren't already inside a
         trips-repository write transaction."""
         with db_write() as conn:
-            self._recompute_span(conn, trip_id, now)
+            self._recompute_span(conn, trip_id, now, include_airports)
 
     @staticmethod
-    def _recompute_span(conn, trip_id: str, now: str) -> None:
+    def _recompute_span(conn, trip_id: str, now: str, include_airports: bool = True) -> None:
         """Recalculate start/end dates and airports from everything now in the
         trip. start_date = earliest departure; end_date = latest arrival.
 
@@ -386,7 +386,30 @@ class TripRepository:
         MIN/MAX are the aggregate forms, not the two-argument scalar ones: the
         scalars return NULL when either side is NULL, which would blank the span
         of a trip that has flights but no segments (or the reverse).
+
+        ``include_airports=False`` recomputes the **dates only**, for the one
+        caller that has already worked the ends out better than this can:
+        ``grouping._create_trip_for_flights`` picks the destination through
+        ``_find_trip_destination``, which on a round trip names the place the
+        traveller actually went rather than the final arrival (their own origin).
+        Grouping still needs the dates recomputed, because a trip it is assigning
+        flights to may already hold an imported stay whose nights fall outside
+        them — writing the flight-derived pair straight in would silently crop
+        the stay out of its own trip's span.
         """
+        airport_clauses = (
+            """,
+                origin_airport = (
+                    SELECT departure_airport FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) ASC LIMIT 1
+                ),
+                destination_airport = (
+                    SELECT arrival_airport FROM flights WHERE trip_id = ?
+                    ORDER BY datetime(departure_datetime) DESC LIMIT 1
+                )"""
+            if include_airports
+            else ""
+        )
         conn.execute(
             """UPDATE trips SET
                 start_date = (
@@ -410,18 +433,12 @@ class TripRepository:
                         UNION ALL
                         SELECT planned_end_date FROM trips WHERE id = ?
                     )
-                ),
-                origin_airport = (
-                    SELECT departure_airport FROM flights WHERE trip_id = ?
-                    ORDER BY datetime(departure_datetime) ASC LIMIT 1
-                ),
-                destination_airport = (
-                    SELECT arrival_airport FROM flights WHERE trip_id = ?
-                    ORDER BY datetime(departure_datetime) DESC LIMIT 1
-                ),
+                )"""
+            + airport_clauses
+            + """,
                 updated_at = ?
             WHERE id = ?""",
-            (trip_id,) * 10 + (now, trip_id),
+            (trip_id,) * (10 if include_airports else 8) + (now, trip_id),
         )
 
     # -- Flight assignment -----------------------------------------------------

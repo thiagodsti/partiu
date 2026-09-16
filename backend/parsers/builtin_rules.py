@@ -11,7 +11,11 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "31"  # Pegasus Airlines (PC) rule added
+PARSER_VERSION = "32"  # SAS false-date block split fixed; LH boarding-pass enrichment
+# Bumped for two behaviour changes that only reach already-synced mail through the
+# full rescan a version mismatch triggers: SAS itineraries whose block split was
+# broken by a terminal number now parse, and Lufthansa mobile boarding passes now
+# fill in seat/gate/terminal on flights that were stored before this existed.
 
 # ---------------------------------------------------------------------------
 # Shared subject filter — applied to every airline rule.
@@ -241,6 +245,11 @@ class BuiltinAirlineRule:
     priority: int
     custom_extractor: str = ""
     extractor: object = field(default=None, repr=False)
+    # Optional second entry point: an airline whose mail includes boarding
+    # passes may also export `extract_boarding_pass_details`, which returns
+    # seat/gate/terminal for a leg the pipeline has already stored rather than
+    # a flight of its own. Absent on most airlines, and absence is not an error.
+    boarding_pass_extractor: object = field(default=None, repr=False)
 
 
 def _resolve_extractor(name: str):
@@ -259,11 +268,27 @@ def _resolve_extractor(name: str):
         return None
 
 
+def _resolve_boarding_pass_extractor(name: str):
+    """Return the optional ``extract_boarding_pass_details()`` callable, if any.
+
+    Same dynamic-import contract as ``_resolve_extractor``: an airline opts in
+    by defining the function, and needs no change here.
+    """
+    if not name:
+        return None
+    try:
+        module = importlib.import_module(f".airlines.{name}", package="backend.parsers")
+        return getattr(module, "extract_boarding_pass_details", None)
+    except ImportError:
+        return None
+
+
 def get_builtin_rules() -> list[BuiltinAirlineRule]:
     """Return all built-in airline rules as in-memory objects (no DB query)."""
     rules = []
     for rule_dict in BUILTIN_AIRLINE_RULES:
         rule = BuiltinAirlineRule(**rule_dict)  # type: ignore[arg-type]
         rule.extractor = _resolve_extractor(rule.custom_extractor)
+        rule.boarding_pass_extractor = _resolve_boarding_pass_extractor(rule.custom_extractor)
         rules.append(rule)
     return rules
