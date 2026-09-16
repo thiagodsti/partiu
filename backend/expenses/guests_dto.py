@@ -20,3 +20,11 @@ class UpdateGuestDTO(BaseModel):
 class CreateGuestResponseDTO(BaseModel):
     id: int
     ok: bool
+
+
+class AddTripGuestDTO(BaseModel):
+    """Put an existing guest on a trip. Creating a guest stays `POST /api/guests`
+    — the address book and a trip's roster are separate facts, and folding them
+    into one call would make "add to this trip" quietly create duplicates."""
+
+    guest_id: int

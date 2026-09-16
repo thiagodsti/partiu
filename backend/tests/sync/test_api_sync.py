@@ -50,17 +50,18 @@ class TestSyncNow:
         assert r.status_code == 401
 
 
-class TestRegroup:
-    def test_regroup_starts(self, auth_client):
-        r = auth_client.post("/api/sync/regroup")
-        assert r.status_code == 200
-        assert r.json()["status"] == "started"
+class TestRegroupIsNotExposed:
+    """Re-group was a whole-account destructive operation with no undo: it deleted
+    every auto-generated trip, taking the expenses, budgets, stays and Immich links
+    that hung off them, to fix what is nearly always one trip's grouping. The
+    per-trip repairs (merge, ungroup) do that without collateral, and
+    `_merge_overlapping_groups` already re-merges split trips on every sync.
+    The function itself is gone too — see git history; what survives is
+    `_create_trip_for_flights`' in-place update, which reassigns flights without
+    destroying the trip they land on."""
 
-    def test_regroup_unauthenticated(self, client):
-        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
-        client.cookies.clear()
-        r = client.post("/api/sync/regroup")
-        assert r.status_code == 401
+    def test_the_route_is_gone(self, auth_client):
+        assert auth_client.post("/api/sync/regroup").status_code == 404
 
 
 class TestFullSync:

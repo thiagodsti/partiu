@@ -123,6 +123,173 @@ class TestMe:
         data = auth_client.get("/api/auth/me").json()
         assert data["carto_api_key"] == ""
 
+    def test_me_reports_demo_mode(self, auth_client, monkeypatch):
+        """The banner has to be permanent on a demo instance, so the frontend
+        needs to know it is on one."""
+        import backend.config as cfg_module
+
+        assert auth_client.get("/api/auth/me").json()["demo"] is False
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        assert auth_client.get("/api/auth/me").json()["demo"] is True
+
+
+# ---------------------------------------------------------------------------
+# /api/auth/public-config
+# ---------------------------------------------------------------------------
+
+
+class TestPublicConfig:
+    """The login page reads this before anyone has signed in, so it must answer
+    unauthenticated — and must say nothing at all unless DEMO_MODE is on."""
+
+    def test_says_nothing_by_default(self, client):
+        r = client.get("/api/auth/public-config")
+        assert r.status_code == 200
+        data = r.json()
+        assert data == {"demo": False, "demo_username": "", "demo_password": ""}
+
+    def test_publishes_the_demo_credentials_when_demo_mode_is_on(self, client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        monkeypatch.setattr(cfg_module.settings, "DEMO_USERNAME", "demo")
+        monkeypatch.setattr(cfg_module.settings, "DEMO_PASSWORD", "demo1234")
+        data = client.get("/api/auth/public-config").json()
+        assert data == {"demo": True, "demo_username": "demo", "demo_password": "demo1234"}
+
+    def test_a_configured_password_never_leaks_with_demo_mode_off(self, client, monkeypatch):
+        """The credentials being set is not consent to publish them."""
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", False)
+        monkeypatch.setattr(cfg_module.settings, "DEMO_PASSWORD", "demo1234")
+        body = client.get("/api/auth/public-config").text
+        assert "demo1234" not in body
+
+    def test_reachable_before_setup(self, client):
+        """FirstRunMiddleware 503s every other /api/ path until an account
+        exists; this one is on the allowlist beside /login and /me."""
+        r = client.get("/api/auth/public-config")
+        assert r.status_code == 200
+
+    def test_requires_no_session(self, client):
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        client.cookies.clear()
+        assert client.get("/api/auth/public-config").status_code == 200
+
+
+class TestDemoLoginIsNotThrottled:
+    """A demo instance is a crowd arriving with one published username, often
+    behind one proxy address. The per-IP defences read that as an attack."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_lockout_state(self):
+        """The failure counter lives on a module-level singleton and its window
+        is ten minutes, so a test that deliberately trips the lockout would 429
+        every later test that signs in."""
+        from backend.auth import auth_service
+
+        auth_service._login_failures.clear()
+        yield
+        auth_service._login_failures.clear()
+
+    def test_the_per_ip_lockout_is_off_in_demo_mode(self, client, monkeypatch):
+        import backend.config as cfg_module
+
+        client.post("/api/auth/setup", json={"username": "demo", "password": "demo1234"})
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+
+        # Well past _LOGIN_LOCKOUT_THRESHOLD: every one of these is a wrong
+        # password, and the next real visitor must still get in.
+        for _ in range(12):
+            assert (
+                client.post(
+                    "/api/auth/login", json={"username": "demo", "password": "wrong"}
+                ).status_code
+                == 401
+            )
+        r = client.post("/api/auth/login", json={"username": "demo", "password": "demo1234"})
+        assert r.status_code == 200
+
+    def test_the_lockout_still_applies_on_an_ordinary_install(self, client, monkeypatch):
+        import backend.config as cfg_module
+
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", False)
+
+        codes = [
+            client.post(
+                "/api/auth/login", json={"username": "admin", "password": "wrong"}
+            ).status_code
+            for _ in range(8)
+        ]
+        assert 429 in codes
+
+    def test_the_route_ceiling_is_raised_not_removed(self, monkeypatch):
+        """Rate limiting is stubbed out in the test suite, so the decorator's
+        callable is checked directly. It must still return a real limit in demo
+        mode — a crowd cannot reach 120/minute, a script can."""
+        import backend.config as cfg_module
+        from backend.auth.routes import _login_rate_limit
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", False)
+        assert _login_rate_limit() == "5/minute"
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        assert _login_rate_limit() == "120/minute"
+
+
+class TestDemoLocksTheSharedCredentials:
+    """One visitor must not be able to lock the rest of the world out of the
+    demo account — both of these are one-way doors without shell access."""
+
+    def test_enabling_2fa_is_refused(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        r = auth_client.post("/api/auth/2fa/enable", json={"code": "123456"})
+        assert r.status_code == 403
+        assert auth_client.get("/api/auth/me").json()["totp_enabled"] is False
+
+    def test_changing_the_password_is_refused(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        r = auth_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "password123", "new_password": "somethingelse"},
+        )
+        assert r.status_code == 403
+        # The published password still works, which is the whole point.
+        auth_client.cookies.clear()
+        login = auth_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "password123"}
+        )
+        assert login.status_code == 200
+
+    def test_disabling_2fa_is_still_allowed(self, auth_client, monkeypatch):
+        """The escape hatch stays open: on an account whose password is public,
+        turning 2FA off gives an attacker nothing and un-bricks the demo."""
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        r = auth_client.post("/api/auth/2fa/disable", json={"password": "password123"})
+        assert r.status_code != 403
+
+    def test_both_are_allowed_on_an_ordinary_install(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", False)
+        # Wrong TOTP code and wrong password respectively — the point is that
+        # neither is turned away with a 403 before it is even considered.
+        assert auth_client.post("/api/auth/2fa/enable", json={"code": "000000"}).status_code != 403
+        assert (
+            auth_client.post(
+                "/api/auth/change-password",
+                json={"current_password": "password123", "new_password": "newpassword1"},
+            ).status_code
+            != 403
+        )
+
 
 # ---------------------------------------------------------------------------
 # /api/auth/logout

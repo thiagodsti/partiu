@@ -28,8 +28,11 @@ BASE_URL = (
     else os.environ.get("SEED_BASE_URL", "http://localhost:8000").rstrip("/")
 )
 
-DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "demo1234"
+# The same pair the login page publishes when DEMO_MODE is on (see
+# backend/config.py). Read from the environment so the advertised credentials
+# and the seeded account cannot drift apart.
+DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "demo")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo1234")
 
 # ---------------------------------------------------------------------------
 # HTTP helpers

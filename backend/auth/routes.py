@@ -9,11 +9,13 @@ from fastapi.responses import JSONResponse
 
 from ..limiter import limiter
 from . import auth_service, twofa_service
+from .access import refuse_on_demo
 from .dto import (
     ChangePasswordRequestDTO,
     LoginRequestDTO,
     MeResponseDTO,
     OkDTO,
+    PublicConfigDTO,
     RequiresTwoFADTO,
     SetupRequestDTO,
     TwoFADisableRequestDTO,
@@ -30,6 +32,22 @@ from .session import get_current_user, has_any_users
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "true").lower() != "false"
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _login_rate_limit() -> str:
+    """The per-IP ceiling on sign-in attempts, resolved per request.
+
+    5/minute is right for a private install, where the only person behind an
+    address is the owner. A public demo is the opposite: everyone arrives with
+    the same published username, and behind a reverse proxy they may all share
+    one apparent address, so the sixth visitor in a minute was being turned
+    away with a 429 for the crime of being sixth. Demo mode raises the ceiling
+    rather than removing it — a bound the crowd cannot reach still bounds a
+    script — and `AuthService` skips its own per-IP lockout for the same reason.
+    """
+    from ..config import settings
+
+    return "120/minute" if settings.DEMO_MODE else "5/minute"
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -57,7 +75,7 @@ def setup(request: Request, body: SetupRequestDTO, response: Response):
 
 
 @router.post("/login")
-@limiter.limit("5/minute")
+@limiter.limit(_login_rate_limit)
 def login(request: Request, body: LoginRequestDTO, response: Response):
     ip = request.client.host if request.client else "unknown"
     try:
@@ -109,6 +127,7 @@ def setup_2fa(user: dict = Depends(get_current_user)):
 
 @router.post("/2fa/enable", response_model=OkDTO)
 def enable_2fa(body: TwoFAEnableRequestDTO, user: dict = Depends(get_current_user)):
+    refuse_on_demo("Enabling two-factor authentication")
     try:
         twofa_service.enable_2fa(user["id"], body.code)
     except AuthError as e:
@@ -146,7 +165,27 @@ def me(request: Request):
 
     from ..config import settings
 
-    return user_summary_to_me_dto(summary, settings.ANNOUNCEMENT, settings.CARTO_API_KEY)
+    return user_summary_to_me_dto(
+        summary, settings.ANNOUNCEMENT, settings.CARTO_API_KEY, settings.DEMO_MODE
+    )
+
+
+@router.get("/public-config", response_model=PublicConfigDTO)
+def public_config():
+    """Unauthenticated: the handful of server facts the login page needs.
+
+    Only the demo credentials live here, and only while DEMO_MODE is on — off,
+    the response is three empty fields, so an ordinary install leaks nothing.
+    """
+    from ..config import settings
+
+    if not settings.DEMO_MODE:
+        return PublicConfigDTO()
+    return PublicConfigDTO(
+        demo=True,
+        demo_username=settings.DEMO_USERNAME,
+        demo_password=settings.DEMO_PASSWORD,
+    )
 
 
 @router.patch("/me", response_model=OkDTO)
@@ -160,6 +199,7 @@ def update_me(body: UpdateMeRequestDTO, user: dict = Depends(get_current_user)):
 
 @router.post("/change-password", response_model=OkDTO)
 def change_password(body: ChangePasswordRequestDTO, user: dict = Depends(get_current_user)):
+    refuse_on_demo("Changing the password")
     try:
         auth_service.change_password(
             user["id"], body.current_password, body.new_password, body.totp_code

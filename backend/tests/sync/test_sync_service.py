@@ -131,17 +131,6 @@ class TestResetLastSynced:
         assert service.get_status(user_id).last_synced_at is None
 
 
-class TestTriggerRegroup:
-    def test_calls_regroup_all_flights(self, test_db):
-        from backend.sync.service import SyncService
-
-        service = SyncService()
-        user_id = _seed_user(test_db)
-        with patch("backend.sync.grouping.regroup_all_flights") as mock_regroup:
-            service.trigger_regroup(user_id)
-        mock_regroup.assert_called_once_with(user_id=user_id)
-
-
 class TestImportEmlFiles:
     _MINIMAL_EML = (
         b"From: airline@example.com\r\n"

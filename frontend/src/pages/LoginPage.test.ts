@@ -2,14 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import LoginPage from './LoginPage.svelte';
 
-const { mockLogin, mockVerify2fa, mockSetCurrentUser } = vi.hoisted(() => ({
+const { mockLogin, mockVerify2fa, mockSetCurrentUser, mockPublicConfig } = vi.hoisted(() => ({
   mockLogin: vi.fn(),
   mockVerify2fa: vi.fn(),
   mockSetCurrentUser: vi.fn(),
+  mockPublicConfig: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
-  authApi: { login: mockLogin, verify2fa: mockVerify2fa },
+  authApi: { login: mockLogin, verify2fa: mockVerify2fa, publicConfig: mockPublicConfig },
 }));
 
 vi.mock('../lib/authStore', () => ({
@@ -28,6 +29,7 @@ vi.mock('../lib/i18n', () => ({
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPublicConfig.mockResolvedValue({ demo: false, demo_username: '', demo_password: '' });
   });
 
   it('renders the login form', () => {
@@ -111,5 +113,55 @@ describe('LoginPage', () => {
     await fireEvent.input(container.querySelector('#totp-code')!, { target: { value: '000000' } });
 
     await waitFor(() => expect(container.querySelector('.auth-error')).toBeInTheDocument());
+  });
+
+  describe('demo instance notice', () => {
+    it('shows nothing on an ordinary install', async () => {
+      const { container } = render(LoginPage);
+      await waitFor(() => expect(mockPublicConfig).toHaveBeenCalled());
+      expect(container.querySelector('.demo-note')).toBeNull();
+    });
+
+    it('prints the demo credentials when the server publishes them', async () => {
+      mockPublicConfig.mockResolvedValue({
+        demo: true,
+        demo_username: 'demo',
+        demo_password: 'demo1234',
+      });
+      const { container } = render(LoginPage);
+
+      await waitFor(() => expect(container.querySelector('.demo-note')).toBeInTheDocument());
+      const creds = container.querySelectorAll('.demo-creds dd');
+      expect(creds[0].textContent).toBe('demo');
+      expect(creds[1].textContent).toBe('demo1234');
+    });
+
+    it('signs in with those credentials when the button is used', async () => {
+      mockPublicConfig.mockResolvedValue({
+        demo: true,
+        demo_username: 'demo',
+        demo_password: 'demo1234',
+      });
+      mockLogin.mockResolvedValue({ id: '2', username: 'demo', is_admin: false });
+      const { container } = render(LoginPage);
+
+      await waitFor(() => expect(container.querySelector('.demo-btn')).toBeInTheDocument());
+      await fireEvent.click(container.querySelector('.demo-btn')!);
+
+      await waitFor(() =>
+        expect(mockLogin).toHaveBeenCalledWith({ username: 'demo', password: 'demo1234' }),
+      );
+    });
+
+    // The form is the feature; the notice is decoration. A server too old to
+    // know the endpoint must not take the login page down with it.
+    it('still renders the form when the config call fails', async () => {
+      mockPublicConfig.mockRejectedValue(new Error('404'));
+      const { container } = render(LoginPage);
+
+      await waitFor(() => expect(mockPublicConfig).toHaveBeenCalled());
+      expect(container.querySelector('#login-username')).toBeInTheDocument();
+      expect(container.querySelector('.demo-note')).toBeNull();
+    });
   });
 });

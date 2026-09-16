@@ -1,9 +1,18 @@
 <script lang="ts">
   import { currentUser } from '../lib/authStore';
+  import { t } from '../lib/i18n';
 
   const STORAGE_KEY = 'announcement_dismissed';
 
   let dismissed = $state(sessionStorage.getItem(STORAGE_KEY) === ($currentUser?.announcement ?? ''));
+
+  // On a demo instance the banner is not a notice but a standing fact about
+  // the install: everyone who signs in shares one account and one set of data.
+  // So it is always on and carries no dismiss button — a fact you can close is
+  // a fact the next person never sees. A deployer's own ANNOUNCEMENT still
+  // wins as the text, since they may have something more specific to say.
+  let isDemo = $derived($currentUser?.demo === true);
+  let message = $derived($currentUser?.announcement || (isDemo ? $t('demo.banner') : ''));
 
   function dismiss() {
     sessionStorage.setItem(STORAGE_KEY, $currentUser?.announcement ?? '');
@@ -11,10 +20,12 @@
   }
 </script>
 
-{#if $currentUser?.announcement && !dismissed}
+{#if message && (isDemo || !dismissed)}
   <div class="announcement-banner">
-    <span>{$currentUser.announcement}</span>
-    <button onclick={dismiss} aria-label="Dismiss">✕</button>
+    <span>{message}</span>
+    {#if !isDemo}
+      <button onclick={dismiss} aria-label="Dismiss">✕</button>
+    {/if}
   </div>
 {/if}
 

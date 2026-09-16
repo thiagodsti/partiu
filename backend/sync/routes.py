@@ -33,16 +33,6 @@ def sync_now(
     return TriggerResponseDTO(status="started", message="Sync started in background")
 
 
-@router.post("/regroup", response_model=TriggerResponseDTO)
-def regroup(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
-    """Re-run grouping on all flights (re-creates auto-generated trips)."""
-    from ..activity.service import activity_service
-
-    activity_service.record(user["id"], "trips.regrouped")
-    background_tasks.add_task(sync_service.trigger_regroup, user["id"])
-    return TriggerResponseDTO(status="started", message="Regrouping started in background")
-
-
 @router.post("/full-sync", response_model=TriggerResponseDTO)
 def full_sync(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """

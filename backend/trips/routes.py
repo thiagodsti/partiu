@@ -74,6 +74,9 @@ def list_trips(user: dict = Depends(get_current_user)):
             segment_count=item.segment_count,
             stay_count=item.stay_count,
             car_rental_count=item.car_rental_count,
+            collaborator_count=item.collaborator_count,
+            pending_invite_count=item.pending_invite_count,
+            guest_count=item.guest_count,
             segment_types=item.segment_types,
             expenses_total=item.expenses_total,
             budget_amount=item.budget_amount,
@@ -91,9 +94,16 @@ def list_trips(user: dict = Depends(get_current_user)):
 def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
     """Return a single trip with its flights."""
     try:
-        trip, is_owner, owner_username, flights, expenses_total, immich_album_id, destinations = (
-            trip_service.get_trip(trip_id, user["id"])
-        )
+        (
+            trip,
+            is_owner,
+            owner_username,
+            flights,
+            expenses_total,
+            immich_album_id,
+            destinations,
+            people,
+        ) = trip_service.get_trip(trip_id, user["id"])
     except TripError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return trip_to_detail_dto(
@@ -104,6 +114,9 @@ def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
         flights=flights,
         expenses_total=expenses_total,
         immich_album_id=immich_album_id,
+        collaborator_count=people.get("accepted", 0),
+        pending_invite_count=people.get("pending", 0),
+        guest_count=people.get("guests", 0),
     )
 
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { expensesApi, guestsApi } from '../api/client';
-  import type { TripExpense, Participant, BalanceEntry, Guest } from '../api/types';
+  import { expensesApi } from '../api/client';
+  import type { TripExpense, Participant, BalanceEntry } from '../api/types';
   import { CURRENCIES } from '../lib/currencies';
   import PeoplePicker from './PeoplePicker.svelte';
   import { currentUser } from '../lib/authStore';
@@ -55,7 +55,6 @@
 
   let expenses = $state<TripExpense[]>([]);
   let participants = $state<Participant[]>([]);
-  let myGuests = $state<Guest[]>([]);
   let balances = $state<Record<string, BalanceEntry[]>>({});
   let loading = $state(true);
   let loadError = $state<string | null>(null);
@@ -69,9 +68,7 @@
   let newCurrency = $state(defaultCurrency);
   let newPaidByKey = $state('');
   let newParticipantKeys = $state<Set<string>>(new Set());
-  let newGuestName = $state('');
   let adding = $state(false);
-  let addingGuest = $state(false);
   let addError = $state<string | null>(null);
 
   // Inline edit
@@ -81,8 +78,18 @@
   let editCurrency = $state('');
   let editPaidByKey = $state('');
   let editParticipantKeys = $state<Set<string>>(new Set());
-  let editGuestName = $state('');
   let editSaving = $state(false);
+
+  /* The trip's own participant list is the whole candidate set: its owner, its
+   * accepted collaborators, and the guests on its roster — managed in the trip's
+   * People section, which is the one place a companion is added. The expense
+   * form used to carry its own "add guest" box and a suggestion strip over your
+   * whole address book; both are gone, because a second door to the same room is
+   * what made this confusing in the first place (the same argument the single
+   * "Add transport" entry point rests on). Your wider address book is
+   * deliberately not offered here — a guest on a 2024 city break is not a
+   * candidate on an unrelated 2026 trip. */
+  const addOptions = $derived(participants);
 
   const editOptions = $derived.by(() => {
     if (!editingId) return participants;
@@ -90,8 +97,6 @@
     return expense ? withExpenseParticipants(participants, expense) : participants;
   });
 
-  const newGuestMatches = $derived.by(() => matchingGuests(newGuestName, newParticipantKeys));
-  const editGuestMatches = $derived.by(() => matchingGuests(editGuestName, editParticipantKeys));
 
   /** Balance selections are scoped per currency — the same person shows up in
    * every currency group, but "combine" only makes sense within one currency
@@ -121,27 +126,14 @@
     // Each call updates its own state slice independently — one endpoint
     // failing (or being transiently slow) must not stop the others from
     // reflecting a mutation that already succeeded on the server.
-    const [exp, parts, bal, guests] = await Promise.all([
+    const [exp, parts, bal] = await Promise.all([
       expensesApi.list(tripId).catch((err) => { console.error(err); return expenses; }),
       expensesApi.participants(tripId).catch((err) => { console.error(err); return participants; }),
       expensesApi.balances(tripId).catch((err) => { console.error(err); return { balances }; }),
-      guestsApi.list().catch((err) => { console.error(err); return myGuests; }),
     ]);
     expenses = exp;
     participants = parts;
     balances = bal.balances;
-    myGuests = guests;
-  }
-
-  /** Guests you've already added on other trips that match what's being typed,
-   * so you can reuse one instead of creating a duplicate — excludes guests
-   * already selected for this expense. */
-  function matchingGuests(typed: string, selectedKeys: Set<string>): Guest[] {
-    const query = typed.trim().toLowerCase();
-    if (!query) return [];
-    return myGuests
-      .filter((g) => g.name.toLowerCase().includes(query) && !selectedKeys.has(`guest:${g.id}`))
-      .slice(0, 5);
   }
 
   async function load() {
@@ -231,36 +223,6 @@
     }
   }
 
-  async function handleAddGuest(target: 'add' | 'edit') {
-    const name = (target === 'add' ? newGuestName : editGuestName).trim();
-    if (!name) return;
-    addingGuest = true;
-    try {
-      const { id } = await guestsApi.create(name);
-      myGuests = [...myGuests, { id, name, created_at: new Date().toISOString() }];
-      selectGuest(target, { type: 'guest', id, name });
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      addingGuest = false;
-    }
-  }
-
-  /** Reuse a guest already in your address book (e.g. from another trip)
-   * instead of creating a duplicate. */
-  function selectGuest(target: 'add' | 'edit', guest: Participant) {
-    if (!participants.some((p) => p.type === 'guest' && p.id === guest.id)) {
-      participants = [...participants, guest];
-    }
-    if (target === 'add') {
-      newGuestName = '';
-      newParticipantKeys = new Set([...newParticipantKeys, key(guest)]);
-    } else {
-      editGuestName = '';
-      editParticipantKeys = new Set([...editParticipantKeys, key(guest)]);
-    }
-  }
-
   function startEdit(expense: TripExpense) {
     editingId = expense.id;
     editDesc = expense.description;
@@ -268,7 +230,6 @@
     editCurrency = expense.currency;
     editPaidByKey = key(expense.paid_by);
     editParticipantKeys = new Set(expense.participants.map(key));
-    editGuestName = '';
     showAddForm = false;
   }
 
@@ -321,7 +282,6 @@
     // the two rendered as two separate options for the same person.
     newPaidByKey = ownParticipantKey();
     newParticipantKeys = new Set(participants.map(key));
-    newGuestName = '';
     showAddForm = true;
     editingId = null;
   }
@@ -357,23 +317,6 @@
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="0.5" y="0.5" width="15" height="15" rx="2.5" stroke="var(--border-strong, var(--border))"/>
     </svg>
-  {/if}
-{/snippet}
-
-{#snippet guestSuggestions(matches: Guest[], target: 'add' | 'edit')}
-  {#if matches.length > 0}
-    <div class="guest-suggestions">
-      <span class="guest-suggestions-label">{$t('expenses.pick_existing_guest')}</span>
-      {#each matches as guest (guest.id)}
-        <button
-          type="button"
-          class="guest-suggestion-chip"
-          onclick={() => selectGuest(target, { type: 'guest', id: guest.id, name: guest.name })}
-        >
-          {guest.name}
-        </button>
-      {/each}
-    </div>
   {/if}
 {/snippet}
 
@@ -439,24 +382,6 @@
                 label={$t('expenses.split_between')}
                 display={displayName}
               />
-              <div class="expense-add-guest-inline">
-                <input
-                  class="form-input"
-                  type="text"
-                  bind:value={editGuestName}
-                  placeholder={$t('expenses.add_guest_placeholder')}
-                  onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddGuest('edit'); } }}
-                />
-                <button
-                  class="btn btn-secondary btn-sm"
-                  type="button"
-                  disabled={addingGuest || !editGuestName.trim()}
-                  onclick={() => handleAddGuest('edit')}
-                >
-                  + {$t('expenses.add_guest')}
-                </button>
-              </div>
-              {@render guestSuggestions(editGuestMatches, 'edit')}
             </div>
           </div>
         {:else}
@@ -565,42 +490,24 @@
       <div class="expense-split-row">
         <label class="expense-split-label" for="new-paid-by">{$t('expenses.paid_by')}</label>
         <select id="new-paid-by" class="form-input" bind:value={newPaidByKey}>
-          {#if participants.length === 0}
+          {#if addOptions.length === 0}
             <!-- Only when the list is unavailable: with it loaded you are in it,
                  and a separate "Me" would be the same person offered twice. -->
             <option value="">{$t('expenses.paid_by_me')}</option>
           {/if}
-          {#each participants as p (key(p))}
+          {#each addOptions as p (key(p))}
             <option value={key(p)}>{displayName(p)}</option>
           {/each}
         </select>
       </div>
       <div class="expense-split-row">
         <PeoplePicker
-          people={participants}
+          people={addOptions}
           selected={newParticipantKeys}
           onToggle={(p) => (newParticipantKeys = toggleKey(newParticipantKeys, key(p)))}
           label={$t('expenses.split_between')}
           display={displayName}
         />
-        <div class="expense-add-guest-inline">
-          <input
-            class="form-input"
-            type="text"
-            bind:value={newGuestName}
-            placeholder={$t('expenses.add_guest_placeholder')}
-            onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddGuest('add'); } }}
-          />
-          <button
-            class="btn btn-secondary btn-sm"
-            type="button"
-            disabled={addingGuest || !newGuestName.trim()}
-            onclick={() => handleAddGuest('add')}
-          >
-            + {$t('expenses.add_guest')}
-          </button>
-        </div>
-        {@render guestSuggestions(newGuestMatches, 'add')}
       </div>
       <div class="expense-add-actions">
         <button
@@ -746,44 +653,6 @@
   .mini-checkbox svg {
     width: 1rem;
     height: 1rem;
-  }
-
-  .expense-add-guest-inline {
-    display: flex;
-    gap: var(--space-xs);
-    align-items: center;
-  }
-
-  .expense-add-guest-inline .form-input {
-    max-width: 12rem;
-  }
-
-  .guest-suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-top: 4px;
-  }
-
-  .guest-suggestions-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .guest-suggestion-chip {
-    background: var(--bg-subtle, var(--bg-card));
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 4px);
-    padding: 2px 8px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    color: inherit;
-  }
-
-  .guest-suggestion-chip:hover {
-    border-color: var(--accent);
-    color: var(--accent);
   }
 
   .expenses-totals {

@@ -41,6 +41,13 @@ class Settings:
     # https://carto.com/basemaps/apikey. Left empty, the map falls back to plain
     # OpenStreetMap tiles, which need no key.
     CARTO_API_KEY: str = os.getenv("CARTO_API_KEY", "")
+    # Public demo instance. With DEMO_MODE on, the login page publishes the
+    # shared demo credentials so a visitor can sign straight in; off (the
+    # default) the endpoint that serves them says nothing at all, because a
+    # real install must never advertise a working password on its login page.
+    DEMO_MODE: bool = os.getenv("DEMO_MODE", "false").lower() == "true"
+    DEMO_USERNAME: str = os.getenv("DEMO_USERNAME", "demo")
+    DEMO_PASSWORD: str = os.getenv("DEMO_PASSWORD", "demo1234")
 
 
 settings = Settings()

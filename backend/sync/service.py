@@ -67,11 +67,6 @@ class SyncService:
     def reset_last_synced(self, user_id: int) -> None:
         self._repository.reset_last_synced(user_id)
 
-    def trigger_regroup(self, user_id: int) -> None:
-        from .grouping import regroup_all_flights
-
-        regroup_all_flights(user_id=user_id)
-
     def import_eml_files(self, files: list[tuple[str | None, bytes]], user_id: int) -> dict:
         """Parse uploaded .eml files into EmailMessage objects and run them through the
         normal sync pipeline. ``files`` is (filename, raw_bytes) pairs already read by

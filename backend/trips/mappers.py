@@ -46,6 +46,9 @@ def trip_to_list_item_dto(
     segment_count: int,
     stay_count: int,
     car_rental_count: int,
+    collaborator_count: int,
+    pending_invite_count: int,
+    guest_count: int,
     segment_types: list[str],
     expenses_total: dict[str, float],
     budget_amount: float | None,
@@ -82,6 +85,9 @@ def trip_to_list_item_dto(
         segment_count=segment_count,
         stay_count=stay_count,
         car_rental_count=car_rental_count,
+        collaborator_count=collaborator_count,
+        pending_invite_count=pending_invite_count,
+        guest_count=guest_count,
         segment_types=segment_types,
         expenses_total=expenses_total,
         budget_amount=budget_amount,
@@ -101,6 +107,9 @@ def trip_to_detail_dto(
     flights: list[dict],
     expenses_total: dict[str, float],
     immich_album_id: str | None,
+    collaborator_count: int = 0,
+    pending_invite_count: int = 0,
+    guest_count: int = 0,
 ) -> TripDetailDTO:
     return TripDetailDTO(
         id=trip.id,
@@ -129,6 +138,9 @@ def trip_to_detail_dto(
         flights=flights,
         expenses_total=expenses_total,
         immich_album_id=immich_album_id,
+        collaborator_count=collaborator_count,
+        pending_invite_count=pending_invite_count,
+        guest_count=guest_count,
     )
 
 

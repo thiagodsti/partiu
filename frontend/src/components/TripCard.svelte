@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Trip } from "../api/types";
-  import { budgetLevel, formatCurrencyTotals, formatDateRange } from "../lib/utils";
+  import { budgetLevel, formatCurrencyTotals, formatDateRange, tripPeople } from "../lib/utils";
   import { t } from "../lib/i18n";
 
   /**
@@ -44,6 +44,13 @@
   const stayCount = $derived(trip.stay_count ?? 0);
   const carRentalCount = $derived(trip.car_rental_count ?? 0);
   const segmentTypes = $derived(trip.segment_types ?? []);
+  const people = $derived(
+    tripPeople(
+      trip.collaborator_count ?? 0,
+      trip.pending_invite_count ?? 0,
+      trip.guest_count ?? 0,
+    ),
+  );
 
   const SEGMENT_ICONS: Record<string, string> = {
     train: "🚆",
@@ -110,6 +117,16 @@
      * in suppressing the flight chip above. */
     if (carRentalCount > 0) {
       parts.push(`🚗 ${plural("trips.car_rental_count", carRentalCount)}`);
+    }
+    /* Last, and only when there is anybody else: people are not contents, and a
+     * solo trip — which is most of them — must not print "1 person". Pending
+     * invitations get their own chip rather than being added in, because an
+     * invitation is not a companion until it is accepted. */
+    if (people) {
+      parts.push(`👥 ${plural("trips.people_count", people.people)}`);
+      if (people.pending > 0) {
+        parts.push(`✉ ${plural("trips.pending_invite_count", people.pending)}`);
+      }
     }
     return parts;
   });

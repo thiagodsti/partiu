@@ -3,7 +3,7 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import TripDetailPage from './TripDetailPage.svelte';
 
-const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList, mockBpListForTrip, mockBudgetGet } = vi.hoisted(() => ({
+const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDocList, mockBpListForTrip, mockBudgetGet, mockListTripShares, mockGuestsForTrip } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockSettingsGet: vi.fn(),
   mockRefreshImage: vi.fn(),
@@ -11,6 +11,8 @@ const { mockGet, mockSettingsGet, mockRefreshImage, mockCheckImmichAlbum, mockDo
   mockDocList: vi.fn(),
   mockBpListForTrip: vi.fn(),
   mockBudgetGet: vi.fn(),
+  mockListTripShares: vi.fn(),
+  mockGuestsForTrip: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
@@ -38,11 +40,17 @@ vi.mock('../api/client', () => ({
     participants: vi.fn().mockResolvedValue([]),
     balances: vi.fn().mockResolvedValue({ balances: {} }),
   },
-  guestsApi: { list: vi.fn().mockResolvedValue([]) },
+  guestsApi: {
+    list: vi.fn().mockResolvedValue([]),
+    listForTrip: mockGuestsForTrip,
+    addToTrip: vi.fn(),
+    removeFromTrip: vi.fn(),
+    create: vi.fn(),
+  },
   segmentsApi: { list: vi.fn().mockResolvedValue([]) },
   staysApi: { list: vi.fn().mockResolvedValue([]) },
   sharesApi: {
-    listTripShares: vi.fn().mockResolvedValue([]),
+    listTripShares: mockListTripShares,
     shareTrip: vi.fn(),
     revokeTripShare: vi.fn(),
     leaveTrip: vi.fn(),
@@ -119,6 +127,24 @@ describe('TripDetailPage', () => {
     mockDocList.mockResolvedValue([]);
     mockBpListForTrip.mockResolvedValue([]);
     mockBudgetGet.mockResolvedValue({ amount: null, currency: null, spent: 0, uncounted: {} });
+    mockListTripShares.mockResolvedValue([]);
+    mockGuestsForTrip.mockResolvedValue([]);
+  });
+
+  it('loads collaborators with the trip, not when the share panel is opened', async () => {
+    // The People section lists collaborators and outstanding invitations, so a
+    // fetch deferred until Share was clicked left that section showing only the
+    // owner and the guests — the names then appeared on the click, which reads
+    // as a bug rather than as lazy loading.
+    mockGet.mockResolvedValue(TRIP);
+    mockListTripShares.mockResolvedValue([
+      { user_id: 2, username: 'barbara', status: 'accepted' },
+    ]);
+    const { getByText } = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+
+    await waitFor(() => expect(mockListTripShares).toHaveBeenCalledWith('trip-1'));
+    // ...and the name is on the page without anything being clicked.
+    await waitFor(() => expect(getByText('barbara')).toBeInTheDocument());
   });
 
   it('shows loading screen initially', () => {
@@ -286,11 +312,15 @@ describe('TripDetailPage', () => {
     // Documents rides at the foot of the spine: it is the least-used card on the
     // page, and keeping it out of the aside stops that column becoming a stack
     // of three things nobody opens.
-    // The spine reads as the trip in order: how you move, where you sleep,
-    // what you drove, what you did each day.
+    // The spine reads as the trip in order: how you move, where you sleep, who
+    // is with you, what you drove, what you did each day. People sits in the
+    // spine rather than the aside because its guest roster is what bounds the
+    // expense payer and split-between pickers — a companion is a fact about the
+    // trip, not an ancillary note about it.
     expect(titlesIn('.trip-spine')).toEqual([
       'trip.transport',
       'stays.title',
+      'trip_people.title',
       'car_rentals.title',
       'planner.title',
       'trip.documents',

@@ -46,6 +46,12 @@ class TripListItemDTO(BaseModel):
     segment_count: int
     stay_count: int
     car_rental_count: int = 0
+    # People on the trip besides its owner. Two numbers, not one: an invitation
+    # that has not been accepted is not a companion yet. Defaulted so a client
+    # built against the older shape still validates.
+    collaborator_count: int = 0
+    pending_invite_count: int = 0
+    guest_count: int = 0
     # Distinct ground-transport types on the trip, so the card can name the
     # kind ('2 trains') when there is only one and fall back to a generic
     # label when there are several.
@@ -87,6 +93,9 @@ class TripDetailDTO(BaseModel):
     flights: list[dict]
     expenses_total: dict[str, float]
     immich_album_id: str | None
+    collaborator_count: int = 0
+    pending_invite_count: int = 0
+    guest_count: int = 0
 
 
 class TripListResponseDTO(BaseModel):

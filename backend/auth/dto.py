@@ -58,6 +58,23 @@ class MeResponseDTO(UserResponseDTO):
     # Docker image is built before the deployer's key exists, so it cannot be
     # baked in at build time.
     carto_api_key: str = ""
+    # True on a demo instance. The frontend uses it to keep the announcement
+    # banner permanent and undismissable there — everyone shares one account,
+    # which is a standing fact about the install rather than a notice.
+    demo: bool = False
+
+
+class PublicConfigDTO(BaseModel):
+    """What the login page needs before anyone has signed in.
+
+    /auth/me cannot carry this: it 401s in exactly the state the login page is
+    rendered in. Everything here is public by construction, so nothing that is
+    not meant for an anonymous visitor may be added.
+    """
+
+    demo: bool = False
+    demo_username: str = ""
+    demo_password: str = ""
 
 
 class RequiresTwoFADTO(BaseModel):

@@ -14,6 +14,18 @@ export interface User {
   announcement?: string;
   /** CARTO basemap key, supplied by the server at runtime (see MeResponseDTO). */
   carto_api_key?: string;
+  /** True on a demo instance: the announcement banner is then permanent and
+   * undismissable, because sharing one account is a standing fact here. */
+  demo?: boolean;
+}
+
+/** Server facts the login page can read before anyone has signed in.
+ * `demo` is false on every ordinary install; only a deliberately-configured
+ * demo instance publishes credentials here. */
+export interface PublicConfig {
+  demo: boolean;
+  demo_username: string;
+  demo_password: string;
 }
 
 export interface LoginResponse {
@@ -51,6 +63,14 @@ export interface Trip {
   segment_count?: number;
   stay_count?: number;
   car_rental_count?: number;
+  /** People on the trip besides its owner. Two numbers, not one: someone
+   * invited has not joined yet, so adding a pending invite to the collaborator
+   * count would claim a companion who may still decline. Carried on the trip
+   * payload because `GET /api/trips/{id}/shares` is owner-only — a collaborator
+   * deriving it from there would see nobody on a trip they are on. */
+  collaborator_count?: number;
+  pending_invite_count?: number;
+  guest_count?: number;
   /** Distinct ground-transport types on the trip; lets the card say
    * "2 trains" instead of the generic "2 legs" when there is only one. */
   segment_types?: string[];

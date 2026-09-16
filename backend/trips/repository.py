@@ -97,6 +97,51 @@ class TripRepository:
             ).fetchall()
         return {r["trip_id"]: r["cnt"] for r in rows}
 
+    def get_people_counts(self, trip_ids: list[str]) -> dict[str, dict[str, int]]:
+        """Accepted collaborators and outstanding invitations per trip.
+
+        Kept apart from the content counts above because people are not things
+        on the trip, and kept as two numbers rather than one because someone who
+        has been invited has not joined: adding a pending invite to the
+        collaborator count would claim a companion who may yet decline.
+
+        The owner is deliberately **not** counted here — the caller adds them, so
+        the number means the same thing whoever is looking at it. Rejected shares
+        count as nothing at all; they are neither a collaborator nor an open
+        invitation. Guests on the trip's roster are counted as a third figure:
+        they are companions, but they are not accounts and cannot be invited.
+        """
+        if not trip_ids:
+            return {}
+        placeholders = ",".join("?" * len(trip_ids))
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"SELECT trip_id, status, COUNT(*) AS cnt FROM trip_shares "
+                f"WHERE trip_id IN ({placeholders}) AND status IN ('accepted', 'pending') "
+                f"GROUP BY trip_id, status",
+                trip_ids,
+            ).fetchall()
+        counts: dict[str, dict[str, int]] = {}
+        for r in rows:
+            counts.setdefault(r["trip_id"], {"accepted": 0, "pending": 0, "guests": 0})[
+                r["status"]
+            ] = r["cnt"]
+
+        # Guests are companions too, and the roster (migration 0036) is what the
+        # expense pickers are bounded by — so a trip with three guests and no
+        # collaborators has four people on it, not one.
+        with db_conn() as conn:
+            guest_rows = conn.execute(
+                f"SELECT trip_id, COUNT(*) AS cnt FROM trip_guests "
+                f"WHERE trip_id IN ({placeholders}) GROUP BY trip_id",
+                trip_ids,
+            ).fetchall()
+        for r in guest_rows:
+            counts.setdefault(r["trip_id"], {"accepted": 0, "pending": 0, "guests": 0})[
+                "guests"
+            ] = r["cnt"]
+        return counts
+
     def get_segment_types(self, trip_ids: list[str]) -> dict[str, list[str]]:
         """The distinct transport types on each trip, so a card can say "trains"
         rather than the generic "legs" when a trip only uses one kind."""

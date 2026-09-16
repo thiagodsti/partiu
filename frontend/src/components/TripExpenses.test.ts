@@ -263,59 +263,21 @@ describe('TripExpenses', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('quick-adding a guest creates it and checks it as a participant', async () => {
-    const { container, getByText, getByPlaceholderText } = render(TripExpenses, { tripId: 't1' });
-    await waitFor(() => getByText('+ expenses.add'));
-    await fireEvent.click(getByText('+ expenses.add'));
-
-    const guestInput = getByPlaceholderText('expenses.add_guest_placeholder') as HTMLInputElement;
-    await fireEvent.input(guestInput, { target: { value: 'Grandma' } });
-    await fireEvent.click(getByText('+ expenses.add_guest'));
-
-    await waitFor(() => expect(mockGuestCreate).toHaveBeenCalledWith('Grandma'));
-    // The new guest joins the split immediately, as a third token.
-    await waitFor(() => {
-      const tokens = container.querySelectorAll('.people-token');
-      expect(tokens.length).toBe(3);
-    });
-    const names = [...container.querySelectorAll('.people-token')].map((el) =>
-      el.textContent?.replace('×', '').trim(),
-    );
-    expect(names).toContain('Grandma');
-  });
-
-  it('typing a name matching a guest from another trip offers it as a reuse suggestion', async () => {
+  it('offers only the trip\'s own people, never the whole address book', async () => {
+    // Adding a companion is the People section's job now — the expense form had
+    // its own "add guest" box and a suggestion strip over every guest you have
+    // ever created, which is the second door that made this confusing. The form
+    // picks from the trip's participants and nothing else.
     mockGuestList.mockResolvedValue([{ id: 5, name: 'Alex', created_at: '2026-01-01T00:00:00Z' }]);
-    const { getByText, getByPlaceholderText, container } = render(TripExpenses, { tripId: 't1' });
+    const { getByText, container, queryByPlaceholderText } = render(TripExpenses, { tripId: 't1' });
     await waitFor(() => getByText('+ expenses.add'));
     await fireEvent.click(getByText('+ expenses.add'));
 
-    const guestInput = getByPlaceholderText('expenses.add_guest_placeholder') as HTMLInputElement;
-    await fireEvent.input(guestInput, { target: { value: 'Al' } });
-
-    await waitFor(() => expect(container.textContent).toContain('Alex'));
-    expect(container.querySelectorAll('.guest-suggestion-chip').length).toBe(1);
-
-    await fireEvent.click(getByText('Alex'));
-
-    // Reusing an existing guest must not create a new one.
-    expect(mockGuestCreate).not.toHaveBeenCalled();
-    const names = [...container.querySelectorAll('.people-token')].map((el) =>
-      el.textContent?.replace('×', '').trim(),
-    );
-    expect(names).toContain('Alex');
-
-    const desc = container.querySelector('.expense-input-desc') as HTMLInputElement;
-    const amount = container.querySelector('.expense-input-amount') as HTMLInputElement;
-    await fireEvent.input(desc, { target: { value: 'Taxi' } });
-    await fireEvent.input(amount, { target: { value: '40' } });
-
-    await fireEvent.click(getByText('expenses.save'));
-    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
-    const [, payload] = mockCreate.mock.calls[0];
-    expect(payload.participants).toEqual(
-      expect.arrayContaining([{ type: 'guest', id: 5 }])
-    );
+    expect(queryByPlaceholderText('expenses.add_guest_placeholder')).toBeNull();
+    expect(container.querySelectorAll('.guest-suggestion-chip').length).toBe(0);
+    // Alex is in the address book but not on this trip, so the form never
+    // mentions them.
+    expect(container.textContent).not.toContain('Alex');
   });
 
   it('deletes an expense after confirmation', async () => {

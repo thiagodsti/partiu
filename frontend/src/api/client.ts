@@ -31,6 +31,7 @@ import type {
   User,
   UserListItem,
   LoginResponse,
+  PublicConfig,
   TripShare,
   TripInvitation,
   TrustedUser,
@@ -120,6 +121,7 @@ export const authApi = {
     post<LoginResponse>('/api/auth/login', data),
   logout: () => post<{ ok: boolean }>('/api/auth/logout'),
   me: () => get<User>('/api/auth/me'),
+  publicConfig: () => get<PublicConfig>('/api/auth/public-config'),
   changePassword: (data: { current_password: string; new_password: string; totp_code?: string }) =>
     post<{ ok: boolean }>('/api/auth/change-password', data),
   setup2fa: () => get<{ secret: string; uri: string }>('/api/auth/2fa/setup'),
@@ -283,7 +285,6 @@ export const tripDocumentsApi = {
 export const syncApi = {
   status: () => get<SyncStatus>('/api/sync/status'),
   now: () => post<null>('/api/sync/now'),
-  regroup: () => post<null>('/api/sync/regroup'),
   fullSync: () => post<null>('/api/sync/full-sync'),
   uploadEml: async (files: File[]): Promise<{ emails_processed: number; flights_created: number; flights_updated: number; stays_created: number; flights_cancelled: number }> => {
     const form = new FormData();
@@ -526,6 +527,15 @@ export const guestsApi = {
   create: (name: string) => post<{ id: number; ok: boolean }>('/api/guests', { name }),
   update: (guestId: number, name: string) => patch<Guest>(`/api/guests/${guestId}`, { name }),
   delete: (guestId: number) => del<null>(`/api/guests/${guestId}`),
+
+  /* A trip's own roster, separate from the address book above: who is
+   * travelling with you on *this* trip. `listForTrip` is what the expense
+   * payer/split pickers are ultimately bounded by. */
+  listForTrip: (tripId: string) => get<Guest[]>(`/api/trips/${tripId}/guests`),
+  addToTrip: (tripId: string, guestId: number) =>
+    post<Guest>(`/api/trips/${tripId}/guests`, { guest_id: guestId }),
+  removeFromTrip: (tripId: string, guestId: number) =>
+    del<null>(`/api/trips/${tripId}/guests/${guestId}`),
 };
 
 export interface NonFlightDomain {

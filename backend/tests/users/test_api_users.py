@@ -148,3 +148,51 @@ class TestDeleteUser:
             c.post("/api/auth/login", json={"username": "regular", "password": "password123"})
             r2 = c.delete(f"/api/users/{victim_id}")
             assert r2.status_code == 403
+
+
+class TestDemoModeBlocksAccountManagement:
+    """Enforced in the backend, not only in the UI: the hidden button is a
+    courtesy and `curl` does not read it. Listing stays open — reading who is
+    on the instance changes nothing."""
+
+    @pytest.fixture
+    def demo(self, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+
+    def test_create_is_refused(self, auth_client, demo):
+        r = auth_client.post("/api/users", json={"username": "intruder", "password": "password123"})
+        assert r.status_code == 403
+        assert [u["username"] for u in auth_client.get("/api/users").json()] == ["admin"]
+
+    def test_delete_is_refused(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        auth_client.post("/api/users", json={"username": "regular", "password": "password123"})
+        victim = next(u for u in auth_client.get("/api/users").json() if u["username"] == "regular")
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        assert auth_client.delete(f"/api/users/{victim['id']}").status_code == 403
+        assert any(u["username"] == "regular" for u in auth_client.get("/api/users").json())
+
+    def test_update_is_refused(self, auth_client, monkeypatch):
+        """Same one-way door: this route resets passwords and grants admin."""
+        import backend.config as cfg_module
+
+        auth_client.post("/api/users", json={"username": "regular", "password": "password123"})
+        target = next(u for u in auth_client.get("/api/users").json() if u["username"] == "regular")
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        r = auth_client.patch(f"/api/users/{target['id']}", json={"new_password": "hijacked1"})
+        assert r.status_code == 403
+
+    def test_listing_is_still_allowed(self, auth_client, demo):
+        assert auth_client.get("/api/users").status_code == 200
+
+    def test_nothing_is_blocked_on_an_ordinary_install(self, auth_client, monkeypatch):
+        import backend.config as cfg_module
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", False)
+        r = auth_client.post("/api/users", json={"username": "regular", "password": "password123"})
+        assert r.status_code == 200

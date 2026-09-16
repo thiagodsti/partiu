@@ -80,6 +80,29 @@ class ExpenseService:
                 seen.add(("guest", guest.id))
         return choices
 
+    def _join_guests_to_trip(
+        self, trip_id: str, paid_by: tuple[str, int] | None, participants: list[tuple[str, int]]
+    ) -> None:
+        """Put any guest this expense names onto the trip's roster.
+
+        `_acceptable_choices` accepts a guest the caller owns but has not yet put
+        on the trip — that is what lets one quick-added in the expense form be
+        used immediately. Without this the expense would then reference somebody
+        the trip's own roster says is not on it, which is the inconsistency
+        `remove_from_trip` refuses to create from the other direction.
+        """
+        from .guests_repository import GuestRepository
+
+        refs = list(participants)
+        if paid_by is not None:
+            refs.append(paid_by)
+        guest_ids = [pid for ptype, pid in refs if ptype == "guest"]
+        if not guest_ids:
+            return
+        repository = GuestRepository()
+        for guest_id in guest_ids:
+            repository.add_to_trip(trip_id, guest_id)
+
     def create_expense(
         self,
         trip_id: str,
@@ -107,6 +130,10 @@ class ExpenseService:
         paid_by_type, paid_by_id = self._resolve_paid_by(paid_by, user_id, valid_choices)
         resolved_participants = self._resolve_participants(
             participants, trip_participants, valid_choices
+        )
+
+        self._join_guests_to_trip(
+            trip_id, (paid_by_type, paid_by_id) if paid_by_type else None, resolved_participants
         )
 
         expense_id = str(uuid.uuid4())
@@ -153,18 +180,28 @@ class ExpenseService:
             trip_participants = self.list_participants_for_trip(trip_id, user_id)
             valid_choices = self._acceptable_choices(trip_id, user_id, trip_participants)
 
+        resolved_paid_by: tuple[str, int] | None = None
         if paid_by is not None:
             paid_by_type, paid_by_id = self._resolve_paid_by(paid_by, user_id, valid_choices)
             updates["paid_by_user_id"] = paid_by_id if paid_by_type == "user" else None
             updates["paid_by_guest_id"] = paid_by_id if paid_by_type == "guest" else None
+            if paid_by_type:
+                resolved_paid_by = (paid_by_type, paid_by_id)
+
+        resolved_participants: list[tuple[str, int]] = []
+        if participants is not None:
+            resolved_participants = self._resolve_participants(
+                participants, trip_participants, valid_choices
+            )
+
+        # Before the write, for the same reason create does it: an expense must
+        # never end up naming somebody the trip's roster says is not on it.
+        self._join_guests_to_trip(trip_id, resolved_paid_by, resolved_participants)
 
         if updates:
             self._repository.update(expense_id, trip_id, updates)
 
         if participants is not None:
-            resolved_participants = self._resolve_participants(
-                participants, trip_participants, valid_choices
-            )
             self._repository.replace_participants(expense_id, resolved_participants)
 
     def delete_expense(self, trip_id: str, expense_id: str, user_id: int) -> None:

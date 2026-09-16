@@ -36,7 +36,8 @@ Want to try it before self-hosting? A public demo is available at:
 - **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — the HTML table form, the compact one-line-per-leg form found in PDF attachments, and the fixed-column plain-text form some airlines send in a monospace body, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
 - **Turkish Airlines ticket mails**: TK sends its own branded "Ticket Details" document rather than a GDS receipt, so it gets a dedicated parser that reads both of its renderings — the HTML itinerary and, if that is missing, the attached `TicketDetails.pdf` — including connections, overnight arrivals and the Turkish-language version
 - **Pegasus Airlines confirmations**: PC's Turkish-language booking mail carries no attachment at all, so its dedicated parser reads the HTML leg blocks directly, taking each leg's date from the header above it (never from the "check-in opens" date at the top of the mail) and picking up per-leg terminals along the way
-- **Nothing is lost on delete.** Deleting a trip or a flight moves it to a trash in Settings with everything that was on it — notes, ratings, expenses, stays, documents — from where it can be restored or deleted for good, and an activity log records deletions, restores, merges, regroups and syncs. Deleting still frees the booking to be imported again, which is what you do when a parser read it wrongly
+- **A trip says who is on it.** Its People section lists the owner, collaborators, outstanding invitations and guests — companions with no Partiu account — and the guests you add there are exactly who that trip's expenses can be paid by and split between. Guests are per trip, so your travel companions on one trip are not suggested on an unrelated one
+- **Nothing is lost on delete.** Deleting a trip or a flight moves it to a trash in Settings with everything that was on it — notes, ratings, expenses, stays, documents — from where it can be restored or deleted for good, and an activity log records deletions, restores, merges and syncs. Deleting still frees the booking to be imported again, which is what you do when a parser read it wrongly
 - **A parser update re-reads your mail.** The first sync after an upgrade that changes the parsers looks back over the whole lookback window, and Full sync now re-reads everything it fetches rather than skipping mail it has seen before
 - **Schedule changes reach flights you already have.** A change mail that reprints the itinerary updates the stored leg and keeps the times it moved from, so the flight shows "Rescheduled" with the previous departure and arrival and you get a notification; a leg moved to another day is recognised as the same leg rather than added beside it; and an airline's notice that a booking has changed without listing the new times (SAS) flags every leg of that booking and points you at the airline
 - **Cancellations reach flights you already have.** Every parser refuses to *create* a cancelled leg, which was only half the job: the flight is normally already stored from its booking confirmation weeks earlier, and nothing ever went back to it. A cancellation mail from SAS, Lufthansa, Finnair or Austrian now marks the legs it names as cancelled — by booking reference where the airline cancels the whole booking, or by flight number and date where it cancels one leg, which must not take the return with it
@@ -170,6 +171,11 @@ Want to try it before self-hosting? A public demo is available at:
 - TOTP-based 2FA — enable/disable from Settings; QR code for any authenticator app
 - Login rate-limiting and TOTP lockout after repeated failures
 - Audit logging of auth events
+- Demo mode (`DEMO_MODE`), off by default, for a public demo instance where everyone signs in to one shared account:
+  - the login page prints the credentials and offers a one-click sign-in; a permanent, undismissable banner says the account is shared
+  - the per-IP sign-in throttles are relaxed (5/min → 120/min, and the failed-attempt lockout is off) — a crowd arriving behind one proxy address is not an attacker
+  - **the doors that would lock everyone out are refused in the backend**, not just hidden in the UI: enabling 2FA, changing the password, and creating, editing or deleting accounts all return 403. Disabling 2FA stays allowed, as the escape hatch
+  - run the demo account as a **non-admin** if you can — admin pages expose sync, SMTP and VAPID settings a visitor can still misconfigure
 
 - Signing in or out clears the app's cached API responses, so two people sharing a phone never see each other's trips or statistics
 ### Multi-user & admin
@@ -268,6 +274,9 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `OLLAMA_MODEL` | | Model for the fallback (default: `qwen2.5:1.5b`) |
 | `SECURE_COOKIES` | | Set to `false` when testing over plain HTTP on a local network. Leave `true` in production |
 | `ANNOUNCEMENT` | | A short message shown as a banner to every signed-in user |
+| `DEMO_MODE` | | Set to `true` on a public demo instance: the login page prints the shared demo credentials with a one-click sign-in, a permanent banner says the account is shared, the sign-in throttles are relaxed, and credential/account changes are refused (see below). Off by default, and while it is off the endpoint serving the credentials returns nothing |
+| `DEMO_USERNAME` | | Username published by `DEMO_MODE` (default: `demo`). Advertises an account; does not create one |
+| `DEMO_PASSWORD` | | Password published by `DEMO_MODE` (default: `demo1234`) |
 | `PARTIU_VERSION` | | The running version, shown in the UI and used for the update check. Normally set to the Docker image tag |
 
 Which of these are set is visible at a glance in **Settings → Optional integrations** (admin only), along with what each one adds. It is also summarised in one line at INFO level on startup. Nothing here is required: every integration degrades a single feature rather than breaking the app.

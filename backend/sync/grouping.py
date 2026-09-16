@@ -48,9 +48,7 @@ def _fetch_ungrouped_flights(user_id: int | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def auto_group_flights(
-    user_id: int | None = None, _reuse_ids: dict[str, str] | None = None
-) -> dict:
+def auto_group_flights(user_id: int | None = None) -> dict:
     """
     Auto-group ungrouped flights into trips.
 
@@ -58,9 +56,6 @@ def auto_group_flights(
     1. Group by booking_reference if available (same booking = same trip)
     2. For remaining flights, group by time proximity (flights within 48h)
     3. Merge overlapping groups (multiple bookings in same trip)
-
-    _reuse_ids: optional booking_ref → old trip_id map passed by regroup_all_flights
-                to preserve cached images across a full regroup.
 
     Returns a summary dict.
     """
@@ -91,9 +86,7 @@ def auto_group_flights(
             no_booking.append(flight)
 
     for booking_ref, flights in by_booking.items():
-        trip_id = _create_trip_for_flights(
-            flights, booking_ref, user_id=user_id, _reuse_ids=_reuse_ids
-        )
+        trip_id = _create_trip_for_flights(flights, booking_ref, user_id=user_id)
         if trip_id:
             groups_created += 1
             flights_grouped += len(flights)
@@ -105,7 +98,7 @@ def auto_group_flights(
         proximity_groups = _group_by_proximity(remaining, max_gap=_MAX_GAP)
         for cluster in proximity_groups:
             if len(cluster) >= 2:
-                trip_id = _create_trip_for_flights(cluster, user_id=user_id, _reuse_ids=_reuse_ids)
+                trip_id = _create_trip_for_flights(cluster, user_id=user_id)
                 if trip_id:
                     groups_created += 1
                     flights_grouped += len(cluster)
@@ -287,17 +280,18 @@ def _create_trip_for_flights(
     flights: list[dict],
     booking_ref: str = "",
     user_id: int | None = None,
-    _reuse_ids: dict[str, str] | None = None,
 ) -> str | None:
     """
     Create (or update in-place) a trip row and assign flights to it.
 
-    If a trip already exists for this user with the same booking reference,
-    the existing trip_id is reused so that cached images are preserved.
-
-    _reuse_ids: optional mapping of booking_ref → old trip_id supplied by
-                regroup_all_flights so that image files can be restored even
-                when the old trip rows were deleted before this call.
+    If a trip already exists for this user with the same booking reference, that
+    row is updated **in place** rather than replaced — the trip id survives, and
+    with it the cached cover image and everything hanging off the id by foreign
+    key: the rating, notes, expenses, budget, stays, segments, car rentals and
+    Immich album link. Grouping decides which trip a flight belongs to; it has no
+    business destroying a trip's own contents. (The removed `regroup_all_flights`
+    did exactly that by deleting the rows before calling this, which is why it is
+    gone — see git history for the implementation.)
     """
     if not flights:
         return None
@@ -322,21 +316,18 @@ def _create_trip_for_flights(
 
     flight_ids = [f["id"] for f in flights]
 
-    # Try to reuse an existing trip ID to preserve the cached destination image.
-    # Priority: caller-supplied mapping (from regroup), then live DB lookup.
+    # Reuse an existing trip id so the row — and everything on it — is updated
+    # in place rather than replaced.
     trip_id: str | None = None
-    if booking_ref:
-        if _reuse_ids and booking_ref in _reuse_ids:
-            trip_id = _reuse_ids[booking_ref]
-        elif effective_user_id is not None:
-            with db_conn() as conn:
-                row = conn.execute(
-                    "SELECT id FROM trips "
-                    "WHERE user_id = ? AND is_auto_generated = 1 AND booking_refs LIKE ?",
-                    (effective_user_id, f'%"{booking_ref}"%'),
-                ).fetchone()
-            if row:
-                trip_id = row["id"]
+    if booking_ref and effective_user_id is not None:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM trips "
+                "WHERE user_id = ? AND is_auto_generated = 1 AND booking_refs LIKE ?",
+                (effective_user_id, f'%"{booking_ref}"%'),
+            ).fetchone()
+        if row:
+            trip_id = row["id"]
 
     # No booking reference matched. Accommodation for this journey may still
     # have arrived first and opened a trip of its own — join that rather than
@@ -554,75 +545,3 @@ def _merge_overlapping_groups(max_gap: timedelta, user_id: int | None = None) ->
                 break
 
     return merges
-
-
-def regroup_all_flights(user_id: int | None = None) -> dict:
-    """
-    Unassign all auto-generated trips and re-run grouping from scratch.
-    Manually added flights and manually created trips are preserved.
-
-    Saves a booking_ref → trip_id mapping before deletion so that
-    _create_trip_for_flights can reuse the old IDs and preserve cached images.
-    """
-    # Snapshot booking_ref → trip_id for trips that had images before we delete them
-    with db_conn() as conn:
-        if user_id is not None:
-            old_rows = conn.execute(
-                "SELECT id, booking_refs FROM trips "
-                "WHERE is_auto_generated = 1 AND user_id = ? AND image_fetched_at IS NOT NULL",
-                (user_id,),
-            ).fetchall()
-        else:
-            old_rows = conn.execute(
-                "SELECT id, booking_refs FROM trips "
-                "WHERE is_auto_generated = 1 AND image_fetched_at IS NOT NULL"
-            ).fetchall()
-
-    reuse_ids: dict[str, str] = {}
-    for row in old_rows:
-        try:
-            refs = json.loads(row["booking_refs"] or "[]")
-            for ref in refs:
-                if ref:
-                    reuse_ids[ref] = row["id"]
-        except Exception:
-            pass
-
-    now = now_iso()
-    with db_write() as conn:
-        if user_id is not None:
-            conn.execute(
-                """UPDATE flights SET trip_id = NULL, updated_at = ?
-                   WHERE trip_id IN (SELECT id FROM trips WHERE is_auto_generated = 1 AND user_id = ?)
-                   AND user_id = ?""",
-                (now, user_id, user_id),
-            )
-            conn.execute(
-                "DELETE FROM trips WHERE is_auto_generated = 1 AND user_id = ?", (user_id,)
-            )
-        else:
-            conn.execute(
-                """UPDATE flights SET trip_id = NULL, updated_at = ?
-                   WHERE trip_id IN (SELECT id FROM trips WHERE is_auto_generated = 1)""",
-                (now,),
-            )
-            conn.execute("DELETE FROM trips WHERE is_auto_generated = 1")
-
-    result = auto_group_flights(user_id=user_id, _reuse_ids=reuse_ids)
-
-    # Restore image_fetched_at for trips whose IDs were reused.
-    # The INSERT sets image_fetched_at = NULL, but since the image file is still
-    # on disk (same trip_id = same filename), we mark it as fetched so the route
-    # serves the existing file instead of re-fetching a different random photo.
-    if reuse_ids:
-        reused = set(reuse_ids.values())
-        restore_ts = now_iso()
-        with db_write() as conn:
-            for trip_id in reused:
-                conn.execute(
-                    "UPDATE trips SET image_fetched_at = ? "
-                    "WHERE id = ? AND image_fetched_at IS NULL",
-                    (restore_ts, trip_id),
-                )
-
-    return result

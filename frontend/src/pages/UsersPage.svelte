@@ -46,6 +46,12 @@
 
   load();
 
+  // The backend refuses all three of these with a 403 on a demo instance (see
+  // auth/access.py::refuse_on_demo) — an account created, renamed or deleted
+  // there locks the next visitor out of an account everybody shares. Hiding
+  // the controls is the courtesy; the refusal is the rule.
+  let isDemo = $derived($currentUser?.demo === true);
+
   async function createUser(e: Event) {
     e.preventDefault();
     if (!newUsername.trim() || !newPassword) return;
@@ -132,7 +138,9 @@
                 {/if}
               </div>
               <div class="user-actions">
-                {#if u.id !== $currentUser?.id}
+                {#if isDemo}
+                  <span class="demo-locked">{$t('demo.locked_users')}</span>
+                {:else if u.id !== $currentUser?.id}
                   <button
                     class="btn btn-secondary btn-sm"
                     onclick={() => { resetUserId = resetUserId === u.id ? null : u.id; resetPassword = ''; }}
@@ -187,6 +195,9 @@
     <!-- Create user form -->
     <div class="settings-section">
       <div class="settings-section-title">{$t('users.add_user')}</div>
+      {#if isDemo}
+        <p class="demo-locked">{$t('demo.locked_users')}</p>
+      {:else}
       <form onsubmit={createUser}>
         <div class="form-group">
           <label class="form-label" for="new-username">{$t('users.new_username')}</label>
@@ -236,11 +247,19 @@
           {creating ? $t('users.btn_adding') : $t('users.btn_add')}
         </button>
       </form>
+      {/if}
     </div>
   {/if}
 </div>
 
 <style>
+  /* Neutral, not a warning colour: nothing has gone wrong here. */
+  .demo-locked {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
   .user-list {
     display: flex;
     flex-direction: column;

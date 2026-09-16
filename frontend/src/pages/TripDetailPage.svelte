@@ -13,6 +13,7 @@
   import TripPackingList from "../components/TripPackingList.svelte";
   import TripTransport from "../components/TripTransport.svelte";
   import TripStays from "../components/TripStays.svelte";
+  import TripPeople from "../components/TripPeople.svelte";
   import TripCarRentals from "../components/TripCarRentals.svelte";
   import { tripImageBust } from "../lib/tripImageStore";
   import type {
@@ -34,6 +35,7 @@
     inferTripStatus,
     timeUntilTrip,
     tripContents,
+    tripPeople,
   } from "../lib/utils";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -217,6 +219,34 @@
     return $t(n === 1 ? key : `${key}_plural`, { values: { n } });
   }
 
+  /* Who else is on the trip. Read off the trip payload rather than the
+   * collaborators list loaded below, because `GET /api/trips/{id}/shares` is
+   * owner-only — a collaborator's copy of that list is always empty, and the
+   * header would tell them they are travelling alone. Rendered in the same
+   * shape as `contents` so the two share one row and one separator rule. */
+  const peopleParts = $derived.by(() => {
+    const people = tripPeople(
+      trip?.collaborator_count ?? 0,
+      trip?.pending_invite_count ?? 0,
+      // The live roster, reported by the People section — so adding a guest
+      // updates the header without a refetch. Seeded from the trip payload so
+      // the count is right on first paint, before that section has loaded.
+      tripGuestCount ?? trip?.guest_count ?? 0,
+    );
+    if (!people) return [];
+    const parts = [
+      { icon: "👥", labelKey: "trips.people_count", count: people.people },
+    ];
+    if (people.pending > 0) {
+      parts.push({
+        icon: "✉",
+        labelKey: "trips.pending_invite_count",
+        count: people.pending,
+      });
+    }
+    return parts;
+  });
+
   /* Seeded from the trip payload so the line is right on first paint, then kept
    * current by the expenses section — which is the only thing that knows an
    * expense was just added. */
@@ -395,6 +425,12 @@
   // ---- Collapsible sections ----
   let flightsCollapsed = $state(false);
   let staysCollapsed = $state(false);
+  let peopleCollapsed = $state(false);
+  /* The trip's guest roster size, reported by the People section so the
+   * header's companion count stays live without re-fetching the trip. Null
+   * until that section reports, so the header falls back to the trip payload's
+   * own figure and does not flash a zero on first paint. */
+  let tripGuestCount = $state<number | null>(null);
   let carRentalsCollapsed = $state(false);
   let plannerCollapsed = $state(false);
   let packingCollapsed = $state(false);
@@ -512,8 +548,19 @@
     }
   }
 
+  /* Loaded with the trip, not when the share panel is opened.
+   *
+   * This was lazy while the share panel was the only thing that read it. The
+   * People section lists collaborators and outstanding invitations too, so
+   * deferring the fetch left that section showing just the owner and the guests
+   * until you happened to click Share — at which point the names appeared, which
+   * reads as a bug rather than as lazy loading.
+   *
+   * `loadCollaborators` returns early for a non-owner (the endpoint is
+   * owner-only), so this costs a collaborator nothing and TripPeople already
+   * renders correctly against the empty list it gets. */
   $effect(() => {
-    if (trip && showSharePanel) {
+    if (trip?.id) {
       loadCollaborators();
     }
   });
@@ -564,10 +611,16 @@
           <span>📅 {dateRange}</span>
         </div>
       {/if}
-      {#if contents.length > 0 || expenseLabels.length > 0}
+      {#if contents.length > 0 || peopleParts.length > 0 || expenseLabels.length > 0}
         <p class="trip-header-contents">
           {#each contents as part, i (part.labelKey)}
             {#if i > 0}<span class="trip-header-sep" aria-hidden="true">·</span>{/if}
+            <span>{part.icon} {plural(part.labelKey, part.count)}</span>
+          {/each}
+          {#each peopleParts as part, i (part.labelKey)}
+            {#if contents.length > 0 || i > 0}
+              <span class="trip-header-sep" aria-hidden="true">·</span>
+            {/if}
             <span>{part.icon} {plural(part.labelKey, part.count)}</span>
           {/each}
           {#each expenseLabels as label (label)}
@@ -829,6 +882,33 @@
             flights={flightList}
             {segments}
             onchange={(list) => (stays = list)}
+          />
+        </div>
+      </div>
+
+      <!-- People: who is on the trip. Its guest roster is what bounds the
+           expense payer/split pickers, so it sits with the trip's contents
+           rather than inside Expenses — a companion is a fact about the trip,
+           not about its bills. -->
+      <div class="trip-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="trip-section-header section-toggle"
+          onclick={() => (peopleCollapsed = !peopleCollapsed)}
+        >
+          <div class="section-header-inner">
+            <div class="section-title-row">
+              <h3 class="trip-section-title">{$t("trip_people.title")}</h3>
+              <span class="section-chevron">{peopleCollapsed ? "▼" : "▲"}</span>
+            </div>
+          </div>
+        </div>
+        <div class:section-hidden={peopleCollapsed}>
+          <TripPeople
+            {trip}
+            {collaborators}
+            onchange={(list) => (tripGuestCount = list.length)}
           />
         </div>
       </div>

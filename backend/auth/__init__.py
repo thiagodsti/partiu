@@ -4,7 +4,8 @@ Auth package. Two responsibilities:
 1. Cross-cutting session/password/authorization helpers — ``get_current_user``,
    ``require_admin``, ``hash_password``, ``verify_password``, ``has_any_users``,
    ``get_user_imap_settings``, ``validate_secret_key`` (session.py), plus
-   ``can_access_trip``, ``is_trip_owner``, ``can_access_flight`` (access.py) —
+   ``can_access_trip``, ``is_trip_owner``, ``can_access_flight``, ``refuse_on_demo``
+   (access.py) —
    re-exported here because the rest of the backend imports them as
    ``from ..auth import get_current_user`` / ``from ..auth import can_access_trip``
    (literally every route/service module). Keeping that import path stable is why
@@ -33,7 +34,7 @@ Auth package. Two responsibilities:
 depends on them rather than reaching into the repository directly.
 """
 
-from .access import can_access_flight, can_access_trip, is_trip_owner
+from .access import can_access_flight, can_access_trip, is_trip_owner, refuse_on_demo
 from .service import auth_service
 from .session import (
     get_current_user,
@@ -55,6 +56,7 @@ __all__ = [
     "has_any_users",
     "hash_password",
     "is_trip_owner",
+    "refuse_on_demo",
     "require_admin",
     "twofa_service",
     "validate_secret_key",

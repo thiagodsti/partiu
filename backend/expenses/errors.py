@@ -20,3 +20,15 @@ class GuestInUseError(Exception):
         self.guest_name = guest_name
         self.expense_count = expense_count
         super().__init__(f"Guest {guest_name} is used in {expense_count} existing expense(s)")
+
+
+class GuestOnTripError(Exception):
+    """Raised when taking a guest off a trip that still has an expense naming them.
+
+    Same rule as deleting a guest outright: a reference must never be left
+    pointing at somebody the trip says is not on it.
+    """
+
+    def __init__(self, guest_name: str):
+        self.guest_name = guest_name
+        super().__init__(f"Guest {guest_name} is named by an expense on this trip")

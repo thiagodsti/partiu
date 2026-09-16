@@ -31,7 +31,7 @@ def user_summary_to_dto(user: UserSummary) -> UserResponseDTO:
 
 
 def user_summary_to_me_dto(
-    user: UserSummary, announcement: str, carto_api_key: str = ""
+    user: UserSummary, announcement: str, carto_api_key: str = "", demo: bool = False
 ) -> MeResponseDTO:
     return MeResponseDTO(
         id=user.id,
@@ -43,4 +43,5 @@ def user_summary_to_me_dto(
         accent=user.accent,
         announcement=announcement,
         carto_api_key=carto_api_key,
+        demo=demo,
     )

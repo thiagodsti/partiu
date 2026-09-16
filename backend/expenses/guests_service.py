@@ -3,7 +3,12 @@
 from ..auth import can_access_trip
 from ..database import db_conn
 from .domain import Guest
-from .errors import GuestInUseError, GuestNotFoundError, TripAccessError
+from .errors import (
+    GuestInUseError,
+    GuestNotFoundError,
+    GuestOnTripError,
+    TripAccessError,
+)
 from .guests_repository import GuestRepository
 
 
@@ -15,17 +20,49 @@ class GuestService:
         return self._repository.list_for_owner(user_id)
 
     def list_for_trip(self, trip_id: str, user_id: int) -> list[Guest]:
-        """Guests already tagged (as payer or participant) on this specific trip.
+        """The guests on this trip, from its roster.
 
-        Guests are scoped to the trip they're added to, not surfaced globally
-        across every trip the caller has ever added a guest to — otherwise
-        someone invited on a 2024 city break would keep showing up as a
-        suggested participant on an unrelated 2026 trip. Any collaborator on
-        the trip sees these, regardless of who created the guest."""
+        Guests are scoped to the trip they are put on, not surfaced globally
+        across every trip the caller has ever added one to — otherwise someone
+        invited on a 2024 city break would keep showing up as a suggested
+        participant on an unrelated 2026 trip. Any collaborator on the trip sees
+        these, regardless of who created the guest."""
         with db_conn() as conn:
             if not can_access_trip(trip_id, user_id, conn):
                 raise TripAccessError(trip_id)
         return self._repository.list_for_trip(trip_id)
+
+    def add_to_trip(self, trip_id: str, guest_id: int, user_id: int) -> Guest:
+        """Put one of the caller's own guests on a trip they can access.
+
+        Ownership of the guest is still the caller's — the roster says who is
+        travelling, not who the address-book entry belongs to. Idempotent, so a
+        double-submit is not an error.
+        """
+        with db_conn() as conn:
+            if not can_access_trip(trip_id, user_id, conn):
+                raise TripAccessError(trip_id)
+        guest = self._repository.get(guest_id)
+        if guest is None or guest.owner_id != user_id:
+            raise GuestNotFoundError(guest_id)
+        self._repository.add_to_trip(trip_id, guest_id)
+        return guest
+
+    def remove_from_trip(self, trip_id: str, guest_id: int, user_id: int) -> None:
+        """Take a guest off a trip, refusing while an expense there names them.
+
+        The guest itself is untouched — they stay in the address book and on any
+        other trip. Only this trip's roster changes.
+        """
+        with db_conn() as conn:
+            if not can_access_trip(trip_id, user_id, conn):
+                raise TripAccessError(trip_id)
+        guest = self._repository.get(guest_id)
+        if guest is None:
+            raise GuestNotFoundError(guest_id)
+        if self._repository.is_used_on_trip(trip_id, guest_id):
+            raise GuestOnTripError(guest.name)
+        self._repository.remove_from_trip(trip_id, guest_id)
 
     def create(self, user_id: int, name: str) -> int:
         clean = name.strip()

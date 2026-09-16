@@ -1,11 +1,26 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { authApi } from '../api/client';
   import { currentUser } from '../lib/authStore';
   import { refreshInvitationCount } from '../lib/invitationStore';
   import { t, applyUserLocale } from '../lib/i18n';
   import { applyUserAccent } from '../lib/accentStore';
   import { purgeApiCache } from '../lib/apiCache';
-  import type { User } from '../api/types';
+  import type { PublicConfig, User } from '../api/types';
+
+  // Only a deliberately-configured demo instance answers with credentials here;
+  // every other install returns `demo: false` and this block never renders.
+  let demo = $state<PublicConfig | null>(null);
+
+  onMount(async () => {
+    try {
+      const config = await authApi.publicConfig();
+      if (config?.demo) demo = config;
+    } catch {
+      // An install too old to know this endpoint, or offline: the login form
+      // is the feature, the demo notice is decoration. Never block on it.
+    }
+  });
 
   let username = $state('');
   let password = $state('');
@@ -38,6 +53,19 @@
 
   async function handleLogin(e: Event) {
     e.preventDefault();
+    await doLogin();
+  }
+
+  /** Fills the form in full view rather than posting the credentials behind the
+   * visitor's back — they are printed above, and this is the same sign-in. */
+  async function signInAsDemo() {
+    if (!demo || loading) return;
+    username = demo.demo_username;
+    password = demo.demo_password;
+    await doLogin();
+  }
+
+  async function doLogin() {
     if (!username.trim() || !password) return;
 
     loading = true;
@@ -121,6 +149,27 @@
 
     {#if step === 'credentials'}
       <p class="auth-subtitle">{$t('login.subtitle')}</p>
+
+      {#if demo}
+        <div class="demo-note">
+          <p class="demo-note-title">{$t('login.demo_title')}</p>
+          <p class="demo-note-hint">{$t('login.demo_hint')}</p>
+          <dl class="demo-creds">
+            <dt>{$t('login.username')}</dt>
+            <dd>{demo.demo_username}</dd>
+            <dt>{$t('login.password')}</dt>
+            <dd>{demo.demo_password}</dd>
+          </dl>
+          <button
+            class="btn btn-secondary btn-full demo-btn"
+            type="button"
+            onclick={signInAsDemo}
+            disabled={loading}
+          >
+            {$t('login.demo_signin')}
+          </button>
+        </div>
+      {/if}
 
       <form onsubmit={handleLogin}>
         <div class="form-group">
@@ -238,6 +287,52 @@
     color: var(--text-secondary);
     font-size: 0.875rem;
     margin: 0 0 var(--space-xl);
+  }
+
+  /* Neutral panel on purpose: the accent is worn by the sign-in button, and a
+     notice is not a status. */
+  .demo-note {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    padding: var(--space-md);
+    margin-bottom: var(--space-lg);
+  }
+
+  .demo-note-title {
+    margin: 0 0 var(--space-xs);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .demo-note-hint {
+    margin: 0 0 var(--space-sm);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .demo-creds {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px var(--space-sm);
+    margin: 0 0 var(--space-md);
+    font-size: 0.875rem;
+  }
+
+  .demo-creds dt {
+    color: var(--text-secondary);
+  }
+
+  .demo-creds dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    /* A password read off a screen and typed elsewhere has to be selectable. */
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .demo-btn {
+    margin: 0;
   }
 
   .auth-error {

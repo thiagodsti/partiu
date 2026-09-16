@@ -4,7 +4,7 @@ User management routes (admin only).
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import require_admin
+from ..auth import refuse_on_demo, require_admin
 from . import user_service
 from .dto import (
     CreateUserRequestDTO,
@@ -26,6 +26,7 @@ def list_users(admin: dict = Depends(require_admin)):
 
 @router.post("", response_model=CreateUserResponseDTO)
 def create_user(body: CreateUserRequestDTO, admin: dict = Depends(require_admin)):
+    refuse_on_demo("Creating users")
     try:
         created = user_service.create_user(
             admin["id"], body.username, body.password, body.is_admin, body.smtp_recipient_address
@@ -37,6 +38,9 @@ def create_user(body: CreateUserRequestDTO, admin: dict = Depends(require_admin)
 
 @router.patch("/{user_id}", response_model=OkDTO)
 def update_user(user_id: int, body: UpdateUserRequestDTO, admin: dict = Depends(require_admin)):
+    # Editing an account is the same one-way door as creating or deleting one:
+    # this route can reset a password and grant or revoke admin.
+    refuse_on_demo("Editing users")
     try:
         user_service.update_user(
             admin["id"], user_id, body.is_admin, body.smtp_recipient_address, body.new_password
@@ -50,6 +54,7 @@ def update_user(user_id: int, body: UpdateUserRequestDTO, admin: dict = Depends(
 
 @router.delete("/{user_id}", response_model=OkDTO)
 def delete_user(user_id: int, admin: dict = Depends(require_admin)):
+    refuse_on_demo("Deleting users")
     try:
         user_service.delete_user(admin["id"], user_id)
     except SelfDeleteError:

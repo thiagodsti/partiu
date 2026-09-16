@@ -685,6 +685,32 @@ const SEGMENT_ORDER = ['train', 'bus', 'ferry', 'car'];
  * Zero-count kinds are omitted entirely; an empty trip returns `[]` and the
  * caller shows nothing rather than a row of noughts.
  */
+/** How a trip's companions are summarised, shared by the card and the trip
+ * header so the two cannot drift.
+ *
+ * The count is **owner + accepted collaborators** — the people on the trip —
+ * because that reads the same whoever is looking at it; "besides you" would
+ * mean a different number to the owner than to a collaborator. Pending
+ * invitations stay a separate figure for the same reason they are a separate
+ * column: an invitation is not a companion until it is accepted.
+ *
+ * A solo trip returns `null` rather than "1 person" — a trip with nobody else
+ * on it is the normal case, and saying so on every card is the row of noughts
+ * `tripContents` already refuses to print.
+ */
+export function tripPeople(
+  collaboratorCount: number,
+  pendingInviteCount = 0,
+  guestCount = 0,
+): { people: number; pending: number } | null {
+  // + the owner, who holds no share row of their own. Guests count as people:
+  // they are companions, and the trip's roster is what its expenses are split
+  // between — a trip with three guests and no collaborators has four on it.
+  const people = collaboratorCount + guestCount + 1;
+  if (collaboratorCount <= 0 && pendingInviteCount <= 0 && guestCount <= 0) return null;
+  return { people, pending: pendingInviteCount };
+}
+
 export function tripContents(
   flightCount: number,
   segmentTypes: string[],

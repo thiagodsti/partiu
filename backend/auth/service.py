@@ -106,6 +106,12 @@ class AuthService:
         return LoginResult(requires_2fa=False, user=summary, session_token=session_token)
 
     def _check_login_lockout(self, ip: str) -> None:
+        # A demo instance publishes its password, so a failed attempt there is
+        # a typo, not an attack — and the whole crowd usually shares one
+        # apparent address behind the proxy, which would lock all of them out
+        # together. The route's rate limit still bounds the endpoint.
+        if self._demo_mode():
+            return
         now = time.time()
         cutoff = now - _LOGIN_LOCKOUT_WINDOW
         self._login_failures[ip] = [t for t in self._login_failures[ip] if t > cutoff]
@@ -113,7 +119,17 @@ class AuthService:
             raise AuthError("Too many failed login attempts. Please try again later.", 429)
 
     def _record_login_failure(self, ip: str) -> None:
+        # Nothing reads these in demo mode, and the pruning that keeps the list
+        # bounded happens in the check we just skipped — so don't grow one.
+        if self._demo_mode():
+            return
         self._login_failures[ip].append(time.time())
+
+    @staticmethod
+    def _demo_mode() -> bool:
+        from ..config import settings
+
+        return settings.DEMO_MODE
 
     # -- Logout / me / update-me -----------------------------------------------
 

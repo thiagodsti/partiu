@@ -8,6 +8,9 @@ ALLOWED_UNAUTHENTICATED_PATHS = {
     "/api/auth/setup",
     "/api/auth/login",
     "/api/auth/me",
+    # Read by the login page, which is what an unset-up instance shows once
+    # setup is done — and it answers the same before setup either way.
+    "/api/auth/public-config",
 }
 
 _SECURITY_HEADERS = {

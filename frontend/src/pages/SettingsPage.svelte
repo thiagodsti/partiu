@@ -169,7 +169,6 @@
   let imapTestMsg = $state("");
   let imapTestOk = $state(false);
 
-  let regrouping = $state(false);
   let fullSyncing = $state(false);
   let reloadingAirports = $state(false);
 
@@ -218,19 +217,6 @@
   load();
 
   // ---- Sync actions ----
-  async function regroup() {
-    if (!confirm($t("settings.regroup_confirm"))) return;
-    regrouping = true;
-    try {
-      await syncApi.regroup();
-      showMsg($t("settings.regroup_ok"), "success");
-    } catch (err) {
-      showMsg(`Error: ${(err as Error).message}`, "error");
-    } finally {
-      regrouping = false;
-    }
-  }
-
   async function fullSync() {
     if (!confirm($t("settings.full_sync_confirm"))) return;
     fullSyncing = true;
@@ -488,6 +474,12 @@
   let changingPw = $state(false);
   let pwMsg = $state("");
   let pwMsgType = $state<"success" | "error">("success");
+
+  // A demo instance refuses both of these server-side (403): one visitor
+  // turning on 2FA, or changing the shared password, locks everyone else out
+  // with no way back in short of shell access. Hide the controls so nobody
+  // fills a form only to be turned away by it.
+  let isDemo = $derived($currentUser?.demo === true);
 
   async function changePassword(e: Event) {
     e.preventDefault();
@@ -784,15 +776,6 @@
     <div class="settings-section">
       <div class="settings-section-title">{$t("settings.sync_status")}</div>
       <SyncStatusBar {syncStatus} style="margin-bottom:var(--space-md)" />
-
-      <button
-        class="btn btn-secondary btn-full"
-        disabled={regrouping}
-        style="margin-top:var(--space-sm)"
-        onclick={regroup}
-      >
-        {regrouping ? $t("settings.regrouping") : $t("settings.regroup")}
-      </button>
 
       <button
         class="btn btn-secondary btn-full"
@@ -1404,6 +1387,9 @@
     <div class="settings-section">
       <div class="settings-section-title">{$t("settings.2fa")}</div>
 
+      {#if isDemo}
+        <p class="demo-locked">{$t("demo.locked_2fa")}</p>
+      {:else}
       {#if twoFaMsg}
         <div
           style="font-size:0.875rem;margin-bottom:var(--space-sm);color:{twoFaMsgType ===
@@ -1575,6 +1561,7 @@
             : $t("settings.2fa_idle_btn")}
         </button>
       {/if}
+      {/if}
     </div>
 
     <!-- Appearance -->
@@ -1649,6 +1636,9 @@
     <!-- Change Password -->
     <div class="settings-section">
       <div class="settings-section-title">{$t("settings.change_password")}</div>
+      {#if isDemo}
+        <p class="demo-locked">{$t("demo.locked_password")}</p>
+      {:else}
       <form onsubmit={changePassword}>
         <div class="form-group">
           <label class="form-label" for="cur-pw"
@@ -1711,6 +1701,7 @@
             : $t("settings.change_pw_btn")}
         </button>
       </form>
+      {/if}
     </div>
 
     <!-- Trusted Users -->
@@ -1817,6 +1808,14 @@
 </div>
 
 <style>
+  /* Neutral, not a warning colour: nothing has gone wrong, this install simply
+     does not let one visitor change an account everybody shares. */
+  .demo-locked {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
   .integration-row {
     display: flex;
     gap: 10px;

@@ -30,6 +30,9 @@ class TripListItem:
         self.is_owner = is_owner
         self.owner_username: str | None = None
         self.flight_count = 0
+        self.collaborator_count = 0
+        self.pending_invite_count = 0
+        self.guest_count = 0
         self.segment_count = 0
         self.stay_count = 0
         self.car_rental_count = 0
@@ -81,8 +84,13 @@ class TripService:
         stay_counts = self._repository.get_stay_counts(trip_ids)
         car_rental_counts = self._repository.get_car_rental_counts(trip_ids)
         segment_types = self._repository.get_segment_types(trip_ids)
+        people = self._repository.get_people_counts(trip_ids)
         for item in items:
             item.flight_count = flight_counts.get(item.trip.id, 0)
+            trip_people = people.get(item.trip.id, {})
+            item.collaborator_count = trip_people.get("accepted", 0)
+            item.pending_invite_count = trip_people.get("pending", 0)
+            item.guest_count = trip_people.get("guests", 0)
             item.segment_count = segment_counts.get(item.trip.id, 0)
             item.stay_count = stay_counts.get(item.trip.id, 0)
             item.car_rental_count = car_rental_counts.get(item.trip.id, 0)
@@ -156,11 +164,16 @@ class TripService:
 
     def get_trip(
         self, trip_id: str, user_id: int
-    ) -> tuple[Trip, bool, str | None, list[dict], dict, str | None, list[dict]]:
+    ) -> tuple[Trip, bool, str | None, list[dict], dict, str | None, list[dict], dict[str, int]]:
         """Return a single trip with its flights.
 
         Returns (trip, is_owner, owner_username, flights, expenses_total,
-        immich_album_id, destinations).
+        immich_album_id, destinations, people).
+
+        ``people`` rides on the trip rather than being fetched from
+        ``GET /api/trips/{id}/shares`` because that endpoint is owner-only — a
+        collaborator opening the trip would get a 404 and see nobody on a trip
+        they are themselves on.
         """
         if not self._can_access(trip_id, user_id):
             raise TripError("Trip not found", 404)
@@ -175,6 +188,9 @@ class TripService:
         expenses_total = self._repository.get_expenses_total(trip_id)
         immich_album_id = self._repository.get_immich_album_id(trip_id, user_id)
         destinations = self._repository.list_destinations([trip_id]).get(trip_id, [])
+        people = self._repository.get_people_counts([trip_id]).get(
+            trip_id, {"accepted": 0, "pending": 0, "guests": 0}
+        )
 
         return (
             trip,
@@ -184,6 +200,7 @@ class TripService:
             expenses_total,
             immich_album_id,
             destinations,
+            people,
         )
 
     # -- Create / update / delete --------------------------------------------

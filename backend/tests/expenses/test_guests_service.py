@@ -42,12 +42,10 @@ class TestListForTrip:
         with pytest.raises(TripAccessError):
             service.list_for_trip(trip_id, other_id)
 
-    def test_only_returns_trip_referenced_guests_not_unused_ones(self, test_db):
-        """Guests are scoped per trip: a guest owned by the caller but never used
-        on this trip must not show up, even though a guest actually tagged on
-        this trip (owned by someone else entirely) does."""
-        import sqlite3
-
+    def test_only_returns_guests_on_this_trip_not_the_whole_address_book(self, test_db):
+        """The scoping that makes a per-trip roster worth having: your address
+        book does not leak into a trip nobody was added to."""
+        from backend.expenses.guests_repository import GuestRepository
         from backend.expenses.guests_service import GuestService
 
         service = GuestService()
@@ -55,29 +53,105 @@ class TestListForTrip:
         trip_id = _seed_trip(test_db, owner_id)
 
         service.create(owner_id, "Own unused guest")
+        on_trip = service.create(owner_id, "Jimmy")
+        GuestRepository().add_to_trip(trip_id, on_trip)
 
-        other_owner = _seed_user(test_db)
-        conn = sqlite3.connect(test_db)
-        conn.execute(
-            "INSERT INTO guests (owner_id, name, created_at) VALUES (?, ?, ?)",
-            (other_owner, "Trip-tagged guest", datetime.now(UTC).isoformat()),
-        )
-        conn.commit()
-        other_guest_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        now = datetime.now(UTC).isoformat()
-        conn.execute(
-            """INSERT INTO trip_expenses
-                   (id, trip_id, description, amount, currency, created_by,
-                    paid_by_guest_id, created_at, updated_at)
-               VALUES (?, ?, 'Cab', 30.0, 'EUR', ?, ?, ?, ?)""",
-            (str(uuid.uuid4()), trip_id, owner_id, other_guest_id, now, now),
-        )
-        conn.commit()
-        conn.close()
+        assert {g.id for g in service.list_for_trip(trip_id, owner_id)} == {on_trip}
 
-        guests = service.list_for_trip(trip_id, owner_id)
-        ids = {g.id for g in guests}
-        assert ids == {other_guest_id}
+
+class TestTripRoster:
+    """Adding and removing the guests on one trip. This is the feature the old
+    derived membership made impossible: a guest created in Settings was in no
+    picker because no expense named them, and no expense could name them because
+    they were in no picker."""
+
+    def test_a_guest_created_in_settings_can_be_put_on_a_trip(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest_id = service.create(owner_id, "Jimmy")
+
+        assert service.list_for_trip(trip_id, owner_id) == []
+        service.add_to_trip(trip_id, guest_id, owner_id)
+        assert [g.name for g in service.list_for_trip(trip_id, owner_id)] == ["Jimmy"]
+
+    def test_adding_someone_elses_guest_is_refused(self, test_db):
+        from backend.expenses.errors import GuestNotFoundError
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        stranger = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        theirs = service.create(stranger, "Not yours")
+
+        with pytest.raises(GuestNotFoundError):
+            service.add_to_trip(trip_id, theirs, owner_id)
+
+    def test_adding_to_a_trip_you_cannot_see_is_refused(self, test_db):
+        from backend.expenses.errors import TripAccessError
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        stranger = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, stranger)
+        guest_id = service.create(owner_id, "Jimmy")
+
+        with pytest.raises(TripAccessError):
+            service.add_to_trip(trip_id, guest_id, owner_id)
+
+    def test_removing_is_refused_while_an_expense_names_them(self, test_db):
+        from backend.expenses.errors import GuestOnTripError
+        from backend.expenses.guests_service import GuestService
+        from backend.expenses.service import ExpenseService
+
+        guests = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest_id = guests.create(owner_id, "Jimmy")
+        guests.add_to_trip(trip_id, guest_id, owner_id)
+
+        ExpenseService().create_expense(
+            trip_id, owner_id, "Cab", 30.0, "EUR", paid_by=("guest", guest_id)
+        )
+
+        with pytest.raises(GuestOnTripError):
+            guests.remove_from_trip(trip_id, guest_id, owner_id)
+
+    def test_removing_an_unused_guest_leaves_the_address_book_alone(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest_id = service.create(owner_id, "Jimmy")
+        service.add_to_trip(trip_id, guest_id, owner_id)
+
+        service.remove_from_trip(trip_id, guest_id, owner_id)
+
+        assert service.list_for_trip(trip_id, owner_id) == []
+        assert [g.id for g in service.list_mine(owner_id)] == [guest_id]
+
+    def test_naming_a_guest_on_an_expense_puts_them_on_the_trip(self, test_db):
+        """`_acceptable_choices` accepts a guest the caller owns but has not yet
+        added, so a quick-add in the expense form works. The roster has to keep
+        up, or the expense would name somebody the trip says is not on it."""
+        from backend.expenses.guests_service import GuestService
+        from backend.expenses.service import ExpenseService
+
+        guests = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest_id = guests.create(owner_id, "Quick-added")
+
+        ExpenseService().create_expense(
+            trip_id, owner_id, "Lunch", 20.0, "EUR", participants=[("guest", guest_id)]
+        )
+
+        assert [g.id for g in guests.list_for_trip(trip_id, owner_id)] == [guest_id]
 
 
 class TestRename:
