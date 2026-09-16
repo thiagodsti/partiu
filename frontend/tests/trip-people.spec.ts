@@ -107,3 +107,25 @@ test('the trip header counts the people on the trip', async ({ page }) => {
   // Owner + one guest = two people; a solo trip prints nothing at all.
   await expect(page.locator('.trip-header-contents')).toContainText('👥');
 });
+
+/* The bug this pins: the People section and the expense form are different
+ * cards on the same page, and adding a guest updated only the first. The
+ * guest was on the trip server-side, but its payer select and split-between
+ * picker had loaded their list on mount and never looked again — so the guest
+ * you had just added could not be used until a hard refresh. */
+test('a guest added to the trip appears in the expense form without reloading', async ({ page }) => {
+  const tripId = await createTrip(page, `Picker refresh ${Date.now()}`);
+  await openTrip(page, tripId);
+
+  // Open the expense form first, so the pickers are mounted with the old list.
+  await page.locator('.expenses-add-btn').click();
+  await expect(page.locator('.expense-add-form')).toBeVisible();
+
+  const name = `Vivian ${Date.now()}`;
+  await page.locator('.people-add input').first().fill(name);
+  await page.locator('.people-add button[type="submit"]').click();
+  await expect(page.locator('.people-row', { hasText: name })).toBeVisible();
+
+  // No navigation, no reload: the same page must now offer them.
+  await expect(page.locator('#new-paid-by option', { hasText: name })).toHaveCount(1);
+});

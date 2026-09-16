@@ -332,4 +332,46 @@ describe('TripExpenses', () => {
     const combinedNodes = container.querySelectorAll('.balance-combined');
     expect(combinedNodes.length).toBe(1);
   });
+
+  /* The roster lives in another section of the trip page. A guest added there
+   * has to reach these pickers without a page reload — the bug was that it
+   * didn't, so a guest you had just added could not be picked. */
+  describe('reloadParticipants', () => {
+    it('refetches the trip roster and offers the new guest', async () => {
+      const { container, getByText, component } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+      expect(mockParticipants).toHaveBeenCalledTimes(1);
+
+      mockParticipants.mockResolvedValue([
+        ...PARTICIPANTS,
+        { type: 'guest' as const, id: 7, name: 'Jimmy' },
+      ]);
+      await component.reloadParticipants();
+
+      await fireEvent.click(getByText('+ expenses.add'));
+      await waitFor(() => expect(container.textContent).toContain('Jimmy'));
+    });
+
+    it('leaves the expenses and balances alone', async () => {
+      const { getByText, component } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+
+      await component.reloadParticipants();
+
+      expect(mockParticipants).toHaveBeenCalledTimes(2);
+      expect(mockList).toHaveBeenCalledTimes(1);
+      expect(mockBalances).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the existing list when the refetch fails', async () => {
+      const { container, getByText, component } = render(TripExpenses, { tripId: 't1' });
+      await waitFor(() => getByText('+ expenses.add'));
+
+      mockParticipants.mockRejectedValue(new Error('offline'));
+      await component.reloadParticipants();
+
+      await fireEvent.click(getByText('+ expenses.add'));
+      expect(container.querySelectorAll('.people-token').length).toBe(2);
+    });
+  });
 });

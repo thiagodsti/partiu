@@ -136,6 +136,21 @@
     balances = bal.balances;
   }
 
+  /** Refetch only the people this trip's expenses can be paid by and split
+   * between. The roster is managed in another section entirely (`TripPeople`),
+   * so a guest added there has to reach these pickers without a reload — and
+   * nothing else on this card changed, so the expenses and the balances are
+   * left alone. A method rather than a `revision` prop for exactly the reason
+   * `TripBudget.reload` is one: a prop bumped from a callback re-renders the
+   * page, which hands back a fresh callback, which bumps it again. */
+  export async function reloadParticipants() {
+    try {
+      participants = await expensesApi.participants(tripId);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function load() {
     loading = true;
     loadError = null;

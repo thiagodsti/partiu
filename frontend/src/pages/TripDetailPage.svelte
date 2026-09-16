@@ -252,6 +252,11 @@
    * expense was just added. */
   let expenseTotals = $state<Record<string, number> | undefined>(undefined);
   let budgetPanel = $state<{ reload: () => void } | null>(null);
+  // The roster section and the expense form are different cards on this page;
+  // the roster is what bounds the expense pickers, so a guest added there has
+  // to refresh them here. Null until mount, which is fine — the expense card
+  // fetches its own participants when it loads.
+  let expensesPanel = $state<{ reloadParticipants: () => void } | null>(null);
 
   /* The budget, reported by the panel below so the header does not fetch it a
    * second time. Shown as its own chip rather than folded into the expense
@@ -908,7 +913,10 @@
           <TripPeople
             {trip}
             {collaborators}
-            onchange={(list) => (tripGuestCount = list.length)}
+            onchange={(list) => {
+              tripGuestCount = list.length;
+              expensesPanel?.reloadParticipants();
+            }}
           />
         </div>
       </div>
@@ -1076,6 +1084,7 @@
         <p class="form-hint budget-hint">{$t(budgetIsShared ? 'budget.hint_shared' : 'budget.hint')}</p>
 
         <TripExpenses
+          bind:this={expensesPanel}
           tripId={params.id}
           {defaultCurrency}
           onchange={(totals) => {

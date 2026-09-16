@@ -133,6 +133,52 @@ class TestMe:
         assert auth_client.get("/api/auth/me").json()["demo"] is True
 
 
+class TestSignInCarriesTheServerConfig:
+    """Signing in does not remount the SPA, so what the login response omits
+    stays missing until the next full page load — which is how a demo's banner
+    came to appear only after a hard refresh, and the trip map spent a whole
+    session on OSM tiles because it never saw the CARTO key."""
+
+    def test_login_returns_the_me_fields(self, client, monkeypatch):
+        import backend.config as cfg_module
+
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        monkeypatch.setattr(cfg_module.settings, "ANNOUNCEMENT", "Back at 03:00")
+        monkeypatch.setattr(cfg_module.settings, "CARTO_API_KEY", "carto-key")
+
+        data = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "password123"}
+        ).json()
+        assert data["demo"] is True
+        assert data["announcement"] == "Back at 03:00"
+        assert data["carto_api_key"] == "carto-key"
+        assert data["username"] == "admin"
+
+    def test_2fa_verify_returns_them_too(self, auth_client, api_app, monkeypatch):
+        """That branch signs in just as completely as the password-only one."""
+        import pyotp
+
+        import backend.config as cfg_module
+
+        secret = auth_client.get("/api/auth/2fa/setup").json()["secret"]
+        auth_client.post("/api/auth/2fa/enable", json={"code": pyotp.TOTP(secret).now()})
+
+        monkeypatch.setattr(cfg_module.settings, "DEMO_MODE", True)
+        from fastapi.testclient import TestClient
+
+        with TestClient(api_app, base_url="https://testserver") as c:
+            assert (
+                c.post(
+                    "/api/auth/login", json={"username": "admin", "password": "password123"}
+                ).json()["requires_2fa"]
+                is True
+            )
+            data = c.post("/api/auth/2fa/verify", json={"code": pyotp.TOTP(secret).now()}).json()
+            assert data["demo"] is True
+            assert data["username"] == "admin"
+
+
 # ---------------------------------------------------------------------------
 # /api/auth/public-config
 # ---------------------------------------------------------------------------

@@ -28,6 +28,9 @@ export interface PublicConfig {
   demo_password: string;
 }
 
+/** Either the 2FA challenge, or the same shape `/api/auth/me` returns —
+ * server config included. Signing in does not remount the app, so anything
+ * missing here stays missing until the next full load. */
 export interface LoginResponse {
   requires_2fa?: boolean;
   id?: string;
@@ -37,6 +40,9 @@ export interface LoginResponse {
   totp_enabled?: boolean;
   locale?: string;
   accent?: string;
+  announcement?: string;
+  carto_api_key?: string;
+  demo?: boolean;
 }
 
 export interface UserListItem extends User {

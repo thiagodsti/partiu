@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from ..limiter import limiter
 from . import auth_service, twofa_service
 from .access import refuse_on_demo
+from .domain import UserSummary
 from .dto import (
     ChangePasswordRequestDTO,
     LoginRequestDTO,
@@ -61,6 +62,15 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def _me_dto(summary: UserSummary) -> MeResponseDTO:
+    """The full sign-in response: the user plus the server config the SPA needs."""
+    from ..config import settings
+
+    return user_summary_to_me_dto(
+        summary, settings.ANNOUNCEMENT, settings.CARTO_API_KEY, settings.DEMO_MODE
+    )
+
+
 @router.post("/setup", response_model=UserResponseDTO)
 @limiter.limit("5/minute")
 def setup(request: Request, body: SetupRequestDTO, response: Response):
@@ -98,10 +108,15 @@ def login(request: Request, body: LoginRequestDTO, response: Response):
 
     assert result.session_token is not None and result.user is not None
     _set_session_cookie(response, result.session_token)
-    return user_summary_to_dto(result.user)
+    # The me-shaped DTO, not the bare user: signing in does not remount the SPA,
+    # so whatever this response omits stays missing until the next full load.
+    # `announcement`, `carto_api_key` and `demo` all only existed on /auth/me,
+    # which is why a demo's banner appeared only after a hard refresh — and why
+    # the trip map fell back to OSM tiles for the rest of the session.
+    return _me_dto(result.user)
 
 
-@router.post("/2fa/verify", response_model=UserResponseDTO)
+@router.post("/2fa/verify", response_model=MeResponseDTO)
 @limiter.limit("10/minute")
 def verify_2fa(request: Request, body: TwoFAVerifyRequestDTO, response: Response):
     pending_token = request.cookies.get("pending_2fa")
@@ -113,7 +128,9 @@ def verify_2fa(request: Request, body: TwoFAVerifyRequestDTO, response: Response
 
     response.delete_cookie("pending_2fa", httponly=True, samesite="lax", secure=True)
     _set_session_cookie(response, session_token)
-    return user_summary_to_dto(summary)
+    # Same shape as the password-only path — this branch signs in just as
+    # completely, so it must hand back just as much.
+    return _me_dto(summary)
 
 
 @router.get("/2fa/setup", response_model=TwoFASetupResponseDTO)
@@ -163,11 +180,7 @@ def me(request: Request):
     except AuthError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
-    from ..config import settings
-
-    return user_summary_to_me_dto(
-        summary, settings.ANNOUNCEMENT, settings.CARTO_API_KEY, settings.DEMO_MODE
-    )
+    return _me_dto(summary)
 
 
 @router.get("/public-config", response_model=PublicConfigDTO)

@@ -62,6 +62,28 @@ describe('LoginPage', () => {
     await waitFor(() => expect(mockSetCurrentUser).toHaveBeenCalledWith(user));
   });
 
+  /* Signing in does not remount the app, so whatever the login response omits
+   * is missing until the next full load — that is how the demo banner came to
+   * need a hard refresh. The page must pass the response through whole. */
+  it('passes the server config on the login response into the user store', async () => {
+    const user = {
+      id: '1',
+      username: 'demo',
+      is_admin: false,
+      demo: true,
+      announcement: 'Back at 03:00',
+      carto_api_key: 'carto-key',
+    };
+    mockLogin.mockResolvedValue(user);
+    const { container } = render(LoginPage);
+
+    await fireEvent.input(container.querySelector('#login-username')!, { target: { value: 'demo' } });
+    await fireEvent.input(container.querySelector('#login-password')!, { target: { value: 'demo1234' } });
+    await fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() => expect(mockSetCurrentUser).toHaveBeenCalledWith(user));
+  });
+
   it('shows error message on failed login', async () => {
     mockLogin.mockRejectedValue(new Error('Invalid credentials'));
     const { container } = render(LoginPage);
