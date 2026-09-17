@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import TripPeople from './TripPeople.svelte';
 
@@ -42,11 +42,22 @@ vi.mock('../lib/authStore', () => ({
 
 const TRIP = { id: 'trip-1', name: 'Sardinia' } as never;
 
+let confirmed: ReturnType<typeof vi.fn>;
+
 describe('TripPeople', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListForTrip.mockResolvedValue([]);
     mockList.mockResolvedValue([]);
+    // Removing a guest asks first; the default answer here is yes, so the tests
+    // that are about what removal *does* are not also about the dialog.
+    // `stubGlobal`, not `spyOn`: happy-dom has no `window.confirm` to spy on.
+    confirmed = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmed);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('always lists the owner, so a solo trip is not an empty card', async () => {
@@ -66,22 +77,44 @@ describe('TripPeople', () => {
     render(TripPeople, { props: { trip: TRIP } });
 
     await waitFor(() => expect(screen.getByText('Jimmy')).toBeTruthy());
-    expect(screen.getByText('+ Lucas')).toBeTruthy();
+    // Lucas is a suggestion, which the box only shows once it has focus.
+    await fireEvent.focus(screen.getByPlaceholderText('trip_people.add_placeholder'));
+    await waitFor(() => expect(screen.getByText('Lucas')).toBeTruthy());
   });
 
-  it('adds someone from the address book to this trip', async () => {
+  it('suggests someone you have travelled with as you type, accent-blind', async () => {
+    mockList.mockResolvedValue([
+      { id: 2, name: 'João', owner_id: 1, created_at: '' },
+      { id: 3, name: 'Lucas', owner_id: 1, created_at: '' },
+    ]);
+
+    render(TripPeople, { props: { trip: TRIP } });
+    await waitFor(() => expect(screen.getByText('thiago')).toBeTruthy());
+
+    const input = screen.getByPlaceholderText('trip_people.add_placeholder');
+    await fireEvent.input(input, { target: { value: 'joa' } });
+
+    await waitFor(() => expect(screen.getByText('João')).toBeTruthy());
+    expect(screen.queryByText('Lucas')).toBeNull();
+  });
+
+  it('adds the picked suggestion rather than creating a second guest', async () => {
     mockList.mockResolvedValue([{ id: 2, name: 'Lucas', owner_id: 1, created_at: '' }]);
     mockAddToTrip.mockResolvedValue({ id: 2, name: 'Lucas' });
 
     render(TripPeople, { props: { trip: TRIP } });
-    await waitFor(() => expect(screen.getByText('+ Lucas')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('thiago')).toBeTruthy());
 
-    await fireEvent.click(screen.getByText('+ Lucas'));
+    await fireEvent.focus(screen.getByPlaceholderText('trip_people.add_placeholder'));
+    await waitFor(() => expect(screen.getByText('Lucas')).toBeTruthy());
+    await fireEvent.mouseDown(screen.getByText('Lucas'));
+
     expect(mockAddToTrip).toHaveBeenCalledWith('trip-1', 2);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('creates a brand-new guest and puts them on the trip in one go', async () => {
-    mockCreate.mockResolvedValue({ id: 7, ok: true });
+    mockCreate.mockResolvedValue({ id: 7, ok: true, created: true, name: 'Vivian' });
     mockAddToTrip.mockResolvedValue({ id: 7, name: 'Vivian' });
 
     render(TripPeople, { props: { trip: TRIP } });
@@ -95,6 +128,22 @@ describe('TripPeople', () => {
     expect(mockAddToTrip).toHaveBeenCalledWith('trip-1', 7);
   });
 
+  it('refuses to add a name already on the trip, whatever its case', async () => {
+    // Adding an existing member is a no-op server-side, so without this the
+    // form would look like it did nothing at all.
+    mockListForTrip.mockResolvedValue([{ id: 1, name: 'Jimmy', owner_id: 1, created_at: '' }]);
+
+    render(TripPeople, { props: { trip: TRIP } });
+    await waitFor(() => expect(screen.getByText('Jimmy')).toBeTruthy());
+
+    const input = screen.getByPlaceholderText('trip_people.add_placeholder');
+    await fireEvent.input(input, { target: { value: 'JIMMY' } });
+
+    await waitFor(() => expect(screen.getByText('trip_people.already_on_trip')).toBeTruthy());
+    await fireEvent.click(screen.getByText('trip_people.add'));
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it('explains a refused removal instead of showing the raw error', async () => {
     // The backend answers 409 when an expense on the trip still names them.
     mockListForTrip.mockResolvedValue([{ id: 1, name: 'Jimmy', owner_id: 1, created_at: '' }]);
@@ -105,6 +154,21 @@ describe('TripPeople', () => {
 
     await fireEvent.click(screen.getByLabelText('trip_people.remove'));
     await waitFor(() => expect(screen.getByText('trip_people.remove_blocked')).toBeTruthy());
+  });
+
+  it('asks before taking someone off the trip, and does nothing if you say no', async () => {
+    mockListForTrip.mockResolvedValue([{ id: 1, name: 'Jimmy', owner_id: 1, created_at: '' }]);
+    confirmed.mockReturnValue(false);
+    render(TripPeople, { props: { trip: TRIP } });
+    await waitFor(() => expect(screen.getByText('Jimmy')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('trip_people.remove'));
+    expect(confirmed).toHaveBeenCalled();
+    expect(mockRemoveFromTrip).not.toHaveBeenCalled();
+
+    confirmed.mockReturnValue(true);
+    await fireEvent.click(screen.getByLabelText('trip_people.remove'));
+    expect(mockRemoveFromTrip).toHaveBeenCalledWith('trip-1', 1);
   });
 
   it('renders the trip even when the address book fails to load', async () => {

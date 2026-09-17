@@ -43,6 +43,18 @@ class TestShareTrip:
         assert r.status_code == 404
         assert third is not None
 
+    def test_inviting_by_a_differently_cased_username_finds_the_account(self, auth_client, api_app):
+        """Usernames are stored lowercased, and this path handed the typed
+        spelling straight to the lookup — so inviting "User2" reported that no
+        such account existed. Normalising inside `find_by_username` covers this
+        caller and the trusted-user one below without either having to remember."""
+        other = _make_second_user_client(api_app, auth_client)
+        trip_id = _make_trip(auth_client)
+
+        r = auth_client.post(f"/api/trips/{trip_id}/share", json={"username": "User2"})
+        assert r.status_code == 201, r.text
+        assert [i["trip_id"] for i in other.get("/api/trips/invitations").json()] == [trip_id]
+
     def test_share_trip_invitee_not_found_returns_404(self, auth_client):
         trip_id = _make_trip(auth_client)
         r = auth_client.post(f"/api/trips/{trip_id}/share", json={"username": "nonexistent"})
@@ -187,6 +199,14 @@ class TestTrustedUsers:
         r = auth_client.post("/api/settings/trusted-users", json={"username": "user2"})
         assert r.status_code == 201
 
+        [trusted] = auth_client.get("/api/settings/trusted-users").json()
+        assert trusted["username"] == "user2"
+
+    def test_trusting_by_a_differently_cased_username_finds_the_account(self, auth_client, api_app):
+        _make_second_user_client(api_app, auth_client)
+
+        r = auth_client.post("/api/settings/trusted-users", json={"username": "USER2"})
+        assert r.status_code == 201
         [trusted] = auth_client.get("/api/settings/trusted-users").json()
         assert trusted["username"] == "user2"
 

@@ -20,6 +20,15 @@ class UpdateGuestDTO(BaseModel):
 class CreateGuestResponseDTO(BaseModel):
     id: int
     ok: bool
+    created: bool = True
+    """False when the name already named one of your guests and that one was
+    handed back instead. The form needs to know: a list that appends the
+    returned id unconditionally ends up with the same row twice."""
+
+    name: str = ""
+    """The stored spelling, which on a reuse is the *existing* guest's — typing
+    "jimmy" gets you "Jimmy", and the list must show the name the rest of the
+    app calls them."""
 
 
 class AddTripGuestDTO(BaseModel):

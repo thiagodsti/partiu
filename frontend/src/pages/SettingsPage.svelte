@@ -692,8 +692,14 @@
   let newGuestName = $state('');
   let addingGuest = $state(false);
   let guestError = $state('');
+  let guestNote = $state('');
   let editingGuestId = $state<number | null>(null);
   let editingGuestName = $state('');
+  /* The guest a delete was refused for because they are on trips, held so the
+   * "Delete anyway" button knows who it is confirming. Null the moment anything
+   * else happens — a confirmation left standing after the question scrolled
+   * away is a button that deletes somebody you are no longer looking at. */
+  let guestPendingDelete = $state<number | null>(null);
 
   async function loadGuests() {
     guestsLoading = true;
@@ -710,9 +716,19 @@
     if (!newGuestName.trim()) return;
     addingGuest = true;
     guestError = '';
+    guestNote = '';
+    guestPendingDelete = null;
     try {
-      const { id } = await guestsApi.create(newGuestName.trim());
-      guests = [...guests, { id, name: newGuestName.trim(), created_at: new Date().toISOString() }].sort((a, b) => a.name.localeCompare(b.name));
+      const created = await guestsApi.create(newGuestName.trim());
+      if (created.created) {
+        guests = [...guests, { id: created.id, name: created.name, created_at: new Date().toISOString() }].sort((a, b) => a.name.localeCompare(b.name));
+      } else {
+        // The name already named one of your guests, so the server handed that
+        // one back. Appending it would put the same person in the list twice —
+        // and a repeated key is a hard error in Svelte, which took the page
+        // down rather than showing a duplicate row.
+        guestNote = $t('settings.guest_already_exists', { values: { name: created.name } });
+      }
       newGuestName = '';
     } catch (err) {
       guestError = (err as Error).message;
@@ -725,6 +741,8 @@
     editingGuestId = guest.id;
     editingGuestName = guest.name;
     guestError = '';
+    guestNote = '';
+    guestPendingDelete = null;
   }
 
   function cancelEditGuest() {
@@ -741,19 +759,36 @@
       editingGuestId = null;
       editingGuestName = '';
     } catch (err) {
-      guestError = (err as Error).message;
+      if (err instanceof ApiError && err.code === 'guest_name_taken' && err.params) {
+        // Refused rather than merged: two guests becoming one would have to move
+        // every expense naming either of them, which nobody asked for.
+        guestError = $t('settings.guest_name_taken_error', { values: err.params });
+      } else {
+        guestError = (err as Error).message;
+      }
     }
   }
 
-  async function deleteGuest(guestId: number) {
+  async function deleteGuest(guestId: number, force = false) {
     guestError = '';
+    guestNote = '';
     try {
-      await guestsApi.delete(guestId);
+      await guestsApi.delete(guestId, force);
       guests = guests.filter((g) => g.id !== guestId);
+      guestPendingDelete = null;
     } catch (err) {
       if (err instanceof ApiError && err.code === 'guest_in_use' && err.params) {
+        // Unconditional: an expense's reference cannot be left dangling, so
+        // there is nothing to confirm here.
+        guestPendingDelete = null;
         guestError = $t('settings.guest_in_use_error', { values: err.params });
+      } else if (err instanceof ApiError && err.code === 'guest_on_trips' && err.params) {
+        // Allowed, but not silently — deleting the address-book entry cascades
+        // their roster rows away, taking them off trips this page never shows.
+        guestPendingDelete = guestId;
+        guestError = $t('settings.guest_on_trips_error', { values: err.params });
       } else {
+        guestPendingDelete = null;
         guestError = (err as Error).message;
       }
     }
@@ -1765,6 +1800,14 @@
       </div>
       {#if guestError}
         <p style="color:var(--error,red);font-size:0.85rem;margin:0 0 var(--space-xs)">{guestError}</p>
+        {#if guestPendingDelete !== null}
+          <button class="btn btn-danger btn-sm" style="margin:0 0 var(--space-sm)" onclick={() => deleteGuest(guestPendingDelete!, true)}>
+            {$t('settings.guest_delete_anyway')}
+          </button>
+        {/if}
+      {/if}
+      {#if guestNote}
+        <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 var(--space-xs)">{guestNote}</p>
       {/if}
       {#if guestsLoading}
         <p style="color:var(--text-muted);font-size:0.85rem">{$t('settings.guests_loading')}</p>

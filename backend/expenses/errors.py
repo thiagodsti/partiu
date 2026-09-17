@@ -32,3 +32,31 @@ class GuestOnTripError(Exception):
     def __init__(self, guest_name: str):
         self.guest_name = guest_name
         super().__init__(f"Guest {guest_name} is named by an expense on this trip")
+
+
+class GuestNameTakenError(Exception):
+    """Raised when a name would collide with another guest of the same owner.
+
+    Folded, so "Jimmy" and "jimmy" are the same person — see
+    `GuestRepository.find_by_name`.
+    """
+
+    def __init__(self, guest_name: str):
+        self.guest_name = guest_name
+        super().__init__(f"You already have a guest named {guest_name}")
+
+
+class GuestOnTripsError(Exception):
+    """Raised when deleting a guest who is still on one or more trips.
+
+    Deleting the address-book entry cascades their roster rows away, so the
+    guest disappears from trips the caller was not looking at. That is a
+    legitimate thing to want and a terrible thing to do silently, so the trips
+    are named and the caller has to ask again with `force=True`.
+    """
+
+    def __init__(self, guest_name: str, trip_names: list[str]):
+        self.guest_name = guest_name
+        self.trip_names = trip_names
+        joined = ", ".join(trip_names)
+        super().__init__(f"Guest {guest_name} is on {len(trip_names)} trip(s): {joined}")

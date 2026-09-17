@@ -40,13 +40,41 @@
   let actionError = $state<string | null>(null);
   let newName = $state('');
   let adding = $state(false);
+  let open = $state(false);
+  let highlighted = $state(-1);
 
   const onTrip = $derived(new Set(guests.map((g) => g.id)));
 
-  /** Your address book minus whoever is already on this trip — the "add someone
-   * you have travelled with before" list. Empty is the normal case on a first
-   * trip and simply renders nothing. */
+  /* Accent-folded, mirroring `fold_text` on the backend and `PeoplePicker`'s
+   * own search: the names here are typed by hand in a pt-BR app, so "joao" has
+   * to find "João". The backend dedupes on the same folding, which is what
+   * makes what this box offers and what the server does agree. */
+  const fold = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  /** Your address book minus whoever is already on this trip — the "someone you
+   * have travelled with before" list. Shown as a type-ahead rather than a row
+   * of chips: an address book grows and a chip row costs the form its full
+   * height on every trip to serve the crowded one. */
   const available = $derived(myGuests.filter((g) => !onTrip.has(g.id)));
+
+  const suggestions = $derived.by(() => {
+    const needle = fold(newName.trim());
+    return available.filter((g) => !needle || fold(g.name).includes(needle));
+  });
+
+  /** The typed name is already on this trip. Checked against the roster rather
+   * than left to the server: adding an existing member is a harmless no-op
+   * there, so without this the form would look like it did nothing. It also
+   * catches a namesake owned by a *collaborator*, whom the address book above
+   * cannot see. */
+  const alreadyOnTrip = $derived.by(() => {
+    const needle = fold(newName.trim());
+    return needle ? (guests.find((g) => fold(g.name) === needle) ?? null) : null;
+  });
 
   const accepted = $derived(collaborators.filter((c) => c.status === 'accepted'));
   const pending = $derived(collaborators.filter((c) => c.status === 'pending'));
@@ -81,6 +109,9 @@
     busyId = guestId;
     try {
       await guestsApi.addToTrip(trip.id, guestId);
+      newName = '';
+      open = false;
+      highlighted = -1;
       await load();
     } catch (err) {
       actionError = (err as Error).message;
@@ -91,13 +122,18 @@
 
   async function createAndAdd() {
     const name = newName.trim();
-    if (!name || adding) return;
+    if (!name || adding || alreadyOnTrip) return;
     actionError = null;
     adding = true;
     try {
+      // The server reuses an existing guest of the same folded name rather than
+      // creating a second one, so typing a name you have used before means that
+      // person — no duplicate, whether or not the suggestion was picked.
       const { id } = await guestsApi.create(name);
       await guestsApi.addToTrip(trip.id, id);
       newName = '';
+      open = false;
+      highlighted = -1;
       await load();
     } catch (err) {
       actionError = (err as Error).message;
@@ -106,7 +142,33 @@
     }
   }
 
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      open = true;
+      if (suggestions.length > 0) highlighted = (highlighted + 1) % suggestions.length;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (suggestions.length > 0) {
+        highlighted = highlighted <= 0 ? suggestions.length - 1 : highlighted - 1;
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // A highlighted row wins; otherwise Enter submits what was typed, which
+      // is how a name nobody has travelled with yet gets added.
+      if (highlighted >= 0 && suggestions[highlighted]) add(suggestions[highlighted].id);
+      else createAndAdd();
+    } else if (e.key === 'Escape') {
+      open = false;
+      highlighted = -1;
+    }
+  }
+
   async function remove(guest: Guest) {
+    // Asked rather than done: the row disappears from the expense pickers with
+    // it, and × on a list is an easy button to hit by accident. The guest stays
+    // in the address book, which is what the message says.
+    if (!confirm($t('trip_people.remove_confirm', { values: { name: guest.name } }))) return;
     actionError = null;
     busyId = guest.id;
     try {
@@ -170,22 +232,6 @@
       <p class="people-error">{actionError}</p>
     {/if}
 
-    {#if available.length > 0}
-      <div class="people-available">
-        <span class="people-available-label">{$t('trip_people.add_existing')}</span>
-        {#each available as guest (guest.id)}
-          <button
-            type="button"
-            class="people-chip"
-            disabled={busyId === guest.id}
-            onclick={() => add(guest.id)}
-          >
-            + {guest.name}
-          </button>
-        {/each}
-      </div>
-    {/if}
-
     <form
       class="people-add"
       onsubmit={(e) => {
@@ -193,16 +239,68 @@
         createAndAdd();
       }}
     >
-      <input
-        class="form-input"
-        bind:value={newName}
-        placeholder={$t('trip_people.add_placeholder')}
-        aria-label={$t('trip_people.add_placeholder')}
-      />
-      <button type="submit" class="btn btn-secondary" disabled={adding || !newName.trim()}>
+      <div class="people-combo">
+        <input
+          class="form-input"
+          type="text"
+          autocomplete="off"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="trip-people-suggestions"
+          bind:value={newName}
+          placeholder={$t('trip_people.add_placeholder')}
+          aria-label={$t('trip_people.add_placeholder')}
+          oninput={() => {
+            open = true;
+            highlighted = -1;
+          }}
+          onkeydown={onKeydown}
+          onfocus={() => (open = true)}
+          onblur={() => setTimeout(() => (open = false), 150)}
+        />
+
+        <!-- Opens on focus with the whole book, not only on a match: a box that
+             only answers what you already know hides the fact that there is
+             anything to pick. Same rule as `PlaceInput` and `PeoplePicker`. -->
+        {#if open && suggestions.length > 0}
+          <ul class="people-suggestions" id="trip-people-suggestions">
+            {#each suggestions as guest, i (guest.id)}
+              <li>
+                <button
+                  type="button"
+                  class="people-suggestion"
+                  class:highlighted={i === highlighted}
+                  disabled={busyId === guest.id}
+                  onmousedown={(e) => {
+                    e.preventDefault();
+                    add(guest.id);
+                  }}
+                  onmouseenter={() => (highlighted = i)}
+                >
+                  {guest.name}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <button
+        type="submit"
+        class="btn btn-secondary"
+        disabled={adding || !newName.trim() || !!alreadyOnTrip}
+      >
         {adding ? '…' : $t('trip_people.add')}
       </button>
     </form>
+
+    <!-- Says why the button is disabled. A name already on the roster is not an
+         error and not a second person, so it reads as a statement. -->
+    {#if alreadyOnTrip}
+      <p class="people-note">
+        {$t('trip_people.already_on_trip', { values: { name: alreadyOnTrip.name } })}
+      </p>
+    {/if}
+
     <p class="section-note">{$t('trip_people.hint')}</p>
   {/if}
 </div>
@@ -252,37 +350,57 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .people-available {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-xs);
-    margin-bottom: var(--space-md);
-  }
-  .people-available-label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-  .people-chip {
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 2px var(--space-sm);
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85rem;
-  }
-  .people-chip:hover:not(:disabled) {
-    border-color: var(--border-strong);
-  }
   .people-add {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-sm);
   }
-  .people-add .form-input {
+  /* The combo, not the input, is what the row flexes — the suggestion list is
+     absolutely positioned against it, so it has to be the positioned box. */
+  .people-combo {
+    position: relative;
     flex: 1 1 180px;
+    min-width: 0;
+  }
+  .people-combo .form-input {
+    width: 100%;
+  }
+  /* An overlay: a growing address book then costs the form no height at all. */
+  .people-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    max-height: 14rem;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow, 0 4px 12px rgb(0 0 0 / 0.15));
+  }
+  .people-suggestion {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: var(--space-xs) var(--space-sm);
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .people-suggestion.highlighted,
+  .people-suggestion:hover:not(:disabled) {
+    background: var(--bg-subtle);
+  }
+  .people-note {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin: var(--space-xs) 0 0;
   }
   .people-empty,
   .people-error {

@@ -164,3 +164,52 @@ class TestTripGuestRoster:
 
     def test_unauthenticated(self, client):
         assert client.get("/api/trips/whatever/guests").status_code == 401
+
+
+class TestCreatingTheSameNameTwice:
+    def test_returns_the_existing_guest_rather_than_a_duplicate(self, auth_client):
+        first = auth_client.post("/api/guests", json={"name": "Jimmy"}).json()
+        again = auth_client.post("/api/guests", json={"name": "jimmy"})
+
+        assert again.status_code == 201
+        body = again.json()
+        assert body["id"] == first["id"]
+        # Reuse is not an error — the caller asked for "a guest called Jimmy"
+        # and got exactly that — so the flag, not the status code, says which
+        # happened. A form that appends on every 201 needs this to not show the
+        # same person twice.
+        assert body["created"] is False
+        assert body["name"] == "Jimmy"
+        assert len(auth_client.get("/api/guests").json()) == 1
+
+    def test_renaming_onto_an_existing_name_returns_409(self, auth_client):
+        auth_client.post("/api/guests", json={"name": "Jimmy"})
+        lucas = auth_client.post("/api/guests", json={"name": "Lucas"}).json()["id"]
+
+        r = auth_client.patch(f"/api/guests/{lucas}", json={"name": "JIMMY"})
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "guest_name_taken"
+
+
+class TestDeletingAGuestOnATrip:
+    def test_returns_409_naming_the_trips_and_deletes_nothing(self, auth_client):
+        guest_id = auth_client.post("/api/guests", json={"name": "Jimmy"}).json()["id"]
+        trip_id = auth_client.post("/api/trips", json={"name": "Lisbon"}).json()["id"]
+        auth_client.post(f"/api/trips/{trip_id}/guests", json={"guest_id": guest_id})
+
+        r = auth_client.delete(f"/api/guests/{guest_id}")
+        assert r.status_code == 409
+        detail = r.json()["detail"]
+        assert detail["error"] == "guest_on_trips"
+        assert detail["params"]["trips"] == "Lisbon"
+        assert len(auth_client.get("/api/guests").json()) == 1
+
+    def test_force_deletes_and_clears_the_roster(self, auth_client):
+        guest_id = auth_client.post("/api/guests", json={"name": "Jimmy"}).json()["id"]
+        trip_id = auth_client.post("/api/trips", json={"name": "Lisbon"}).json()["id"]
+        auth_client.post(f"/api/trips/{trip_id}/guests", json={"guest_id": guest_id})
+
+        r = auth_client.delete(f"/api/guests/{guest_id}?force=true")
+        assert r.status_code == 204
+        assert auth_client.get("/api/guests").json() == []
+        assert auth_client.get(f"/api/trips/{trip_id}/guests").json() == []

@@ -3,6 +3,7 @@
 import sqlite3
 
 from ..database import db_conn, db_write
+from ..utils.text import normalize_username
 from .domain import User
 from .mappers import row_to_user
 
@@ -30,11 +31,15 @@ class UserRepository:
         return row is not None
 
     def find_by_username(self, username: str) -> User | None:
+        """Look a user up by name, case-insensitively — and normalise here rather
+        than at each caller, so that inviting "Thiago" to a trip finds the same
+        account that signing in as "thiago" does. Every caller was a place the
+        normalisation could be forgotten, and the trip-sharing ones had been."""
         with db_conn() as conn:
             row = conn.execute(
                 "SELECT id, username, is_admin, smtp_recipient_address, totp_enabled, created_at "
-                "FROM users WHERE username = ?",
-                (username,),
+                "FROM users WHERE LOWER(username) = ?",
+                (normalize_username(username),),
             ).fetchone()
         return row_to_user(row) if row else None
 

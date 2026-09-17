@@ -207,7 +207,7 @@ describe('SettingsPage', () => {
     });
 
     it('adds a guest and shows it in the list', async () => {
-      mockGuestsCreate.mockResolvedValue({ id: 2, ok: true });
+      mockGuestsCreate.mockResolvedValue({ id: 2, ok: true, created: true, name: 'Grandpa' });
       const { container, getByPlaceholderText, getByText } = render(SettingsPage);
       await waitFor(() => expect(container.textContent).toContain('settings.no_guests_yet'));
 
@@ -242,7 +242,44 @@ describe('SettingsPage', () => {
 
       await fireEvent.click(getByText('settings.delete_guest'));
 
-      await waitFor(() => expect(mockGuestsDelete).toHaveBeenCalledWith(1));
+      await waitFor(() => expect(mockGuestsDelete).toHaveBeenCalledWith(1, false));
+      await waitFor(() => expect(container.textContent).not.toContain('Grandma'));
+    });
+
+    it('reuses the existing guest instead of listing the same person twice', async () => {
+      // The server dedupes on a folded name, so this 201 is a *reuse*. Appending
+      // it anyway would repeat the row — and a duplicate key is a hard error in
+      // Svelte, which takes the page down rather than showing two rows.
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsCreate.mockResolvedValue({ id: 1, ok: true, created: false, name: 'Grandma' });
+      const { container, getByPlaceholderText, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      const input = getByPlaceholderText('settings.guest_name_placeholder') as HTMLInputElement;
+      await fireEvent.input(input, { target: { value: 'grandma' } });
+      await fireEvent.click(getByText('settings.add_guest'));
+
+      await waitFor(() => expect(container.textContent).toContain('settings.guest_already_exists'));
+      expect(container.textContent?.match(/Grandma/g)?.length).toBe(1);
+    });
+
+    it('names the trips a guest is on before deleting them, then deletes on confirmation', async () => {
+      // Deleting the address-book entry cascades their roster rows away, taking
+      // them off trips this page never shows. Allowed — but not silently.
+      mockGuestsList.mockResolvedValue([{ id: 1, name: 'Grandma', created_at: '2026-01-01T00:00:00Z' }]);
+      mockGuestsDelete.mockRejectedValueOnce(
+        new MockApiError('on trips', 'guest_on_trips', { name: 'Grandma', count: 1, trips: 'Lisbon' })
+      );
+      const { container, getByText } = render(SettingsPage);
+      await waitFor(() => expect(container.textContent).toContain('Grandma'));
+
+      await fireEvent.click(getByText('settings.delete_guest'));
+      await waitFor(() => expect(container.textContent).toContain('settings.guest_on_trips_error'));
+      expect(container.textContent).toContain('Grandma');
+
+      mockGuestsDelete.mockResolvedValue(null);
+      await fireEvent.click(getByText('settings.guest_delete_anyway'));
+      await waitFor(() => expect(mockGuestsDelete).toHaveBeenCalledWith(1, true));
       await waitFor(() => expect(container.textContent).not.toContain('Grandma'));
     });
 

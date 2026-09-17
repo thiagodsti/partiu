@@ -4,7 +4,9 @@ Guests API routes (a per-user address book of non-account trip participants).
   GET    /api/guests             — list guests owned by the current user
   POST   /api/guests             — create a guest
   PATCH  /api/guests/{guest_id}  — rename a guest
-  DELETE /api/guests/{guest_id}  — delete a guest (must be unused in any expense)
+  DELETE /api/guests/{guest_id}  — delete a guest (must be unused in any expense;
+                                   `?force=true` to accept removing them from
+                                   the trips they are on)
 
   GET    /api/trips/{trip_id}/guests             — the guests on one trip
   POST   /api/trips/{trip_id}/guests             — put one of your guests on it
@@ -19,7 +21,14 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user
 from . import guest_service
-from .errors import GuestInUseError, GuestNotFoundError, GuestOnTripError, TripAccessError
+from .errors import (
+    GuestInUseError,
+    GuestNameTakenError,
+    GuestNotFoundError,
+    GuestOnTripError,
+    GuestOnTripsError,
+    TripAccessError,
+)
 from .guests_dto import (
     AddTripGuestDTO,
     CreateGuestDTO,
@@ -39,11 +48,17 @@ def list_guests(user: dict = Depends(get_current_user)):
 
 @router.post("/api/guests", status_code=201, response_model=CreateGuestResponseDTO)
 def create_guest(body: CreateGuestDTO, user: dict = Depends(get_current_user)):
+    """Create a guest, or return the one that name already names.
+
+    Reuse is not an error, so this stays a 201 with `created: false` rather than
+    a 409 the form would have to recover from — the caller asked for "a guest
+    called X" and gets exactly that.
+    """
     try:
-        guest_id = guest_service.create(user["id"], body.name)
+        guest, created = guest_service.create(user["id"], body.name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return CreateGuestResponseDTO(id=guest_id, ok=True)
+    return CreateGuestResponseDTO(id=guest.id, ok=True, created=created, name=guest.name)
 
 
 @router.patch("/api/guests/{guest_id}", response_model=GuestDTO)
@@ -54,15 +69,43 @@ def update_guest(guest_id: int, body: UpdateGuestDTO, user: dict = Depends(get_c
         raise HTTPException(status_code=400, detail=str(e))
     except GuestNotFoundError:
         raise HTTPException(status_code=404, detail="Guest not found")
+    except GuestNameTakenError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(e),
+                "error": "guest_name_taken",
+                "params": {"name": e.guest_name},
+            },
+        )
     return guest_to_dto(guest)
 
 
 @router.delete("/api/guests/{guest_id}", status_code=204)
-def delete_guest(guest_id: int, user: dict = Depends(get_current_user)):
+def delete_guest(guest_id: int, force: bool = False, user: dict = Depends(get_current_user)):
+    """Delete a guest. `?force=true` accepts taking them off the trips they are on.
+
+    Without it, a guest on a roster comes back as 409 `guest_on_trips` naming
+    those trips — the delete cascades them off, which is fine to do and not fine
+    to do silently.
+    """
     try:
-        guest_service.delete(guest_id, user["id"])
+        guest_service.delete(guest_id, user["id"], force=force)
     except GuestNotFoundError:
         raise HTTPException(status_code=404, detail="Guest not found")
+    except GuestOnTripsError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(e),
+                "error": "guest_on_trips",
+                "params": {
+                    "name": e.guest_name,
+                    "count": len(e.trip_names),
+                    "trips": ", ".join(e.trip_names),
+                },
+            },
+        )
     except GuestInUseError as e:
         raise HTTPException(
             status_code=400,

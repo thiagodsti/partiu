@@ -58,6 +58,19 @@ class TestCreateUser:
         with pytest.raises(ValidationError):
             service.create_user(admin_id, "alice", "password456", False, None)
 
+    def test_a_differently_cased_duplicate_is_rejected(self, test_db):
+        """Usernames are one account however they are capitalised, so "Alice"
+        must not become a second row beside "alice" — a case-insensitive lookup
+        would then have two answers to choose between. The UNIQUE constraint
+        cannot catch this: it compares bytes."""
+        from backend.users.service import UserService, ValidationError
+
+        service = UserService()
+        admin_id = _seed_user(test_db)
+        service.create_user(admin_id, "alice", "password123", False, None)
+        with pytest.raises(ValidationError):
+            service.create_user(admin_id, "ALICE", "password456", False, None)
+
     def test_returns_created_user(self, test_db):
         from backend.users.service import UserService
 

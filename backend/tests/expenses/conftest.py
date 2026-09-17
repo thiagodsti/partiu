@@ -22,13 +22,13 @@ def _seed_user(db_path: str) -> int:
     return user_id
 
 
-def _seed_trip(db_path: str, user_id: int) -> str:
+def _seed_trip(db_path: str, user_id: int, name: str = "Test Trip") -> str:
     trip_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO trips (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (trip_id, user_id, "Test Trip", now, now),
+        (trip_id, user_id, name, now, now),
     )
     conn.commit()
     conn.close()

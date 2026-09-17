@@ -6,6 +6,7 @@ and is handled by the service layer — this repository only knows how to read/w
 
 from ..database import db_conn, db_write
 from ..utils import now_iso
+from ..utils.text import fold_text
 from .domain import Guest
 
 
@@ -78,6 +79,42 @@ class GuestRepository:
             ).fetchone()
         return row is not None
 
+    def trips_for_guest(self, guest_id: int) -> list[str]:
+        """The names of the trips this guest is on the roster of.
+
+        Read before deleting the guest: `trip_guests.guest_id` cascades, so the
+        delete quietly takes them off every trip, and the caller deserves to be
+        told which ones before that happens.
+        """
+        with db_conn() as conn:
+            rows = conn.execute(
+                """SELECT COALESCE(NULLIF(t.name, ''), t.id) AS name
+                   FROM trip_guests tg
+                   JOIN trips t ON t.id = tg.trip_id
+                   WHERE tg.guest_id = ?
+                   ORDER BY t.start_date DESC, name ASC""",
+                (guest_id,),
+            ).fetchall()
+        return [r["name"] for r in rows]
+
+    def find_by_name(self, owner_id: int, name: str, exclude_id: int | None = None) -> Guest | None:
+        """One of the owner's guests whose name folds to the same thing, if any.
+
+        Folded rather than compared byte for byte, and folded in Python rather
+        than in SQL: SQLite's own `LOWER`/`NOCASE` are ASCII-only, so they would
+        call "JOÃO" and "joão" different people in a pt-BR app. `fold_text` is
+        the same normalisation `PeoplePicker` searches with on the frontend, so
+        a name the picker offers as a match is the name this refuses to
+        duplicate. An address book is small enough to fold in memory.
+        """
+        needle = fold_text(name.strip())
+        if not needle:
+            return None
+        for guest in self.list_for_owner(owner_id):
+            if guest.id != exclude_id and fold_text(guest.name) == needle:
+                return guest
+        return None
+
     def get(self, guest_id: int) -> Guest | None:
         with db_conn() as conn:
             row = conn.execute(
@@ -101,6 +138,25 @@ class GuestRepository:
                 "UPDATE guests SET name = ? WHERE id = ? AND owner_id = ?",
                 (name, guest_id, owner_id),
             )
+
+    def count_expense_references(self, guest_id: int) -> int:
+        """How many expenses name this guest, as payer or participant.
+
+        A read-only twin of the count inside `delete_if_unused`, so the service
+        can decide *which* objection to report first without deleting anything.
+        The atomic check in `delete_if_unused` is still the one that guards the
+        delete — this one only orders the messages.
+        """
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT COUNT(DISTINCT id) FROM (
+                       SELECT expense_id AS id FROM trip_expense_participants WHERE guest_id = ?
+                       UNION
+                       SELECT id FROM trip_expenses WHERE paid_by_guest_id = ?
+                   )""",
+                (guest_id, guest_id),
+            ).fetchone()
+        return row[0]
 
     def delete_if_unused(self, guest_id: int, owner_id: int) -> int:
         """Delete the guest unless it's referenced by an expense, atomically — the

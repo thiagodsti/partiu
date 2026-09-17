@@ -1,5 +1,6 @@
 """Use cases for admin user management: validation + audit logging."""
 
+from ..utils.text import normalize_username
 from .domain import CreatedUser, User
 from .errors import SelfDeleteError, UserNotFoundError, ValidationError
 from .repository import UserRepository
@@ -23,11 +24,17 @@ class UserService:
         from ..auth import hash_password
         from ..auth.audit_log import audit
 
-        normalized = username.strip().lower()
+        normalized = normalize_username(username)
         if len(normalized) < 4:
             raise ValidationError("Username must be at least 4 characters")
         if len(password) < 8:
             raise ValidationError("Password must be at least 8 characters")
+        # Checked here rather than left to the UNIQUE constraint, which is
+        # case-sensitive: on an install carrying a pre-normalisation "Thiago",
+        # inserting "thiago" would succeed and leave two rows one
+        # case-insensitive lookup then has to choose between.
+        if self._repository.find_by_username(normalized) is not None:
+            raise ValidationError("Username already taken")
 
         try:
             user_id = self._repository.create_user(

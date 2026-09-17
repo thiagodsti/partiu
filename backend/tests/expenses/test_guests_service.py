@@ -53,7 +53,7 @@ class TestListForTrip:
         trip_id = _seed_trip(test_db, owner_id)
 
         service.create(owner_id, "Own unused guest")
-        on_trip = service.create(owner_id, "Jimmy")
+        on_trip = service.create(owner_id, "Jimmy")[0].id
         GuestRepository().add_to_trip(trip_id, on_trip)
 
         assert {g.id for g in service.list_for_trip(trip_id, owner_id)} == {on_trip}
@@ -71,7 +71,7 @@ class TestTripRoster:
         service = GuestService()
         owner_id = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        guest_id = service.create(owner_id, "Jimmy")
+        guest_id = service.create(owner_id, "Jimmy")[0].id
 
         assert service.list_for_trip(trip_id, owner_id) == []
         service.add_to_trip(trip_id, guest_id, owner_id)
@@ -85,7 +85,7 @@ class TestTripRoster:
         owner_id = _seed_user(test_db)
         stranger = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        theirs = service.create(stranger, "Not yours")
+        theirs = service.create(stranger, "Not yours")[0].id
 
         with pytest.raises(GuestNotFoundError):
             service.add_to_trip(trip_id, theirs, owner_id)
@@ -98,7 +98,7 @@ class TestTripRoster:
         owner_id = _seed_user(test_db)
         stranger = _seed_user(test_db)
         trip_id = _seed_trip(test_db, stranger)
-        guest_id = service.create(owner_id, "Jimmy")
+        guest_id = service.create(owner_id, "Jimmy")[0].id
 
         with pytest.raises(TripAccessError):
             service.add_to_trip(trip_id, guest_id, owner_id)
@@ -111,7 +111,7 @@ class TestTripRoster:
         guests = GuestService()
         owner_id = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        guest_id = guests.create(owner_id, "Jimmy")
+        guest_id = guests.create(owner_id, "Jimmy")[0].id
         guests.add_to_trip(trip_id, guest_id, owner_id)
 
         ExpenseService().create_expense(
@@ -127,7 +127,7 @@ class TestTripRoster:
         service = GuestService()
         owner_id = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        guest_id = service.create(owner_id, "Jimmy")
+        guest_id = service.create(owner_id, "Jimmy")[0].id
         service.add_to_trip(trip_id, guest_id, owner_id)
 
         service.remove_from_trip(trip_id, guest_id, owner_id)
@@ -145,7 +145,7 @@ class TestTripRoster:
         guests = GuestService()
         owner_id = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        guest_id = guests.create(owner_id, "Quick-added")
+        guest_id = guests.create(owner_id, "Quick-added")[0].id
 
         ExpenseService().create_expense(
             trip_id, owner_id, "Lunch", 20.0, "EUR", participants=[("guest", guest_id)]
@@ -160,7 +160,7 @@ class TestRename:
 
         service = GuestService()
         owner_id = _seed_user(test_db)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         with pytest.raises(ValueError):
             service.rename(guest_id, owner_id, "   ")
@@ -172,7 +172,7 @@ class TestRename:
         service = GuestService()
         owner_id = _seed_user(test_db)
         other_id = _seed_user(test_db)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         with pytest.raises(GuestNotFoundError):
             service.rename(guest_id, other_id, "Grandpa")
@@ -182,7 +182,7 @@ class TestRename:
 
         service = GuestService()
         owner_id = _seed_user(test_db)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         updated = service.rename(guest_id, owner_id, "  Grandpa  ")
         assert updated.name == "Grandpa"
@@ -198,7 +198,7 @@ class TestDelete:
         service = GuestService()
         owner_id = _seed_user(test_db)
         other_id = _seed_user(test_db)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         with pytest.raises(GuestNotFoundError):
             service.delete(guest_id, other_id)
@@ -212,7 +212,7 @@ class TestDelete:
         service = GuestService()
         owner_id = _seed_user(test_db)
         trip_id = _seed_trip(test_db, owner_id)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         now = datetime.now(UTC).isoformat()
         conn = sqlite3.connect(test_db)
@@ -237,7 +237,149 @@ class TestDelete:
 
         service = GuestService()
         owner_id = _seed_user(test_db)
-        guest_id = service.create(owner_id, "Grandma")
+        guest_id = service.create(owner_id, "Grandma")[0].id
 
         service.delete(guest_id, owner_id)
+        assert service.list_mine(owner_id) == []
+
+
+class TestNamesAreOnePerson:
+    """A person is not a row. Typing a name you have already used means the
+    person it already names — the bug this fixes put two identical names in
+    every payer select with nothing to tell them apart."""
+
+    def test_the_same_name_reuses_the_existing_guest(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+
+        first, created_first = service.create(owner_id, "Jimmy")
+        second, created_second = service.create(owner_id, "Jimmy")
+
+        assert created_first is True
+        assert created_second is False
+        assert second.id == first.id
+        assert len(service.list_mine(owner_id)) == 1
+
+    def test_case_and_accents_do_not_make_a_second_person(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+
+        first, _ = service.create(owner_id, "João")
+        again, created = service.create(owner_id, "  joao ")
+
+        assert created is False
+        assert again.id == first.id
+        # The stored spelling is the one already on file, not what was typed:
+        # the rest of the app calls this person "João".
+        assert again.name == "João"
+
+    def test_another_owners_guest_is_not_a_collision(self, test_db):
+        """The address book is per-user, so two accounts can each know a Jimmy."""
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        mine = _seed_user(test_db)
+        theirs = _seed_user(test_db)
+
+        a, _ = service.create(mine, "Jimmy")
+        b, created = service.create(theirs, "Jimmy")
+
+        assert created is True
+        assert a.id != b.id
+
+    def test_renaming_onto_another_guest_is_refused(self, test_db):
+        """Refused rather than merged: merging would have to move every expense
+        naming one of them onto the other, which nobody asked for."""
+        from backend.expenses.errors import GuestNameTakenError
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        service.create(owner_id, "Jimmy")
+        lucas, _ = service.create(owner_id, "Lucas")
+
+        with pytest.raises(GuestNameTakenError) as exc:
+            service.rename(lucas.id, owner_id, "jimmy")
+        assert exc.value.guest_name == "Jimmy"
+
+    def test_recasing_your_own_name_is_allowed(self, test_db):
+        """A guest cannot collide with itself — fixing a capital is a rename."""
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        guest, _ = service.create(owner_id, "jimmy")
+
+        updated = service.rename(guest.id, owner_id, "Jimmy")
+        assert updated.name == "Jimmy"
+
+
+class TestDeletingAGuestWhoIsOnATrip:
+    """Deleting the address-book entry cascades `trip_guests` away, so it takes
+    the guest off trips the caller is not looking at. Allowed, but never
+    silently."""
+
+    def test_is_refused_until_confirmed_and_names_the_trips(self, test_db):
+        from backend.expenses.errors import GuestOnTripsError
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id, name="Lisbon")
+        guest, _ = service.create(owner_id, "Jimmy")
+        service.add_to_trip(trip_id, guest.id, owner_id)
+
+        with pytest.raises(GuestOnTripsError) as exc:
+            service.delete(guest.id, owner_id)
+        assert exc.value.trip_names == ["Lisbon"]
+        assert service.list_mine(owner_id) != []
+
+    def test_force_goes_through_and_takes_them_off_the_trip(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest, _ = service.create(owner_id, "Jimmy")
+        service.add_to_trip(trip_id, guest.id, owner_id)
+
+        service.delete(guest.id, owner_id, force=True)
+
+        assert service.list_mine(owner_id) == []
+        assert service.list_for_trip(trip_id, owner_id) == []
+
+    def test_an_expense_reference_is_reported_before_the_trip_warning(self, test_db):
+        """The in-use refusal is unconditional, so reporting the confirmable
+        warning first would ask a question whose every answer is still a no."""
+        from backend.expenses.errors import GuestInUseError
+        from backend.expenses.guests_service import GuestService
+        from backend.expenses.service import ExpenseService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        trip_id = _seed_trip(test_db, owner_id)
+        guest, _ = service.create(owner_id, "Jimmy")
+        service.add_to_trip(trip_id, guest.id, owner_id)
+        ExpenseService().create_expense(
+            trip_id, owner_id, "Cab", 30.0, "EUR", paid_by=("guest", guest.id)
+        )
+
+        with pytest.raises(GuestInUseError):
+            service.delete(guest.id, owner_id)
+        # …and force does not override it either.
+        with pytest.raises(GuestInUseError):
+            service.delete(guest.id, owner_id, force=True)
+
+    def test_a_guest_on_no_trip_deletes_without_a_question(self, test_db):
+        from backend.expenses.guests_service import GuestService
+
+        service = GuestService()
+        owner_id = _seed_user(test_db)
+        guest, _ = service.create(owner_id, "Jimmy")
+
+        service.delete(guest.id, owner_id)
         assert service.list_mine(owner_id) == []

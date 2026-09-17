@@ -6,6 +6,7 @@ cross-cutting infrastructure every route depends on, not part of this feature.
 """
 
 from ..database import db_conn, db_write
+from ..utils.text import normalize_username
 from .domain import AuthUser, PasswordAndTotp, UserSummary
 from .mappers import row_to_user_summary
 
@@ -14,10 +15,18 @@ class AuthRepository:
     # -- Users ------------------------------------------------------------
 
     def find_user_by_username(self, username: str) -> AuthUser | None:
+        """Look a user up by name, case-insensitively.
+
+        The comparison is `LOWER(username)` against the normalised argument
+        rather than an exact match, so it also finds a row written before
+        usernames were normalised on the way in — on those installs an account
+        created as "Thiago" could never be signed into again once the login path
+        started lowercasing what it was given.
+        """
         with db_conn() as conn:
             row = conn.execute(
-                "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale, accent FROM users WHERE username = ?",
-                (username,),
+                "SELECT id, username, password_hash, is_admin, smtp_recipient_address, totp_enabled, locale, accent FROM users WHERE LOWER(username) = ?",
+                (normalize_username(username),),
             ).fetchone()
         if row is None:
             return None

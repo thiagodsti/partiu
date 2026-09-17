@@ -524,9 +524,19 @@ export const budgetApi = {
 
 export const guestsApi = {
   list: () => get<Guest[]>('/api/guests'),
-  create: (name: string) => post<{ id: number; ok: boolean }>('/api/guests', { name }),
+  /* `created: false` means the name already named one of your guests and that
+   * one came back instead — a person is not a row. `name` is then the stored
+   * spelling, not what was typed. A caller that appends the result to a list
+   * must check the flag, or it shows the same person twice. */
+  create: (name: string) =>
+    post<{ id: number; ok: boolean; created: boolean; name: string }>('/api/guests', { name }),
   update: (guestId: number, name: string) => patch<Guest>(`/api/guests/${guestId}`, { name }),
-  delete: (guestId: number) => del<null>(`/api/guests/${guestId}`),
+  /* `force` accepts taking the guest off the trips they are on — without it a
+   * guest on a roster comes back as 409 `guest_on_trips` naming them, because
+   * the delete cascades those rows away and that is not something to do
+   * silently. An expense naming them is refused whatever force says. */
+  delete: (guestId: number, force = false) =>
+    del<null>(`/api/guests/${guestId}${force ? '?force=true' : ''}`),
 
   /* A trip's own roster, separate from the address book above: who is
    * travelling with you on *this* trip. `listForTrip` is what the expense

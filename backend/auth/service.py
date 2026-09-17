@@ -6,6 +6,7 @@ update-me, change-password.
 import collections
 import time
 
+from ..utils.text import normalize_username
 from .domain import LoginResult, UserSummary
 from .errors import AuthError
 from .repository import AuthRepository
@@ -40,7 +41,7 @@ class AuthService:
         if has_any_users():
             raise AuthError("Setup already completed", 409)
 
-        normalized = username.strip().lower()
+        normalized = normalize_username(username)
         if len(normalized) < 4:
             raise AuthError("Username must be at least 4 characters", 400)
         if len(password) < 8:
@@ -75,7 +76,9 @@ class AuthService:
 
         self._check_login_lockout(ip)
 
-        user = self._repository.find_user_by_username(username.strip().lower())
+        # The repository normalises too; this stays explicit because the
+        # audit line below records what was typed, not what was looked up.
+        user = self._repository.find_user_by_username(username)
 
         # Always run bcrypt to prevent username enumeration via timing differences
         password_hash = (user.password_hash if user else None) or _DUMMY_HASH

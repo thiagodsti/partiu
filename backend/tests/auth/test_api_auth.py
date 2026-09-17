@@ -82,6 +82,59 @@ class TestLogin:
         assert "session" in client.cookies
 
 
+class TestUsernamesAreCaseInsensitive:
+    """A username is one account however it is capitalised; a password is not.
+
+    Setup already stored the name lowercased and login already lowercased what
+    it was given, so the two agreed — but only for accounts created *since*
+    that normalisation landed, and only on paths that remembered to do it.
+    """
+
+    def test_signing_in_with_a_different_case_works(self, client):
+        client.post("/api/auth/setup", json={"username": "thiago", "password": "password123"})
+        client.cookies.clear()
+        r = client.post("/api/auth/login", json={"username": "ThIaGo", "password": "password123"})
+        assert r.status_code == 200
+        assert r.json()["username"] == "thiago"
+
+    def test_surrounding_whitespace_is_ignored(self, client):
+        client.post("/api/auth/setup", json={"username": "thiago", "password": "password123"})
+        client.cookies.clear()
+        r = client.post(
+            "/api/auth/login", json={"username": "  thiago ", "password": "password123"}
+        )
+        assert r.status_code == 200
+
+    def test_the_password_is_still_case_sensitive(self, client):
+        client.post("/api/auth/setup", json={"username": "thiago", "password": "password123"})
+        client.cookies.clear()
+        r = client.post("/api/auth/login", json={"username": "thiago", "password": "PASSWORD123"})
+        assert r.status_code == 401
+
+    def test_an_account_stored_with_capitals_can_still_sign_in(self, client, test_db):
+        """The case that motivated the repository-side fix: a row written before
+        usernames were normalised on the way in. Once login started lowercasing
+        what it was given, an exact-match lookup could never find it again."""
+        import sqlite3
+
+        from backend.auth.session import hash_password
+
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 0)",
+            ("LegacyName", hash_password("password123")),
+        )
+        conn.commit()
+        conn.close()
+        client.cookies.clear()
+
+        r = client.post(
+            "/api/auth/login", json={"username": "legacyname", "password": "password123"}
+        )
+        assert r.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # /api/auth/me
 # ---------------------------------------------------------------------------

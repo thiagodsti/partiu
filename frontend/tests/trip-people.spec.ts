@@ -129,3 +129,73 @@ test('a guest added to the trip appears in the expense form without reloading', 
   // No navigation, no reload: the same page must now offer them.
   await expect(page.locator('#new-paid-by option', { hasText: name })).toHaveCount(1);
 });
+
+/* Typing a name you have used before means *that* person. The form used to
+ * create a second guest every time, so a trip's payer select ended up with two
+ * identical names and one person's expense history split across two ids. */
+test('typing a name already in the address book reuses that guest', async ({ page }) => {
+  const stamp = Date.now();
+  const name = `Jimmy ${stamp}`;
+  const first = await page.request.post(`${BASE_URL}/api/guests`, { data: { name } });
+  const guestId = (await first.json()).id;
+
+  // Different case, same person — the match is folded, like the picker's search.
+  const again = await page.request.post(`${BASE_URL}/api/guests`, {
+    data: { name: name.toUpperCase() },
+  });
+  const body = await again.json();
+  expect(body.id).toBe(guestId);
+  expect(body.created).toBe(false);
+  expect(body.name).toBe(name);
+
+  const book = await page.request.get(`${BASE_URL}/api/guests`);
+  const matches = (await book.json()).filter((g: { name: string }) => g.name === name);
+  expect(matches).toHaveLength(1);
+});
+
+test('the add box suggests a guest you have travelled with before', async ({ page }) => {
+  const stamp = Date.now();
+  const name = `Lucas ${stamp}`;
+  await page.request.post(`${BASE_URL}/api/guests`, { data: { name } });
+
+  const tripId = await createTrip(page, `Suggest ${stamp}`);
+  await openTrip(page, tripId);
+
+  await page.locator('.people-add input').first().fill(`lucas ${stamp}`);
+  const suggestion = page.locator('.people-suggestion', { hasText: name });
+  await expect(suggestion).toBeVisible();
+  await suggestion.click();
+
+  await expect(page.locator('.people-row', { hasText: name })).toBeVisible();
+  // Picked, not re-created: the address book still holds exactly one Lucas.
+  const book = await page.request.get(`${BASE_URL}/api/guests`);
+  const matches = (await book.json()).filter((g: { name: string }) => g.name === name);
+  expect(matches).toHaveLength(1);
+});
+
+test('deleting a guest who is on a trip is refused until it is confirmed', async ({ page }) => {
+  const stamp = Date.now();
+  const tripId = await createTrip(page, `Cascade ${stamp}`);
+  const guest = await page.request.post(`${BASE_URL}/api/guests`, {
+    data: { name: `Vivian ${stamp}` },
+  });
+  const guestId = (await guest.json()).id;
+  await page.request.post(`${BASE_URL}/api/trips/${tripId}/guests`, {
+    data: { guest_id: guestId },
+  });
+
+  // The delete cascades their roster rows away, so it names the trips first.
+  const refused = await page.request.delete(`${BASE_URL}/api/guests/${guestId}`);
+  expect(refused.status()).toBe(409);
+  const detail = (await refused.json()).detail;
+  expect(detail.error).toBe('guest_on_trips');
+  expect(detail.params.trips).toContain(`Cascade ${stamp}`);
+
+  const stillThere = await page.request.get(`${BASE_URL}/api/trips/${tripId}/guests`);
+  expect((await stillThere.json()).map((g: { id: number }) => g.id)).toContain(guestId);
+
+  const forced = await page.request.delete(`${BASE_URL}/api/guests/${guestId}?force=true`);
+  expect(forced.status()).toBe(204);
+  const roster = await page.request.get(`${BASE_URL}/api/trips/${tripId}/guests`);
+  expect(await roster.json()).toEqual([]);
+});
