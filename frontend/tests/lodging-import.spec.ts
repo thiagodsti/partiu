@@ -180,3 +180,52 @@ test('an email with no reservation markup imports no stay', async () => {
 
   await ctx!.dispose();
 });
+
+// Booking.com ships no schema.org markup, so its confirmations are read by a
+// template reader (`parsers/booking_com.py`) instead. Also a blocked sender, and
+// also synthetic — the structure mirrors the real confirmation's HTML, where
+// each label and its value sit in separate elements.
+const BOOKING_REF = '9900112233';
+const BOOKING_PROPERTY = 'E2E Harbour Hotel';
+const BOOKING_HTML = `<html><body>
+<p>Confirmation:</p><p>${BOOKING_REF}</p><p>PIN:</p><p>0000</p>
+<p>Thanks Test! Your booking in Porto is confirmed.</p>
+<p>${BOOKING_PROPERTY}</p><p>is expecting you on</p><p>Fri 3 Sep</p>
+<p>Your reservation is paid with Booking.com</p>
+<h2>Reservation details</h2>
+<p>Check-in</p><p>Friday, 3 September 2027</p><p>(15:00 - 23:00)</p>
+<p>Check-out</p><p>Sunday, 5 September 2027</p><p>(until 11:00)</p>
+<p>Your reservation</p><p>2 nights</p><p>Twin Room</p>
+<p>You booked for</p><p>2 adults</p>
+<p>Location</p><p>1 Example Street, 4000-000 Porto, Portugal</p>
+<p>Phone</p><p>+351000000000</p>
+</body></html>`;
+
+test('a Booking.com confirmation imports a stay with no markup to read', async () => {
+  const ctx = await ensureUser();
+  test.skip(!ctx, 'Could not set up user — skipping lodging import tests');
+
+  const eml = buildEml({
+    from: 'noreply@booking.com',
+    subject: `Thanks! Your booking is confirmed at ${BOOKING_PROPERTY}`,
+    date: 'Mon, 2 Aug 2027 10:00:00 +0200',
+    html: BOOKING_HTML,
+  });
+  const res = await uploadEml(ctx!, 'booking-com.eml', eml);
+  expect(res.ok()).toBeTruthy();
+
+  const trips = (await (await ctx!.get('/api/trips')).json()).trips ?? [];
+  const matches: Stay[] = [];
+  for (const trip of trips) {
+    matches.push(
+      ...(await staysFor(ctx!, trip.id)).filter((s) => s.booking_reference === BOOKING_REF),
+    );
+  }
+  // Exactly one, also on a re-run: the importer is idempotent on the reference.
+  expect(matches).toHaveLength(1);
+  expect(matches[0].place.name).toBe(BOOKING_PROPERTY);
+  expect(matches[0].check_in_date).toBe('2027-09-03');
+  expect(matches[0].check_out_date).toBe('2027-09-05');
+
+  await ctx!.dispose();
+});

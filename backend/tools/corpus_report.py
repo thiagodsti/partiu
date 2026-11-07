@@ -80,6 +80,7 @@ def load_corpus(path: str | Path) -> list:
 def measure(email_msg, rules) -> dict:
     """Run every tier over one email and report what each produced."""
     from backend.airports.timezone import apply_airport_timezones
+    from backend.parsers.booking_com import extract_booking_com_stays
     from backend.parsers.car_rental import extract_car_rentals
     from backend.parsers.engine import (
         extract_flights_from_email,
@@ -108,7 +109,9 @@ def measure(email_msg, rules) -> dict:
         "legs": [],
     }
     try:
-        row["stays"] = len(extract_lodging_reservations(email_msg))
+        row["stays"] = len(
+            extract_lodging_reservations(email_msg) or extract_booking_com_stays(email_msg)
+        )
         row["rentals"] = len(extract_car_rentals(email_msg))
         rule = match_rule_to_email(email_msg, rules)
         flights: list[dict] = []

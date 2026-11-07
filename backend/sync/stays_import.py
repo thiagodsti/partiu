@@ -1,6 +1,7 @@
-"""Import accommodation declared in schema.org markup into trips.
+"""Import accommodation from booking emails into trips.
 
-The parser (``parsers/schema_org.py``) turns a booking email into typed fields;
+The parsers (``parsers/schema_org.py`` for typed markup, ``parsers/booking_com.py``
+for Booking.com's template, which carries none) turn a booking email into typed fields;
 this module decides which trip those fields belong to, creating one when no
 trip fits. It is the accommodation counterpart of ``grouping.py`` and lives
 beside it for the same reason: deciding what a booking belongs to is a sync
@@ -42,6 +43,7 @@ import uuid
 from datetime import date, timedelta
 
 from ..database import db_conn, db_write
+from ..parsers.booking_com import extract_booking_com_stays
 from ..parsers.schema_org import extract_lodging_reservations
 from ..utils import now_iso
 
@@ -206,7 +208,9 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
     """
     from ..stays.service import stay_service
 
-    reservations = extract_lodging_reservations(email_msg)
+    # Markup first: a typed reservation is the stronger evidence. Booking.com
+    # ships none, so its own template reader is the fallback, gated on sender.
+    reservations = extract_lodging_reservations(email_msg) or extract_booking_com_stays(email_msg)
     if not reservations:
         return []
 
@@ -240,6 +244,8 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
                     "check_out_datetime": stay["check_out_datetime"],
                     "booking_reference": stay.get("booking_reference"),
                     "contact": stay.get("contact"),
+                    "room_type": stay.get("room_type"),
+                    "guests": stay.get("guests"),
                 },
             )
             created.append(stay_id)

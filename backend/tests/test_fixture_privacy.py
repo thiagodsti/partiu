@@ -69,6 +69,7 @@ ALLOWED_AIRLINE_DOMAIN_WORDS = (
     "flypgs",
     "pegasus",
     "google.com",
+    "booking.com",  # the platform's own sender and customer-service mailbox
     "sendgrid",
     "media-carrier.de",
 )

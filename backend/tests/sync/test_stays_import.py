@@ -386,3 +386,39 @@ class TestBlockedSenderBypass:
 
         assert result["stays_created"] == 0
         assert _stays(conn, user_id) == []
+
+
+class TestBookingComConfirmation:
+    """Booking.com carries no markup; its template reader feeds the same import."""
+
+    def test_the_real_confirmation_joins_its_trip(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.grouping import auto_group_flights
+        from backend.sync.pipeline import _process_emails, is_non_flight_domain
+
+        user_id = _make_user(conn)
+        _add_airport(conn, "ARN", "SE", "Stockholm")
+        _add_airport(conn, "LIS", "PT", "Lisbon")
+        out = datetime(2026, 12, 22, 8, 0, tzinfo=UTC)
+        _add_flight(conn, user_id, "ARN", "LIS", out, out + timedelta(hours=4), ref="PNR777")
+        auto_group_flights(user_id=user_id)
+        trips_before = conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"]
+
+        email = load_anonymized_fixture("booking_com_confirmation_anonymized.json")
+        assert is_non_flight_domain(email.sender), "precondition: sender is blocked"
+        result = _process_emails([email], user_id)
+
+        assert result["stays_created"] == 1
+        assert conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"] == trips_before
+        (stay,) = _stays(conn, user_id)
+        assert stay["name"] == "B&B HOTEL Lisboa Aeroporto"
+        assert stay["kind"] == "hotel"
+        assert stay["booking_reference"] == "1234567890"
+        assert stay["room_type"] == "Double Room"
+        assert stay["guests"] == 1
+        assert stay["check_in_date"] == "2026-12-22"
+        assert stay["check_out_date"] == "2026-12-23"
+
+        # A rescan reads the same mail again and must not duplicate the stay.
+        assert _process_emails([email], user_id, skip_dedup=True)["stays_created"] == 0
