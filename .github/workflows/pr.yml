@@ -72,7 +72,11 @@ jobs:
 
   e2e:
     name: E2E tests (Playwright)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: when -latest moved to 26.04, Playwright 1.58
+    # had no Chromium build or dependency list for it and `playwright install
+    # --with-deps` failed before a single test ran. Move this forward together
+    # with a Playwright upgrade that lists the new release as supported.
+    runs-on: ubuntu-24.04
     needs: [backend, frontend]
     steps:
       - name: Checkout
