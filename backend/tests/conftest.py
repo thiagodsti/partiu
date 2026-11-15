@@ -1,6 +1,7 @@
 """Shared pytest fixtures for backend tests."""
 
 import email as stdlib_email
+import email.utils
 import os
 import sys
 from datetime import UTC, datetime
@@ -264,6 +265,23 @@ def seeded_airports_db(tmp_path_factory):
     is_valid_iata.cache_clear()
 
 
+def _header_date(msg) -> datetime:
+    """The email's own Date header, as the IMAP connector reads it.
+
+    This used to be ``datetime.now()``. Parsers resolve a year-less leg date
+    ("12NOV") against the email date, so every fixture with one quietly
+    expired the day the calendar passed it — the SAS e-ticket tests began
+    failing on 15 Nov 2026 with nothing in the code changed.
+    """
+    raw = msg.get("Date")
+    if raw:
+        try:
+            return stdlib_email.utils.parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            pass
+    return datetime.now(tz=UTC)
+
+
 def load_eml_as_email_message(eml_filename: str):
     """Parse a .eml fixture file into an EmailMessage for parser pipeline tests."""
     from backend.parsers.email_connector import EmailMessage, decode_header_value
@@ -293,7 +311,7 @@ def load_eml_as_email_message(eml_filename: str):
         sender=decode_header_value(msg.get("From") or ""),
         subject=decode_header_value(msg.get("Subject") or ""),
         body=body,
-        date=datetime.now(tz=UTC),
+        date=_header_date(msg),
         html_body=html_body,
         pdf_attachments=pdf_attachments,
     )

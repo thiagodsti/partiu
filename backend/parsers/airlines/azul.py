@@ -119,8 +119,31 @@ def _extract_flights(text: str, rule, ref_year: int | None) -> list[dict]:
     return flights
 
 
+def _roll_forward(flights: list[dict], email_date) -> list[dict]:
+    """Move legs dated before the booking email into the next year.
+
+    Azul prints leg dates as "02/03" and ``extract_line_datetime`` injects the
+    email's year, so a December booking for a March flight came out in the
+    March *before* it was bought. A booking is made before it is flown, which
+    is the same rule ``sas._extract_pdf_tabular`` applies.
+    """
+    if not email_date:
+        return flights
+    for flight in flights:
+        dep, arr = flight["departure_datetime"], flight["arrival_datetime"]
+        if dep.date() >= email_date.date():
+            continue
+        try:
+            flight["departure_datetime"] = dep.replace(year=dep.year + 1)
+            flight["arrival_datetime"] = arr.replace(year=arr.year + 1)
+        except ValueError:  # 29 Feb in a non-leap year
+            continue
+    return flights
+
+
 def extract(email_msg, rule) -> list[dict]:
     """Extract flights from an Azul email (HTML preferred, plain-text fallback)."""
     text = get_email_text_newline(email_msg)
     flights = _extract_flights(text, rule, get_ref_year(email_msg))
+    flights = _roll_forward(flights, email_msg.date)
     return enrich_flights(flights, text, email_msg.subject)
