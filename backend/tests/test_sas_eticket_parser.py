@@ -88,10 +88,10 @@ class TestSASScandinavianAirlinesLegOne:
         assert sas_scandinavian_airlines_flights[0]["airline_code"] == "SK"
 
     def test_departure_datetime(self, sas_scandinavian_airlines_flights):
-        assert sas_scandinavian_airlines_flights[0]["departure_datetime"] == dt(2026, 11, 12, 7, 55)
+        assert sas_scandinavian_airlines_flights[0]["departure_datetime"] == dt(2025, 11, 12, 7, 55)
 
     def test_arrival_datetime(self, sas_scandinavian_airlines_flights):
-        assert sas_scandinavian_airlines_flights[0]["arrival_datetime"] == dt(2026, 11, 12, 19, 15)
+        assert sas_scandinavian_airlines_flights[0]["arrival_datetime"] == dt(2025, 11, 12, 19, 15)
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +113,10 @@ class TestSASScandinavianAirlinesLegTwo:
         assert sas_scandinavian_airlines_flights[1]["airline_code"] == "SK"
 
     def test_departure_datetime(self, sas_scandinavian_airlines_flights):
-        assert sas_scandinavian_airlines_flights[1]["departure_datetime"] == dt(2026, 11, 12, 21, 0)
+        assert sas_scandinavian_airlines_flights[1]["departure_datetime"] == dt(2025, 11, 12, 21, 0)
 
     def test_arrival_datetime(self, sas_scandinavian_airlines_flights):
-        assert sas_scandinavian_airlines_flights[1]["arrival_datetime"] == dt(2026, 11, 12, 23, 40)
+        assert sas_scandinavian_airlines_flights[1]["arrival_datetime"] == dt(2025, 11, 12, 23, 40)
 
 
 # ---------------------------------------------------------------------------
