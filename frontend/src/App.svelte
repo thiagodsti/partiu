@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import Router from 'svelte-spa-router';
   import wrap from 'svelte-spa-router/wrap';
   import TabBar from './components/TabBar.svelte';
@@ -61,9 +62,9 @@
     // Poll for invitations + unread notifications every 30 seconds while the tab is open
     const pollInterval = setInterval(refreshInvitationCount, 30_000);
 
-    // Clear app badge when the user opens/returns to the app
+    // Clear app badge when the user opens/returns to the app (signed in only — it 401s otherwise)
     const clearBadge = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && get(currentUser)) {
         if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
         notificationsApi.clearBadge().catch(() => {});
       }
@@ -79,6 +80,9 @@
         applyUserAccent(user.accent);
         authLoading.set(false);
         refreshInvitationCount();
+        // Clear the app badge on load, now that we know someone is signed in
+        if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+        notificationsApi.clearBadge().catch(() => {});
 
         // Redirect away from auth pages if already logged in
         const hash = window.location.hash.replace('#', '');
@@ -100,10 +104,6 @@
         }
       }
     })();
-
-    // Also clear immediately on load
-    if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
-    notificationsApi.clearBadge().catch(() => {});
 
     // Silently restore push subscription if user previously opted in but subscription was lost
     import('./lib/notifications').then(({ restoreIfNeeded }) => restoreIfNeeded()).catch(() => {});;

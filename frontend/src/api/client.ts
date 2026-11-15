@@ -71,6 +71,15 @@ export class ApiError extends Error {
   }
 }
 
+/** Thrown for a 401 — no session, or the session expired. The message is the
+ * server's detail, unchanged, so callers that only show `err.message` keep working. */
+export class UnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 async function _request<T>(method: string, path: string, body: unknown = null): Promise<T> {
   const opts: RequestOptions = {
     method,
@@ -100,6 +109,7 @@ async function _request<T>(method: string, path: string, body: unknown = null): 
     }
     const detail = typeof d.detail === 'string' ? d.detail : undefined;
     const message = detail || d.error || d.message || `HTTP ${res.status}`;
+    if (res.status === 401) throw new UnauthorizedError(message);
     throw new Error(message);
   }
 
