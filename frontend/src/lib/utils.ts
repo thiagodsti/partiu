@@ -742,7 +742,7 @@ export function tripContents(
   }
 
   if (stayCount > 0) {
-    parts.push({ icon: '🛏', labelKey: 'trips.stay_count', count: stayCount });
+    parts.push({ icon: '🛏️', labelKey: 'trips.stay_count', count: stayCount });
   }
 
   // Counted apart from the ground legs above, not folded into them: a hired car

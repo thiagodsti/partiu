@@ -1959,7 +1959,7 @@ img {
   flex-wrap: wrap;
 }
 
-/* The trip's inventory, under its dates: "✈ 2 flights · 🚗 2 drives · 🛏 3
+/* The trip's inventory, under its dates: "✈ 2 flights · 🚗 2 drives · 🛏️ 3
    stays". Small and muted — it answers "what is on this trip" at a glance,
    and everything it names has its own section further down the page. */
 .trip-header-contents {

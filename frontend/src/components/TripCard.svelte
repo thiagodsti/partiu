@@ -108,7 +108,7 @@
       parts.push(`${icon} ${label}`);
     }
     if (stayCount > 0) {
-      parts.push(`🛏 ${plural("trips.stay_count", stayCount)}`);
+      parts.push(`🛏️ ${plural("trips.stay_count", stayCount)}`);
     }
     /* Its own chip rather than part of the leg count: a hired car is a contract
      * over days, not a journey, so folding it in would claim a drive that may

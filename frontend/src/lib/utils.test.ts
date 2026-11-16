@@ -1084,7 +1084,7 @@ describe('tripContents', () => {
       { icon: '✈', labelKey: 'trips.flight_count', count: 2 },
       { icon: '⛴️', labelKey: 'trips.segment_count_ferry', count: 1 },
       { icon: '🚗', labelKey: 'trips.segment_count_car', count: 2 },
-      { icon: '🛏', labelKey: 'trips.stay_count', count: 3 },
+      { icon: '🛏️', labelKey: 'trips.stay_count', count: 3 },
     ]);
   });
 
