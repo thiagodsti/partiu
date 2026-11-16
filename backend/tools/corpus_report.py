@@ -89,6 +89,7 @@ def measure(email_msg, rules) -> dict:
     )
     from backend.parsers.gds_eticket import extract_gds_eticket
     from backend.parsers.schema_org import extract_lodging_reservations
+    from backend.parsers.trip_com import extract_trip_com_stays
     from backend.parsers.validation import validate_flights
     from backend.sync.pipeline import _sender_domain, is_non_flight_domain
 
@@ -110,7 +111,9 @@ def measure(email_msg, rules) -> dict:
     }
     try:
         row["stays"] = len(
-            extract_lodging_reservations(email_msg) or extract_booking_com_stays(email_msg)
+            extract_lodging_reservations(email_msg)
+            or extract_booking_com_stays(email_msg)
+            or extract_trip_com_stays(email_msg)
         )
         row["rentals"] = len(extract_car_rentals(email_msg))
         rule = match_rule_to_email(email_msg, rules)

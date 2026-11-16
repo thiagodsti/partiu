@@ -70,6 +70,7 @@ ALLOWED_AIRLINE_DOMAIN_WORDS = (
     "pegasus",
     "google.com",
     "booking.com",  # the platform's own sender and customer-service mailbox
+    "trip.com",  # the hotel desk's no-reply sender
     "sendgrid",
     "media-carrier.de",
 )

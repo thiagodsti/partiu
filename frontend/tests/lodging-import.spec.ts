@@ -229,3 +229,49 @@ test('a Booking.com confirmation imports a stay with no markup to read', async (
 
   await ctx!.dispose();
 });
+
+// Trip.com's hotel desk ships no markup either; `parsers/trip_com.py` reads its
+// template. Synthetic again, mirroring the real HTML's one-label-per-element
+// layout — the summary's "1 Room 2 nights" line deliberately precedes the room
+// block's own, which is the one sitting over "Guest names".
+const TRIP_REF = '7700112233445566';
+const TRIP_PROPERTY = 'E2E Hutong Courtyard Hotel';
+const TRIP_HTML = `<html><body>
+<p>Hi Test Passenger! The booking for your stay in Beijing is confirmed.</p>
+<p>Booking no.</p><p>${TRIP_REF}</p>
+<p>${TRIP_PROPERTY}</p><p>Call+86-10000000000</p>
+<h2>Booking details</h2>
+<p>Check-in</p><p>Oct 6, 2027</p><p>After 14:00</p><p>Hotel's local time</p>
+<p>Check-out</p><p>Oct 9, 2027</p><p>Before 12:00</p><p>Hotel's local time</p>
+<p>Your booking</p><p>1 Room 3 nights</p>
+<p>Address</p><p>1 Example Hutong, Dongcheng District, Beijing, China</p>
+<p>Guest Room (Double Bed)</p><p>1 Room 3 nights</p><p>Guest names</p><p>Test Passenger</p>
+</body></html>`;
+
+test('a Trip.com hotel confirmation imports a stay with no markup to read', async () => {
+  const ctx = await ensureUser();
+  test.skip(!ctx, 'Could not set up user — skipping lodging import tests');
+
+  const eml = buildEml({
+    from: '"Trip.com" <EN_HTL_NoReply@trip.com>',
+    subject: `[Booking confirmation] Your booking at ${TRIP_PROPERTY} has been confirmed-NoReply`,
+    date: 'Mon, 6 Sep 2027 10:00:00 +0200',
+    html: TRIP_HTML,
+  });
+  const res = await uploadEml(ctx!, 'trip-com.eml', eml);
+  expect(res.ok()).toBeTruthy();
+
+  const trips = (await (await ctx!.get('/api/trips')).json()).trips ?? [];
+  const matches: Stay[] = [];
+  for (const trip of trips) {
+    matches.push(
+      ...(await staysFor(ctx!, trip.id)).filter((s) => s.booking_reference === TRIP_REF),
+    );
+  }
+  expect(matches).toHaveLength(1);
+  expect(matches[0].place.name).toBe(TRIP_PROPERTY);
+  expect(matches[0].check_in_date).toBe('2027-10-06');
+  expect(matches[0].check_out_date).toBe('2027-10-09');
+
+  await ctx!.dispose();
+});

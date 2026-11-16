@@ -422,3 +422,37 @@ class TestBookingComConfirmation:
 
         # A rescan reads the same mail again and must not duplicate the stay.
         assert _process_emails([email], user_id, skip_dedup=True)["stays_created"] == 0
+
+
+class TestTripComConfirmation:
+    """Trip.com carries no markup either; its template reader feeds the same import."""
+
+    def test_the_real_confirmation_joins_its_trip(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.grouping import auto_group_flights
+        from backend.sync.pipeline import _process_emails
+
+        user_id = _make_user(conn)
+        _add_airport(conn, "ARN", "SE", "Stockholm")
+        _add_airport(conn, "PEK", "CN", "Beijing")
+        out = datetime(2027, 3, 24, 2, 0, tzinfo=UTC)
+        _add_flight(conn, user_id, "ARN", "PEK", out, out + timedelta(hours=9), ref="PNR888")
+        auto_group_flights(user_id=user_id)
+        trips_before = conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"]
+
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        result = _process_emails([email], user_id)
+
+        assert result["stays_created"] == 1
+        assert conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"] == trips_before
+        (stay,) = _stays(conn, user_id)
+        assert stay["name"] == "Houhaiyuan Hotel (Beijing Gongwangfu Nanluoguxiang Branch)"
+        assert stay["kind"] == "hotel"
+        assert stay["booking_reference"] == "1234567890123456"
+        assert stay["room_type"] == "Guest Room (Double Bed)"
+        assert stay["check_in_date"] == "2027-03-24"
+        assert stay["check_out_date"] == "2027-03-27"
+
+        # A rescan reads the same mail again and must not duplicate the stay.
+        assert _process_emails([email], user_id, skip_dedup=True)["stays_created"] == 0
