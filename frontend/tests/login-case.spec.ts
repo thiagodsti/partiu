@@ -14,15 +14,17 @@
 
 import { test, expect } from '@playwright/test';
 import { E2E_BROWSER } from './support/accounts';
+import { requireSeededServer } from './support/seed';
 
 const BASE_URL = 'http://localhost:8000';
 
 test('a username signs in whatever its case, and the password still does not', async ({
   page,
 }) => {
+  requireSeededServer();
   const { username, password } = E2E_BROWSER;
   const exact = await page.request.post(`${BASE_URL}/api/auth/login`, { data: { username, password } });
-  test.skip(!exact.ok(), 'The seeded account does not exist on this server');
+  expect(exact.status()).toBe(200);
 
   const shouting = await page.request.post(`${BASE_URL}/api/auth/login`, {
     data: { username: username.toUpperCase(), password },

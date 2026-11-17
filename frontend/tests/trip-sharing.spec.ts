@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId } from './support/seed';
+import { BROWSER_STATE, requireSeededServer, seededTripId } from './support/seed';
 
 const BASE_URL = 'http://localhost:8000';
 
@@ -22,8 +22,9 @@ test.beforeEach(async ({ page }) => {
 test('delete trip flow', async ({ page }) => {
   // Deletes a trip made for the purpose: "the first card" was the seeded trip
   // every other browse spec opens.
+  requireSeededServer();
   const res = await page.request.post(`${BASE_URL}/api/trips`, { data: { name: `E2E delete me ${Date.now()}` } });
-  test.skip(!res.ok(), 'Could not create a trip to delete');
+  expect(res.ok(), `creating the trip to delete answered ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json();
   await page.goto(`${BASE_URL}/#/trips/${id}`);
   await page.waitForLoadState('networkidle');

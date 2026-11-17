@@ -151,10 +151,13 @@ test('an empty documents section collapses onto its header row', async ({ page }
   test.skip(!found, 'No trips in database');
 
   // Documents specifically: other empty sections (stays, say) carry advisory
-  // lines under their note and are not meant to fold onto one row.
-  const docs = page.locator('.trip-section-documents.trip-section-compact');
-  test.skip(await docs.count() === 0, 'This trip has documents');
-  const box = await docs.first().boundingBox();
+  // lines under their note and are not meant to fold onto one row. Found
+  // without the compact class, so losing that class fails here, not skips.
+  const docs = page.locator('.trip-section-documents');
+  await expect(docs).toBeVisible();
+  test.skip(await docs.locator('.section-note').count() === 0, 'This trip has documents');
+  await expect(docs).toHaveClass(/trip-section-compact/);
+  const box = await docs.boundingBox();
   expect(box!.height).toBeLessThan(100);
 });
 

@@ -10,23 +10,12 @@
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import { ACCOUNTS } from './support/accounts';
+import { requireSeededServer } from './support/seed';
 import { signInPage } from './support/session';
 
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:8000';
 const USER = ACCOUNTS.apiKeysUser.username;
 const PASS = ACCOUNTS.apiKeysUser.password;
-
-async function ensureUser(): Promise<boolean> {
-  const anon = await request.newContext({ baseURL: BASE });
-  const setupRes = await anon.post('/api/auth/setup', { data: { username: USER, password: PASS } });
-  if (!setupRes.ok() && setupRes.status() !== 409) {
-    await anon.dispose();
-    return false;
-  }
-  const login = await anon.post('/api/auth/login', { data: { username: USER, password: PASS } });
-  await anon.dispose();
-  return login.ok();
-}
 
 /** A client with no cookie jar worth the name — only the key it is handed. */
 async function keyClient(secret: string): Promise<APIRequestContext> {
@@ -37,12 +26,11 @@ async function keyClient(secret: string): Promise<APIRequestContext> {
 }
 
 test('a key created in Settings works without a session and stops when revoked', async ({ page }) => {
-  test.skip(!(await ensureUser()), 'Could not set up the test user — skipping API key tests');
-
+  // Global setup creates the account; a sign-in failure is a failure, not a skip.
+  requireSeededServer();
   await signInPage(page, USER, PASS);
 
   await page.goto(`${BASE}/#/settings`);
-  await page.waitForLoadState('networkidle');
   const panel = page.locator('.api-keys-panel');
   await expect(panel).toBeVisible({ timeout: 15000 });
 

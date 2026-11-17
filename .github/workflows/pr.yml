@@ -105,29 +105,15 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: frontend
 
-      - name: Start server
-        run: |
-          export SECRET_KEY="ci-test-secret-key-placeholder-32x"
-          uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
-          # The first boot loads the airports table, which global setup's seeded
-          # trip depends on; wait for the app rather than for a fixed time.
-          for i in $(seq 1 90); do
-            curl -s -o /dev/null http://127.0.0.1:8000/api/version && exit 0
-            sleep 1
-          done
-          cat server.log; exit 1
-        env:
-          DISABLE_SCHEDULER: "true"
-          # The suite signs in two dozen accounts from one address (see
-          # frontend/tests/global-setup.ts), and talks plain http to localhost.
-          DISABLE_RATE_LIMITS: "true"
-          SECURE_COOKIES: "false"
-
-      # Blocking: global setup creates every account and the seeded trips, so the
-      # suite no longer depends on data a fresh CI server never had.
+      # scripts/run_e2e.sh starts a server on a scratch database with the flags
+      # the suite needs, waits for it, runs Playwright and stops it — the same
+      # recipe a developer runs locally. Blocking: global setup creates every
+      # account and the seeded trips, so nothing depends on pre-existing data.
       - name: Run e2e tests
-        run: npm run test:e2e
-        working-directory: frontend
+        run: scripts/run_e2e.sh
+        env:
+          SECRET_KEY: "ci-test-secret-key-placeholder-32x"
+          E2E_SERVER_LOG: ${{ github.workspace }}/server.log
 
       - name: Upload Playwright report
         if: failure()

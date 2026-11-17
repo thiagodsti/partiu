@@ -13,7 +13,11 @@ def _user(username: str) -> int:
 
 
 def _create(repo: ApiKeyRepository, uid: int, name: str, key_hash: str, created_at: str):
-    return repo.create(uid, name, "partiu_abc123", key_hash, "read", created_at, None)
+    key = repo.create_within_limit(
+        uid, name, "partiu_abc123", key_hash, "read", created_at, None, limit=100
+    )
+    assert key is not None
+    return key
 
 
 class TestApiKeyRepository:
@@ -25,8 +29,18 @@ class TestApiKeyRepository:
         _create(repo, bob, "bobs", "h3", "2026-03-01T00:00:00+00:00")
 
         assert [k.name for k in repo.list_for_user(alice)] == ["new", "old"]
-        assert repo.count_for_user(alice) == 2
-        assert repo.count_for_user(bob) == 1
+        assert [k.name for k in repo.list_for_user(bob)] == ["bobs"]
+
+    def test_the_limit_is_checked_by_the_insert_itself(self, test_db):
+        repo = ApiKeyRepository()
+        alice, bob = _user("alice"), _user("bob")
+        args = ("partiu_abc123", "read", "2026-01-01T00:00:00+00:00", None)
+        assert repo.create_within_limit(alice, "a", args[0], "h1", *args[1:], limit=2)
+        assert repo.create_within_limit(alice, "b", args[0], "h2", *args[1:], limit=2)
+        assert repo.create_within_limit(alice, "c", args[0], "h3", *args[1:], limit=2) is None
+        assert repo.find_by_hash("h3") is None
+        # Someone else's keys do not count against alice's limit.
+        assert repo.create_within_limit(bob, "d", args[0], "h4", *args[1:], limit=2)
 
     def test_find_by_hash(self, test_db):
         repo = ApiKeyRepository()

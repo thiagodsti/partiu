@@ -82,15 +82,12 @@ class ApiKeyService:
             raise ValueError("Name cannot be empty")
         if scope not in ("read", "write"):
             raise ValueError("Scope must be 'read' or 'write'")
-        if self._repository.count_for_user(user_id) >= MAX_KEYS_PER_USER:
-            raise ApiKeyLimitError(user_id)
-
         secret = KEY_PREFIX + secrets.token_urlsafe(32)
         now = datetime.now(UTC)
         expires_at = (
             (now + timedelta(days=expires_in_days)).isoformat() if expires_in_days else None
         )
-        key = self._repository.create(
+        key = self._repository.create_within_limit(
             user_id=user_id,
             name=clean_name,
             prefix=secret[:_DISPLAY_PREFIX_LEN],
@@ -98,7 +95,10 @@ class ApiKeyService:
             scope=scope,
             created_at=now.isoformat(),
             expires_at=expires_at,
+            limit=MAX_KEYS_PER_USER,
         )
+        if key is None:
+            raise ApiKeyLimitError(user_id)
         return key, secret
 
     def revoke_key(self, key_id: int, user_id: int) -> None:

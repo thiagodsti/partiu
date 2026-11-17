@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { test } from '@playwright/test';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,9 @@ export const SEED_BOOKING_REF = 'E2ESED';
 export const STOPOVER_BOOKING_REF = 'E2ESTO';
 
 export interface SeedInfo {
+  /** False only when global setup could not sign in as E2E_ADMIN — someone
+   * else's server, outside CI. Every other failure throws in setup instead. */
+  available: boolean;
   tripId: string | null;
   /** A one-way trip that waits 25h in Copenhagen between its two legs. */
   stopoverTripId?: string | null;
@@ -39,6 +43,16 @@ function readSeedInfo(): SeedInfo | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Skips the calling test only when global setup said this server could not be
+ * prepared. Anything else that goes wrong — a sign-in that fails, a fixture
+ * that will not create — must fail the test: a skip there is coverage lost
+ * without anyone being told.
+ */
+export function requireSeededServer(): void {
+  test.skip(readSeedInfo()?.available !== true, 'Global setup could not prepare this server');
 }
 
 /** The seeded trip's id, or null when global setup could not create it. */

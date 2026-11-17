@@ -427,11 +427,11 @@ npm run dev   # Vite dev server at localhost:5173
 # Backend unit tests
 uv run pytest backend/tests/ -v --cov=backend --cov-fail-under=70
 
-# E2E tests: start a throwaway server first — global setup creates its test
-# accounts and seeded trips, so point it at a scratch database, not your own
-DB_PATH=/tmp/partiu-e2e.db DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false \
-  uv run uvicorn backend.main:app --port 8000 &
-cd frontend && npx playwright install chromium && npm run test:e2e
+# E2E tests: starts its own server on a scratch database, waits for it, runs
+# Playwright and stops it. Refuses to run if port 8000 is already in use, since
+# global setup would otherwise create test accounts in that server's database.
+(cd frontend && npx playwright install chromium && npm run build)
+scripts/run_e2e.sh                       # or: scripts/run_e2e.sh tests/foo.spec.ts
 ```
 
 ---

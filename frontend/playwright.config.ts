@@ -14,7 +14,9 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   retries: 0,
   use: {
-    baseURL: 'http://localhost:8000',
+    // Global setup provisions accounts on this same server, so a spec pointed
+    // elsewhere with E2E_BASE_URL finds them there too.
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8000',
     headless: true,
     ...devices['Desktop Chrome'],
   },

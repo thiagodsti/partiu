@@ -19,16 +19,16 @@ async function openSeededTrip(page: Page): Promise<boolean> {
   const tripId = seededTripId();
   if (!tripId) return false;
   await page.goto(`${BASE_URL}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
+  // The page has painted once its add-transport control has: the seeded trip
+  // is the caller's own, so that control is always there.
+  await expect(page.locator('a[href*="/add-transport"]').first()).toBeVisible();
   return true;
 }
 
 async function openAddTransport(page: Page): Promise<boolean> {
   if (!(await openSeededTrip(page))) return false;
 
-  const addLink = page.locator('a[href*="/add-transport"]').first();
-  if (await addLink.count() === 0) return false;
-  await addLink.click();
+  await page.locator('a[href*="/add-transport"]').first().click();
   await page.waitForLoadState('networkidle');
   return true;
 }

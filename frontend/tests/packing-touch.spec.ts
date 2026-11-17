@@ -47,8 +47,10 @@ async function packingRows(page: Page) {
   if (!tripId) return null;
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
+  // The seeded trip always has packing items: wait for them to paint rather
+  // than counting early and skipping every touch test as "no items".
   const rows = page.locator('.packing-item');
-  if ((await rows.count()) === 0) return null;
+  await expect(rows.first()).toBeVisible();
   await rows.first().scrollIntoViewIfNeeded();
   return rows;
 }
