@@ -150,7 +150,9 @@ class AuthService:
         user_id = decode_session_cookie(token)
         if user_id is None:
             raise AuthError("Invalid or expired session", 401)
+        return self.get_me_by_id(user_id)
 
+    def get_me_by_id(self, user_id: int) -> UserSummary:
         user = self._repository.get_user_summary(user_id)
         if user is None:
             raise AuthError("User not found", 401)

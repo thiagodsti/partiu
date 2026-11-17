@@ -4,6 +4,9 @@
  */
 
 import type {
+  ApiKey,
+  ApiKeyScope,
+  CreatedApiKey,
   TrashItem,
   RestoreResult,
   ActivityEntry,
@@ -610,4 +613,11 @@ export const trashApi = {
 
 export const activityApi = {
   list: (limit = 100) => get<ActivityEntry[]>(`/api/activity?limit=${limit}`),
+};
+
+export const apiKeysApi = {
+  list: () => get<ApiKey[]>('/api/api-keys'),
+  create: (body: { name: string; scope: ApiKeyScope; expires_in_days: number | null }) =>
+    post<CreatedApiKey>('/api/api-keys', body),
+  revoke: (id: number) => del<null>(`/api/api-keys/${id}`),
 };

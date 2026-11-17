@@ -28,7 +28,7 @@ from .dto import (
 )
 from .errors import AuthError
 from .mappers import user_summary_to_dto, user_summary_to_me_dto
-from .session import get_current_user, has_any_users
+from .session import get_current_user, has_any_users, resolve_user_id
 
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "true").lower() != "false"
 
@@ -174,9 +174,11 @@ def me(request: Request):
     if not has_any_users():
         return JSONResponse({"detail": "Setup required", "setup_required": True}, status_code=503)
 
-    token = request.cookies.get("session")
+    # Resolved like every other route (cookie or API key), so an integration can
+    # ask who its key belongs to.
+    user_id = resolve_user_id(request)
     try:
-        summary = auth_service.get_me(token)
+        summary = auth_service.get_me_by_id(user_id)
     except AuthError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 

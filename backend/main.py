@@ -19,6 +19,7 @@ from slowapi.errors import RateLimitExceeded
 
 from .activity import routes as activity_routes
 from .airports import routes as airports_routes
+from .api_keys import routes as api_keys_routes
 from .auth import routes as auth_routes
 from .auth import validate_secret_key
 from .boarding_passes import routes as boarding_passes_routes
@@ -183,6 +184,7 @@ app.include_router(trip_documents_routes.router)
 app.include_router(version_routes.router)
 app.include_router(trash_routes.router)
 app.include_router(activity_routes.router)
+app.include_router(api_keys_routes.router)
 
 
 def _resolve_static_file(base: Path, full_path: str) -> Path | None:

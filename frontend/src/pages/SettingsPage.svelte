@@ -10,6 +10,7 @@
   import SyncStatusBar from "../components/SyncStatusBar.svelte";
   import TrashPanel from "../components/TrashPanel.svelte";
   import ActivityPanel from "../components/ActivityPanel.svelte";
+  import ApiKeysPanel from "../components/ApiKeysPanel.svelte";
   import { currentUser } from "../lib/authStore";
   import { theme } from "../lib/themeStore";
   import { accent, setAccent, ACCENTS, DEFAULT_ACCENT } from "../lib/accentStore";
@@ -1775,6 +1776,9 @@
         </ul>
       {/if}
     </div>
+
+    <!-- API keys: own component, like the trash, so it loads and fails on its own. -->
+    <ApiKeysPanel demo={isDemo} />
 
     <!-- Guests -->
     <!-- Trash and activity: what was deleted, and what happened. Own components

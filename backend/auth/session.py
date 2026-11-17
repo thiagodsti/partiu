@@ -135,13 +135,48 @@ def has_any_users() -> bool:
         return row[0] > 0
 
 
+def _user_id_from_api_key(request: Request, secret: str) -> int:
+    """Resolve a Bearer API key, refusing requests its scope does not cover."""
+    from ..api_keys.service import api_key_service, refusal_reason
+
+    key = api_key_service.authenticate(secret)
+    if key is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    reason = refusal_reason(key.scope, request.method, request.url.path)
+    if reason:
+        raise HTTPException(status_code=403, detail=reason)
+    return key.user_id
+
+
+def resolve_user_id(request: Request) -> int:
+    """The id of the account this request authenticates as — by API key or session cookie.
+
+    Raises a 401 (or a 403 for a key reaching past its scope). Shared by
+    ``get_current_user`` and ``/api/auth/me``, which builds its own response.
+    """
+    # An explicit Authorization header wins over a cookie, and a bad key is a
+    # 401 rather than a fall-back to the cookie: a script that sent a key wants
+    # to know the key is wrong, not to act as whoever last signed in here.
+    authorization = request.headers.get("authorization", "")
+    scheme, _, credentials = authorization.partition(" ")
+    if scheme.lower() == "bearer" and credentials.strip():
+        user_id = _user_id_from_api_key(request, credentials.strip())
+    else:
+        token = request.cookies.get("session")
+        if not token:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        user_id = decode_session_cookie(token)
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return user_id
+
+
 async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("session")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    user_id = decode_session_cookie(token)
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    user_id = resolve_user_id(request)
     from ..database import db_conn
 
     with db_conn() as conn:

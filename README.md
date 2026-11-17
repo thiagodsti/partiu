@@ -172,6 +172,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Username / password login with session cookies (30-day expiration, server-side revocable). **Usernames are case-insensitive** — `Thiago` and `thiago` are the same account, wherever the name is typed (signing in, inviting someone to a trip, trusting a user); the password, being a secret rather than an identifier, is not
 - TOTP-based 2FA — enable/disable from Settings; QR code for any authenticator app
 - Login rate-limiting and TOTP lockout after repeated failures
+- **Personal API keys** (Settings → API keys) for scripts and other services: nothing is generated until you press *Create key*; the value is shown once and only a hash is stored. Send it as `Authorization: Bearer partiu_…`. Each key is *read only* (GET) or *read and write*, can expire after 30/90/365 days or never, shows when it was last used, and can be revoked at any time. **No key can reach the account itself** whatever its scope: it cannot create or revoke keys, change the password, 2FA or sessions, manage users, or change Settings (which hold the IMAP and Immich credentials). Refused on a demo instance
 - Audit logging of auth events
 - Demo mode (`DEMO_MODE`), off by default, for a public demo instance where everyone signs in to one shared account:
   - the login page prints the credentials and offers a one-click sign-in; a permanent, undismissable banner says the account is shared
@@ -298,6 +299,17 @@ On first visit, Partiu shows a setup page to create the admin account. After log
 ### Two-Factor Authentication
 
 Each user can enable TOTP-based 2FA from Settings → Two-Factor Authentication. Use any authenticator app (Google Authenticator, Authy, 1Password, etc.).
+
+### API keys
+
+Settings → API keys → *Create key*. Copy the value straight away — it is never shown again. Then:
+
+```bash
+curl -H "Authorization: Bearer partiu_…" https://your-partiu/api/trips
+curl -H "Authorization: Bearer partiu_…" https://your-partiu/api/auth/me   # who the key belongs to
+```
+
+A *read only* key gets 403 on anything but GET. Keys are meant for server-to-server use; the API sends no CORS headers for other origins.
 
 ### AviationStack API Key (optional)
 
@@ -519,7 +531,7 @@ To improve results, edit the system prompt in `backend/integrations/llm/parser.p
 |---|---|
 | Backend | FastAPI + APScheduler + SQLite (WAL mode) |
 | Frontend | Svelte 5 + Vite (PWA) |
-| Auth | Session cookies (itsdangerous) + bcrypt + TOTP 2FA |
+| Auth | Session cookies (itsdangerous) + bcrypt + TOTP 2FA + hashed Bearer API keys |
 | Email fetch | Gmail IMAP with App Password (per user) |
 | Email receive | aiosmtpd (inbound SMTP server) |
 | HTML parsing | BeautifulSoup4 + lxml |

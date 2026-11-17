@@ -537,6 +537,25 @@ export interface IntegrationStatus {
   env_var: string | null;
 }
 
+// ---- Personal API keys (migration 0037) ----
+
+export type ApiKeyScope = 'read' | 'write';
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  prefix: string;
+  scope: ApiKeyScope;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+}
+
+/** Only the create response carries the secret, and only once. */
+export interface CreatedApiKey extends ApiKey {
+  key: string;
+}
+
 // ---- Trash & activity log (migration 0035) ----
 
 export interface TrashItem {
