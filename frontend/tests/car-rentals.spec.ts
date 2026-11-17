@@ -11,6 +11,7 @@
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { ACCOUNTS } from './support/accounts';
+import { signInPage } from './support/session';
 
 const BASE = 'http://localhost:8000';
 const OWNER_USER = ACCOUNTS.rentalOwner.username;
@@ -339,25 +340,7 @@ test('the car rental section and the planner banding render on the trip page', a
   const tripId = await createTrip(ownerCtx, 'E2E rental UI');
   await ownerCtx.post(`/api/trips/${tripId}/car-rentals`, { data: rentalPayload() });
 
-  await page.goto(`${BASE}/#/login`);
-  await page.waitForLoadState('networkidle');
-  const usernameField = page.locator('#login-username');
-  const loginShown = await usernameField
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .then(() => true)
-    .catch(() => false);
-  if (loginShown) {
-    await usernameField.fill(OWNER_USER);
-    await page.locator('#login-password').fill(OWNER_PASS);
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/auth/login')),
-      page.click('button[type="submit"]'),
-    ]);
-    await page.waitForLoadState('networkidle');
-  }
-
-  const sessionCookie = (await page.context().cookies()).find((c) => c.name === 'session');
-  test.skip(!sessionCookie, 'Browser could not hold a session — run the server with SECURE_COOKIES=false');
+  await signInPage(page, OWNER_USER, OWNER_PASS);
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');

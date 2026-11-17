@@ -10,6 +10,7 @@
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
 import { ACCOUNTS } from './support/accounts';
+import { signInPage } from './support/session';
 
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:8000';
 const USER = ACCOUNTS.apiKeysUser.username;
@@ -38,24 +39,7 @@ async function keyClient(secret: string): Promise<APIRequestContext> {
 test('a key created in Settings works without a session and stops when revoked', async ({ page }) => {
   test.skip(!(await ensureUser()), 'Could not set up the test user — skipping API key tests');
 
-  await page.goto(`${BASE}/#/login`);
-  await page.waitForLoadState('networkidle');
-  const usernameField = page.locator('#login-username');
-  const loginShown = await usernameField
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .then(() => true)
-    .catch(() => false);
-  if (loginShown) {
-    await usernameField.fill(USER);
-    await page.locator('#login-password').fill(PASS);
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/auth/login')),
-      page.click('button[type="submit"]'),
-    ]);
-    await page.waitForLoadState('networkidle');
-  }
-  const sessionCookie = (await page.context().cookies()).find((c) => c.name === 'session');
-  test.skip(!sessionCookie, 'Browser could not hold a session — run the server with SECURE_COOKIES=false');
+  await signInPage(page, USER, PASS);
 
   await page.goto(`${BASE}/#/settings`);
   await page.waitForLoadState('networkidle');

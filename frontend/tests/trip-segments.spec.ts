@@ -10,6 +10,7 @@
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { ACCOUNTS } from './support/accounts';
+import { signInPage } from './support/session';
 
 const BASE = 'http://localhost:8000';
 const OWNER_USER = ACCOUNTS.segOwner.username;
@@ -306,29 +307,7 @@ test('the ground transport section renders on the trip page', async ({ page }) =
   const tripId = await createTrip(ownerCtx, 'E2E segments UI');
   await ownerCtx.post(`/api/trips/${tripId}/segments`, { data: trainPayload() });
 
-  await page.goto(`${BASE}/#/login`);
-  await page.waitForLoadState('networkidle');
-  // The app renders the trips list directly when a session cookie is already
-  // present, so the login form is only filled in when it actually appears —
-  // waited for explicitly, because a bare count() does not auto-wait and would
-  // race the app's first render.
-  const usernameField = page.locator('#login-username');
-  const loginShown = await usernameField
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .then(() => true)
-    .catch(() => false);
-  if (loginShown) {
-    await usernameField.fill(OWNER_USER);
-    await page.locator('#login-password').fill(OWNER_PASS);
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/auth/login')),
-      page.click('button[type="submit"]'),
-    ]);
-    await page.waitForLoadState('networkidle');
-  }
-
-  const sessionCookie = (await page.context().cookies()).find((c) => c.name === 'session');
-  test.skip(!sessionCookie, 'Browser could not hold a session — run the server with SECURE_COOKIES=false');
+  await signInPage(page, OWNER_USER, OWNER_PASS);
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
@@ -375,24 +354,7 @@ test('a round trip groups its legs into outbound, getting around, and return', a
   }
   await ownerCtx.post(`/api/trips/${tripId}/segments`, { data: trainPayload() });
 
-  await page.goto(`${BASE}/#/login`);
-  await page.waitForLoadState('networkidle');
-  const usernameField = page.locator('#login-username');
-  const loginShown = await usernameField
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .then(() => true)
-    .catch(() => false);
-  if (loginShown) {
-    await usernameField.fill(OWNER_USER);
-    await page.locator('#login-password').fill(OWNER_PASS);
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/auth/login')),
-      page.click('button[type="submit"]'),
-    ]);
-    await page.waitForLoadState('networkidle');
-  }
-  const sessionCookie = (await page.context().cookies()).find((c) => c.name === 'session');
-  test.skip(!sessionCookie, 'Browser could not hold a session — run the server with SECURE_COOKIES=false');
+  await signInPage(page, OWNER_USER, OWNER_PASS);
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
