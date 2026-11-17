@@ -15,10 +15,11 @@
  */
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const USER = 'e2e_lodging_user';
-const PASS = 'E2eLodgingUser1!';
+const USER = ACCOUNTS.lodgingUser.username;
+const PASS = ACCOUNTS.lodgingUser.password;
 
 // Stable across runs so a re-run re-imports the same booking and exercises the
 // importer's idempotency rather than piling up duplicates.

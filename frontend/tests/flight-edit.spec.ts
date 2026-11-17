@@ -9,12 +9,13 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const OWNER_USER = 'e2e_fedit_owner';
-const OWNER_PASS = 'E2eFeditOwner1!';
-const OTHER_USER = 'e2e_fedit_other';
-const OTHER_PASS = 'E2eFeditOther1!';
+const OWNER_USER = ACCOUNTS.feditOwner.username;
+const OWNER_PASS = ACCOUNTS.feditOwner.password;
+const OTHER_USER = ACCOUNTS.feditOther.username;
+const OTHER_PASS = ACCOUNTS.feditOther.password;
 
 function flightPayload(tripId: string, overrides: Record<string, unknown> = {}) {
   return {

@@ -15,6 +15,10 @@ load_dotenv(_ROOT / ".env")
 class Settings:
     DB_PATH: str = os.getenv("DB_PATH", str(_ROOT / "data" / "partiu.db"))
     DISABLE_SCHEDULER: bool = os.getenv("DISABLE_SCHEDULER", "false").lower() == "true"
+    # Test servers only. The E2E suite signs in two dozen accounts and imports
+    # dozens of mails from one address in a couple of minutes, which the per-IP
+    # limits (5 sign-ins a minute) are there to stop. Never set it in production.
+    DISABLE_RATE_LIMITS: bool = os.getenv("DISABLE_RATE_LIMITS", "false").lower() == "true"
     AVIATIONSTACK_API_KEY: str = os.getenv("AVIATIONSTACK_API_KEY", "")
     # Auth
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")

@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
+import { BROWSER_STATE, seededTripId } from './support/seed';
 
 const BASE_URL = 'http://localhost:8000';
+
+test.use({ storageState: BROWSER_STATE });
 
 async function serverAvailable(page: Page): Promise<boolean> {
   try {
@@ -17,13 +20,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('delete trip flow', async ({ page }) => {
-  await page.goto(BASE_URL);
-  await page.waitForLoadState('networkidle');
-
-  const cards = page.locator('.trip-card');
-  test.skip(await cards.count() === 0, 'No trips available for delete test');
-
-  await cards.first().click();
+  // Deletes a trip made for the purpose: "the first card" was the seeded trip
+  // every other browse spec opens.
+  const res = await page.request.post(`${BASE_URL}/api/trips`, { data: { name: `E2E delete me ${Date.now()}` } });
+  test.skip(!res.ok(), 'Could not create a trip to delete');
+  const { id } = await res.json();
+  await page.goto(`${BASE_URL}/#/trips/${id}`);
   await page.waitForLoadState('networkidle');
 
   const deleteBtn = page.locator('button', { hasText: 'Delete Trip' });
@@ -37,13 +39,9 @@ test('delete trip flow', async ({ page }) => {
 });
 
 test('share trip panel opens', async ({ page }) => {
-  await page.goto(BASE_URL);
-  await page.waitForLoadState('networkidle');
-
-  const cards = page.locator('.trip-card');
-  test.skip(await cards.count() === 0, 'No trips available for share test');
-
-  await cards.first().click();
+  const tripId = seededTripId();
+  test.skip(!tripId, 'No trips available for share test');
+  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
 
   const shareBtn = page.locator('button', { hasText: 'Share Trip' });

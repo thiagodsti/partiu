@@ -8,13 +8,14 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
 
-const OWNER_USER = 'e2e_split_owner';
-const OWNER_PASS = 'E2eSplitOwner1!';
-const SPOUSE_USER = 'e2e_split_spouse';
-const SPOUSE_PASS = 'E2eSplitSpouse1!';
+const OWNER_USER = ACCOUNTS.splitOwner.username;
+const OWNER_PASS = ACCOUNTS.splitOwner.password;
+const SPOUSE_USER = ACCOUNTS.splitSpouse.username;
+const SPOUSE_PASS = ACCOUNTS.splitSpouse.password;
 
 async function loginContext(username: string, password: string): Promise<APIRequestContext | null> {
   const ctx = await (await import('@playwright/test')).request.newContext({ baseURL: BASE });
@@ -75,11 +76,15 @@ test('lunch split between owner, spouse and two guests nets the expected balance
     expect(invitation).toBeDefined();
     await spouseCtx.post(`/api/trips/invitations/${invitation.id}/accept`);
 
-    // Two guests
+    // Two guests, put on this trip's roster — since migration 0036 the picker
+    // offers the roster, not every guest the owner has ever created.
     for (const name of ['E2E Friend One', 'E2E Friend Two']) {
       const guestRes = await ownerCtx.post('/api/guests', { data: { name } });
       expect(guestRes.status()).toBe(201);
-      guestIds.push((await guestRes.json()).id);
+      const guestId = (await guestRes.json()).id;
+      guestIds.push(guestId);
+      const rosterRes = await ownerCtx.post(`/api/trips/${trip.id}/guests`, { data: { guest_id: guestId } });
+      expect(rosterRes.status()).toBe(201);
     }
 
     // Participants picker should list owner + spouse + both guests

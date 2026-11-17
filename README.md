@@ -270,6 +270,7 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `SECRET_KEY` | ✓ | Secret key for signing session cookies. Generate with `openssl rand -hex 32` |
 | `DB_PATH` | | Path to the SQLite database (default: `./data/partiu.db`) |
 | `DISABLE_SCHEDULER` | | Set to `true` to disable background email sync (useful for dev) |
+| `DISABLE_RATE_LIMITS` | | **Test servers only.** Set to `true` to turn off the per-IP limits (5 sign-ins/minute, the failed-login lockout, upload limits) so the E2E suite can run; logged as a warning at startup. Never set it in production |
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
 | `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
 | `PHOTON_URL` | | Geocoder for the station, hotel and address pickers (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and type places as plain text — note that a place with no coordinates gets no map pin, no timezone conversion, and does not count toward visited countries |
@@ -426,9 +427,11 @@ npm run dev   # Vite dev server at localhost:5173
 # Backend unit tests
 uv run pytest backend/tests/ -v --cov=backend --cov-fail-under=70
 
-# E2E tests (requires a running server at localhost:8000)
-uv run playwright install chromium
-uv run pytest frontend/tests/ -v
+# E2E tests: start a throwaway server first — global setup creates its test
+# accounts and seeded trips, so point it at a scratch database, not your own
+DB_PATH=/tmp/partiu-e2e.db DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false \
+  uv run uvicorn backend.main:app --port 8000 &
+cd frontend && npx playwright install chromium && npm run test:e2e
 ```
 
 ---

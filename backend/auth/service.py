@@ -113,7 +113,7 @@ class AuthService:
         # a typo, not an attack — and the whole crowd usually shares one
         # apparent address behind the proxy, which would lock all of them out
         # together. The route's rate limit still bounds the endpoint.
-        if self._demo_mode():
+        if self._lockout_disabled():
             return
         now = time.time()
         cutoff = now - _LOGIN_LOCKOUT_WINDOW
@@ -122,17 +122,20 @@ class AuthService:
             raise AuthError("Too many failed login attempts. Please try again later.", 429)
 
     def _record_login_failure(self, ip: str) -> None:
-        # Nothing reads these in demo mode, and the pruning that keeps the list
-        # bounded happens in the check we just skipped — so don't grow one.
-        if self._demo_mode():
+        # Nothing reads these with the lockout off, and the pruning that keeps the
+        # list bounded happens in the check we just skipped — so don't grow one.
+        if self._lockout_disabled():
             return
         self._login_failures[ip].append(time.time())
 
     @staticmethod
-    def _demo_mode() -> bool:
+    def _lockout_disabled() -> bool:
+        # Off on a demo (see above) and on a test server running with
+        # DISABLE_RATE_LIMITS, where the E2E suite's deliberate wrong-password
+        # attempts would otherwise lock every later sign-in out for ten minutes.
         from ..config import settings
 
-        return settings.DEMO_MODE
+        return settings.DEMO_MODE or settings.DISABLE_RATE_LIMITS
 
     # -- Logout / me / update-me -----------------------------------------------
 

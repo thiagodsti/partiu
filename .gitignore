@@ -50,6 +50,8 @@ htmlcov/
 .pytest_cache/
 playwright-report/
 test-results/
+# E2E session + seed ids written by frontend/tests/global-setup.ts
+frontend/tests/.auth/
 
 # Locale JSONs copied into the image at build time (see Dockerfile)
 backend/locales/

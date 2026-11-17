@@ -12,13 +12,14 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
 
-const OWNER_USER = 'e2e_budget_owner';
-const OWNER_PASS = 'E2eBudgetOwner1!';
-const PARTNER_USER = 'e2e_budget_partner';
-const PARTNER_PASS = 'E2eBudgetPartner1!';
+const OWNER_USER = ACCOUNTS.budgetOwner.username;
+const OWNER_PASS = ACCOUNTS.budgetOwner.password;
+const PARTNER_USER = ACCOUNTS.budgetPartner.username;
+const PARTNER_PASS = ACCOUNTS.budgetPartner.password;
 
 async function loginContext(username: string, password: string): Promise<APIRequestContext | null> {
   const ctx = await (await import('@playwright/test')).request.newContext({ baseURL: BASE });

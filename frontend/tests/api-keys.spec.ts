@@ -9,10 +9,11 @@
  */
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:8000';
-const USER = 'e2e_api_keys_user';
-const PASS = 'E2eApiKeysUser1!';
+const USER = ACCOUNTS.apiKeysUser.username;
+const PASS = ACCOUNTS.apiKeysUser.password;
 
 async function ensureUser(): Promise<boolean> {
   const anon = await request.newContext({ baseURL: BASE });

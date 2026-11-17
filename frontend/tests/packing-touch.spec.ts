@@ -22,13 +22,15 @@
  */
 
 import { test, expect, devices, type Page } from '@playwright/test';
+import { BROWSER_STATE, seededTripId } from './support/seed';
 
 const BASE = 'http://localhost:8000';
 
 // The device profile supplies the viewport, `hasTouch` and `isMobile` — but not
 // the browser: this project installs Chromium only (`npx playwright install
 // chromium`), and iPhone profiles otherwise default to WebKit.
-test.use({ ...devices['iPhone 13'], browserName: 'chromium' });
+// Signed in as the account global-setup seeded a trip with a packing list for.
+test.use({ ...devices['iPhone 13'], browserName: 'chromium', storageState: BROWSER_STATE });
 
 async function serverAvailable(page: Page): Promise<boolean> {
   try {
@@ -39,13 +41,11 @@ async function serverAvailable(page: Page): Promise<boolean> {
   }
 }
 
-/** Opens the first trip and returns its packing rows, or null when there are none. */
+/** Opens the seeded trip and returns its packing rows, or null when there are none. */
 async function packingRows(page: Page) {
-  await page.goto(`${BASE}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const card = page.locator('.card-link').first();
-  if ((await card.count()) === 0) return null;
-  await card.click();
+  const tripId = seededTripId();
+  if (!tripId) return null;
+  await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
   const rows = page.locator('.packing-item');
   if ((await rows.count()) === 0) return null;

@@ -1,13 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
+import { BROWSER_STATE, seededTripId, stopoverTripId } from './support/seed';
 
 const BASE_URL = 'http://localhost:8000';
 
+// Signed in as the account global-setup seeded a round trip for.
+test.use({ storageState: BROWSER_STATE });
+
+/** Opens the seeded trip: ARN→FRA→LIS out, LIS→ARN back, with an expense. */
 async function goToFirstTrip(page: Page): Promise<boolean> {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const card = page.locator('.trip-card').first();
-  if (await card.count() === 0) return false;
-  await card.click();
+  const tripId = seededTripId();
+  if (!tripId) return false;
+  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
   return true;
 }
@@ -52,87 +55,51 @@ test('flight row shows route arrow', async ({ page }) => {
   await expect(route.locator('.flight-route-arrow')).toBeVisible();
 });
 
-test('outbound divider shows flying time', async ({ page }) => {
+test('outbound divider shows travelling time', async ({ page }) => {
   const found = await goToFirstTrip(page);
   test.skip(!found, 'No trips in database');
   const outbound = page.locator('.section-divider-label', { hasText: 'Outbound' }).first();
   await expect(outbound).toBeVisible();
   const label = await outbound.textContent() ?? '';
-  expect(label).toContain('flying');
+  // "travelling", not "flying", since a leg can be a train (LegDivider).
+  expect(label).toContain('travelling');
 });
 
 test('round trip has return divider', async ({ page }) => {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const cards = page.locator('.trip-card');
-  test.skip(await cards.count() === 0, 'No trips in database');
-
-  const count = Math.min(await cards.count(), 8);
-  for (let i = 0; i < count; i++) {
-    await cards.nth(i).click();
-    await page.waitForLoadState('networkidle');
-    const ret = page.locator('.section-divider-label', { hasText: 'Return' });
-    if (await ret.count() > 0) {
-      await expect(ret.first()).toBeVisible();
-      return;
-    }
-    await page.goBack();
-    await page.waitForLoadState('networkidle');
-  }
-  test.skip(true, 'No round-trip found in first 8 trips');
+  const found = await goToFirstTrip(page);
+  test.skip(!found, 'No trips in database');
+  await expect(page.locator('.section-divider-label', { hasText: 'Return' }).first()).toBeVisible();
 });
 
 test('connection badge visible for multi-leg trip', async ({ page }) => {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const cards = page.locator('.trip-card');
-  test.skip(await cards.count() === 0, 'No trips in database');
-
-  const count = Math.min(await cards.count(), 15);
-  for (let i = 0; i < count; i++) {
-    await cards.nth(i).click();
-    await page.waitForLoadState('networkidle');
-    const badges = page.locator('.connection-badge');
-    if (await badges.count() > 0) {
-      await expect(badges.first()).toBeVisible();
-      const label = badges.first().locator('.connection-badge-label');
-      await expect(label).toBeVisible();
-      const text = await label.textContent() ?? '';
-      expect(text.includes('at') || text.includes('m')).toBe(true);
-      return;
-    }
-    await page.goBack();
-    await page.waitForLoadState('networkidle');
-  }
-  test.skip(true, 'No multi-leg trip found in first 15 trips');
+  const found = await goToFirstTrip(page);
+  test.skip(!found, 'No trips in database');
+  // The seeded outbound changes planes in Frankfurt.
+  const badge = page.locator('.connection-badge').first();
+  await expect(badge).toBeVisible();
+  const label = badge.locator('.connection-badge-label');
+  await expect(label).toBeVisible();
+  const text = await label.textContent() ?? '';
+  expect(text.includes('at') || text.includes('m')).toBe(true);
 });
 
 test('no total shown for long stopover', async ({ page }) => {
-  await page.goto(`${BASE_URL}/#/trips`);
+  const tripId = stopoverTripId();
+  test.skip(!tripId, 'No trip with 24h+ stopover found');
+  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
-  const cards = page.locator('.trip-card');
-  test.skip(await cards.count() === 0, 'No trips in database');
 
-  const count = Math.min(await cards.count(), 15);
-  for (let i = 0; i < count; i++) {
-    await cards.nth(i).click();
-    await page.waitForLoadState('networkidle');
-    const badges = page.locator('.connection-badge-label');
-    const badgeCount = await badges.count();
-    for (let j = 0; j < badgeCount; j++) {
-      const text = await badges.nth(j).textContent() ?? '';
-      const m = text.match(/(\d+)h/);
-      if (m && parseInt(m[1]) >= 24) {
-        const outbound = page.locator('.section-divider-label', { hasText: 'Outbound' }).first();
-        const label = await outbound.textContent() ?? '';
-        expect(label).not.toContain('total');
-        return;
-      }
-    }
-    await page.goBack();
-    await page.waitForLoadState('networkidle');
-  }
-  test.skip(true, 'No trip with 24h+ stopover found');
+  // The seeded stopover waits 25h in Copenhagen. A wait that long always
+  // crosses a day, so the legs are separated by a date divider rather than a
+  // connection badge — which is why this test used to look for a 24h+ badge
+  // and skip on every trip: no such badge can be drawn.
+  await expect(page.locator('.flight-row')).toHaveCount(2);
+  await expect(page.locator('.connection-badge')).toHaveCount(0);
+
+  // legStats drops the total past 24h: door to door is no longer one journey.
+  const outbound = page.locator('.section-divider-label', { hasText: 'Outbound' }).first();
+  await expect(outbound).toBeVisible();
+  expect(await outbound.textContent() ?? '').not.toContain('total');
 });
 
 test('clicking flight row opens flight detail', async ({ page }) => {
@@ -183,8 +150,10 @@ test('an empty documents section collapses onto its header row', async ({ page }
   const found = await goToFirstTrip(page);
   test.skip(!found, 'No trips in database');
 
-  const docs = page.locator('.trip-section').filter({ has: page.locator('.section-note') });
-  test.skip(await docs.count() === 0, 'Every section on this trip has content');
+  // Documents specifically: other empty sections (stays, say) carry advisory
+  // lines under their note and are not meant to fold onto one row.
+  const docs = page.locator('.trip-section-documents.trip-section-compact');
+  test.skip(await docs.count() === 0, 'This trip has documents');
   const box = await docs.first().boundingBox();
   expect(box!.height).toBeLessThan(100);
 });

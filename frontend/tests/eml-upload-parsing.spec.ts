@@ -9,10 +9,11 @@
  */
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const USER = 'e2e_eml_user';
-const PASS = 'E2eEmlUser1!';
+const USER = ACCOUNTS.emlUser.username;
+const PASS = ACCOUNTS.emlUser.password;
 
 async function loginContext(username: string, password: string): Promise<APIRequestContext | null> {
   const ctx = await request.newContext({ baseURL: BASE });

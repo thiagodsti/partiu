@@ -16,10 +16,11 @@
  */
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const USER = 'e2e_cancel_user';
-const PASS = 'E2eCancelUser1!';
+const USER = ACCOUNTS.cancelUser.username;
+const PASS = ACCOUNTS.cancelUser.password;
 
 async function loginContext(): Promise<APIRequestContext | null> {
   const ctx = await request.newContext({ baseURL: BASE });

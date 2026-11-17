@@ -310,6 +310,18 @@ class TestDemoLoginIsNotThrottled:
         r = client.post("/api/auth/login", json={"username": "demo", "password": "demo1234"})
         assert r.status_code == 200
 
+    def test_the_per_ip_lockout_is_off_on_a_test_server(self, client, monkeypatch):
+        import backend.config as cfg_module
+
+        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+        monkeypatch.setattr(cfg_module.settings, "DISABLE_RATE_LIMITS", True)
+
+        for _ in range(8):
+            r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+            assert r.status_code == 401
+        r = client.post("/api/auth/login", json={"username": "admin", "password": "password123"})
+        assert r.status_code == 200
+
     def test_the_lockout_still_applies_on_an_ordinary_install(self, client, monkeypatch):
         import backend.config as cfg_module
 

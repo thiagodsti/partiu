@@ -9,12 +9,13 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const OWNER_USER = 'e2e_stay_owner';
-const OWNER_PASS = 'E2eStayOwner1!';
-const OTHER_USER = 'e2e_stay_other';
-const OTHER_PASS = 'E2eStayOther1!';
+const OWNER_USER = ACCOUNTS.stayOwner.username;
+const OWNER_PASS = ACCOUNTS.stayOwner.password;
+const OTHER_USER = ACCOUNTS.stayOther.username;
+const OTHER_PASS = ACCOUNTS.stayOther.password;
 
 const HOTEL_LISBON = {
   name: 'Hotel Avenida Palace',
@@ -297,7 +298,7 @@ test('the stays section and the planner banding render on the trip page', async 
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('heading', { name: 'Stays' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Stays', exact: true })).toBeVisible({ timeout: 15000 });
 
   const stayRow = page.locator('.stay-row', { hasText: 'Hotel Avenida Palace' });
   await expect(stayRow).toBeVisible();

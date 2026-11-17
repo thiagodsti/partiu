@@ -4,12 +4,13 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const ADMIN_USER = 'e2e_blocked_admin';
-const ADMIN_PASS = 'E2eBlockedAdmin1!';
-const REGULAR_USER = 'e2e_blocked_regular';
-const REGULAR_PASS = 'E2eBlockedRegular1!';
+const ADMIN_USER = ACCOUNTS.blockedAdmin.username;
+const ADMIN_PASS = ACCOUNTS.blockedAdmin.password;
+const REGULAR_USER = ACCOUNTS.blockedRegular.username;
+const REGULAR_PASS = ACCOUNTS.blockedRegular.password;
 const TEST_DOMAIN = 'e2e-test-blocked.com';
 
 async function loginContext(username: string, password: string): Promise<APIRequestContext | null> {

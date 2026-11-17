@@ -10,12 +10,13 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const OWNER_USER = 'e2e_rental_owner';
-const OWNER_PASS = 'E2eRentalOwner1!';
-const OTHER_USER = 'e2e_rental_other';
-const OTHER_PASS = 'E2eRentalOther1!';
+const OWNER_USER = ACCOUNTS.rentalOwner.username;
+const OWNER_PASS = ACCOUNTS.rentalOwner.password;
+const OTHER_USER = ACCOUNTS.rentalOther.username;
+const OTHER_PASS = ACCOUNTS.rentalOther.password;
 
 const COUNTER_VIENNA = {
   name: 'Vienna Airport',
@@ -360,7 +361,7 @@ test('the car rental section and the planner banding render on the trip page', a
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('heading', { name: 'Car rental' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Car rental', exact: true })).toBeVisible({ timeout: 15000 });
 
   const row = page.locator('.rental-row', { hasText: 'Hertz' });
   await expect(row).toBeVisible();

@@ -9,12 +9,13 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
-const OWNER_USER = 'e2e_seg_owner';
-const OWNER_PASS = 'E2eSegOwner1!';
-const OTHER_USER = 'e2e_seg_other';
-const OTHER_PASS = 'E2eSegOther1!';
+const OWNER_USER = ACCOUNTS.segOwner.username;
+const OWNER_PASS = ACCOUNTS.segOwner.password;
+const OTHER_USER = ACCOUNTS.segOther.username;
+const OTHER_PASS = ACCOUNTS.segOther.password;
 
 const BEIJING_WEST = {
   name: 'Beijing West Railway Station',
@@ -331,7 +332,7 @@ test('the ground transport section renders on the trip page', async ({ page }) =
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('heading', { name: 'Transport' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Transport', exact: true })).toBeVisible({ timeout: 15000 });
 
   // The ground leg renders as a row in the same list as the flights, not in a
   // section of its own.
@@ -395,7 +396,7 @@ test('a round trip groups its legs into outbound, getting around, and return', a
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('heading', { name: 'Transport' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Transport', exact: true })).toBeVisible({ timeout: 15000 });
 
   // Three dividers in order, with the train in the middle one. The round trip
   // splitting at all is the point: its origin and destination are both FRA.

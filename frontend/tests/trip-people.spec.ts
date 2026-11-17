@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { BROWSER_STATE } from './support/seed';
 
 /**
  * The trip's People section and its guest roster.
@@ -12,6 +13,10 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 const BASE_URL = 'http://localhost:8000';
+
+// These create their own trips through `page.request`, which carries the page's
+// session — so they need one, and never signed in to get it.
+test.use({ storageState: BROWSER_STATE });
 
 async function createTrip(page: Page, name: string): Promise<string> {
   const res = await page.request.post(`${BASE_URL}/api/trips`, { data: { name } });

@@ -9,14 +9,15 @@
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 const BASE = 'http://localhost:8000';
 
 // Stable credentials so tests are idempotent when run repeatedly against a dev server
-const OWNER_USER = 'e2e_trust_owner';
-const OWNER_PASS = 'E2eTrustOwner1!';
-const GUEST_USER = 'e2e_trust_guest';
-const GUEST_PASS = 'E2eTrustGuest1!';
+const OWNER_USER = ACCOUNTS.trustOwner.username;
+const OWNER_PASS = ACCOUNTS.trustOwner.password;
+const GUEST_USER = ACCOUNTS.trustGuest.username;
+const GUEST_PASS = ACCOUNTS.trustGuest.password;
 
 /** Log in and return an authenticated request context, or null on failure. */
 async function loginContext(username: string, password: string): Promise<APIRequestContext | null> {

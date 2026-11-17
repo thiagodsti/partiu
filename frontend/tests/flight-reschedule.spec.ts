@@ -14,11 +14,12 @@
  */
 
 import { test, expect, request, type APIRequestContext } from '@playwright/test';
+import { ACCOUNTS } from './support/accounts';
 
 // Overridable so the spec can be pointed at a throwaway server on another port.
 const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:8000';
-const USER = 'e2e_resched_user';
-const PASS = 'E2eReschedUser1!';
+const USER = ACCOUNTS.reschedUser.username;
+const PASS = ACCOUNTS.reschedUser.password;
 
 async function loginContext(): Promise<APIRequestContext | null> {
   const ctx = await request.newContext({ baseURL: BASE });

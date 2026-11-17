@@ -1,5 +1,3 @@
-import { test, expect } from '@playwright/test';
-
 /**
  * A username is one account however it is capitalised; a password is not.
  *
@@ -8,41 +6,37 @@ import { test, expect } from '@playwright/test';
  * user) handed the typed spelling straight through — so "Thiago" was a
  * different person from "thiago" depending on which door you came in by.
  *
- * This drives it through the one door that needs no existing session: first-run
- * setup. On a server that already has an account there is nothing to set up and
- * no password to try, so the test skips rather than guessing credentials.
+ * This signs in as an account global-setup created (stored lowercased, like
+ * every account). It used to go through first-run setup instead, which only
+ * works on an empty server — and global-setup is what makes a server non-empty,
+ * so that version could no longer run anywhere.
  */
 
+import { test, expect } from '@playwright/test';
+import { E2E_BROWSER } from './support/accounts';
+
 const BASE_URL = 'http://localhost:8000';
-const PASSWORD = 'password1234';
 
 test('a username signs in whatever its case, and the password still does not', async ({
   page,
 }) => {
-  const me = await page.request.get(`${BASE_URL}/api/auth/me`);
-  const firstRun = me.status() === 503 && (await me.json()).setup_required === true;
-  test.skip(!firstRun, 'Server already has an account; nothing to set up');
-
-  // Typed with capitals; stored lowercased, which the response confirms.
-  const setup = await page.request.post(`${BASE_URL}/api/auth/setup`, {
-    data: { username: 'CaseAdmin', password: PASSWORD },
-  });
-  expect(setup.ok()).toBeTruthy();
-  expect((await setup.json()).username).toBe('caseadmin');
+  const { username, password } = E2E_BROWSER;
+  const exact = await page.request.post(`${BASE_URL}/api/auth/login`, { data: { username, password } });
+  test.skip(!exact.ok(), 'The seeded account does not exist on this server');
 
   const shouting = await page.request.post(`${BASE_URL}/api/auth/login`, {
-    data: { username: 'CASEADMIN', password: PASSWORD },
+    data: { username: username.toUpperCase(), password },
   });
   expect(shouting.status()).toBe(200);
 
   const padded = await page.request.post(`${BASE_URL}/api/auth/login`, {
-    data: { username: '  caseadmin ', password: PASSWORD },
+    data: { username: `  ${username} `, password },
   });
   expect(padded.status()).toBe(200);
 
   // The password is a secret, not an identifier: case is part of it.
   const wrongCasePassword = await page.request.post(`${BASE_URL}/api/auth/login`, {
-    data: { username: 'caseadmin', password: PASSWORD.toUpperCase() },
+    data: { username, password: password.toUpperCase() },
   });
   expect(wrongCasePassword.status()).toBe(401);
 });

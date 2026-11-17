@@ -8,16 +8,23 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { BROWSER_STATE, seededTripId } from './support/seed';
 
 const BASE_URL = 'http://localhost:8000';
 
+// Signed in as the account global-setup seeded a round trip for.
+test.use({ storageState: BROWSER_STATE });
+
+async function openSeededTrip(page: Page): Promise<boolean> {
+  const tripId = seededTripId();
+  if (!tripId) return false;
+  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
+  await page.waitForLoadState('networkidle');
+  return true;
+}
+
 async function openAddTransport(page: Page): Promise<boolean> {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const card = page.locator('.trip-card').first();
-  if (await card.count() === 0) return false;
-  await card.click();
-  await page.waitForLoadState('networkidle');
+  if (!(await openSeededTrip(page))) return false;
 
   const addLink = page.locator('a[href*="/add-transport"]').first();
   if (await addLink.count() === 0) return false;
@@ -27,12 +34,7 @@ async function openAddTransport(page: Page): Promise<boolean> {
 }
 
 test('the trip page offers one transport button, not two', async ({ page }) => {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const card = page.locator('.trip-card').first();
-  test.skip(await card.count() === 0, 'No trips in database');
-  await card.click();
-  await page.waitForLoadState('networkidle');
+  test.skip(!(await openSeededTrip(page)), 'No trips in database');
 
   expect(await page.locator('a[href*="/add-flight"]').count()).toBe(0);
   expect(await page.locator('a[href*="/add-transport"]').count()).toBeGreaterThan(0);
@@ -91,12 +93,12 @@ test('date fields are bounded by the trip and say so', async ({ page }) => {
   test.skip(!opened, 'No trips in database');
 
   const first = page.locator('input[type="datetime-local"]').first();
+  // The bounds arrive with the trip lookup, after the form renders; reading the
+  // attribute straight away raced it and skipped as "no dates". The seeded trip
+  // always has dates, so wait for them. Date-granular at both ends: a bound
+  // carrying a time greys out the whole boundary day, a broken-looking picker.
+  await expect(first).toHaveAttribute('min', /T00:00$/);
   const min = await first.getAttribute('min');
-  test.skip(min === null, 'This trip has no dates to bound with');
-
-  // Date-granular at both ends: a bound carrying a time greys out the whole
-  // boundary day, which reads as a broken picker.
-  expect(min).toMatch(/T00:00$/);
   const max = await first.getAttribute('max');
   if (max !== null) {
     expect(max).toMatch(/T23:59$/);

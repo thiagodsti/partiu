@@ -3,8 +3,13 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { BROWSER_STATE } from './support/seed';
 
 const BASE = 'http://localhost:8000';
+
+// The inbox belongs to someone; these tests never signed in, so on any server
+// with an account they rendered the login page and failed.
+test.use({ storageState: BROWSER_STATE });
 
 async function serverAvailable(page: Page): Promise<boolean> {
   try {
@@ -13,6 +18,13 @@ async function serverAvailable(page: Page): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Opens the inbox and waits for it to render — networkidle is not "rendered",
+ * and counting cards before the list paints reads an empty inbox. */
+async function openInbox(page: Page) {
+  await page.goto(`${BASE}/#/notifications`);
+  await page.locator('.notif-card, .empty-state').first().waitFor();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -30,8 +42,7 @@ test('notifications entry exists in the navigation', async ({ page }) => {
 });
 
 test('notifications page loads without error', async ({ page }) => {
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
+  await openInbox(page);
   // Should show either content or the empty state — never a crash
   const hasContent =
     (await page.locator('.notif-card').count()) > 0 ||
@@ -41,8 +52,7 @@ test('notifications page loads without error', async ({ page }) => {
 });
 
 test('notifications page shows empty state when inbox is empty', async ({ page }) => {
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
+  await openInbox(page);
   const notifCards = page.locator('.notif-card');
   const emptyState = page.locator('.empty-state');
   // Either there are cards (real data) or the empty state is shown
@@ -52,8 +62,7 @@ test('notifications page shows empty state when inbox is empty', async ({ page }
 });
 
 test('notification cards show title', async ({ page }) => {
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
+  await openInbox(page);
   const cards = page.locator('.notif-card');
   test.skip(await cards.count() === 0, 'No notifications to check');
   const title = cards.first().locator('.notif-title');
@@ -63,21 +72,20 @@ test('notification cards show title', async ({ page }) => {
 });
 
 test('notification card delete button works', async ({ page }) => {
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
-  const cards = page.locator('.notif-card');
-  test.skip(await cards.count() === 0, 'No notifications to delete');
+  await openInbox(page);
+  // Only notifications can be deleted; an invitation card is answered with
+  // accept/reject instead and has no delete button.
+  const deletable = page.locator('.notif-card:has(.notif-delete)');
+  test.skip(await deletable.count() === 0, 'No notifications to delete');
 
-  const before = await cards.count();
-  await cards.first().locator('.notif-delete').click();
+  const before = await deletable.count();
+  await deletable.first().locator('.notif-delete').click();
   await page.waitForLoadState('networkidle');
-  const after = await page.locator('.notif-card').count();
-  expect(after).toBe(before - 1);
+  await expect(page.locator('.notif-card:has(.notif-delete)')).toHaveCount(before - 1);
 });
 
 test('invitation cards show accept and reject buttons', async ({ page }) => {
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
+  await openInbox(page);
   // Invitations are shown as notif-unread cards at the top with action buttons
   const actionCards = page.locator('.notif-actions');
   test.skip(await actionCards.count() === 0, 'No pending invitations');
@@ -88,30 +96,36 @@ test('invitation cards show accept and reject buttons', async ({ page }) => {
 });
 
 test('notifications tab badge reflects unread count', async ({ page }) => {
-  await page.goto(BASE);
+  // What the badge must say, from the same two sources the app sums.
+  const unread = (await (await page.request.get(`${BASE}/api/notifications/inbox/count`)).json()).unread as number;
+  const invitations = ((await (await page.request.get(`${BASE}/api/trips/invitations`)).json()) as unknown[]).length;
+  const expected = unread + invitations;
+
+  await page.goto(`${BASE}/#/trips`);
   await page.waitForLoadState('networkidle');
   const badge = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
-  // Badge is only visible when there are unread items — both states are valid
-  const hasBadge = await badge.count() > 0;
-  if (hasBadge) {
-    await expect(badge).toBeVisible();
-    const text = await badge.textContent();
-    expect(Number(text)).toBeGreaterThan(0);
+  if (expected === 0) {
+    await expect(badge).toHaveCount(0);
+  } else {
+    await expect(badge).toHaveText(String(expected));
   }
-  // If no badge, that's fine — just means inbox is empty
-  expect(true).toBe(true);
 });
 
-test('visiting notifications page clears unread badge', async ({ page }) => {
+// The badge counts unread notifications *and* pending invitations. Visiting the
+// inbox marks the notifications read; an invitation stays until it is answered,
+// so what is left on the badge afterwards is exactly the pending invitations.
+test('visiting notifications page leaves only pending invitations on the badge', async ({ page }) => {
   await page.goto(BASE);
   await page.waitForLoadState('networkidle');
 
   const badge = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
+  // The badge arrives with the first inbox poll, after networkidle.
+  await badge.waitFor({ timeout: 5000 }).catch(() => {});
   test.skip(await badge.count() === 0, 'No unread notifications to test badge clearing');
 
   // Navigate to the notifications page
-  await page.goto(`${BASE}/#/notifications`);
-  await page.waitForLoadState('networkidle');
+  await openInbox(page);
+  const pendingInvitations = await page.locator('.notif-actions').count();
 
   // Wait briefly for the mark-all-read API call to complete
   await page.waitForTimeout(500);
@@ -121,5 +135,9 @@ test('visiting notifications page clears unread badge', async ({ page }) => {
   await page.waitForLoadState('networkidle');
 
   const badgeAfter = page.locator('.nav-item[href="#/notifications"]:visible .nav-badge');
-  expect(await badgeAfter.count()).toBe(0);
+  if (pendingInvitations === 0) {
+    await expect(badgeAfter).toHaveCount(0);
+  } else {
+    await expect(badgeAfter).toHaveText(String(pendingInvitations));
+  }
 });
