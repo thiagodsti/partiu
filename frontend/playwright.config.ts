@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
@@ -7,6 +8,10 @@ export default defineConfig({
   // global-setup.ts lists the server flags the suite needs.
   globalSetup: './tests/global-setup.ts',
   fullyParallel: false,
+  // CI's default is the dot reporter, which prints a ° per skipped test and no
+  // names — a skip there could not be told apart from another. List them, and
+  // keep an HTML report for the artifact the workflow uploads on failure.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   retries: 0,
   use: {
     baseURL: 'http://localhost:8000',
