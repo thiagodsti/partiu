@@ -14,7 +14,8 @@
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { request, type APIRequestContext, type FullConfig } from '@playwright/test';
+import process from 'node:process';
+import { request, type APIRequestContext, type APIResponse, type FullConfig } from '@playwright/test';
 import { ALL_ACCOUNTS, E2E_ADMIN, E2E_BROWSER, type E2EAccount } from './support/accounts';
 import {
   AUTH_DIR,
@@ -106,20 +107,31 @@ async function importTrip(ctx: APIRequestContext, ref: string, receipt: () => Bu
   return tripId;
 }
 
+/** Throws with status and body unless the response is a success. */
+async function ok<T = unknown>(what: string, res: APIResponse): Promise<T> {
+  if (!res.ok()) throw new Error(`${what} failed: ${res.status()} ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
 async function seedBrowserTrip(ctx: APIRequestContext): Promise<string> {
   const tripId = await importTrip(ctx, SEED_BOOKING_REF, seedReceipt);
 
-  const packing = await ctx.get(`/api/trips/${tripId}/packing`);
-  if (packing.ok() && (await packing.json()).length === 0) {
+  // A fixture that silently failed to create would turn the specs relying on
+  // it into skips ("no packing items"), so every call here is checked.
+  const packing = await ok<unknown[]>('Reading the packing list', await ctx.get(`/api/trips/${tripId}/packing`));
+  if (packing.length === 0) {
     for (const text of ['Passport', 'Charger', 'Sunglasses']) {
-      await ctx.post(`/api/trips/${tripId}/packing`, { data: { text } });
+      await ok(`Adding packing item ${text}`, await ctx.post(`/api/trips/${tripId}/packing`, { data: { text } }));
     }
   }
-  const expenses = await ctx.get(`/api/trips/${tripId}/expenses`);
-  if (expenses.ok() && (await expenses.json()).length === 0) {
-    await ctx.post(`/api/trips/${tripId}/expenses`, {
-      data: { description: 'Airport coach into the city centre', amount: 18, currency: 'EUR' },
-    });
+  const expenses = await ok<unknown[]>('Reading expenses', await ctx.get(`/api/trips/${tripId}/expenses`));
+  if (expenses.length === 0) {
+    await ok(
+      'Adding the seeded expense',
+      await ctx.post(`/api/trips/${tripId}/expenses`, {
+        data: { description: 'Airport coach into the city centre', amount: 18, currency: 'EUR' },
+      }),
+    );
   }
   return tripId;
 }
@@ -130,12 +142,20 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   const admin = await ensureAdmin(baseURL);
   if (!admin) {
+    // On CI, and in a run scripts/run_e2e.sh started, the server is a fresh
+    // scratch one — so this is a broken setup, not someone else's server, and
+    // failing beats a green run of skipped tests. Compared against explicit
+    // values: CI=false must not count as CI.
+    const flag = (v: string | undefined) => v === 'true' || v === '1';
+    if (flag(process.env.CI) || flag(process.env.E2E_MANAGED)) {
+      throw new Error(`[e2e] Could not sign in as ${E2E_ADMIN.username} on ${baseURL}`);
+    }
     console.warn(
       `[e2e] Could not sign in as ${E2E_ADMIN.username}: this server belongs to someone else. ` +
         'Specs that need accounts or seeded data will skip.',
     );
     write(BROWSER_STATE, EMPTY_STATE);
-    writeSeedInfo({ tripId: null }, write);
+    writeSeedInfo({ available: false, tripId: null }, write);
     return;
   }
 
@@ -146,6 +166,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     if (!browser) throw new Error(`Could not sign in as ${E2E_BROWSER.username} after creating it`);
     writeSeedInfo(
       {
+        available: true,
         tripId: await seedBrowserTrip(browser),
         stopoverTripId: await importTrip(browser, STOPOVER_BOOKING_REF, stopoverReceipt),
       },

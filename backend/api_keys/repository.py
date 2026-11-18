@@ -16,12 +16,6 @@ class ApiKeyRepository:
             ).fetchall()
         return [row_to_key(r) for r in rows]
 
-    def count_for_user(self, user_id: int) -> int:
-        with db_conn() as conn:
-            return conn.execute(
-                "SELECT COUNT(*) FROM api_keys WHERE user_id = ?", (user_id,)
-            ).fetchone()[0]
-
     def find_by_hash(self, key_hash: str) -> ApiKey | None:
         with db_conn() as conn:
             row = conn.execute(
@@ -29,7 +23,7 @@ class ApiKeyRepository:
             ).fetchone()
         return row_to_key(row) if row else None
 
-    def create(
+    def create_within_limit(
         self,
         user_id: int,
         name: str,
@@ -38,13 +32,22 @@ class ApiKeyRepository:
         scope: str,
         created_at: str,
         expires_at: str | None,
-    ) -> ApiKey:
+        limit: int,
+    ) -> ApiKey | None:
+        """Insert the key unless the user already holds ``limit``; None when they do.
+
+        The count is part of the INSERT rather than a SELECT before it, so two
+        creations racing at ``limit - 1`` cannot both pass the check.
+        """
         with db_write() as conn:
             cursor = conn.execute(
                 """INSERT INTO api_keys (user_id, name, prefix, key_hash, scope, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (user_id, name, prefix, key_hash, scope, created_at, expires_at),
+                   SELECT ?, ?, ?, ?, ?, ?, ?
+                   WHERE (SELECT COUNT(*) FROM api_keys WHERE user_id = ?) < ?""",
+                (user_id, name, prefix, key_hash, scope, created_at, expires_at, user_id, limit),
             )
+            if cursor.rowcount == 0:
+                return None
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM api_keys WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()

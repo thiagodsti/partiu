@@ -45,7 +45,7 @@
 
   async function create(e: Event) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || loading) return;
     creating = true;
     error = null;
     try {
@@ -175,7 +175,10 @@
           </select>
         </div>
       </div>
-      <button class="btn btn-primary" type="submit" disabled={creating || !name.trim()}>
+      <!-- Not while the list is loading: a key created then would be added to
+           the list and wiped by the late response, leaving a live credential
+           with no revoke button until the page is reloaded. -->
+      <button class="btn btn-primary" type="submit" disabled={creating || loading || !name.trim()}>
         {creating ? $t('api_keys.creating') : $t('api_keys.create')}
       </button>
     </form>

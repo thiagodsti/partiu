@@ -1,63 +1,49 @@
 import { test, expect, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId, stopoverTripId } from './support/seed';
-
-const BASE_URL = 'http://localhost:8000';
+import { BROWSER_STATE, requireSeededTrip, requireStopoverTrip } from './support/seed';
 
 // Signed in as the account global-setup seeded a round trip for.
 test.use({ storageState: BROWSER_STATE });
 
-/** Opens the seeded trip: ARN→FRA→LIS out, LIS→ARN back, with an expense. */
-async function goToFirstTrip(page: Page): Promise<boolean> {
-  const tripId = seededTripId();
-  if (!tripId) return false;
-  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
-  return true;
+/**
+ * Opens the seeded trip: ARN→FRA→LIS out, LIS→ARN back, with an expense.
+ * Paths only, so navigation follows the configured baseURL. Waits for the legs
+ * to paint (the seeded trip always has them) rather than for network idle,
+ * which also waits on every unrelated request.
+ */
+async function goToFirstTrip(page: Page): Promise<void> {
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
+  await expect(page.locator('.flight-row').first()).toBeVisible();
 }
 
 test('homepage loads trips view', async ({ page }) => {
-  await page.goto(BASE_URL);
-  await page.waitForLoadState('networkidle');
-  const cards = page.locator('.trip-card');
-  const empty = page.locator('.empty-state');
-  const hasCards = await cards.count() > 0;
-  const hasEmpty = await empty.count() > 0;
-  expect(hasCards || hasEmpty).toBe(true);
+  await page.goto('/');
+  await expect(page.locator('.trip-card, .empty-state').first()).toBeVisible();
 });
 
 test('trips list renders cards or empty state', async ({ page }) => {
-  await page.goto(`${BASE_URL}/#/trips`);
-  await page.waitForLoadState('networkidle');
-  const cards = page.locator('.trip-card');
-  const empty = page.locator('.empty-state');
-  const hasCards = await cards.count() > 0;
-  const hasEmpty = await empty.count() > 0;
-  expect(hasCards || hasEmpty).toBe(true);
+  await page.goto('/#/trips');
+  await expect(page.locator('.trip-card, .empty-state').first()).toBeVisible();
 });
 
 test('trip detail has outbound divider', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   await expect(page.locator('.section-divider-label', { hasText: 'Outbound' }).first()).toBeVisible();
 });
 
 test('trip detail shows flight rows', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   await expect(page.locator('.flight-row').first()).toBeVisible();
 });
 
 test('flight row shows route arrow', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   const route = page.locator('.flight-route').first();
   await expect(route).toBeVisible();
   await expect(route.locator('.flight-route-arrow')).toBeVisible();
 });
 
 test('outbound divider shows travelling time', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   const outbound = page.locator('.section-divider-label', { hasText: 'Outbound' }).first();
   await expect(outbound).toBeVisible();
   const label = await outbound.textContent() ?? '';
@@ -66,14 +52,12 @@ test('outbound divider shows travelling time', async ({ page }) => {
 });
 
 test('round trip has return divider', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   await expect(page.locator('.section-divider-label', { hasText: 'Return' }).first()).toBeVisible();
 });
 
 test('connection badge visible for multi-leg trip', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
   // The seeded outbound changes planes in Frankfurt.
   const badge = page.locator('.connection-badge').first();
   await expect(badge).toBeVisible();
@@ -84,10 +68,8 @@ test('connection badge visible for multi-leg trip', async ({ page }) => {
 });
 
 test('no total shown for long stopover', async ({ page }) => {
-  const tripId = stopoverTripId();
-  test.skip(!tripId, 'No trip with 24h+ stopover found');
-  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
+  const tripId = requireStopoverTrip();
+  await page.goto(`/#/trips/${tripId}`);
 
   // The seeded stopover waits 25h in Copenhagen. A wait that long always
   // crosses a day, so the legs are separated by a date divider rather than a
@@ -103,12 +85,9 @@ test('no total shown for long stopover', async ({ page }) => {
 });
 
 test('clicking flight row opens flight detail', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
-  await page.waitForSelector('.flight-row', { state: 'visible', timeout: 5000 });
+  await goToFirstTrip(page);
   await page.locator('.flight-row').first().click();
-  await page.waitForLoadState('networkidle');
-  expect(page.url()).toContain('/flights/');
+  await expect(page).toHaveURL(/\/flights\//);
 });
 
 // The desktop layout is two independent flows (spine + aside), not one balanced
@@ -117,8 +96,7 @@ test('clicking flight row opens flight detail', async ({ page }) => {
 // layout exists to remove. Measure the gaps rather than the CSS.
 test('desktop columns stack without row-band holes', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
 
   const spine = page.locator('.trip-spine');
   const aside = page.locator('.trip-aside');
@@ -147,14 +125,26 @@ test('desktop columns stack without row-band holes', async ({ page }) => {
 });
 
 test('an empty documents section collapses onto its header row', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  // The section renders its empty state before its lists arrive, so wait for
+  // both: measuring earlier would pass on the placeholder whatever the data.
+  // The id is resolved first so an unprepared server skips before any wait is
+  // registered, and the waits ride in one Promise.all with the navigation so
+  // none is left unhandled if another fails.
+  const tripId = requireSeededTrip();
+  const listed = (kind: string) =>
+    page.waitForResponse((r) => new URL(r.url()).pathname === `/api/trips/${tripId}/${kind}` && r.ok());
+  await Promise.all([listed('documents'), listed('boarding-passes'), page.goto(`/#/trips/${tripId}`)]);
+  await expect(page.locator('.flight-row').first()).toBeVisible();
 
   // Documents specifically: other empty sections (stays, say) carry advisory
-  // lines under their note and are not meant to fold onto one row.
-  const docs = page.locator('.trip-section-documents.trip-section-compact');
-  test.skip(await docs.count() === 0, 'This trip has documents');
-  const box = await docs.first().boundingBox();
+  // lines under their note and are not meant to fold onto one row. The seeded
+  // trip never has documents, so its settled state is the empty one — asserted,
+  // not inferred: a missing note or a lost compact class fails here.
+  const docs = page.locator('.trip-section-documents');
+  await expect(docs).toBeVisible();
+  await expect(docs.locator('.section-note')).toBeVisible();
+  await expect(docs).toHaveClass(/trip-section-compact/);
+  const box = await docs.boundingBox();
   expect(box!.height).toBeLessThan(100);
 });
 
@@ -163,11 +153,11 @@ test('an empty documents section collapses onto its header row', async ({ page }
 // to a viewport query, descriptions start getting clipped here first.
 test('expense descriptions are not clipped in the sidebar column', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
 
+  // The seeded trip has an expense: wait for it rather than counting early.
   const descs = page.locator('.expense-desc');
-  test.skip(await descs.count() === 0, 'No expenses on this trip');
+  await expect(descs.first()).toBeVisible();
 
   const clipped = await descs.evaluateAll((els) =>
     els.filter((el) => el.scrollWidth > el.clientWidth + 1).length,
@@ -180,8 +170,7 @@ test('expense descriptions are not clipped in the sidebar column', async ({ page
 // CSS `order` moves Documents down next to the notes. Assert the painted order.
 test('documents sits directly above the trip notes on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
 
   const order = await page.$$eval('.trip-section', (els) =>
     els
@@ -208,15 +197,15 @@ test('documents sits directly above the trip notes on a phone', async ({ page })
 // the whole document sideways. Nothing on this page may exceed the viewport.
 test('the trip page never scrolls sideways on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
 
   // Rate the trip so the clear button is on screen for the measurement.
-  const star = page.locator('.rating-half').last();
-  if (await star.count() > 0) {
-    await star.click();
-    await page.waitForTimeout(200);
-  }
+  // Clicking the current rating clears it, so click only on an unrated trip:
+  // a rerun on the same database finds it already rated from the last run.
+  const clear = page.locator('.rating-header-actions > .btn');
+  await expect(page.locator('.rating-half').last()).toBeVisible();
+  if (await clear.count() === 0) await page.locator('.rating-half').last().click();
+  await expect(clear).toBeVisible();
 
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -226,11 +215,11 @@ test('the trip page never scrolls sideways on a phone', async ({ page }) => {
 });
 
 test('an empty section shows its whole explanation, not an ellipsis', async ({ page }) => {
-  const found = await goToFirstTrip(page);
-  test.skip(!found, 'No trips in database');
+  await goToFirstTrip(page);
 
+  // The seeded trip has no documents, so at least that note is always there.
   const notes = page.locator('.section-note');
-  test.skip(await notes.count() === 0, 'Every section on this trip has content');
+  await expect(notes.first()).toBeVisible();
   const clipped = await notes.evaluateAll((els) =>
     els.filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).length,
   );

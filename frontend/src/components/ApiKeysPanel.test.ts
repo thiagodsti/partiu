@@ -104,6 +104,27 @@ describe('ApiKeysPanel', () => {
     await waitFor(() => expect(screen.queryByText('Home Assistant')).toBeNull());
   });
 
+  it('cannot create until the list has loaded, so the late list cannot wipe the new key', async () => {
+    let resolveList: (keys: unknown[]) => void = () => {};
+    mockList.mockReturnValue(new Promise((r) => (resolveList = r)));
+    mockCreate.mockResolvedValue({ ...listed, id: 2, name: 'CI', key: 'partiu_secret-value' });
+    render(ApiKeysPanel);
+
+    await fireEvent.input(screen.getByLabelText('api_keys.name'), { target: { value: 'CI' } });
+    const button = screen.getByText('api_keys.create') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    await fireEvent.submit(button.closest('form')!);
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    resolveList([listed]);
+    await waitFor(() => expect(button.disabled).toBe(false));
+    await fireEvent.click(button);
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('CI')).toBeTruthy());
+    expect(screen.getByText('Home Assistant')).toBeTruthy();
+    expect(screen.getAllByText('api_keys.revoke')).toHaveLength(2);
+  });
+
   it('hides the create form on a demo', async () => {
     mockList.mockResolvedValue([]);
     render(ApiKeysPanel, { props: { demo: true } });

@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { test } from '@playwright/test';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,9 @@ export const SEED_BOOKING_REF = 'E2ESED';
 export const STOPOVER_BOOKING_REF = 'E2ESTO';
 
 export interface SeedInfo {
+  /** False only when global setup could not sign in as E2E_ADMIN — someone
+   * else's server, outside CI. Every other failure throws in setup instead. */
+  available: boolean;
   tripId: string | null;
   /** A one-way trip that waits 25h in Copenhagen between its two legs. */
   stopoverTripId?: string | null;
@@ -33,21 +37,46 @@ export function writeSeedInfo(info: SeedInfo, write: (file: string, data: string
   write(SEED_FILE, JSON.stringify(info));
 }
 
-function readSeedInfo(): SeedInfo | null {
+function readSeedInfo(): SeedInfo {
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(SEED_FILE, 'utf-8')) as SeedInfo;
+    raw = readFileSync(SEED_FILE, 'utf-8');
   } catch {
-    return null;
+    throw new Error(`${SEED_FILE} is missing — did global setup run?`);
   }
+  const info = JSON.parse(raw) as Partial<SeedInfo>;
+  if (typeof info.available !== 'boolean') {
+    throw new Error(`${SEED_FILE} has no "available" flag — written by an older global setup?`);
+  }
+  return info as SeedInfo;
 }
 
-/** The seeded trip's id, or null when global setup could not create it. */
-export function seededTripId(): string | null {
-  return readSeedInfo()?.tripId ?? null;
+/**
+ * Skips the calling test only when global setup said this server could not be
+ * prepared. Anything else that goes wrong — a sign-in that fails, a fixture
+ * that will not create — must fail the test: a skip there is coverage lost
+ * without anyone being told.
+ */
+export function requireSeededServer(): void {
+  test.skip(readSeedInfo().available === false, 'Global setup could not prepare this server');
 }
 
-export function stopoverTripId(): string | null {
-  return readSeedInfo()?.stopoverTripId ?? null;
+function requireTrip(id: string | null | undefined, which: string): string {
+  requireSeededServer();
+  if (typeof id !== 'string' || id === '') {
+    throw new Error(`Global setup reported success but recorded no usable ${which} id (${JSON.stringify(id)})`);
+  }
+  return id;
+}
+
+/** The seeded round trip's id. Skips only on an unprepared server; a missing id fails. */
+export function requireSeededTrip(): string {
+  return requireTrip(readSeedInfo().tripId, 'seeded trip');
+}
+
+/** The seeded 25h-stopover trip's id, on the same terms as requireSeededTrip. */
+export function requireStopoverTrip(): string {
+  return requireTrip(readSeedInfo().stopoverTripId, 'stopover trip');
 }
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];

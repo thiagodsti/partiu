@@ -61,6 +61,28 @@ class TestCreateKey:
         with pytest.raises(ValueError):
             ApiKeyService().create_key(_user(), "x", "admin", None)
 
+    def test_concurrent_creations_cannot_pass_the_limit_together(self, test_db):
+        from concurrent.futures import ThreadPoolExecutor
+
+        from backend.api_keys.repository import ApiKeyRepository
+
+        uid = _user()
+        svc = ApiKeyService()
+        for i in range(MAX_KEYS_PER_USER - 1):
+            svc.create_key(uid, f"k{i}", "read", None)
+
+        def attempt(n: int) -> bool:
+            try:
+                svc.create_key(uid, f"race{n}", "read", None)
+                return True
+            except ApiKeyLimitError:
+                return False
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(attempt, range(8)))
+        assert results.count(True) == 1
+        assert len(ApiKeyRepository().list_for_user(uid)) == MAX_KEYS_PER_USER
+
     def test_a_user_cannot_hold_more_than_the_limit(self, test_db):
         uid = _user()
         svc = ApiKeyService()

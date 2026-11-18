@@ -276,7 +276,6 @@ test('the stays section and the planner banding render on the trip page', async 
   await signInPage(page, OWNER_USER, OWNER_PASS);
 
   await page.goto(`${BASE}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
   await expect(page.getByRole('heading', { name: 'Stays', exact: true })).toBeVisible({ timeout: 15000 });
 
   const stayRow = page.locator('.stay-row', { hasText: 'Hotel Avenida Palace' });

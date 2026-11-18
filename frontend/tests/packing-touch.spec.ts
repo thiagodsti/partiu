@@ -22,9 +22,7 @@
  */
 
 import { test, expect, devices, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId } from './support/seed';
-
-const BASE = 'http://localhost:8000';
+import { BROWSER_STATE, requireSeededTrip } from './support/seed';
 
 // The device profile supplies the viewport, `hasTouch` and `isMobile` — but not
 // the browser: this project installs Chromium only (`npx playwright install
@@ -32,53 +30,39 @@ const BASE = 'http://localhost:8000';
 // Signed in as the account global-setup seeded a trip with a packing list for.
 test.use({ ...devices['iPhone 13'], browserName: 'chromium', storageState: BROWSER_STATE });
 
-async function serverAvailable(page: Page): Promise<boolean> {
-  try {
-    const res = await page.request.get(BASE, { timeout: 3000 });
-    return res.status() < 500;
-  } catch {
-    return false;
-  }
-}
-
-/** Opens the seeded trip and returns its packing rows, or null when there are none. */
+/** Opens the seeded trip and returns its packing rows. */
 async function packingRows(page: Page) {
-  const tripId = seededTripId();
-  if (!tripId) return null;
-  await page.goto(`${BASE}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
+  // The seeded trip always has packing items: wait for them to paint rather
+  // than counting early and skipping every touch test as "no items".
   const rows = page.locator('.packing-item');
-  if ((await rows.count()) === 0) return null;
+  await expect(rows.first()).toBeVisible();
   await rows.first().scrollIntoViewIfNeeded();
   return rows;
 }
 
-test.beforeEach(async ({ page }) => {
-  test.skip(!(await serverAvailable(page)), 'Server not available at http://localhost:8000');
-});
-
 test('the row has no hover-gated controls where hover does not exist', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
   expect(await page.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(false);
 
-  const del = rows!.first().locator('.packing-delete');
+  const del = rows.first().locator('.packing-delete');
   await expect(del).toBeVisible();
   expect(await del.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
 });
 
 test('the checkbox hit area covers the full height of the row', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
-  const reach = await rows!.first().locator('.checkbox').evaluate((el) => {
+  const reach = await rows.first().locator('.checkbox').evaluate((el) => {
     const box = el.getBoundingClientRect();
     const cx = box.left + box.width / 2;
     const cy = box.top + box.height / 2;
     // How far above and below the drawn box a tap still lands on the button.
+    // A probe outside the viewport finds no element at all, which is a miss —
+    // `?.` alone would turn it into `undefined !== null`, a hit.
     const hits = (dy: number) =>
-      document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') !== null;
+      (document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') ?? null) !== null;
     return { drawn: Math.round(box.height), up: hits(-14), down: hits(14) };
   });
 
@@ -89,9 +73,8 @@ test('the checkbox hit area covers the full height of the row', async ({ page })
 
 test('one tap toggles an item', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
-  const row = rows!.first();
+  const row = rows.first();
   const before = await row.evaluate((el) => el.classList.contains('is-checked'));
   await row.locator('.checkbox').tap();
   await expect

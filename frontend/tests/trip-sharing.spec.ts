@@ -1,54 +1,35 @@
-import { test, expect, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId } from './support/seed';
+import { test, expect } from '@playwright/test';
+import { BROWSER_STATE, requireSeededServer, requireSeededTrip } from './support/seed';
 
-const BASE_URL = 'http://localhost:8000';
-
+// Paths only: Playwright resolves them against the configured baseURL, which
+// is the server global setup prepared (E2E_BASE_URL when set).
 test.use({ storageState: BROWSER_STATE });
-
-async function serverAvailable(page: Page): Promise<boolean> {
-  try {
-    const res = await page.request.get(BASE_URL, { timeout: 3000 });
-    return res.status() < 500;
-  } catch {
-    return false;
-  }
-}
-
-
-test.beforeEach(async ({ page }) => {
-  test.skip(!(await serverAvailable(page)), 'Server not available at http://localhost:8000');
-});
 
 test('delete trip flow', async ({ page }) => {
   // Deletes a trip made for the purpose: "the first card" was the seeded trip
   // every other browse spec opens.
-  const res = await page.request.post(`${BASE_URL}/api/trips`, { data: { name: `E2E delete me ${Date.now()}` } });
-  test.skip(!res.ok(), 'Could not create a trip to delete');
+  requireSeededServer();
+  const res = await page.request.post('/api/trips', { data: { name: `E2E delete me ${Date.now()}` } });
+  expect(res.ok(), `creating the trip to delete answered ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json();
-  await page.goto(`${BASE_URL}/#/trips/${id}`);
-  await page.waitForLoadState('networkidle');
+  await page.goto(`/#/trips/${id}`);
 
+  // The caller owns this trip, so the owner's controls must be there.
   const deleteBtn = page.locator('button', { hasText: 'Delete Trip' });
-  test.skip(await deleteBtn.count() === 0, 'Delete Trip button not found (may be a shared trip)');
-
+  await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
   await page.locator('button', { hasText: 'Delete Trip' }).last().click();
-  await page.waitForLoadState('networkidle');
 
-  expect(page.url()).toMatch(/\/#\/?/);
+  await expect(page).not.toHaveURL(new RegExp(`/trips/${id}`));
+  expect((await page.request.get(`/api/trips/${id}`)).status()).toBe(404);
 });
 
 test('share trip panel opens', async ({ page }) => {
-  const tripId = seededTripId();
-  test.skip(!tripId, 'No trips available for share test');
-  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
 
   const shareBtn = page.locator('button', { hasText: 'Share Trip' });
-  test.skip(await shareBtn.count() === 0, 'Share Trip button not found (may be a shared trip view)');
-
+  await expect(shareBtn).toBeVisible();
   await shareBtn.click();
 
-  const usernameInput = page.locator('input[placeholder*="username" i]');
-  expect(await usernameInput.count()).toBeGreaterThan(0);
+  await expect(page.locator('input[placeholder*="username" i]').first()).toBeVisible();
 });

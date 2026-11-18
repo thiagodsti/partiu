@@ -8,41 +8,34 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId } from './support/seed';
-
-const BASE_URL = 'http://localhost:8000';
+import { BROWSER_STATE, requireSeededTrip } from './support/seed';
 
 // Signed in as the account global-setup seeded a round trip for.
 test.use({ storageState: BROWSER_STATE });
 
-async function openSeededTrip(page: Page): Promise<boolean> {
-  const tripId = seededTripId();
-  if (!tripId) return false;
-  await page.goto(`${BASE_URL}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
-  return true;
+async function openSeededTrip(page: Page): Promise<void> {
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
+  // The page has painted once its add-transport control has: the seeded trip
+  // is the caller's own, so that control is always there.
+  await expect(page.locator('a[href*="/add-transport"]').first()).toBeVisible();
 }
 
-async function openAddTransport(page: Page): Promise<boolean> {
-  if (!(await openSeededTrip(page))) return false;
-
-  const addLink = page.locator('a[href*="/add-transport"]').first();
-  if (await addLink.count() === 0) return false;
-  await addLink.click();
-  await page.waitForLoadState('networkidle');
-  return true;
+async function openAddTransport(page: Page): Promise<void> {
+  await openSeededTrip(page);
+  await page.locator('a[href*="/add-transport"]').first().click();
+  // The form is up once its type picker is.
+  await expect(page.locator('.type-option').first()).toBeVisible();
 }
 
 test('the trip page offers one transport button, not two', async ({ page }) => {
-  test.skip(!(await openSeededTrip(page)), 'No trips in database');
+  await openSeededTrip(page);
 
   expect(await page.locator('a[href*="/add-flight"]').count()).toBe(0);
   expect(await page.locator('a[href*="/add-transport"]').count()).toBeGreaterThan(0);
 });
 
 test('type picker swaps airport comboboxes for station lookups', async ({ page }) => {
-  const opened = await openAddTransport(page);
-  test.skip(!opened, 'No trips in database');
+  await openAddTransport(page);
 
   // Flight is the default: IATA comboboxes, no station type-ahead.
   await expect(page.locator('.airport-combobox')).toHaveCount(2);
@@ -57,8 +50,7 @@ test('type picker swaps airport comboboxes for station lookups', async ({ page }
 });
 
 test('every field is visible, with the required ones marked', async ({ page }) => {
-  const opened = await openAddTransport(page);
-  test.skip(!opened, 'No trips in database');
+  await openAddTransport(page);
 
   // Nothing hidden behind a disclosure: cabin class is the field that used to be.
   await expect(page.locator('details')).toHaveCount(0);
@@ -74,8 +66,10 @@ test('every field is visible, with the required ones marked', async ({ page }) =
 
 test('the form does not scroll sideways on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const opened = await openAddTransport(page);
-  test.skip(!opened, 'No trips in database');
+  await openAddTransport(page);
+  // The date-range hint arrives with the trip lookup, after the picker: measure
+  // the form in its finished state, hint included.
+  await expect(page.locator('.form-hint').first()).toBeVisible();
 
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -89,8 +83,7 @@ test('the form does not scroll sideways on a phone', async ({ page }) => {
 // collapses the span to that leg's day and the return leg would already fall
 // outside its own trip.
 test('date fields are bounded by the trip and say so', async ({ page }) => {
-  const opened = await openAddTransport(page);
-  test.skip(!opened, 'No trips in database');
+  await openAddTransport(page);
 
   const first = page.locator('input[type="datetime-local"]').first();
   // The bounds arrive with the trip lookup, after the form renders; reading the

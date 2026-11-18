@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Always write tests** for every new feature or bug fix without being asked:
   - **Backend**: for a layered feature package (`backend/<feature>/` with routes/service/repository — e.g. `notifications`, `packing`, `expenses`, `boarding_passes`, `shares`), place its tests in `backend/tests/<feature>/`, mirroring the package (`test_repository.py`-style files per layer plus the black-box `test_api_*.py`). For everything else, place tests directly in `backend/tests/` following existing patterns. Both use: class per module, `asyncio.run()` for async, `test_db` fixture, mock with `unittest.mock`. Keep coverage above 70%.
   - **Frontend**: add unit tests as `*.test.ts` files alongside the source (e.g. `utils.test.ts`, `ComponentName.test.ts`) using Vitest + `@testing-library/svelte`. Run with `npm test` inside `frontend/`. Both are already configured.
-  - **E2E**: for every new feature, add a Playwright test in `frontend/tests/` as a `*.spec.ts` file. E2E tests require the server running at `http://localhost:8000` with `DISABLE_RATE_LIMITS=true` and `SECURE_COOKIES=false` (see the command below). For bug fixes, E2E is optional but preferred if the fix touches a user-facing flow. **A new spec's account goes in `tests/support/accounts.ts`**, which `tests/global-setup.ts` creates before any spec runs — never bootstrap one through `/api/auth/setup`: only the first spec on an empty server can, so every other spec skipped, and on a fresh CI server almost nothing ran (75 of 120 tests passed and 15 were silently broken before this was fixed). A spec that only *browses* uses `test.use({ storageState: BROWSER_STATE })` and opens the seeded trip by id (`seededTripId()` / `stopoverTripId()` in `tests/support/seed.ts`), never "the first trip card" — that was whatever data the developer happened to have, and on CI nothing. Wait for what you measure (`toHaveAttribute`, `waitFor`), not `networkidle`: two tests skipped "no data" because they counted before the page painted.
+  - **E2E**: for every new feature, add a Playwright test in `frontend/tests/` as a `*.spec.ts` file. Run them with `scripts/run_e2e.sh` (see the command below), which starts the server they need. For bug fixes, E2E is optional but preferred if the fix touches a user-facing flow. **A new spec's account goes in `tests/support/accounts.ts`**, which `tests/global-setup.ts` creates before any spec runs — never bootstrap one through `/api/auth/setup`: only the first spec on an empty server can, so every other spec skipped, and on a fresh CI server almost nothing ran (75 of 120 tests passed and 15 were silently broken before this was fixed). A spec that only *browses* uses `test.use({ storageState: BROWSER_STATE })` and opens the seeded trip by id (`seededTripId()` / `stopoverTripId()` in `tests/support/seed.ts`), never "the first trip card" — that was whatever data the developer happened to have, and on CI nothing. Wait for what you measure (`toHaveAttribute`, `waitFor`), not `networkidle`: two tests skipped "no data" because they counted before the page painted.
 
 ## Commands
 
@@ -66,13 +66,11 @@ npm run check     # svelte-check (type errors fail build)
 
 ### E2E Tests
 ```bash
-# A throwaway server: global setup creates accounts and seeded trips in it
-DB_PATH=/tmp/partiu-e2e.db DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false \
-  uv run uvicorn backend.main:app --port 8000 &
-cd frontend
-npx playwright install chromium
-npm run test:e2e
+cd frontend && npm ci && npx playwright install chromium && npm run build && cd ..
+scripts/run_e2e.sh                        # whole suite; any playwright args pass through
 ```
+On a bare Linux host use `npx playwright install --with-deps chromium`, which also installs Chromium's system libraries.
+`scripts/run_e2e.sh` is the one recipe, used by CI too. It **binds port 8000 itself and hands the socket to uvicorn (`--fd`)**: a check-then-start would leave a window in which another instance could take the port, and global setup would then create test accounts in *that* server's database. It runs uvicorn on a scratch DB with `DISABLE_RATE_LIMITS` / `SECURE_COOKIES=false` / `DEMO_MODE=false` (a demo refuses the account creation global setup does) and a per-run `SECRET_KEY` unless one is exported, waits on `/api/auth/public-config` — **not** `/api/version`, which answers 503 on a fresh database until first-run setup, by design — and runs Playwright with `E2E_BASE_URL` pinned to `http://localhost:8000` (localhost, not 127.0.0.1: older specs hard-code it and the saved session cookie is per host) and `E2E_MANAGED=1`. Skip a test only through `requireSeededServer()` / `requireSeededTrip()` (`tests/support/seed.ts`): they skip only when global setup recorded `available: false` (could not sign in as `e2e_admin` on someone else's server, outside CI and outside the runner — both of which throw instead), and *fail* on a missing `seed.json` or a missing trip id. A sign-in or fixture that fails is a failure, never a skip. New specs use paths (`page.goto('/#/…')`, `page.request.post('/api/…')`) so they follow `baseURL`.
 
 ### Docker
 ```bash
@@ -200,7 +198,7 @@ docker compose up -d --build
 - PWA icons generated by `generate_icons.py`
 
 ### CI (`.github/workflows/pr.yml`)
-Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (Playwright). The E2E job is **blocking** — it used to be `continue-on-error`, which is how 15 broken specs went unnoticed — and starts its server with `DISABLE_RATE_LIMITS` / `SECURE_COOKIES=false`, waiting on `/api/version` rather than a fixed sleep because the first boot loads the airports table the seeded trips need. `DISABLE_RATE_LIMITS` (`limiter.py`, and `AuthService._lockout_disabled`) also switches off the failed-login lockout: the suite's deliberate wrong-password attempts would otherwise lock every later sign-in out for ten minutes on a rerun.
+Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (Playwright). The E2E job is **blocking** — it used to be `continue-on-error`, which is how 15 broken specs went unnoticed — and runs `scripts/run_e2e.sh`, which waits for the server rather than a fixed sleep because the first boot loads the airports table the seeded trips need. `DISABLE_RATE_LIMITS` (`limiter.py`, and `AuthService._lockout_disabled`) also switches off the failed-login lockout: the suite's deliberate wrong-password attempts would otherwise lock every later sign-in out for ten minutes on a rerun.
 
 ## Features
 
