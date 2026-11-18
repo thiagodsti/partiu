@@ -16,28 +16,27 @@ import { test, expect } from '@playwright/test';
 import { E2E_BROWSER } from './support/accounts';
 import { requireSeededServer } from './support/seed';
 
-const BASE_URL = 'http://localhost:8000';
-
 test('a username signs in whatever its case, and the password still does not', async ({
   page,
 }) => {
   requireSeededServer();
+  // Paths only, so these reach the server global setup prepared (baseURL).
   const { username, password } = E2E_BROWSER;
-  const exact = await page.request.post(`${BASE_URL}/api/auth/login`, { data: { username, password } });
+  const exact = await page.request.post('/api/auth/login', { data: { username, password } });
   expect(exact.status()).toBe(200);
 
-  const shouting = await page.request.post(`${BASE_URL}/api/auth/login`, {
+  const shouting = await page.request.post('/api/auth/login', {
     data: { username: username.toUpperCase(), password },
   });
   expect(shouting.status()).toBe(200);
 
-  const padded = await page.request.post(`${BASE_URL}/api/auth/login`, {
+  const padded = await page.request.post('/api/auth/login', {
     data: { username: `  ${username} `, password },
   });
   expect(padded.status()).toBe(200);
 
   // The password is a secret, not an identifier: case is part of it.
-  const wrongCasePassword = await page.request.post(`${BASE_URL}/api/auth/login`, {
+  const wrongCasePassword = await page.request.post('/api/auth/login', {
     data: { username, password: password.toUpperCase() },
   });
   expect(wrongCasePassword.status()).toBe(401);

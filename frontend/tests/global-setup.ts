@@ -142,9 +142,12 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   const admin = await ensureAdmin(baseURL);
   if (!admin) {
-    // On CI the server is always fresh, so this is a broken setup, not someone
-    // else's server — failing here beats a green run of skipped tests.
-    if (process.env.CI) {
+    // On CI, and in a run scripts/run_e2e.sh started, the server is a fresh
+    // scratch one — so this is a broken setup, not someone else's server, and
+    // failing beats a green run of skipped tests. Compared against explicit
+    // values: CI=false must not count as CI.
+    const flag = (v: string | undefined) => v === 'true' || v === '1';
+    if (flag(process.env.CI) || flag(process.env.E2E_MANAGED)) {
       throw new Error(`[e2e] Could not sign in as ${E2E_ADMIN.username} on ${baseURL}`);
     }
     console.warn(

@@ -22,7 +22,7 @@
  */
 
 import { test, expect, devices, type Page } from '@playwright/test';
-import { BROWSER_STATE, seededTripId } from './support/seed';
+import { BROWSER_STATE, requireSeededTrip } from './support/seed';
 
 const BASE = 'http://localhost:8000';
 
@@ -41,12 +41,9 @@ async function serverAvailable(page: Page): Promise<boolean> {
   }
 }
 
-/** Opens the seeded trip and returns its packing rows, or null when there are none. */
+/** Opens the seeded trip and returns its packing rows. */
 async function packingRows(page: Page) {
-  const tripId = seededTripId();
-  if (!tripId) return null;
-  await page.goto(`${BASE}/#/trips/${tripId}`);
-  await page.waitForLoadState('networkidle');
+  await page.goto(`${BASE}/#/trips/${requireSeededTrip()}`);
   // The seeded trip always has packing items: wait for them to paint rather
   // than counting early and skipping every touch test as "no items".
   const rows = page.locator('.packing-item');
@@ -61,20 +58,18 @@ test.beforeEach(async ({ page }) => {
 
 test('the row has no hover-gated controls where hover does not exist', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
   expect(await page.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(false);
 
-  const del = rows!.first().locator('.packing-delete');
+  const del = rows.first().locator('.packing-delete');
   await expect(del).toBeVisible();
   expect(await del.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
 });
 
 test('the checkbox hit area covers the full height of the row', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
-  const reach = await rows!.first().locator('.checkbox').evaluate((el) => {
+  const reach = await rows.first().locator('.checkbox').evaluate((el) => {
     const box = el.getBoundingClientRect();
     const cx = box.left + box.width / 2;
     const cy = box.top + box.height / 2;
@@ -91,9 +86,8 @@ test('the checkbox hit area covers the full height of the row', async ({ page })
 
 test('one tap toggles an item', async ({ page }) => {
   const rows = await packingRows(page);
-  test.skip(rows === null, 'No trip with packing items in database');
 
-  const row = rows!.first();
+  const row = rows.first();
   const before = await row.evaluate((el) => el.classList.contains('is-checked'));
   await row.locator('.checkbox').tap();
   await expect

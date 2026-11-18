@@ -37,12 +37,18 @@ export function writeSeedInfo(info: SeedInfo, write: (file: string, data: string
   write(SEED_FILE, JSON.stringify(info));
 }
 
-function readSeedInfo(): SeedInfo | null {
+function readSeedInfo(): SeedInfo {
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(SEED_FILE, 'utf-8')) as SeedInfo;
+    raw = readFileSync(SEED_FILE, 'utf-8');
   } catch {
-    return null;
+    throw new Error(`${SEED_FILE} is missing — did global setup run?`);
   }
+  const info = JSON.parse(raw) as Partial<SeedInfo>;
+  if (typeof info.available !== 'boolean') {
+    throw new Error(`${SEED_FILE} has no "available" flag — written by an older global setup?`);
+  }
+  return info as SeedInfo;
 }
 
 /**
@@ -52,16 +58,23 @@ function readSeedInfo(): SeedInfo | null {
  * without anyone being told.
  */
 export function requireSeededServer(): void {
-  test.skip(readSeedInfo()?.available !== true, 'Global setup could not prepare this server');
+  test.skip(readSeedInfo().available === false, 'Global setup could not prepare this server');
 }
 
-/** The seeded trip's id, or null when global setup could not create it. */
-export function seededTripId(): string | null {
-  return readSeedInfo()?.tripId ?? null;
+function requireTrip(id: string | null | undefined, which: string): string {
+  requireSeededServer();
+  if (!id) throw new Error(`Global setup reported success but recorded no ${which} id`);
+  return id;
 }
 
-export function stopoverTripId(): string | null {
-  return readSeedInfo()?.stopoverTripId ?? null;
+/** The seeded round trip's id. Skips only on an unprepared server; a missing id fails. */
+export function requireSeededTrip(): string {
+  return requireTrip(readSeedInfo().tripId, 'seeded trip');
+}
+
+/** The seeded 25h-stopover trip's id, on the same terms as requireSeededTrip. */
+export function requireStopoverTrip(): string {
+  return requireTrip(readSeedInfo().stopoverTripId, 'stopover trip');
 }
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
