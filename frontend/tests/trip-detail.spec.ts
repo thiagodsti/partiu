@@ -127,11 +127,14 @@ test('desktop columns stack without row-band holes', async ({ page }) => {
 test('an empty documents section collapses onto its header row', async ({ page }) => {
   // The section renders its empty state before its lists arrive, so wait for
   // both: measuring earlier would pass on the placeholder whatever the data.
+  // The id is resolved first so an unprepared server skips before any wait is
+  // registered, and the waits ride in one Promise.all with the navigation so
+  // none is left unhandled if another fails.
+  const tripId = requireSeededTrip();
   const listed = (kind: string) =>
-    page.waitForResponse((r) => new URL(r.url()).pathname.endsWith(`/${kind}`) && r.ok());
-  const loaded = Promise.all([listed('documents'), listed('boarding-passes')]);
-  await goToFirstTrip(page);
-  await loaded;
+    page.waitForResponse((r) => new URL(r.url()).pathname === `/api/trips/${tripId}/${kind}` && r.ok());
+  await Promise.all([listed('documents'), listed('boarding-passes'), page.goto(`/#/trips/${tripId}`)]);
+  await expect(page.locator('.flight-row').first()).toBeVisible();
 
   // Documents specifically: other empty sections (stays, say) carry advisory
   // lines under their note and are not meant to fold onto one row. The seeded
@@ -197,8 +200,12 @@ test('the trip page never scrolls sideways on a phone', async ({ page }) => {
   await goToFirstTrip(page);
 
   // Rate the trip so the clear button is on screen for the measurement.
-  await page.locator('.rating-half').last().click();
-  await expect(page.locator('.rating-header-actions > .btn')).toBeVisible();
+  // Clicking the current rating clears it, so click only on an unrated trip:
+  // a rerun on the same database finds it already rated from the last run.
+  const clear = page.locator('.rating-header-actions > .btn');
+  await expect(page.locator('.rating-half').last()).toBeVisible();
+  if (await clear.count() === 0) await page.locator('.rating-half').last().click();
+  await expect(clear).toBeVisible();
 
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,

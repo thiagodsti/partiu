@@ -67,6 +67,9 @@ test('every field is visible, with the required ones marked', async ({ page }) =
 test('the form does not scroll sideways on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openAddTransport(page);
+  // The date-range hint arrives with the trip lookup, after the picker: measure
+  // the form in its finished state, hint included.
+  await expect(page.locator('.form-hint').first()).toBeVisible();
 
   const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
