@@ -63,7 +63,9 @@ export function requireSeededServer(): void {
 
 function requireTrip(id: string | null | undefined, which: string): string {
   requireSeededServer();
-  if (!id) throw new Error(`Global setup reported success but recorded no ${which} id`);
+  if (typeof id !== 'string' || id === '') {
+    throw new Error(`Global setup reported success but recorded no usable ${which} id (${JSON.stringify(id)})`);
+  }
   return id;
 }
 

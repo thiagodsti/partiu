@@ -39,13 +39,22 @@ cd "${ROOT}"
 export SECRET_KEY="${SECRET_KEY:-e2e-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')}"
 # DISABLE_RATE_LIMITS: two dozen sign-ins from one address in a minute.
 # SECURE_COOKIES=false: the suite talks plain http to localhost.
-export DB_PATH="${SCRATCH}/partiu.db" DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false
+# DEMO_MODE=false: a demo refuses the account creation global setup does, and a
+# root .env written for a demo instance would otherwise switch it on here.
+export DB_PATH="${SCRATCH}/partiu.db" DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false DEMO_MODE=false
 
 # Bind first, then exec uvicorn on the inherited socket. Binding fails at once
 # if anything holds the port — no check-then-start window for another instance.
 uv run python - "${PORT}" > "${LOG}" 2>&1 <<'PY' &
 import os, socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# Linux only: lets a rerun bind while the last run's connections sit in
+# TIME_WAIT, and still refuses a second live listener. On BSD/macOS the same
+# option would let this bind 127.0.0.1 beside a server already on 0.0.0.0 —
+# exactly what binding first exists to prevent — so it keeps the strict bind,
+# and an immediate rerun there may have to wait out TIME_WAIT.
+if sys.platform.startswith("linux"):
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 try:
     s.bind(("127.0.0.1", int(sys.argv[1])))
 except OSError as e:
@@ -58,7 +67,8 @@ SERVER_PID=$!
 
 # The first boot loads the airports table, which the seeded trips need.
 # public-config answers 200 even before first-run setup; /api/version does not.
-ready() { curl -sf -o /dev/null --max-time 2 "${URL}/api/auth/public-config"; }
+# --noproxy: a shell http_proxy must not intercept a loopback probe.
+ready() { curl -sf --noproxy '*' -o /dev/null --max-time 2 "${URL}/api/auth/public-config"; }
 for _ in $(seq 1 90); do
   if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
     echo "run_e2e: the server exited during startup:" >&2

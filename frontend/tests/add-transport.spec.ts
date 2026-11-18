@@ -10,13 +10,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { BROWSER_STATE, requireSeededTrip } from './support/seed';
 
-const BASE_URL = 'http://localhost:8000';
-
 // Signed in as the account global-setup seeded a round trip for.
 test.use({ storageState: BROWSER_STATE });
 
 async function openSeededTrip(page: Page): Promise<void> {
-  await page.goto(`${BASE_URL}/#/trips/${requireSeededTrip()}`);
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
   // The page has painted once its add-transport control has: the seeded trip
   // is the caller's own, so that control is always there.
   await expect(page.locator('a[href*="/add-transport"]').first()).toBeVisible();
@@ -25,7 +23,8 @@ async function openSeededTrip(page: Page): Promise<void> {
 async function openAddTransport(page: Page): Promise<void> {
   await openSeededTrip(page);
   await page.locator('a[href*="/add-transport"]').first().click();
-  await page.waitForLoadState('networkidle');
+  // The form is up once its type picker is.
+  await expect(page.locator('.type-option').first()).toBeVisible();
 }
 
 test('the trip page offers one transport button, not two', async ({ page }) => {

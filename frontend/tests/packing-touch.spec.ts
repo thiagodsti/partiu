@@ -24,26 +24,15 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { BROWSER_STATE, requireSeededTrip } from './support/seed';
 
-const BASE = 'http://localhost:8000';
-
 // The device profile supplies the viewport, `hasTouch` and `isMobile` — but not
 // the browser: this project installs Chromium only (`npx playwright install
 // chromium`), and iPhone profiles otherwise default to WebKit.
 // Signed in as the account global-setup seeded a trip with a packing list for.
 test.use({ ...devices['iPhone 13'], browserName: 'chromium', storageState: BROWSER_STATE });
 
-async function serverAvailable(page: Page): Promise<boolean> {
-  try {
-    const res = await page.request.get(BASE, { timeout: 3000 });
-    return res.status() < 500;
-  } catch {
-    return false;
-  }
-}
-
 /** Opens the seeded trip and returns its packing rows. */
 async function packingRows(page: Page) {
-  await page.goto(`${BASE}/#/trips/${requireSeededTrip()}`);
+  await page.goto(`/#/trips/${requireSeededTrip()}`);
   // The seeded trip always has packing items: wait for them to paint rather
   // than counting early and skipping every touch test as "no items".
   const rows = page.locator('.packing-item');
@@ -51,10 +40,6 @@ async function packingRows(page: Page) {
   await rows.first().scrollIntoViewIfNeeded();
   return rows;
 }
-
-test.beforeEach(async ({ page }) => {
-  test.skip(!(await serverAvailable(page)), 'Server not available at http://localhost:8000');
-});
 
 test('the row has no hover-gated controls where hover does not exist', async ({ page }) => {
   const rows = await packingRows(page);
@@ -74,8 +59,10 @@ test('the checkbox hit area covers the full height of the row', async ({ page })
     const cx = box.left + box.width / 2;
     const cy = box.top + box.height / 2;
     // How far above and below the drawn box a tap still lands on the button.
+    // A probe outside the viewport finds no element at all, which is a miss —
+    // `?.` alone would turn it into `undefined !== null`, a hit.
     const hits = (dy: number) =>
-      document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') !== null;
+      (document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') ?? null) !== null;
     return { drawn: Math.round(box.height), up: hits(-14), down: hits(14) };
   });
 
