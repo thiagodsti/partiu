@@ -208,8 +208,7 @@ Want to try it before self-hosting? A public demo is available at:
 - **Navigation adapts to the screen**: a fixed icon rail on desktop, a floating dock on phones — one shared list of destinations behind both
 - Barlow, a grotesk drawn from public-transport signage, self-hosted so the app keeps its type offline
 - Full light and dark themes, following the system or forced from Settings; print styles force light
-- Native-feeling navigation on phones: pages slide in and out like an app's navigation stack, tabs cross-fade (View Transitions; off with reduced motion)
-- Installed-app polish: iOS launch screens in light and dark, no tap flash, no page rubber-banding
+- Installed-app polish: iOS launch screens in light and dark, press feedback on buttons, rows and trip cards instead of the tap flash, no page rubber-banding
 
 ### PWA
 - Installable on iOS and Android as a home screen app

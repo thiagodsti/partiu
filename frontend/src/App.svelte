@@ -14,7 +14,6 @@
   import { refreshInvitationCount } from './lib/invitationStore';
   import { applyUserLocale } from './lib/i18n';
   import { applyUserAccent } from './lib/accentStore';
-  import { installViewTransitions, notifyRouteLoaded } from './lib/viewTransition';
   import ToastContainer from './components/ToastContainer.svelte';
   import AnnouncementBanner from './components/AnnouncementBanner.svelte';
   import OfflineBanner from './components/OfflineBanner.svelte';
@@ -59,7 +58,6 @@
       refreshInvitationCount();
     };
     window.addEventListener('hashchange', onHashChange);
-    const removeViewTransitions = installViewTransitions();
 
     // Poll for invitations + unread notifications every 30 seconds while the tab is open
     const pollInterval = setInterval(refreshInvitationCount, 30_000);
@@ -112,7 +110,6 @@
 
     return () => {
       window.removeEventListener('hashchange', onHashChange);
-      removeViewTransitions();
       document.removeEventListener('visibilitychange', clearBadge);
       clearInterval(pollInterval);
     };
@@ -130,7 +127,7 @@
     <AnnouncementBanner />
     <svelte:boundary>
       <div class="app-content">
-        <Router {routes} on:routeEvent={routeNotFound} on:routeLoaded={notifyRouteLoaded} />
+        <Router {routes} on:routeEvent={routeNotFound} />
       </div>
       {#if showNav}
         <SideRail />
