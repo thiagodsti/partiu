@@ -84,13 +84,20 @@ export function interceptableHref(event: MouseEvent): string | null {
   return href;
 }
 
+let transitionGeneration = 0;
+
 function onClick(event: MouseEvent): void {
   const href = interceptableHref(event);
   if (href === null) return;
 
   event.preventDefault();
   const root = document.documentElement;
-  root.dataset.navDirection = navDirection(routePath(window.location.hash), routePath(href));
+  const direction = navDirection(routePath(window.location.hash), routePath(href));
+  root.dataset.navDirection = direction;
+  // A second click before this transition ends starts a new one, which skips
+  // this one and fires its `finished` — so only the transition that still owns
+  // the attribute may clear it, or the newer one loses its slide halfway in.
+  const generation = ++transitionGeneration;
 
   const transition = document.startViewTransition(async () => {
     const loaded = nextRouteLoaded(ROUTE_WAIT_MS);
@@ -98,7 +105,7 @@ function onClick(event: MouseEvent): void {
     await loaded;
   });
   transition.finished.finally(() => {
-    delete root.dataset.navDirection;
+    if (generation === transitionGeneration) delete root.dataset.navDirection;
   });
 }
 

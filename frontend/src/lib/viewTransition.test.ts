@@ -169,6 +169,35 @@ describe('installViewTransitions', () => {
     expect(document.documentElement.dataset.navDirection).toBeUndefined();
   });
 
+  it('lets only the newest transition clear the direction', async () => {
+    const finishers: Array<() => void> = [];
+    document.startViewTransition = (() => {
+      let finish!: () => void;
+      const finished = new Promise<void>((r) => (finish = r));
+      finishers.push(finish);
+      return { finished };
+    }) as unknown as typeof document.startViewTransition;
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    uninstall = installViewTransitions();
+
+    clickOn(anchor); // /trips → /trips/4: forward
+    const other = document.createElement('a');
+    other.setAttribute('href', '#/stats');
+    document.body.appendChild(other);
+    clickOn(other); // → /stats: fade
+    expect(document.documentElement.dataset.navDirection).toBe('fade');
+
+    // The first, skipped transition finishing must not strip the second's.
+    finishers[0]();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.documentElement.dataset.navDirection).toBe('fade');
+
+    finishers[1]();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.documentElement.dataset.navDirection).toBeUndefined();
+    other.remove();
+  });
+
   it('gives up waiting on a route that never reports itself loaded', async () => {
     vi.useFakeTimers();
     let update: (() => Promise<void>) | undefined;
