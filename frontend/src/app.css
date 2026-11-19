@@ -2607,59 +2607,6 @@ img {
   pointer-events: none;
 }
 
-/* ---- Page transitions ----
-   Driven by lib/viewTransition.ts, which sets data-nav-direction on <html>
-   for the length of one transition. On a phone a push slides the new page in
-   over the old one and a pop slides it back off, the way a native navigation
-   stack does; peers (tab switches) cross-fade. On a wide screen everything
-   cross-fades — a full-width slide across a desktop monitor is a lot of
-   motion for opening a trip. The navigation chrome is named out of the root
-   snapshot so it holds still while the page moves under it. */
-.tab-bar { view-transition-name: tab-bar; }
-.rail { view-transition-name: side-rail; }
-.toast-container { view-transition-name: toasts; }
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 180ms;
-  animation-timing-function: ease;
-}
-
-@media (max-width: 899px) {
-  :root[data-nav-direction="forward"]::view-transition-old(root) {
-    animation: 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both vt-recede;
-  }
-  :root[data-nav-direction="forward"]::view-transition-new(root) {
-    animation: 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both vt-enter;
-  }
-  :root[data-nav-direction="back"]::view-transition-old(root) {
-    animation: 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both reverse vt-enter;
-    /* The page being popped is the one on top, sliding away. */
-    z-index: 1;
-  }
-  :root[data-nav-direction="back"]::view-transition-new(root) {
-    animation: 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both reverse vt-recede;
-  }
-}
-
-@keyframes vt-enter {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-@keyframes vt-recede {
-  from { transform: translateX(0); filter: brightness(1); }
-  to { transform: translateX(-28%); filter: brightness(0.7); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-}
-
 /* ---- Print ---- */
 @media print {
   /* Force light regardless of the user's theme. Specificity must match
