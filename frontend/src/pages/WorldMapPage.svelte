@@ -113,7 +113,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-md);
-    padding: calc(var(--space-md) + env(safe-area-inset-top)) var(--space-md) var(--space-md);
+    padding: calc(var(--space-md) + var(--top-inset)) var(--space-md) var(--space-md);
     border-bottom: 1px solid var(--border);
   }
 
