@@ -226,6 +226,21 @@ def _matches_flight_filter(
     return bool(_FLIGHT_SUBJECT_KEYWORDS.search(subject))
 
 
+def _fetch_part(conn: imaplib.IMAP4, msg_id: bytes, parts: str) -> bytes | None:
+    """The data of one FETCH of one message, or None if the server gave none."""
+    status, msg_data = conn.fetch(msg_id.decode(), parts)
+    if status != "OK" or not msg_data:
+        return None
+    item = msg_data[0]
+    if not isinstance(item, (tuple, list)):
+        return None
+    return item[1]
+
+
+# How many fetched emails between two progress reports.
+PROGRESS_EVERY = 25
+
+
 def fetch_emails_imap(
     host: str,
     port: int,
@@ -240,7 +255,8 @@ def fetch_emails_imap(
     """
     Fetch emails from an IMAP server, filtering by sender patterns OR flight keywords.
 
-    progress_callback: optional callable(fetched, total) called as emails are downloaded.
+    progress_callback: optional callable(fetched, total) called as emails are downloaded,
+    every PROGRESS_EVERY emails and after the last one.
 
     Returns an ImapFetchResult — never raises; check .success and .error on the result.
 
@@ -299,22 +315,24 @@ def fetch_emails_imap(
             conn.select(folder, readonly=True)
             for msg_id in batch:
                 try:
-                    status, msg_data = conn.fetch(msg_id, "(RFC822)")
-                    if status != "OK":
+                    # Headers first: most mail in the window is not about flights,
+                    # so only the matches are downloaded whole.
+                    headers = _fetch_part(conn, msg_id, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
+                    if headers is None:
                         continue
-                    item = msg_data[0]
-                    if not isinstance(item, (tuple, list)):
-                        continue
-                    raw_email: bytes = item[1]
-                    msg = email.message_from_bytes(raw_email)
-
-                    sender = decode_header_value(msg.get("From", ""))
-                    subject = decode_header_value(msg.get("Subject", ""))
-                    message_id = msg.get("Message-ID", f"imap-{msg_id.decode()}")
+                    head = email.message_from_bytes(headers)
+                    sender = decode_header_value(head.get("From", ""))
+                    subject = decode_header_value(head.get("Subject", ""))
 
                     # Filter: known sender pattern OR flight-like subject keyword
                     if not _matches_flight_filter(sender, subject, sender_patterns):
                         continue
+
+                    raw_email = _fetch_part(conn, msg_id, "(RFC822)")
+                    if raw_email is None:
+                        continue
+                    msg = email.message_from_bytes(raw_email)
+                    message_id = msg.get("Message-ID", f"imap-{msg_id.decode()}")
 
                     body, raw_html, pdf_bytes_list, ics_texts = get_email_body_and_html(msg)
 
@@ -344,7 +362,9 @@ def fetch_emails_imap(
                     logger.warning("Error processing email %s: %s", msg_id, e)
                 finally:
                     fetched += 1
-                    if progress_callback:
+                    # Every write of the progress is a database commit: report
+                    # in steps, and always at the end.
+                    if progress_callback and (fetched % PROGRESS_EVERY == 0 or fetched == total):
                         try:
                             progress_callback(fetched, total)  # type: ignore[operator]
                         except Exception:
