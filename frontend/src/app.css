@@ -87,6 +87,9 @@
   --shadow-elevated: 0 18px 40px -18px rgba(0, 0, 0, 0.8);
 
   --nav-height: 64px;
+  /* What the top of the page keeps clear of: the notch / status bar, and
+     installed (below) also the strip iOS blurs underneath it. */
+  --top-inset: env(safe-area-inset-top);
   --tab-height: 62px;
   --rail-width: 88px;
   --max-width: 1100px;
@@ -402,6 +405,13 @@ html {
   html, body {
     overscroll-behavior-y: none;
   }
+
+  /* The installed app on iOS fades a blurred strip under the status bar,
+     deeper than the safe area; without the extra room it blurs the top of
+     the page header. */
+  :root {
+    --top-inset: calc(env(safe-area-inset-top) + 20px);
+  }
 }
 
 body {
@@ -671,8 +681,8 @@ img {
   position: sticky;
   top: 0;
   z-index: 100;
-  min-height: calc(var(--nav-height) + env(safe-area-inset-top));
-  padding: calc(env(safe-area-inset-top) + 10px) var(--space-md) 10px;
+  min-height: calc(var(--nav-height) + var(--top-inset));
+  padding: calc(var(--top-inset) + 10px) var(--space-md) 10px;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
