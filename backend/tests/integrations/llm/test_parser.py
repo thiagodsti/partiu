@@ -249,24 +249,6 @@ class TestAirportCandidates:
 
         assert airport_candidates("Pago com PIX, ref ABC") == []
 
-    def test_schema_limits_both_airports_to_the_candidates(self, airports):
-        from backend.integrations.llm.parser import _FLIGHT_SCHEMA, flight_schema
-
-        schema = flight_schema("São Paulo 08:00 → Florianópolis 09:15")
-        legs = schema["properties"]["flights"]["items"]["properties"]
-        assert legs["dep_airport"]["enum"] == ["CGH", "FLN", "GRU"]
-        assert legs["arr_airport"]["enum"] == ["CGH", "FLN", "GRU"]
-        # the shared schema is not modified
-        assert (
-            "enum"
-            not in _FLIGHT_SCHEMA["properties"]["flights"]["items"]["properties"]["dep_airport"]
-        )
-
-    def test_fewer_than_two_candidates_leaves_airports_free(self, airports):
-        from backend.integrations.llm.parser import _FLIGHT_SCHEMA, flight_schema
-
-        assert flight_schema("Your flight to Florianópolis") is _FLIGHT_SCHEMA
-
     def test_arrival_time_is_required_and_never_null(self):
         from backend.integrations.llm.parser import _FLIGHT_SCHEMA
 
@@ -274,17 +256,45 @@ class TestAirportCandidates:
         assert "arr_datetime" in leg["required"]
         assert leg["properties"]["arr_datetime"] == {"type": "string"}
 
-    def test_llm_request_carries_the_mail_schema(self, airports):
-        from unittest.mock import patch
 
-        from backend.integrations.llm import parser
+class TestCandidatesAndCheckAgree:
+    """The post-answer check accepts exactly the mail's candidate airports."""
 
-        email = _email(body="Voo 4849 São Paulo 08:00 Florianópolis 09:15")
-        with (
-            patch("backend.config.settings.OLLAMA_URL", "http://ollama:11434"),
-            patch.object(parser, "_call_ollama", return_value=None) as call,
-        ):
-            parser.llm_extract_flights(email)
-        schema = call.call_args.kwargs["schema"]
-        legs = schema["properties"]["flights"]["items"]["properties"]
-        assert legs["arr_airport"]["enum"] == ["CGH", "FLN", "GRU"]
+    @pytest.fixture
+    def airports(self, test_db):
+        from backend.database import db_write
+        from backend.utils import fold_text
+
+        rows = [
+            ("LIN", "Milano Linate Airport", "Segrate (MI)"),
+            ("FRA", "Frankfurt am Main Airport", "Frankfurt"),
+            ("ARN", "Stockholm-Arlanda Airport", "Stockholm"),
+        ]
+        with db_write() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, name_folded,"
+                " city_folded, scheduled_service) VALUES (?, ?, ?, ?, ?, 1)",
+                [(c, n, city, fold_text(n), fold_text(city)) for c, n, city in rows],
+            )
+        return test_db
+
+    def test_airport_named_only_by_a_word_of_its_name_is_a_candidate(self, airports):
+        """ "Linate" alone names LIN, though it is neither a city nor an alias."""
+        from backend.integrations.llm.parser import _airport_in_text, airport_candidates
+
+        text = "LH 247 Linate 06:10 → Frankfurt 07:40, then Stockholm"
+        assert "LIN" in airport_candidates(text)
+        assert _airport_in_text("LIN", text)
+
+    def test_check_accepts_exactly_the_candidates(self, airports):
+        from backend.integrations.llm.parser import _airport_in_text, airport_candidates
+
+        text = "Frankfurt 07:40 → Stockholm 09:55"
+        for code in ("LIN", "FRA", "ARN"):
+            assert _airport_in_text(code, text) == (code in airport_candidates(text))
+
+
+class TestAnswerLength:
+    def test_answer_is_capped(self):
+        payload = TestRequest()._payload()
+        assert payload["options"]["num_predict"] == 2048

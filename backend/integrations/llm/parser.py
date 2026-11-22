@@ -13,7 +13,6 @@ Usage (programmatic):
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import re
@@ -152,70 +151,100 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
 }
 
 
-def _airport_lookup() -> tuple[frozenset[str], dict[str, frozenset[str]]]:
-    """Scheduled-service IATA codes, and folded city names / aliases → codes.
+def _airport_index() -> tuple[frozenset[str], dict[str, set[str]], dict[str, set[str]]]:
+    """Airport codes, and what in a mail can name each airport.
 
-    Read on every call (about 14 ms): one call per mail, next to a model
-    that takes a minute, and no cache to go stale when the airports change.
+    Returns (codes, words, phrases): ``words`` maps every locating word of an
+    airport's name, city or aliases (``_significant_tokens``, the filter
+    ``resolve_iata`` uses, so "airport" or "international" name nothing) to
+    codes; ``phrases`` maps whole folded city names and aliases ("sao paulo",
+    "milan bergamo") to codes. Only airports with scheduled service, which an
+    airline itinerary always uses — unless the table has none flagged, as on
+    an install that never ran the ranking backfill.
+
+    Read on every call (tens of ms): one call per mail, next to a model that
+    takes a minute, and no cache to go stale when the airports change.
     """
     from ...database import db_conn
+    from ...parsers.shared import _significant_tokens
 
     codes: set[str] = set()
-    names: dict[str, set[str]] = {}
+    words: dict[str, set[str]] = {}
+    phrases: dict[str, set[str]] = {}
     try:
         with db_conn() as conn:
-            for code, city in conn.execute(
-                "SELECT iata_code, city_folded FROM airports WHERE scheduled_service = 1"
-            ):
-                codes.add(code)
-                if city:
-                    names.setdefault(city, set()).add(code)
-            for alias, code in conn.execute("SELECT alias, iata_code FROM airport_aliases"):
-                names.setdefault(alias, set()).add(code)
+            scheduled = conn.execute(
+                "SELECT 1 FROM airports WHERE scheduled_service = 1 LIMIT 1"
+            ).fetchone()
+            where = "WHERE scheduled_service = 1" if scheduled else ""
+            rows = conn.execute(
+                f"SELECT iata_code, name_folded, city_folded FROM airports {where}"
+            ).fetchall()
+            aliases = conn.execute("SELECT alias, iata_code FROM airport_aliases").fetchall()
     except Exception as e:  # noqa: BLE001 - no airport data: no candidates
         logger.debug("airport candidates unavailable (%s)", e)
-    return frozenset(codes), {k: frozenset(v) for k, v in names.items()}
+        return frozenset(), {}, {}
+    for code, name, city in rows:
+        codes.add(code)
+        for value in (name, city):
+            for token in _significant_tokens(value or ""):
+                words.setdefault(token, set()).add(code)
+        if city:
+            phrases.setdefault(city, set()).add(code)
+    for alias, code in aliases:
+        if code not in codes:
+            continue
+        phrases.setdefault(alias, set()).add(code)
+        for token in _significant_tokens(alias or ""):
+            words.setdefault(token, set()).add(code)
+    return frozenset(codes), words, phrases
+
+
+_MAX_AIRPORTS_PER_WORD = 5
 
 
 def airport_candidates(text: str) -> list[str]:
-    """Every airport the mail names: printed codes, and city or airport names.
+    """Every airport the mail names: printed codes, and words of airport names.
 
-    A code counts when it is printed as a word of its own and is a scheduled-
-    service airport; a name when one to three consecutive words, folded, are a
-    city or an alias in the airports tables ("florianopolis" → FLN, "sao paulo"
-    → GRU and CGH). Noise comes along — PIX (the payment method) is Pico Island,
-    the Portuguese word "nome" is Nome, Alaska — which only adds a choice the
+    A code counts when printed as a word of its own; a name when a locating
+    word of an airport's name, city or aliases is in the mail, or one to three
+    consecutive words are a whole city name or alias ("sao paulo" → GRU and
+    CGH). Noise comes along — PIX (the payment method) is Pico Island, the
+    Portuguese word "nome" is Nome, Alaska — which only adds a choice the
     model has no reason to take. On the 192 corpus legs the right airport was
-    in the list every time (median 7 candidates per mail).
+    in the list every time (median 23 candidates per mail).
+
+    Only used to check an answer (``_airport_in_text``). Offering the list to
+    the model as the schema's choices was measured and dropped: no gain over
+    the check alone (40-41 of 53 legs either way), and the fuller the list the
+    more wrong choices it offers — a passenger named Barbara is Santa Barbara
+    (SBA), "Brasil" is an airport name in Boa Vista.
     """
+    from ...parsers.shared import _significant_tokens
     from ...utils import fold_text
 
-    codes, names = _airport_lookup()
+    codes, words, phrases = _airport_index()
     found = {t for t in re.findall(r"(?<![A-Za-z])([A-Z]{3})(?![A-Za-z])", text) if t in codes}
-    words = re.findall(r"[a-z0-9]+", fold_text(text))
-    for n in (1, 2, 3):
-        for i in range(len(words) - n + 1):
-            found |= names.get(" ".join(words[i : i + n]), frozenset())
+    folded = fold_text(text)
+    for token in set(_significant_tokens(folded)):
+        airports = words.get(token, set())
+        # A word shared by many airports ("santa" names 29) locates nothing and
+        # would only bury the right airport in noise. Five keeps every corpus
+        # airport (Stockholm alone names ARN, BMA, NYO and VST) at a median of
+        # 23 candidates per mail; three already loses Arlanda.
+        if len(airports) <= _MAX_AIRPORTS_PER_WORD:
+            found |= airports
+    plain = re.findall(r"[a-z0-9]+", folded)
+    for n in (2, 3):
+        for i in range(len(plain) - n + 1):
+            found |= phrases.get(" ".join(plain[i : i + n]), set())
     return sorted(found)
 
 
-def flight_schema(mail_text: str) -> dict[str, Any]:
-    """The answer schema for one mail: airports limited to the ones it names.
-
-    Ollama then cannot write an airport the mail never mentions — LATAM's
-    Florianópolis as FLY, Stockholm as STO — and the model only has to decide
-    which named airport is which end of the leg. With fewer than two
-    candidates there is nothing to choose from, and the airports stay free
-    (the _airport_in_text check still applies).
-    """
-    candidates = airport_candidates(mail_text)
-    if len(candidates) < 2:
-        return _FLIGHT_SCHEMA
-    schema = copy.deepcopy(_FLIGHT_SCHEMA)
-    legs = schema["properties"]["flights"]["items"]["properties"]
-    for field in ("dep_airport", "arr_airport"):
-        legs[field] = {"type": "string", "enum": candidates}
-    return schema
+# A four-leg itinerary is about 530 tokens of JSON and the longest answer seen
+# was 1,451. Without a cap a model that loops (granite4:tiny-h once wrote
+# 20,000 tokens of the same list) holds the CPU until the client timeout.
+_MAX_ANSWER_TOKENS = 2048
 
 
 def _call_ollama(
@@ -224,7 +253,6 @@ def _call_ollama(
     ollama_url: str,
     timeout: int = 180,
     num_ctx: int | None = None,
-    schema: dict[str, Any] | None = None,
 ) -> str | None:
     """Send a chat completion request to Ollama and return the raw response text.
 
@@ -249,8 +277,8 @@ def _call_ollama(
             # mail, ending in an empty answer, against 73 s without. Models
             # that do not think accept the flag and ignore it.
             "think": False,
-            "options": {"temperature": 0, "num_ctx": num_ctx},
-            "format": schema or _FLIGHT_SCHEMA,
+            "options": {"temperature": 0, "num_ctx": num_ctx, "num_predict": _MAX_ANSWER_TOKENS},
+            "format": _FLIGHT_SCHEMA,
         }
     ).encode()
 
@@ -324,43 +352,18 @@ def _rejection(flight: dict[str, Any], mail_text: str) -> str:
 
 
 def _airport_in_text(code: str, text: str) -> bool:
-    """True when the mail names this airport: its code, or a word of its name.
+    """True when the mail names this airport, by the same rule as the answer schema.
 
     The model maps city names to codes, mostly right ("Sicily-Catania" → CTA)
     but not always: LATAM's "Florianópolis" came back as FLY, Finley in
     Australia, and asking it to map cities made it invent city codes (STO,
-    CAT). A code is kept when it is printed as a word of its own, or when a
-    locating word of the airport's name, city or aliases is in the mail
-    (Arlanda, Bergamo, Florianópolis). An unknown code is rejected, except
-    on an empty airports table, where nothing can be checked.
+    CAT). An airport is kept exactly when it is one of the mail's
+    ``airport_candidates``. With no airport data at all, nothing can be checked.
     """
-    from ...database import db_conn
-    from ...parsers.shared import _significant_tokens
-    from ...utils import fold_text
-
-    code = (code or "").upper()
-    if re.search(rf"(?<![A-Za-z]){code}(?![A-Za-z])", text):
+    codes, _, _ = _airport_index()
+    if not codes:
         return True
-    try:
-        with db_conn() as conn:
-            names = conn.execute(
-                "SELECT name_folded, city_folded FROM airports WHERE iata_code = ?", (code,)
-            ).fetchall()
-            if not names:
-                return conn.execute("SELECT 1 FROM airports LIMIT 1").fetchone() is None
-            aliases = conn.execute(
-                "SELECT alias FROM airport_aliases WHERE iata_code = ?", (code,)
-            ).fetchall()
-    except Exception as e:  # noqa: BLE001 - no airport data: nothing to check against
-        logger.debug("airport check skipped for %s (%s)", code, e)
-        return True
-    tokens = {
-        t
-        for row in [*names, *aliases]
-        for value in row
-        for t in _significant_tokens(fold_text(value))
-    }
-    return bool(tokens & set(_significant_tokens(fold_text(text))))
+    return (code or "").upper() in airport_candidates(text)
 
 
 def _validate_flight(flight: dict[str, Any]) -> bool:
@@ -581,7 +584,6 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         settings.OLLAMA_MODEL,
         settings.OLLAMA_URL,
         timeout=settings.OLLAMA_TIMEOUT,
-        schema=flight_schema(mail_text),
     )
     if not raw:
         return []

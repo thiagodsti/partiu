@@ -111,15 +111,13 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
     )
     mail_text = f"{email_msg.subject or ''}\n{body}"
     t0 = time.monotonic()
-    raw = llm._call_ollama(
-        prompt, model, ollama_url, timeout=timeout, schema=llm.flight_schema(mail_text)
-    )
+    raw = llm._call_ollama(prompt, model, ollama_url, timeout=timeout)
     elapsed = time.monotonic() - t0
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
         data = {}
-    got = set()
+    legs = []
     if data.get("has_flight"):
         ref = data.get("booking_reference") or ""
         for f in data.get("flights") or []:
@@ -129,19 +127,23 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
                 f["booking_reference"] = ref
             if llm._rejection(f, mail_text):
                 continue
-            # The rest of the sync's path: route check, airport timezones and
-            # the plausibility gate, which drops e.g. an arrival before departure.
-            leg = fix_reversed_route(llm._normalise_flight(f, "", ""))
-            if not validate_flights([apply_airport_timezones(leg)], source="eval"):
-                continue
-            got.add(
-                _leg_key(
-                    leg["flight_number"],
-                    leg["departure_airport"],
-                    leg["arrival_airport"],
-                    f.get("dep_datetime") or f.get("dep_date"),
-                )
+            legs.append(
+                apply_airport_timezones(fix_reversed_route(llm._normalise_flight(f, "", "")))
             )
+    # The rest of the sync's path, on the mail's legs together as the sync does:
+    # the plausibility gate drops e.g. an arrival before departure, and rolls a
+    # year-less January leg after a December one into the next year.
+    got = {
+        _leg_key(
+            leg["flight_number"],
+            leg["departure_airport"],
+            leg["arrival_airport"],
+            _local_date(
+                leg["departure_datetime"].strftime("%Y-%m-%d %H:%M"), leg["departure_airport"]
+            ),
+        )
+        for leg in validate_flights(legs, source="eval")
+    }
     truth = (
         {_leg_key(fn, dep, arr, _local_date(when, dep)) for fn, dep, arr, when in row["legs"]}
         if row["kind"] == "pos"

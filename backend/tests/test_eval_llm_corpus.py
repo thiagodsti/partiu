@@ -1,5 +1,6 @@
 """Tests for backend.tools.eval_llm_corpus (scoring only; Ollama is never called)."""
 
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 
@@ -49,3 +50,62 @@ class TestLocalDate:
 
         with patch("backend.airports.timezone._get_airport_timezone", return_value=None):
             assert _local_date("2021-12-14 22:30", "XXX") == "2021-12-14"
+
+
+class TestScoreFollowsTheSyncPath:
+    def test_legs_are_validated_together_so_a_january_leg_rolls_over(self, test_db):
+        """Production validates a mail's legs as one itinerary, which moves a
+        year-less January return after a December departure into next year."""
+        import json
+        from unittest.mock import patch
+
+        from backend.integrations.llm import parser as llm
+        from backend.parsers.email_connector import EmailMessage
+        from backend.tools.eval_llm_corpus import score
+
+        answer = json.dumps(
+            {
+                "has_flight": True,
+                "booking_reference": "TESTR5",
+                "flights": [
+                    {
+                        "flight_number": "XY1",
+                        "dep_airport": "ARN",
+                        "arr_airport": "LIS",
+                        "dep_datetime": "2026-12-22T10:00:00",
+                        "arr_datetime": "2026-12-22T14:00:00",
+                        "dep_date": "2026-12-22",
+                        "airline_code": "XY",
+                    },
+                    {
+                        "flight_number": "XY2",
+                        "dep_airport": "LIS",
+                        "arr_airport": "ARN",
+                        "dep_datetime": "2026-01-15T10:00:00",
+                        "arr_datetime": "2026-01-15T14:00:00",
+                        "dep_date": "2026-01-15",
+                        "airline_code": "XY",
+                    },
+                ],
+            }
+        )
+        email = EmailMessage(
+            message_id="<t@x>",
+            sender="no-reply@airline.example",
+            subject="Booking TESTR5",
+            body="XY 1 ARN LIS 22 Dec 10:00, XY 2 LIS ARN 15 Jan 10:00",
+            date=datetime(2026, 11, 1, tzinfo=UTC),
+        )
+        row = {
+            "kind": "pos",
+            "rule": "XY",
+            "subject": "Booking TESTR5",
+            "legs": [
+                ("XY1", "ARN", "LIS", "2026-12-22 10:00"),
+                ("XY2", "LIS", "ARN", "2027-01-15 10:00"),
+            ],
+        }
+        with patch.object(llm, "_call_ollama", return_value=answer):
+            result = score(email, row, "m", "u", 1)
+        assert ("XY2", "LIS", "ARN", "2027-01-15") in result["got"]
+        assert result["exact"] == 2
