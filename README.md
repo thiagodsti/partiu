@@ -71,6 +71,18 @@ Want to try it before self-hosting? A public demo is available at:
 - Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency. You appear in the payer list under your own name, marked "(you)" — you are on the trip like everyone else, so there is no separate "Me" entry offering the same person twice
 - Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings. **A name is a person, not a row**: typing one you have used before reuses that guest instead of creating a second one, ignoring case and accents (`jimmy` and `JIMMY` are Jimmy; `joao` is `João`), and renaming a guest onto another's name is refused rather than silently merging two people's expense histories
 
+### Trip planner
+- **A planner page per trip** (`#/trips/:id/plan`, "Planner" / "Planejador" button on any trip not yet over), desktop-first, for organising a trip before and while booking it
+- **Route of cities on top**: add each city with its arrival and departure dates; each city gets a colour, and a city added here also joins the trip's destinations
+- **A board with one column per day**, laid out like a planning spreadsheet: city, transport (flights and ground legs), the night's stay — or a "no stay" warning that opens a new booking for that night — things to do, and notes. Each city's run of days is framed in its colour
+- **Things to do** are items with a status (idea → to book → booked → done, the dot beside each), an optional time ("07:20 Great Wall" sets it), notes and a place; drag them between days
+- **Places to visit**: a search for sights and restaurants ranked near the trip's route; a pick goes straight onto the map, ready to drag onto a day. **Unscheduled ideas** stay free text
+- **Before the trip**: a to-do list with an assignee from the trip's people, or a new companion added on the spot (a trip guest, who can then share expenses too)
+- **A map of the whole plan** under the board — route cities in order, stays, ground legs and every item with a place; click a day's header to focus on that day
+- Stays and ground legs are edited in place with the trip page's own forms; flights open their edit page and come back to the planner
+- Everything saves as it changes. On a phone the board becomes stacked day cards
+- **One list per day**: the trip page's day cards show and edit the planner's items for that day (same status dot, time and place), so planning on either page shows on the other
+
 ### Trip budget
 - Set a spending limit per trip. The bar reads as a traffic light that deepens as it fills: pale green at the start, strong green as it runs on, then pale amber at 80% deepening to strong, then red the moment you reach the limit
 - It counts **your share**, not what you paid: a €100 dinner split four ways counts €25 towards your budget whoever picked up the bill, and paying for a friend's taxi you were not on counts nothing at all

@@ -33,6 +33,7 @@ from .limiter import limiter
 from .middleware import FirstRunMiddleware
 from .notifications import routes as notifications_routes
 from .packing import routes as packing_routes
+from .planner import routes as planner_routes
 from .routes import version as version_routes
 from .scheduler import start_scheduler, stop_scheduler
 from .segments import routes as segments_routes
@@ -177,6 +178,7 @@ app.include_router(day_notes_routes.router)
 app.include_router(expenses_routes.router)
 app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
+app.include_router(planner_routes.router)
 app.include_router(segments_routes.router)
 app.include_router(stays_routes.router)
 app.include_router(car_rentals_routes.router)

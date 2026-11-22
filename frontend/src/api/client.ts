@@ -4,6 +4,10 @@
  */
 
 import type {
+  PlanItem,
+  PlanStop,
+  PlanTask,
+  TripPlan,
   ApiKey,
   ApiKeyScope,
   CreatedApiKey,
@@ -379,6 +383,25 @@ export const notificationsApi = {
   deleteNotification: (id: number) => del<null>(`/api/notifications/inbox/${id}`),
 };
 
+export const plannerApi = {
+  get: (tripId: string) => get<TripPlan>(`/api/trips/${tripId}/plan`),
+  createStop: (tripId: string, data: Omit<PlanStop, 'id' | 'notes'> & { notes?: string | null }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/stops`, data),
+  updateStop: (tripId: string, id: string, data: Partial<Omit<PlanStop, 'id'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/stops/${id}`, data),
+  deleteStop: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/stops/${id}`),
+  createItem: (tripId: string, data: Partial<Omit<PlanItem, 'id' | 'sort_order'>> & { title: string }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/items`, data),
+  updateItem: (tripId: string, id: string, data: Partial<Omit<PlanItem, 'id'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/items/${id}`, data),
+  deleteItem: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/items/${id}`),
+  createTask: (tripId: string, data: { text: string; assignee_type?: 'user' | 'guest' | null; assignee_id?: number | null }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/tasks`, data),
+  updateTask: (tripId: string, id: string, data: Partial<Omit<PlanTask, 'id' | 'sort_order'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/tasks/${id}`, data),
+  deleteTask: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/tasks/${id}`),
+};
+
 export const dayNotesApi = {
   list: (tripId: string) => get<TripDayNote[]>(`/api/trips/${tripId}/day-notes`),
   upsert: (tripId: string, date: string, content: string) =>
@@ -514,7 +537,13 @@ export const stationsApi = {
  * stationsApi because the station search is tag-filtered to stations — a hotel
  * reaching it would land in the train-station dropdown. */
 export const placesApi = {
-  search: (q: string) => get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}`),
+  /* `near` biases the ranking towards a point: the organizer passes the middle
+   * of the trip's route, so a sight's name finds the one on this trip. */
+  search: (q: string, kind: 'stay' | 'poi' = 'stay', near?: { lat: number; lon: number } | null) =>
+    get<PlaceResult[]>(
+      `/api/places/search?q=${encodeURIComponent(q)}&kind=${kind}` +
+        (near ? `&lat=${near.lat.toFixed(2)}&lon=${near.lon.toFixed(2)}` : ''),
+    ),
 };
 
 /** Cities, towns and villages — a trip's own ends. Separate from placesApi

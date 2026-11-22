@@ -20,9 +20,11 @@
      * name — the country is what makes the leg count toward visited countries,
      * and the address is what makes the calendar entry tappable into maps. */
     onchange: (place: PickedPlace) => void;
+    /** Ranks results near this point first ('stay' and 'poi' only). */
+    near?: { lat: number; lon: number } | null;
   }
 
-  const { value, lat, lon, kind, placeholder = '', id, onchange }: Props = $props();
+  const { value, lat, lon, kind, placeholder = '', id, onchange, near = null }: Props = $props();
 
   let results = $state<PlaceResult[]>([]);
   let open = $state(false);
@@ -71,7 +73,7 @@
 
   /** The station wording is wrong on an accommodation form, where the thing
    * being picked is a hotel or a street. */
-  const isStay = $derived(kind === 'stay');
+  const isStay = $derived(kind === 'stay' || kind === 'poi');
   const isCity = $derived(kind === 'city');
 
   async function runSearch(q: string) {
@@ -92,8 +94,8 @@
       // Stays search accommodation *and* plain addresses; a private rental is
       // usually only findable as the latter. Stations stay tag-filtered.
       const found =
-        kind === 'stay'
-          ? await placesApi.search(q)
+        kind === 'stay' || kind === 'poi'
+          ? await placesApi.search(q, kind, near)
           : kind === 'city'
             ? await citiesApi.search(q)
             : await stationsApi.search(q, kind);

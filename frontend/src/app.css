@@ -821,6 +821,25 @@ img {
   max-width: 820px;
 }
 
+/* On a phone the trip page's own gutters — the column's, then each section's —
+   added up to nearly 60px a side around a day card, a sixth of the screen.
+   Tighter here, unchanged from 641px up. */
+@media (max-width: 640px) {
+  .main-content.trip-page {
+    padding: var(--space-md) var(--space-sm) var(--space-xl);
+  }
+  .trip-page .trip-section {
+    padding: 14px 12px;
+    margin-bottom: 10px;
+  }
+  .trip-page .trip-section-compact {
+    padding: 10px 12px;
+  }
+  .trip-page .trip-section-header {
+    margin-bottom: var(--space-sm);
+  }
+}
+
 /* ---- Panels ----
    Two weights, and they mean different things: `.card` is a container
    you can act on, `.trip-section` is a region of a document. They do not

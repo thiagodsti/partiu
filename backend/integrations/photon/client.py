@@ -67,6 +67,9 @@ _OSM_TAGS: dict[str, tuple[str, ...]] = {
     # starts at a door rather than a town — the same shape as "stay", which is
     # why both get the untagged second pass below.
     "car": ("place",),
+    # Things to see and do on a trip plan: sights, museums, parks, restaurants.
+    # Filtered by key, since the values under each are far too many to list.
+    "poi": ("tourism", "historic", "leisure", "amenity", "natural"),
 }
 
 # Kinds whose tagged results are settlements rather than venues.
@@ -258,12 +261,21 @@ def _collect(features: list[dict], limit: int, into: list[dict], seen: set) -> N
             return
 
 
-def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[dict]:
+def search_places(
+    query: str,
+    kind: str | None = None,
+    limit: int = 8,
+    near: tuple[float, float] | None = None,
+) -> list[dict]:
     """Type-ahead candidates for a place.
 
     ``kind`` selects the OSM tag filter: a station kind ("train"/"bus"/"ferry"),
     "stay" for accommodation, "city" for a populated place, or None to search
     every station kind.
+
+    ``near`` biases the ranking towards a point (Photon's ``lat``/``lon``):
+    the organizer passes the middle of the trip's route, so "Summer Palace"
+    finds the one in Beijing rather than the best-known one anywhere.
 
     For "stay" this may issue a **second, untagged** call. Hotels are mapped in
     OSM and searchable by name, but a private rental usually is not — its
@@ -277,7 +289,11 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
         return []
 
     limit = max(1, min(limit, _MAX_LIMIT))
-    cache_key = ("search", query.casefold(), kind or "", limit)
+    if near is not None:
+        # Rounded so nearby callers share a cache entry; a degree is plenty
+        # for a ranking hint.
+        near = (round(near[0], 1), round(near[1], 1))
+    cache_key = ("search", query.casefold(), kind or "", limit, near)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -296,6 +312,8 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
         ]
         if with_tags:
             params.extend(("osm_tag", tag) for tag in tags)
+        if near is not None:
+            params.extend((("lat", near[0]), ("lon", near[1])))
         return params
 
     results: list[dict] = []
@@ -318,7 +336,7 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
         for result in results:
             result["category"] = "place"
 
-    if kind in ("stay", "car") and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
+    if kind in ("stay", "car", "poi") and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
         _collect(
             _fetch(params_for(False), "/api/", f"address lookup for {query!r}"),
             limit,

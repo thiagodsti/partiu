@@ -666,6 +666,16 @@
         class="trip-actions"
         style="margin-top:var(--space-md);display:flex;gap:var(--space-sm);flex-wrap:wrap;align-items:center"
       >
+        {#if !isCompleted}
+          <a
+            href="#/trips/{params.id}/plan"
+            class="btn btn-primary no-print"
+            style="font-size:0.85rem"
+            data-testid="open-organizer"
+          >
+            🗺 {$t("organizer.open")}
+          </a>
+        {/if}
         {#if trip.is_owner !== false}
           <a
             href="#/trips/{params.id}/edit"

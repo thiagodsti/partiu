@@ -54,6 +54,9 @@ export interface Trip {
   name: string;
   start_date: string | null;
   end_date: string | null;
+  /** The dates the traveller declared, before any booking widens them. */
+  planned_start_date?: string | null;
+  planned_end_date?: string | null;
   origin_airport: string | null;
   destination_airport: string | null;
   /** The ends as the traveller typed them. Independent of the airport pair
@@ -273,7 +276,7 @@ export interface PlaceResult {
 /** Kept as the old name so existing station callers read unchanged. */
 export type StationResult = PlaceResult;
 
-export type PlaceInputKind = SegmentType | 'stay' | 'city';
+export type PlaceInputKind = SegmentType | 'stay' | 'city' | 'poi';
 
 /** What PlaceInput hands back when the user picks a result or types freely. */
 export interface PickedPlace {
@@ -595,4 +598,51 @@ export interface ActivityEntry {
   label: string | null;
   details: Record<string, unknown>;
   created_at: string;
+}
+
+// ---- Trip organizer ----
+
+/** A city on the planned route, with the dates you are there. */
+export interface PlanStop {
+  id: string;
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  country_code: string | null;
+  start_date: string;
+  end_date: string;
+  notes: string | null;
+}
+
+export type PlanItemStatus = 'idea' | 'todo' | 'booked' | 'done';
+
+/** Something to do. `date` null = an idea not yet placed on a day. */
+export interface PlanItem {
+  id: string;
+  date: string | null;
+  time: string | null;
+  title: string;
+  notes: string | null;
+  /** Where it happens, picked from the sights search; puts it on the map. */
+  place_name: string | null;
+  lat: number | null;
+  lon: number | null;
+  status: PlanItemStatus;
+  sort_order: number;
+}
+
+/** A to-do before the trip, optionally assigned to someone on it. */
+export interface PlanTask {
+  id: string;
+  text: string;
+  done: boolean;
+  assignee_type: 'user' | 'guest' | null;
+  assignee_id: number | null;
+  sort_order: number;
+}
+
+export interface TripPlan {
+  stops: PlanStop[];
+  items: PlanItem[];
+  tasks: PlanTask[];
 }

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote } from '../api/types';
-  import { dayNotesApi } from '../api/client';
+  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote, PlanItem, PlanStop } from '../api/types';
+  import { stopColor } from '../lib/planColors';
+  import { dayNotesApi, plannerApi } from '../api/client';
+  import { parseDayNote } from '../lib/dayNotes';
   import { t } from '../lib/i18n';
   import TripDayCard, { type DayContent } from './TripDayCard.svelte';
   import { legDateKeys, localDateKey } from '../lib/utils';
@@ -84,48 +86,61 @@
     );
   }
 
-  function parseContent(raw: string): DayContent {
-    if (!raw) return { note: '', items: [] };
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return { note: parsed.note ?? '', items: parsed.items ?? [] };
-      }
-      // Legacy block array
-      if (Array.isArray(parsed)) {
-        const textBlock = parsed.find((b: { type: string }) => b.type === 'text');
-        const checkBlock = parsed.find((b: { type: string }) => b.type === 'checklist');
-        return { note: textBlock?.value ?? '', items: checkBlock?.items ?? [] };
-      }
-    } catch {
-      return { note: raw, items: [] };
-    }
-    return { note: '', items: [] };
-  }
-
   function todayStr(): string {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
-  const allDays = $derived(
-    trip.start_date && trip.end_date ? getDayRange(trip.start_date, trip.end_date) : []
-  );
+  /* The trip's own span, widened by the planner's route and dated items — the
+   * same rule the planner's board uses, so a day planned there past the trip's
+   * last booking still gets a card here. */
+  const allDays = $derived.by(() => {
+    const bounds = [
+      trip.start_date,
+      trip.end_date,
+      ...stops.flatMap((s) => [s.start_date, s.end_date]),
+      ...Object.keys(itemsByDate),
+    ].filter((d): d is string => !!d).sort();
+    return bounds.length ? getDayRange(bounds[0], bounds[bounds.length - 1]) : [];
+  });
   const days = $derived(onlyDate ? allDays.filter((d) => d === onlyDate) : allDays);
   const flightMap = $derived(groupFlightsByDate(trip.flights ?? []));
   const segmentMap = $derived(groupSegmentsByDate(segments));
   const today = todayStr();
 
   let contentByDate = $state<Record<string, DayContent>>({});
+  /** The planner's items by day: the day cards show and edit the same list
+   * the planner does, so what is added on one page is on the other. */
+  let itemsByDate = $state<Record<string, PlanItem[]>>({});
+  /** The planner's route, for each day's city tags and colour. */
+  let stops = $state<PlanStop[]>([]);
+  let itemsUnavailable = $state(false);
+
+  /** The cities a day touches, the one slept in first (it colours the card). */
+  function citiesOn(date: string): { id: string; name: string; color: string }[] {
+    const on = stops.filter((s) => s.start_date <= date && date <= s.end_date);
+    on.sort((a, b) => Number(b.start_date <= date && date < b.end_date) - Number(a.start_date <= date && date < a.end_date));
+    return on.map((s) => ({ id: s.id, name: s.name, color: stopColor(stops, s) }));
+  }
   let loaded = $state(false);
   let loadError = $state<string | null>(null);
 
   onMount(async () => {
     try {
-      const rows: TripDayNote[] = await dayNotesApi.list(trip.id);
+      const [rows, plan]: [TripDayNote[], { items: PlanItem[]; stops: PlanStop[] } | null] = await Promise.all([
+        dayNotesApi.list(trip.id),
+        plannerApi.get(trip.id).catch(() => null),
+      ]);
       const map: Record<string, DayContent> = {};
-      for (const row of rows) map[row.date] = parseContent(row.content);
+      for (const row of rows) map[row.date] = parseDayNote(row.content);
       contentByDate = map;
+      const byDate: Record<string, PlanItem[]> = {};
+      for (const it of plan?.items ?? []) {
+        if (it.date) (byDate[it.date] ??= []).push(it);
+      }
+      itemsByDate = byDate;
+      stops = plan?.stops ?? [];
+      itemsUnavailable = plan === null;
       onLoaded?.(map);
     } catch {
       loadError = 'Failed to load planner notes.';
@@ -135,7 +150,7 @@
 </script>
 
 <div class="planner">
-  {#if !trip.start_date || !trip.end_date}
+  {#if loaded && allDays.length === 0}
     <p class="planner-empty">{$t('planner.no_dates')}</p>
   {:else if loadError}
     <p class="planner-empty" style="color:var(--danger)">{loadError}</p>
@@ -151,6 +166,10 @@
         {stays}
         {carRentals}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
+        planItems={itemsByDate[date] ?? []}
+        cities={citiesOn(date)}
+        {itemsUnavailable}
+        dayNumber={allDays.indexOf(date) + 1}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}
       />

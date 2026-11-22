@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { location, push } from 'svelte-spa-router';
+  import { location, push, querystring } from 'svelte-spa-router';
   import { flightsApi } from '../api/client';
   import TopNav from '../components/TopNav.svelte';
   import FormSection from '../components/FormSection.svelte';
@@ -16,7 +16,15 @@
   // edit page inherits whichever one the user came through so Back/Cancel land
   // where they started.
   const basePath = $derived($location.startsWith('/history') ? 'history' : 'trips');
-  const backUrl = $derived(`#/${basePath}/${params.tripId}/flights/${params.flightId}`);
+  // Opened from the trip planner (`?from=planner`), every way out goes back
+  // there rather than to the flight's own page.
+  const fromPlanner = $derived(new URLSearchParams($querystring ?? '').get('from') === 'planner');
+  const returnPath = $derived(
+    fromPlanner
+      ? `/trips/${params.tripId}/plan`
+      : `/${basePath}/${params.tripId}/flights/${params.flightId}`,
+  );
+  const backUrl = $derived(`#${returnPath}`);
 
   let loading = $state(true);
   let loadError = $state<string | null>(null);
@@ -94,7 +102,7 @@
         arrival_gate:       arrivalGate.trim(),
         notes:              notes.trim(),
       });
-      await push(`/${basePath}/${params.tripId}/flights/${params.flightId}`);
+      await push(returnPath);
     } catch (err) {
       error = (err as Error).message;
     } finally {

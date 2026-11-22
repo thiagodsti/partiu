@@ -23,6 +23,7 @@
     '/trips': TripsListPage,
     '/trips/new': wrap({ asyncComponent: () => import('./pages/AddTripPage.svelte') }),
     '/trips/:id/edit': wrap({ asyncComponent: () => import('./pages/EditTripPage.svelte') }),
+    '/trips/:id/plan': wrap({ asyncComponent: () => import('./pages/TripPlanPage.svelte') }),
     '/trips/:id': TripDetailPage,
     '/trips/:tripId/flights/:flightId/edit': wrap({ asyncComponent: () => import('./pages/EditFlightPage.svelte') }),
     '/trips/:tripId/flights/:flightId': wrap({ asyncComponent: () => import('./pages/FlightDetailPage.svelte') }),
