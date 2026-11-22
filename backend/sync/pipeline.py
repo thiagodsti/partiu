@@ -703,8 +703,9 @@ def _process_emails(
     Args:
         use_llm: When True and Ollama is configured, try the LLM extractor
                  immediately after rule-based + PDF parsing fail, instead of
-                 deferring to the failed-email queue.  Should be False for
-                 full re-scans (too many emails).
+                 deferring to the failed-email queue.  False for
+                 anything that reads the whole lookback window (first sync,
+                 full sync, parser-version rescan): too many emails.
         progress_callback: Optional callable(n) called after every 10 emails
                            with the current processed count.
 
@@ -1030,6 +1031,13 @@ def run_email_sync_for_user(user: dict) -> dict:
             except ValueError:
                 since_date = None
 
+        # The LLM fallback runs on incremental syncs only, as _process_emails'
+        # docstring has always said. A first sync, a full sync or a rescan reads
+        # the whole lookback window, and on a CPU at about a minute per unknown
+        # mail that is hours of work (some 210 mails of a real 372-mail inbox
+        # reach it). An uploaded or forwarded .eml still goes through the LLM.
+        incremental = since_date is not None
+
         if since_date is None:
             first_sync_days = int(get_global_setting("first_sync_days", "90"))
             since_date = datetime.now(UTC) - timedelta(days=first_sync_days)
@@ -1090,7 +1098,7 @@ def run_email_sync_for_user(user: dict) -> dict:
         result = _process_emails(
             emails,
             user_id,
-            use_llm=True,
+            use_llm=incremental,
             progress_callback=lambda n: _sync_repository.upsert_state(user_id, emails_processed=n),
             skip_dedup=rescan,
         )
