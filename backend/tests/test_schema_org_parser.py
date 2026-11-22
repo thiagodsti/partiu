@@ -8,6 +8,8 @@ a real email's *structure* and then filled with invented values, which gives the
 same coverage with nothing to redact.
 """
 
+import pytest
+
 from backend.parsers.schema_org import extract_lodging_reservations
 
 
@@ -78,6 +80,33 @@ class TestJsonLd:
     def test_unparseable_block_is_skipped_not_raised(self):
         html = _json_ld("{ this is not json LodgingReservation")
         assert extract_lodging_reservations(_Email(html)) == []
+
+
+class TestPrice:
+    def test_no_price_in_the_markup_means_none(self):
+        """No measured Airbnb record carries one."""
+        (stay,) = extract_lodging_reservations(_Email(_json_ld(AIRBNB_JSON_LD)))
+        assert stay["price"] is None
+
+    @pytest.mark.parametrize(
+        "fields, expected",
+        [
+            ('"totalPrice": "412.50", "priceCurrency": "EUR"', (412.5, "EUR")),
+            ('"totalPrice": 1200, "priceCurrency": "sek"', (1200.0, "SEK")),
+            (
+                '"totalPrice": {"@type": "PriceSpecification", "price": "99", '
+                '"priceCurrency": "GBP"}',
+                (99.0, "GBP"),
+            ),
+            ('"totalPrice": "412.50"', None),
+            ('"totalPrice": "free", "priceCurrency": "EUR"', None),
+            ('"totalPrice": "10", "priceCurrency": "XYZ"', None),
+        ],
+    )
+    def test_total_price_and_currency(self, fields, expected):
+        payload = AIRBNB_JSON_LD.replace('"checkinDate"', f'{fields},\n "checkinDate"')
+        (stay,) = extract_lodging_reservations(_Email(_json_ld(payload)))
+        assert stay["price"] == expected
 
 
 class TestOffsetsAreDiscarded:

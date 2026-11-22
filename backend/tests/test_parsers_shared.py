@@ -326,3 +326,33 @@ class TestPassengerLabels:
 
         # "passager" used to match inside "Passagerare" and return "are".
         assert extract_passenger("Passagerare\n\nDOE/JOHN\n") != "are"
+
+
+class TestParseMoney:
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("SEK 2,003.00", (2003.0, "SEK")),
+            ("€ 69.23", (69.23, "EUR")),
+            ("1.234,56 EUR", (1234.56, "EUR")),
+            ("SEK 1 234,50", (1234.5, "SEK")),
+            ("1 234,56 €", (1234.56, "EUR")),
+            ("R$ 1.500,00", (1500.0, "BRL")),
+            ("US$ 1,234", (1234.0, "USD")),
+            ("£12", (12.0, "GBP")),
+            ("CNY 88.00 (approx. SEK 132.83)", (88.0, "CNY")),
+        ],
+    )
+    def test_reads_an_amount(self, text, expected):
+        from backend.parsers.shared import parse_money
+
+        assert parse_money(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        ["-SEK 687.00", "−€ 5.00", "$ 50", "¥ 3000", "ABC 12.00", "3 nights", "", "SEK 0.00"],
+    )
+    def test_refuses_discounts_ambiguous_symbols_and_unknown_codes(self, text):
+        from backend.parsers.shared import parse_money
+
+        assert parse_money(text) is None

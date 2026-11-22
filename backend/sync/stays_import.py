@@ -44,6 +44,17 @@ one case where a booking was clearly cancelled and rebooked, the only evidence
 was a second confirmation for the same nights at a different property. Imports
 therefore create stays and never delete them, and two overlapping stays on one
 trip is a visible row the traveller can remove rather than silent corruption.
+
+**A stated price becomes an expense.** Trip.com and Booking.com print what the
+booking cost (schema.org markup can too, though no measured Airbnb record
+does), and that is money the trip has already spent. The importer records it on
+the stay (`price_amount` / `price_currency`) and adds an expense named after the
+property, paid by and split to the importing user alone: who else shares a
+room is not something the mail says, and an expense charged to companions who
+never agreed to it would move their balances. The traveller can split it later.
+The recorded price is the idempotency marker: a stay imported before prices
+were read gets its expense on the next parse of its mail (a rescan), and a
+deleted expense never comes back, because the price is already on the stay.
 """
 
 import logging
@@ -87,8 +98,9 @@ def _shift(iso_date: str, days: int) -> str:
     return (date.fromisoformat(iso_date) + timedelta(days=days)).isoformat()
 
 
-def _find_existing_stay(user_id: int, stay: dict) -> str | None:
-    """Return the id of an already-imported copy of this booking, if any.
+def _find_existing_stay(user_id: int, stay: dict):
+    """Return the already-imported copy of this booking (id, trip_id,
+    price_amount), if any.
 
     Idempotency is keyed on the booking reference where there is one, because
     that is the booking's identity and survives the platform restating it in a
@@ -101,18 +113,65 @@ def _find_existing_stay(user_id: int, stay: dict) -> str | None:
     with db_conn() as conn:
         if stay.get("booking_reference"):
             row = conn.execute(
-                """SELECT s.id FROM trip_stays s JOIN trips t ON t.id = s.trip_id
+                """SELECT s.id, s.trip_id, s.price_amount
+                     FROM trip_stays s JOIN trips t ON t.id = s.trip_id
                    WHERE t.user_id = ? AND s.booking_reference = ?""",
                 (user_id, stay["booking_reference"]),
             ).fetchone()
             if row:
-                return row["id"]
-        row = conn.execute(
-            """SELECT s.id FROM trip_stays s JOIN trips t ON t.id = s.trip_id
+                return row
+        return conn.execute(
+            """SELECT s.id, s.trip_id, s.price_amount
+                 FROM trip_stays s JOIN trips t ON t.id = s.trip_id
                WHERE t.user_id = ? AND s.name = ? AND s.check_in_date = ?""",
             (user_id, stay["name"], check_in_date),
         ).fetchone()
-        return row["id"] if row else None
+
+
+def _record_price(user_id: int, stay_id: str, trip_id: str, stay: dict) -> str | None:
+    """Write the mail's price on the stay and add it to the trip's expenses.
+
+    Returns the expense id, or None when the mail states no price. The caller
+    only calls this for a stay with no price recorded yet; see the module
+    docstring for why that is the marker.
+    """
+    from ..expenses.service import ExpenseService
+
+    price = stay.get("price")
+    if not price:
+        return None
+    amount, currency = price
+    with db_write() as conn:
+        claimed = conn.execute(
+            """UPDATE trip_stays SET price_amount = ?, price_currency = ?
+                WHERE id = ? AND price_amount IS NULL""",
+            (amount, currency, stay_id),
+        ).rowcount
+    if not claimed:
+        return None
+    me = ("user", user_id)
+    try:
+        expense_id = ExpenseService().create_expense(
+            trip_id, user_id, stay["name"], amount, currency, paid_by=me, participants=[me]
+        )
+    except Exception:
+        # Without its expense the price must not stay recorded, or the next
+        # parse of this mail would take the missing expense as deleted.
+        with db_write() as conn:
+            conn.execute(
+                "UPDATE trip_stays SET price_amount = NULL, price_currency = NULL WHERE id = ?",
+                (stay_id,),
+            )
+        raise
+    logger.info(
+        "User %d: added %.2f %s for stay '%s' to the expenses of trip %s",
+        user_id,
+        amount,
+        currency,
+        stay["name"][:40],
+        trip_id,
+    )
+    return expense_id
 
 
 def _find_trip_for_stay(user_id: int, stay: dict) -> str | None:
@@ -270,8 +329,11 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
 
     for stay in reservations:
         try:
-            if _find_existing_stay(user_id, stay):
+            existing = _find_existing_stay(user_id, stay)
+            if existing:
                 logger.debug("Lodging import: '%s' already imported", stay["name"][:40])
+                if existing["price_amount"] is None:
+                    _record_price(user_id, existing["id"], existing["trip_id"], stay)
                 continue
 
             lat, lon, geo_country = _geocode(stay)
@@ -300,6 +362,7 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
                 },
             )
             created.append(stay_id)
+            _record_price(user_id, stay_id, trip_id, stay)
             logger.info(
                 "User %d: imported stay '%s' (%s → %s) into trip %s",
                 user_id,

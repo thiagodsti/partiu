@@ -110,6 +110,18 @@ class TestRealConfirmation:
         assert "paid" not in stay["room_type"]
 
 
+class TestPrice:
+    def test_the_total_includes_vat_and_city_tax(self, booking_email):
+        """ "Total price" € 69.23, not the € 63.90 room rate above it nor the
+        € 67.73 cancellation cost."""
+        (stay,) = extract_booking_com_stays(booking_email)
+        assert stay["price"] == (69.23, "EUR")
+
+    def test_no_total_means_no_price(self):
+        (stay,) = extract_booking_com_stays(_Email(PLAIN))
+        assert stay["price"] is None
+
+
 class TestPlainTextRendering:
     def test_label_and_value_on_one_line(self):
         """Also proves the small print's "… upon check-in on 1 January 2027 at

@@ -563,3 +563,126 @@ class TestStayInsideATrip:
             "country_code": None,
         }
         assert _find_trip_containing_stay(user_id, stay) == "short" != long_trip
+
+
+class TestPriceBecomesAnExpense:
+    """A booking mail's stated total is added to the trip's expenses, once."""
+
+    @staticmethod
+    def _expenses(conn):
+        return conn.execute(
+            "SELECT e.id, e.trip_id, e.description, e.amount, e.currency, e.paid_by_user_id"
+            " FROM trip_expenses e ORDER BY e.created_at"
+        ).fetchall()
+
+    @staticmethod
+    def _participants(conn, expense_id):
+        return conn.execute(
+            "SELECT * FROM trip_expense_participants WHERE expense_id = ?", (expense_id,)
+        ).fetchall()
+
+    def test_the_trip_com_total_is_added_to_the_trip(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        (stay_id,) = import_lodging_from_email(email, user_id)
+
+        (expense,) = self._expenses(conn)
+        stay = conn.execute("SELECT * FROM trip_stays WHERE id = ?", (stay_id,)).fetchone()
+        assert expense["trip_id"] == stay["trip_id"]
+        assert expense["description"] == stay["name"]
+        assert (expense["amount"], expense["currency"]) == (2003.0, "SEK")
+        assert expense["paid_by_user_id"] == user_id
+        assert (stay["price_amount"], stay["price_currency"]) == (2003.0, "SEK")
+
+    def test_the_expense_is_charged_to_the_importer_alone(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("booking_com_confirmation_anonymized.json")
+        import_lodging_from_email(email, user_id)
+
+        (expense,) = self._expenses(conn)
+        assert (expense["amount"], expense["currency"]) == (69.23, "EUR")
+        (participant,) = self._participants(conn, expense["id"])
+        assert participant["user_id"] == user_id
+
+    def test_reimporting_adds_no_second_expense(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        import_lodging_from_email(email, user_id)
+        import_lodging_from_email(email, user_id)
+        assert len(self._expenses(conn)) == 1
+
+    def test_a_stay_imported_before_prices_gets_its_expense_on_rescan(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        import_lodging_from_email(email, user_id)
+        conn.execute("DELETE FROM trip_expenses")
+        conn.execute("UPDATE trip_stays SET price_amount = NULL, price_currency = NULL")
+        conn.commit()
+
+        assert import_lodging_from_email(email, user_id) == []
+        (expense,) = self._expenses(conn)
+        assert expense["amount"] == 2003.0
+
+    def test_a_deleted_expense_does_not_come_back(self, conn):
+        from conftest import load_anonymized_fixture
+
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        import_lodging_from_email(email, user_id)
+        conn.execute("DELETE FROM trip_expenses")
+        conn.commit()
+
+        import_lodging_from_email(email, user_id)
+        assert self._expenses(conn) == []
+
+    def test_a_mail_without_a_price_adds_no_expense(self, conn):
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        (stay_id,) = import_lodging_from_email(_lodging_email(), user_id)
+        assert self._expenses(conn) == []
+        stay = conn.execute("SELECT * FROM trip_stays WHERE id = ?", (stay_id,)).fetchone()
+        assert stay["price_amount"] is None
+
+    def test_a_failed_expense_leaves_no_price_behind(self, conn, monkeypatch):
+        from conftest import load_anonymized_fixture
+
+        from backend.expenses.service import ExpenseService
+        from backend.sync.stays_import import import_lodging_from_email
+
+        real = ExpenseService.create_expense
+        calls = []
+
+        def fail_once(self, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("db down")
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(ExpenseService, "create_expense", fail_once)
+        user_id = _make_user(conn)
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        import_lodging_from_email(email, user_id)
+
+        (stay,) = _stays(conn, user_id)
+        assert stay["price_amount"] is None
+        import_lodging_from_email(email, user_id)
+        assert len(self._expenses(conn)) == 1
