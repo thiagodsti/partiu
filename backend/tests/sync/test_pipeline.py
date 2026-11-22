@@ -547,3 +547,87 @@ class TestApplyCancellations:
 
         rule.cancellation_extractor = _boom
         assert _apply_cancellations(rule, _make_email_msg(), 1) == 0
+
+
+class TestSchemaOrgFlightTier:
+    """An airline with no rule, whose mail carries FlightReservation markup."""
+
+    _MARKUP = """<div itemscope itemtype="http://schema.org/FlightReservation">
+      <meta itemprop="reservationNumber" content="TESTR5">
+      <div itemprop="reservationFor" itemscope itemtype="http://schema.org/Flight">
+        <meta itemprop="flightNumber" content="1234">
+        <div itemprop="airline" itemscope itemtype="http://schema.org/Airline">
+          <meta itemprop="iataCode" content="ZZ"></div>
+        <div itemprop="departureAirport" itemscope itemtype="http://schema.org/Airport">
+          <meta itemprop="iataCode" content="ARN"></div>
+        <meta itemprop="departureTime" content="2026-01-24T14:00:00+01:00">
+        <div itemprop="arrivalAirport" itemscope itemtype="http://schema.org/Airport">
+          <meta itemprop="iataCode" content="LHR"></div>
+        <meta itemprop="arrivalTime" content="2026-01-24T15:30:00+00:00">
+      </div></div>"""
+
+    def _user(self, name):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, 'h', 1)",
+                (name,),
+            )
+            return cur.lastrowid
+
+    def _run(self, user_id, **patches):
+        from backend.sync.pipeline import _process_emails
+
+        email_msg = _make_email_msg(message_id=f"<schema-{user_id}@test>", html_body=self._MARKUP)
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+        ):
+            return _process_emails([email_msg], user_id)
+
+    def test_markup_creates_the_leg_in_utc(self, test_db):
+        from backend.database import db_conn
+
+        user_id = self._user("schema_user1")
+        result = self._run(user_id)
+
+        assert result["flights_created"] == 1
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT flight_number, departure_airport, arrival_airport, departure_datetime"
+                " FROM flights WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        assert (row["flight_number"], row["departure_airport"], row["arrival_airport"]) == (
+            "ZZ1234",
+            "ARN",
+            "LHR",
+        )
+        # 14:00+01:00 stored once as 13:00 UTC, not localised a second time
+        assert row["departure_datetime"].startswith("2026-01-24T13:00")
+
+    def test_not_consulted_when_the_rule_found_flights(self, test_db):
+        from backend.sync.pipeline import _process_emails
+
+        user_id = self._user("schema_user2")
+        email_msg = _make_email_msg(message_id="<schema-rule@test>", html_body=self._MARKUP)
+        flight = {
+            "flight_number": "ZZ1234",
+            "departure_airport": "ARN",
+            "departure_datetime": datetime(2026, 1, 24, 13, 0, tzinfo=UTC),
+            "arrival_airport": "LHR",
+            "arrival_datetime": datetime(2026, 1, 24, 15, 30, tzinfo=UTC),
+        }
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=MagicMock()),
+            patch("backend.sync.pipeline.extract_flights_from_email", return_value=[flight]),
+            patch("backend.sync.pipeline.extract_flight_reservations") as schema_tier,
+            patch("backend.sync.pipeline._apply_boarding_pass_details", return_value=0),
+            patch("backend.sync.pipeline._apply_cancellations", return_value=0),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+        ):
+            _process_emails([email_msg], user_id)
+        schema_tier.assert_not_called()

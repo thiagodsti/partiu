@@ -72,6 +72,7 @@ def _inspect(path: Path) -> None:
         merge_flights,
     )
     from backend.parsers.gds_eticket import extract_gds_eticket
+    from backend.parsers.schema_org import extract_flight_reservations
 
     _section(f"FILE: {path.name}")
 
@@ -114,15 +115,24 @@ def _inspect(path: Path) -> None:
     else:
         print("  [Step 2] Not a GDS e-ticket receipt")
 
-    # Step 3: LLM fallback
+    # Step 3: schema.org FlightReservation markup, only when nothing above read it
+    if not flights_data:
+        flights_data = extract_flight_reservations(email_msg)
+        if flights_data:
+            print(f"  [Step 3] schema.org markup gave {len(flights_data)} leg(s)")
+            step_name = "schema.org markup"
+        else:
+            print("  [Step 3] No usable schema.org FlightReservation markup")
+
+    # Step 4: LLM fallback
     if not flights_data:
         if llm_available():
-            print("  [Step 3] Trying LLM fallback (Ollama)...")
+            print("  [Step 4] Trying LLM fallback (Ollama)...")
             flights_data = llm_extract_flights(email_msg)
             if flights_data:
                 step_name = "LLM (Ollama)"
         else:
-            print("  [Step 3] LLM not configured (OLLAMA_URL not set) — skipping")
+            print("  [Step 4] LLM not configured (OLLAMA_URL not set) — skipping")
 
     _section("RESULT")
 

@@ -47,6 +47,7 @@ ROW_FIELDS = (
     "rule",
     "rule_legs",
     "gds_legs",
+    "schema_legs",
     "valid_legs",
     "stays",
     "rentals",
@@ -88,7 +89,10 @@ def measure(email_msg, rules) -> dict:
         merge_flights,
     )
     from backend.parsers.gds_eticket import extract_gds_eticket
-    from backend.parsers.schema_org import extract_lodging_reservations
+    from backend.parsers.schema_org import (
+        extract_flight_reservations,
+        extract_lodging_reservations,
+    )
     from backend.parsers.trip_com import extract_trip_com_stays
     from backend.parsers.validation import validate_flights
     from backend.sync.pipeline import _sender_domain, is_non_flight_domain
@@ -100,6 +104,7 @@ def measure(email_msg, rules) -> dict:
         "rule": None,
         "rule_legs": 0,
         "gds_legs": 0,
+        "schema_legs": 0,
         "valid_legs": 0,
         "stays": 0,
         "rentals": 0,
@@ -130,6 +135,9 @@ def measure(email_msg, rules) -> dict:
         row["gds_legs"] = len(gds)
         if gds:
             flights = merge_flights(flights, gds)
+        if not flights:
+            flights = extract_flight_reservations(email_msg)
+            row["schema_legs"] = len(flights)
         flights = [apply_airport_timezones(f) for f in flights]
         valid = validate_flights(flights, source=row["subject"][:60])
         row["valid_legs"] = len(valid)

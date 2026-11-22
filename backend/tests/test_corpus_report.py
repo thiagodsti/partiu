@@ -24,6 +24,7 @@ def _row(**overrides):
         "rule": None,
         "rule_legs": 0,
         "gds_legs": 0,
+        "schema_legs": 0,
         "valid_legs": 0,
         "stays": 0,
         "rentals": 0,
