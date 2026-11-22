@@ -527,15 +527,15 @@ Measured in November 2026 with `eval_llm_corpus` on a CPU-only server (i7-7820HQ
 
 | Model | Legs right | Wrong legs | Mails fully right | Negatives with a leg | Seconds per mail (median) |
 |---|---|---|---|---|---|
-| `qwen3:4b-instruct` | 38/53 (71%) | 6 | 15/25 | 2/15 | ~68 |
-| `gemma3:4b` ¹ | 26/53 (49%) | 15 | 10/25 | 2/15 | ~63 |
+| `qwen3:4b-instruct` | 42/53 (79%) | 6 | 17/25 | 2/15 | ~68 |
+| `gemma3:4b` ¹ | 26/53 (49%) | 11 | 10/25 | 1/15 | ~63 |
 | `qwen3:4b-instruct`, before the fixes below | 0/53 | 0 | 0/25 | 0/15 | ~45 |
 
-¹ Measured before the date, context, prefix and grounding fixes, with the leg fields already required; compare it with `qwen3:4b-instruct` at 31/53 under the same conditions.
+¹ Answers taken with the leg fields required but before the context and body fixes; `qwen3:4b-instruct` under the same conditions scores 35/53.
 
-The fixes. Requiring the leg fields alone took it from 0 to 31 legs; the rest together took it from 31 to 38:
+The fixes. Requiring the leg fields is what took it off zero; the others together added the rest:
 
-- **Required leg fields.** The JSON schema listed the leg fields without requiring them, and small models stop after the flight number (`{"flight_number": "AD4849"}`), so every leg failed validation: 0 of 53 before, 31 after.
+- **Required leg fields.** The JSON schema listed the leg fields without requiring them, and small models stop after the flight number (`{"flight_number": "AD4849"}`), so every leg failed validation.
 - **`num_ctx`.** Ollama's default window is 4096 tokens, the system prompt alone is about 1000, and Ollama answers 400 to a request that does not fit. The longest itineraries (a four-leg BA/Iberia e-ticket) never reached the model.
 - **The email's own date** in the prompt instead of the sync date, which is what the year of a `02/03`-style date is derived from.
 - **Prefixing digits-only flight numbers** with the airline code the model returned (`"783"` + `"TP"`).
@@ -545,7 +545,7 @@ The fixes. Requiring the leg fields alone took it from 0 to 31 legs; the rest to
 What is still wrong, and why the fallback stays a last resort:
 
 - **Inverted routes** are the main remaining error (4 of the 6 wrong legs; the other two are LATAM's FLN read as FLY, a real airport in Australia): Azul (`Seu voo para Florianópolis` above `VCP … FLN`) and ITA (`FCO LIN`) come back as FLN→VCP and LIN→FCO every time. A prompt rule about direction did not change that over the full sample, nor did renaming the fields to `from_`/`to_` on the Azul mails (in these runs Ollama wrote the required keys in alphabetical order, so `arr_airport` comes first, which looked like the cause).
-- **Long multi-leg itineraries** lose legs (Qatar, Kiwi.com) or get a date one day off.
+- **Long multi-leg itineraries** lose legs (Qatar, Kiwi.com).
 - **Mails with city names only and no codes** (an SAS receipt PDF) come back as no flight.
 - **At about a minute per mail on a CPU**, it is fine for the incremental sync's handful of unknown mails, not for a backfill.
 

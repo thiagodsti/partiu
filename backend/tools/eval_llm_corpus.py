@@ -49,6 +49,28 @@ def _leg_key(fn, dep, arr, date) -> tuple[str, str, str, str]:
     return (fn, (dep or "").upper(), (arr or "").upper(), str(date or "")[:10])
 
 
+def _local_date(utc_text: str, airport: str) -> str:
+    """The departure's calendar date at its airport.
+
+    measure() reports legs after apply_airport_timezones, in UTC, while a mail
+    (and so the model) gives local times: a 01:30 departure from Doha is the
+    previous day in UTC. Compare like with like.
+    """
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from backend.airports.timezone import _get_airport_timezone
+
+    tz = _get_airport_timezone(airport) if airport else None
+    try:
+        dt = datetime.fromisoformat(utc_text)
+    except ValueError:
+        return utc_text[:10]
+    if not tz:
+        return utc_text[:10]
+    return dt.replace(tzinfo=UTC).astimezone(ZoneInfo(tz)).strftime("%Y-%m-%d")
+
+
 def pick_sample(rows: list[dict], per_rule: int, negatives: int, seed: int) -> list[dict]:
     """A few mails per airline rule, so no single template dominates, plus negatives."""
     rng = random.Random(seed)
@@ -74,12 +96,14 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
     """Run the production prompt over one mail and compare with the rule legs."""
     from backend.integrations.llm import parser as llm
 
+    body = llm.build_llm_body(email_msg)
     prompt = llm._PROMPT_USER_TEMPLATE.format(
         today=email_msg.date.strftime("%Y-%m-%d") if email_msg.date else "",
         sender=email_msg.sender or "",
         subject=email_msg.subject or "",
-        body=llm.build_llm_body(email_msg),
+        body=body,
     )
+    mail_text = f"{email_msg.subject or ''}\n{body}"
     t0 = time.monotonic()
     raw = llm._call_ollama(prompt, model, ollama_url, timeout=timeout)
     elapsed = time.monotonic() - t0
@@ -96,7 +120,7 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
             if not f.get("booking_reference") and ref:
                 f["booking_reference"] = ref
             llm._prefix_flight_number(f)
-            if llm._validate_flight(f) and llm._flight_number_in_text(f, prompt):
+            if llm._validate_flight(f) and llm._flight_number_in_text(f, mail_text):
                 got.add(
                     _leg_key(
                         f.get("flight_number"),
@@ -105,7 +129,11 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
                         f.get("dep_datetime") or f.get("dep_date"),
                     )
                 )
-    truth = {_leg_key(*leg) for leg in row["legs"]} if row["kind"] == "pos" else set()
+    truth = (
+        {_leg_key(fn, dep, arr, _local_date(when, dep)) for fn, dep, arr, when in row["legs"]}
+        if row["kind"] == "pos"
+        else set()
+    )
     truth_routes = {t[:3] for t in truth}
     exact = len(truth & got)
     return {
@@ -128,7 +156,7 @@ def render(model: str, results: list[dict]) -> str:
     neg = [r for r in results if r["kind"] == "neg"]
     legs = sum(len(r["truth"]) for r in pos)
     exact = sum(r["exact"] for r in pos)
-    full = sum(1 for r in pos if r["exact"] == len(r["truth"]) and not r["wrong"])
+    full = sum(1 for r in pos if r["got"] == r["truth"])
     times = sorted(r["elapsed"] for r in results) or [0]
     lines = [
         f"model {model}",
@@ -143,7 +171,7 @@ def render(model: str, results: list[dict]) -> str:
         "Mails not fully right:",
     ]
     for r in results:
-        bad = r["got"] if r["kind"] == "neg" else (r["exact"] < len(r["truth"]) or r["wrong"])
+        bad = r["got"] if r["kind"] == "neg" else r["got"] != r["truth"]
         if bad:
             lines.append(f"  [{r['kind']} {r['rule']}] {r['subject'][:60]} {r['error']}")
             lines.append(f"      want {r['truth']}")

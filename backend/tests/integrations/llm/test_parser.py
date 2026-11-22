@@ -130,3 +130,12 @@ class TestGrounding:
         from backend.integrations.llm.parser import _flight_number_in_text
 
         assert not _flight_number_in_text({"flight_number": "AD484"}, "Voo 4849 VCP FLN")
+
+    def test_non_breaking_space_in_the_flight_number_is_kept(self):
+        flights, _ = _run(_answer(flight_number="AD 4849"))
+        assert [f["flight_number"] for f in flights] == ["AD4849"]
+
+    def test_email_date_in_the_prompt_does_not_ground_a_number(self):
+        email = _email(body="Voo 4849 VCP FLN", date=datetime(2026, 1, 5, tzinfo=UTC))
+        flights, _ = _run(_answer(flight_number="AD2026"), email)
+        assert flights == []

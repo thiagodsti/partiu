@@ -191,20 +191,25 @@ def _call_ollama(
         return None
 
 
+def _clean_flight_number(value: Any) -> str:
+    """Uppercase, without spaces of either kind: the one form every check compares."""
+    return str(value or "").upper().replace(" ", "").replace("\xa0", "")
+
+
 def _prefix_flight_number(flight: dict[str, Any]) -> None:
     """Prefix a digits-only flight number with the airline code the model gave.
 
     Small models often copy "783" as printed next to a "TP" logo; the prompt asks
     for "TP783", but the code is in the same answer, so repair it here.
     """
-    fn = str(flight.get("flight_number") or "").strip()
+    fn = _clean_flight_number(flight.get("flight_number"))
     code = str(flight.get("airline_code") or "").strip().upper()
     if fn.isdigit() and re.fullmatch(r"[A-Z0-9]{2}", code):
         flight["flight_number"] = code + fn
 
 
 def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
-    """True when the leg's flight number appears in the text the model was shown.
+    """True when the leg's flight number appears in the mail (subject and body).
 
     The model is asked to copy, not to infer, and a small one invents: a Vueling
     round trip came back as "VP1234" both ways, a Norwegian reminder as "NK117".
@@ -214,7 +219,7 @@ def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
     names ("Stockholm-Arlanda", "Sicily-Catania") and the model maps those to
     the right codes.
     """
-    fn = (flight.get("flight_number") or "").upper().replace(" ", "")
+    fn = _clean_flight_number(flight.get("flight_number"))
     digits = re.sub(r"^[A-Z0-9]{2}(?=\d)", "", fn).lstrip("0")
     return digits.isdigit() and re.search(rf"(?<!\d)0*{digits}(?!\d)", text) is not None
 
@@ -223,7 +228,7 @@ def _validate_flight(flight: dict[str, Any]) -> bool:
     """Basic sanity checks so we don't insert obviously wrong data."""
     dep = (flight.get("dep_airport") or "").upper()
     arr = (flight.get("arr_airport") or "").upper()
-    fn = (flight.get("flight_number") or "").upper().replace(" ", "").replace("\xa0", "")
+    fn = _clean_flight_number(flight.get("flight_number"))
     # All three are required
     if not dep or not arr or not fn:
         return False
@@ -420,6 +425,9 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
     email_date = (email_msg.date or datetime.now(UTC)).strftime("%Y-%m-%d")
 
     body_text = build_llm_body(email_msg)
+    # What the flight number is checked against: the mail only, not the prompt,
+    # whose generated "Email date: 2026-…" line would ground an invented AD2026.
+    mail_text = f"{email_msg.subject or ''}\n{body_text}"
 
     prompt = _PROMPT_USER_TEMPLATE.format(
         today=email_date,
@@ -457,7 +465,7 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         if not _validate_flight(f):
             logger.debug("LLM flight failed validation: %s", f)
             continue
-        if not _flight_number_in_text(f, prompt):
+        if not _flight_number_in_text(f, mail_text):
             logger.debug("LLM flight number not found in the email: %s", f)
             continue
         results.append(_normalise_flight(f, "", ""))
