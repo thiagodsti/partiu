@@ -384,6 +384,27 @@
 
   const openTasks = $derived(tasks.filter((x) => !x.done).length);
 
+  // The side lists can be hidden so the board and the map get the full width.
+  // Remembered per browser: a viewing preference, not trip data.
+  const SIDE_KEY = 'partiu.organizer.sideHidden';
+  let sideHidden = $state(
+    (() => {
+      try {
+        return localStorage.getItem(SIDE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    })(),
+  );
+  function toggleSide() {
+    sideHidden = !sideHidden;
+    try {
+      localStorage.setItem(SIDE_KEY, sideHidden ? '1' : '0');
+    } catch {
+      /* private mode: the toggle still works for this visit */
+    }
+  }
+
   // ---- Places to visit ----------------------------------------------------------
   //
   // An unscheduled item with a place is a "place to visit"; one without is an
@@ -584,6 +605,14 @@
           <strong>{missingNights}</strong> {$t('organizer.nights_without_stay')}
         </span>
         <span><strong>{openTasks}</strong> {$t('organizer.open_tasks')}</span>
+        <button
+          class="btn btn-secondary btn-sm side-toggle"
+          data-testid="toggle-side"
+          aria-pressed={sideHidden}
+          onclick={toggleSide}
+        >
+          {sideHidden ? `⇤ ${$t('organizer.show_lists')}` : `${$t('organizer.hide_lists')} ⇥`}
+        </button>
       </div>
     </header>
 
@@ -634,7 +663,7 @@
       {/if}
     </section>
 
-    <div class="workspace">
+    <div class="workspace" class:side-hidden={sideHidden}>
       <div class="main-col">
         <!-- Board -->
         {#if days.length === 0}
@@ -744,7 +773,7 @@
       </div>
 
       <!-- Side panels -->
-      <aside class="side">
+      <aside class="side" hidden={sideHidden}>
         <section
           class="panel"
           class:drop={dropTarget === PLACES}
@@ -1056,6 +1085,18 @@
     grid-template-columns: minmax(0, 1fr) 300px;
     gap: var(--space-md);
     align-items: start;
+  }
+  .workspace.side-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .side[hidden] {
+    display: none;
+  }
+  .stats {
+    align-items: center;
+  }
+  .side-toggle {
+    white-space: nowrap;
   }
   .board-empty {
     padding: var(--space-lg);

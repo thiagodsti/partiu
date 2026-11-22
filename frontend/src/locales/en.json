@@ -858,5 +858,7 @@
   "organizer.places_hint": "Search a place: it goes on the map. Drag onto a day once you decide.",
   "organizer.add_place": "+ search a place (e.g. Summer Palace)",
   "organizer.add_person": "+ Add person…",
-  "organizer.person_name": "Name and Enter"
+  "organizer.person_name": "Name and Enter",
+  "organizer.hide_lists": "Hide lists",
+  "organizer.show_lists": "Show lists"
 }

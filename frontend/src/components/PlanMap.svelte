@@ -64,9 +64,16 @@
     m.setView([30, 110], 3);
     layer = L.layerGroup().addTo(m);
     map = m;
+    // Leaflet measures its box once; when the page around it changes width
+    // (the organizer hiding its side lists), it has to be told to re-measure.
+    resizeObserver = new ResizeObserver(() => m.invalidateSize());
+    resizeObserver.observe(mapEl);
   });
 
+  let resizeObserver: ResizeObserver | null = null;
+
   onDestroy(() => {
+    resizeObserver?.disconnect();
     map?.remove();
     map = null;
   });
