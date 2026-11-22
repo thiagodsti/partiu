@@ -830,9 +830,9 @@
   "organizer.no_days": "Set the trip's dates or add a city to the route to start.",
   "organizer.no_stay": "no stay",
   "organizer.notes": "Notes",
-  "organizer.add_item": "+ add an activity (e.g. 07:20 Great Wall) and Enter",
+  "organizer.add_item": "+ add (e.g. 07:20 Great Wall)",
   "organizer.ideas": "Unscheduled ideas",
-  "organizer.ideas_hint": "Drag an idea onto a calendar day once you decide.",
+  "organizer.ideas_hint": "Drag onto a day once you decide.",
   "organizer.add_idea": "+ new idea",
   "organizer.before_trip": "Before the trip",
   "organizer.add_task": "+ new task",
@@ -847,8 +847,11 @@
   "organizer.place_placeholder": "Search a sight, restaurant…",
   "organizer.day": "Day",
   "organizer.no_day": "No day (idea)",
-  "organizer.note_placeholder": "Notes for the day…",
-  "organizer.prev_day": "Previous day",
-  "organizer.next_day": "Next day",
-  "organizer.whole_route": "Whole route"
+  "organizer.whole_route": "Whole route",
+  "organizer.todo_lane": "To do",
+  "organizer.transport": "Transport",
+  "organizer.stay": "Stay",
+  "organizer.map": "Plan map",
+  "organizer.map_hint": "Everything with a place. Click a day's header to focus on it.",
+  "organizer.show_on_map": "Show this day on the map"
 }

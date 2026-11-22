@@ -1,8 +1,7 @@
 <script lang="ts">
-  /* The trip organizer. The route of cities sits on top; below it, a calendar
-   * of the trip's days (city, transport, stay and plan at a glance), the
-   * selected day in detail, and a map of everything that has a place, which
-   * follows the selected day.
+  /* The trip organizer: a desktop-first board, one column per day, laid out the
+   * way a planning spreadsheet is (city, transport, stay, things to do, notes),
+   * with the route of cities above it and the ideas / to-do lists beside it.
    *
    * Flights, ground legs, stays and day notes are read from the features that
    * own them, so a booking imported from mail shows up here without being
@@ -49,7 +48,6 @@
   let items = $state<PlanItem[]>([]);
   let tasks = $state<PlanTask[]>([]);
   let notes = $state<Record<string, string>>({});
-  let selected = $state<string | null>(null);
 
   async function load() {
     loading = true;
@@ -83,11 +81,12 @@
 
   function addDays(iso: string, n: number): string {
     const [y, m, d] = iso.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+    const dt = new Date(Date.UTC(y, m - 1, d + n));
+    return dt.toISOString().slice(0, 10);
   }
 
   /** Every day from the trip's first to its last, widened by the route so a
-   * trip planned before any flight still gets a calendar. */
+   * trip planned before any flight still gets a board. */
   const days = $derived.by<string[]>(() => {
     const bounds = [
       trip?.start_date ?? trip?.planned_start_date,
@@ -103,28 +102,11 @@
     return out;
   });
 
-  $effect(() => {
-    if (days.length && (!selected || !days.includes(selected))) selected = days[0];
-  });
+  const STOP_COLORS = ['#e76f51', '#2a9d8f', '#e9c46a', '#8e7dbe', '#f4a261', '#457b9d', '#90be6d', '#d1495b'];
+  const stopColor = (s: PlanStop) => STOP_COLORS[stops.indexOf(s) % STOP_COLORS.length];
 
-  /** Calendar cells, Monday first, with blanks before the first day. */
-  const cells = $derived.by<(string | null)[]>(() => {
-    if (!days.length) return [];
-    const lead = (new Date(`${days[0]}T12:00:00`).getDay() + 6) % 7;
-    return [...Array<null>(lead).fill(null), ...days];
-  });
-
-  const COLORS = ['#e76f51', '#2a9d8f', '#e9a03b', '#8e7dbe', '#d1495b', '#457b9d', '#6a994e', '#c97c5d'];
-  const stopColor = (s: PlanStop) => COLORS[Math.max(0, stops.indexOf(s)) % COLORS.length];
-
-  /** Where you sleep on `date`: the stop whose nights cover it. */
-  function nightStop(date: string): PlanStop | undefined {
-    return stops.find((s) => s.start_date <= date && date < s.end_date);
-  }
-  /** Where the day starts, when that differs from where it ends (a travel day). */
-  function morningStop(date: string): PlanStop | undefined {
-    const prev = nightStop(addDays(date, -1));
-    return prev && prev !== nightStop(date) ? prev : undefined;
+  function stopsOn(date: string): PlanStop[] {
+    return stops.filter((s) => s.start_date <= date && date <= s.end_date);
   }
 
   function nightsOf(s: PlanStop): number {
@@ -138,11 +120,10 @@
     icon: string;
     label: string;
     time: string;
-    sort: string;
   }
 
   function movesOn(date: string): Move[] {
-    const out: Move[] = [];
+    const out: (Move & { sort: string })[] = [];
     for (const f of flights) {
       if (localDateKey(f.departure_datetime, f.departure_timezone) !== date) continue;
       out.push({
@@ -155,9 +136,10 @@
     }
     for (const s of segments) {
       if (localDateKey(s.departure_datetime, s.departure.timezone) !== date) continue;
+      const icon = { train: '🚆', bus: '🚌', ferry: '⛴️', car: '🚗' }[s.type] ?? '→';
       out.push({
         key: `s-${s.id}`,
-        icon: { train: '🚆', bus: '🚌', ferry: '⛴️', car: '🚗' }[s.type] ?? '→',
+        icon,
         label: `${s.departure.name} → ${s.arrival.name}`,
         time: formatTime(s.departure_datetime, s.departure.timezone),
         sort: s.departure_datetime,
@@ -166,12 +148,13 @@
     return out.sort((a, b) => a.sort.localeCompare(b.sort));
   }
 
+  /** The stay for the night that starts on `date`. */
   function stayFor(date: string): TripStay | undefined {
     return stays.find((s) => s.check_in_date <= date && date < s.check_out_date);
   }
 
-  /** A night of the trip with no booking: not the last day, and not a night
-   * spent on a flight that lands the next day. */
+  /** A night of the trip with no booking. The last day has no night, and a
+   * day spent in the air (a flight leaving that evening) is not one either. */
   function missingStay(date: string): boolean {
     if (date === days[days.length - 1] || stayFor(date)) return false;
     return !flights.some(
@@ -183,11 +166,13 @@
 
   const missingNights = $derived(days.filter(missingStay).length);
 
-  const fmt = (date: string, opts: Intl.DateTimeFormatOptions) => {
-    const s = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, opts);
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  };
-  const isWeekend = (date: string) => [0, 6].includes(new Date(`${date}T12:00:00`).getDay());
+  function weekday(date: string): string {
+    const w = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }
+  function dayMonth(date: string): string {
+    return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
 
   // ---- Route ----------------------------------------------------------------
 
@@ -210,7 +195,6 @@
       start: s.start_date,
       end: s.end_date,
     };
-    selected = s.start_date;
   }
 
   async function saveStop() {
@@ -234,10 +218,9 @@
   }
 
   async function deleteStop() {
-    const id = stopForm?.id;
-    if (!id) return;
-    await plannerApi.deleteStop(params.id, id);
-    stops = stops.filter((s) => s.id !== id);
+    if (!stopForm?.id) return;
+    await plannerApi.deleteStop(params.id, stopForm.id);
+    stops = stops.filter((s) => s.id !== stopForm?.id);
     stopForm = null;
   }
 
@@ -251,8 +234,8 @@
       .sort((a, b) => a.sort_order - b.sort_order || (a.time ?? '').localeCompare(b.time ?? ''));
   }
 
-  let dayDraft = $state('');
-  let ideaDraft = $state('');
+  let drafts = $state<Record<string, string>>({});
+  const IDEAS = '__ideas__';
 
   /** "07:20 Muralha" sets the time; everything else is the title. */
   function parseDraft(raw: string): { title: string; time: string | null } {
@@ -264,17 +247,17 @@
   }
 
   async function addItem(date: string | null) {
-    const raw = date ? dayDraft : ideaDraft;
+    const key = date ?? IDEAS;
+    const raw = drafts[key] ?? '';
     if (!raw.trim()) return;
-    if (date) dayDraft = '';
-    else ideaDraft = '';
     const { title, time } = parseDraft(raw);
-    const status: PlanItemStatus = date ? 'todo' : 'idea';
+    drafts[key] = '';
     try {
-      const { id } = await plannerApi.createItem(params.id, { title, time, date, status });
+      const { id } = await plannerApi.createItem(params.id, { title, time, date, status: date ? 'todo' : 'idea' });
+      const order = itemsOn(date).length;
       items = [
         ...items,
-        { id, title, time, date, notes: null, place_name: null, lat: null, lon: null, status, sort_order: itemsOn(date).length },
+        { id, title, time, date, notes: null, place_name: null, lat: null, lon: null, status: date ? 'todo' : 'idea', sort_order: order },
       ];
     } catch (err) {
       toasts.show((err as Error).message, 'error');
@@ -291,7 +274,7 @@
 
   async function saveEditing() {
     if (!editing) return;
-    const e = { ...editing, time: editing.time || null };
+    const e = { ...editing, time: editing.time || null, place_name: editing.place_name || null };
     const idx = items.findIndex((i) => i.id === e.id);
     if (idx >= 0) items[idx] = e;
     editing = null;
@@ -302,9 +285,9 @@
         notes: e.notes,
         status: e.status,
         date: e.date,
-        place_name: e.place_name || null,
-        lat: e.lat,
-        lon: e.lon,
+        place_name: e.place_name,
+        lat: e.place_name ? e.lat : null,
+        lon: e.place_name ? e.lon : null,
       });
     } catch (err) {
       toasts.show((err as Error).message, 'error');
@@ -318,13 +301,11 @@
     await plannerApi.deleteItem(params.id, item.id);
   }
 
-  // Dragging a plan item: onto a calendar day, into the day list at a
-  // position, or back to the ideas.
+  // Drag and drop: an item moves to a day (or back to the ideas) at a position.
   let dragId = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
-  const IDEAS = '__ideas__';
 
-  async function dropOn(date: string | null, beforeId: string | null = null) {
+  async function dropOn(date: string | null, beforeId: string | null) {
     const id = dragId;
     dragId = null;
     dropTarget = null;
@@ -352,19 +333,6 @@
     }
   }
 
-  function overHandler(target: string) {
-    return (e: DragEvent) => {
-      if (!dragId) return;
-      e.preventDefault();
-      dropTarget = target;
-    };
-  }
-  function leaveHandler(target: string) {
-    return () => {
-      if (dropTarget === target) dropTarget = null;
-    };
-  }
-
   // ---- Day notes --------------------------------------------------------------
 
   async function saveNote(date: string, content: string) {
@@ -375,9 +343,11 @@
 
   // ---- Tasks ------------------------------------------------------------------
 
-  let sideTab = $state<'ideas' | 'tasks'>('ideas');
   let taskDraft = $state('');
-  const personKey = (type: string | null, id: number | null) => (type && id != null ? `${type}:${id}` : '');
+
+  function personKey(type: string | null, id: number | null): string {
+    return type && id != null ? `${type}:${id}` : '';
+  }
 
   async function addTask() {
     const text = taskDraft.trim();
@@ -414,6 +384,24 @@
   const openTasks = $derived(tasks.filter((x) => !x.done).length);
 
   // ---- Map --------------------------------------------------------------------
+  //
+  // Everything in the plan that has a place: the route's cities in order, the
+  // stays, the ground legs and the plan items. Clicking a day's header
+  // highlights that day here and flies to it; clicking it again shows it all.
+
+  let focusDay = $state<string | null>(null);
+
+  function toggleFocus(date: string) {
+    focusDay = focusDay === date ? null : date;
+  }
+
+  /** Where you sleep on `date`, else where the day starts. */
+  function cityOf(date: string): PlanStop | undefined {
+    return (
+      stops.find((s) => s.start_date <= date && date < s.end_date) ??
+      stops.find((s) => s.start_date <= date && date <= s.end_date)
+    );
+  }
 
   const mapCities = $derived<MapCity[]>(
     stops
@@ -431,7 +419,7 @@
 
   const mapPoints = $derived.by<MapPoint[]>(() => {
     const out: MapPoint[] = [];
-    const sel = selected;
+    const sel = focusDay;
     for (const s of stays) {
       if (s.place.lat == null || s.place.lon == null) continue;
       out.push({
@@ -443,21 +431,20 @@
         active: !!sel && s.check_in_date <= sel && sel < s.check_out_date,
       });
     }
-    const byDay = new Map<string, number>();
-    for (const it of [...items].sort((a, b) => a.sort_order - b.sort_order)) {
-      const key = it.date ?? '';
-      byDay.set(key, (byDay.get(key) ?? 0) + 1);
-      if (it.lat == null || it.lon == null) continue;
-      const city = it.date ? nightStop(it.date) ?? morningStop(it.date) : undefined;
-      out.push({
-        id: it.id,
-        kind: 'item',
-        title: it.time ? `${it.time} ${it.title}` : it.title,
-        lat: it.lat,
-        lon: it.lon,
-        active: it.date === sel,
-        color: city ? stopColor(city) : '#64748b',
-        label: it.date === sel ? String(byDay.get(key)) : '',
+    for (const date of [...days, null]) {
+      itemsOn(date).forEach((it, i) => {
+        if (it.lat == null || it.lon == null) return;
+        const city = date ? cityOf(date) : undefined;
+        out.push({
+          id: it.id,
+          kind: 'item',
+          title: `${date ? `${dayMonth(date)} · ` : ''}${it.time ? `${it.time} ` : ''}${it.title}`,
+          lat: it.lat,
+          lon: it.lon,
+          active: date === sel,
+          color: city ? stopColor(city) : '#64748b',
+          label: date === sel ? String(i + 1) : '',
+        });
       });
     }
     return out;
@@ -474,38 +461,27 @@
       })),
   );
 
-  /** Showing the whole route rather than following the selected day. */
-  let overview = $state(false);
-  $effect(() => {
-    void selected;
-    overview = false;
-  });
-
-  /** The selected day's places, or the city it is in when none has one. */
   const mapFocus = $derived.by<[number, number][]>(() => {
-    if (!selected || overview) return [];
+    if (!focusDay) return [];
     const active = mapPoints.filter((p) => p.active).map((p) => [p.lat, p.lon] as [number, number]);
     if (active.length) return active;
-    const city = nightStop(selected) ?? morningStop(selected);
+    const city = cityOf(focusDay);
     return city && city.lat != null && city.lon != null ? [[city.lat, city.lon]] : [];
   });
 
   function pointClicked(p: MapPoint) {
     const it = items.find((i) => i.id === p.id);
-    if (it) {
-      if (it.date) selected = it.date;
-      editing = { ...it };
-    }
+    if (it) editing = { ...it };
   }
 
   function cityClicked(name: string) {
     const s = stops.find((x) => x.name === name);
-    if (s) selected = s.start_date;
+    if (s) focusDay = s.start_date;
   }
 
-  /** The number an item carries on the map, when it has a place there. */
+  /** The number an item carries on the map while its day is highlighted. */
   function mapNumber(item: PlanItem, date: string | null): number {
-    if (!date || item.lat == null) return 0;
+    if (!date || date !== focusDay || item.lat == null) return 0;
     return itemsOn(date).indexOf(item) + 1;
   }
 </script>
@@ -524,20 +500,23 @@
       <div class="stats">
         <span><strong>{days.length}</strong> {$t('organizer.days')}</span>
         <span><strong>{stops.length}</strong> {$t('organizer.cities')}</span>
-        <span class:warn={missingNights > 0}><strong>{missingNights}</strong> {$t('organizer.nights_without_stay')}</span>
+        <span class:warn={missingNights > 0}>
+          <strong>{missingNights}</strong> {$t('organizer.nights_without_stay')}
+        </span>
         <span><strong>{openTasks}</strong> {$t('organizer.open_tasks')}</span>
       </div>
     </header>
 
     <!-- Route -->
     <section class="route" aria-label={$t('organizer.route')}>
+      <h2>{$t('organizer.route')}</h2>
       <div class="route-chips">
         {#each stops as stop, i (stop.id)}
           {#if i > 0}<span class="route-arrow">→</span>{/if}
           <button class="stop-chip" style="--stop:{stopColor(stop)}" onclick={() => openStop(stop)}>
-            <span class="stop-num">{i + 1}</span>
+            <span class="stop-dot"></span>
             <span class="stop-name">{stop.name}</span>
-            <span class="stop-dates">{fmt(stop.start_date, { day: 'numeric', month: 'short' })} – {fmt(stop.end_date, { day: 'numeric', month: 'short' })} · {$t('organizer.nights', { values: { n: nightsOf(stop) } })}</span>
+            <span class="stop-dates">{dayMonth(stop.start_date)} – {dayMonth(stop.end_date)} · {$t('organizer.nights', { values: { n: nightsOf(stop) } })}</span>
           </button>
         {/each}
         <button class="btn btn-secondary btn-sm" data-testid="add-stop" onclick={openNewStop}>+ {$t('organizer.add_city')}</button>
@@ -576,223 +555,219 @@
     </section>
 
     <div class="workspace">
-      <div class="main-col">
-        {#if days.length === 0}
-          <p class="muted empty">{$t('organizer.no_days')}</p>
-        {:else}
-          <!-- Calendar -->
-          <div class="calendar">
-            {#each [0, 1, 2, 3, 4, 5, 6] as i (i)}
-              <div class="cal-weekday">{fmt(addDays('2027-03-01', i), { weekday: 'short' })}</div>
-            {/each}
-            {#each cells as date, i (date ?? `blank-${i}`)}
-              {#if date === null}
-                <div class="cal-blank"></div>
-              {:else}
-                {@const night = nightStop(date)}
-                {@const morning = morningStop(date)}
-                {@const moves = movesOn(date)}
-                {@const stay = stayFor(date)}
-                {@const count = itemsOn(date).length}
-                <button
-                  class="day"
-                  class:selected={selected === date}
-                  class:weekend={isWeekend(date)}
-                  class:drop={dropTarget === date}
-                  style="--stop:{night ? stopColor(night) : morning ? stopColor(morning) : 'var(--border)'}"
-                  onclick={() => (selected = date)}
-                  ondragover={overHandler(date)}
-                  ondragleave={leaveHandler(date)}
-                  ondrop={(e) => { e.preventDefault(); dropOn(date); }}
-                >
-                  <span class="day-top">
-                    <span class="day-date">{fmt(date, { day: 'numeric', month: 'short' })}</span>
-                    <span class="day-n">{$t('planner.day_prefix')} {days.indexOf(date) + 1}</span>
-                  </span>
-                  <span class="day-city">
-                    {#if morning && night}{morning.name} → {night.name}{:else if night}{night.name}{:else if morning}{morning.name}{:else}&nbsp;{/if}
-                  </span>
-                  <span class="day-icons">
-                    {#each moves.slice(0, 2) as m (m.key)}<span title={m.label}>{m.icon}</span>{/each}
-                    {#if stay}<span title={stay.place.name}>🏨</span>{:else if missingStay(date)}<span class="warn-ic" title={$t('organizer.no_stay')}>⚠</span>{/if}
-                    {#if count}<span class="day-count">{count}</span>{/if}
-                  </span>
-                </button>
-              {/if}
-            {/each}
-          </div>
-
-          <!-- Selected day -->
-          {#if selected}
-            {@const sel = selected}
-            {@const night = nightStop(sel)}
-            {@const morning = morningStop(sel)}
-            {@const stay = stayFor(sel)}
-            {@const moves = movesOn(sel)}
-            <section class="day-panel">
-              <header class="day-panel-head" style="--stop:{night ? stopColor(night) : morning ? stopColor(morning) : 'var(--border)'}">
-                <div>
-                  <span class="dp-weekday">{$t('planner.day_prefix')} {days.indexOf(sel) + 1} · {fmt(sel, { weekday: 'long' })}</span>
-                  <h2>
-                    {fmt(sel, { day: 'numeric', month: 'long' })}
-                    {#if morning && night}· {morning.name} → {night.name}{:else if night || morning}· {(night ?? morning)?.name}{/if}
-                  </h2>
-                </div>
-                <div class="dp-nav">
-                  <button class="btn btn-secondary btn-sm" disabled={days.indexOf(sel) === 0} onclick={() => (selected = addDays(sel, -1))} aria-label={$t('organizer.prev_day')}>←</button>
-                  <button class="btn btn-secondary btn-sm" disabled={days.indexOf(sel) === days.length - 1} onclick={() => (selected = addDays(sel, 1))} aria-label={$t('organizer.next_day')}>→</button>
-                </div>
-              </header>
-
-              {#if moves.length || stay || missingStay(sel)}
-                <div class="facts">
-                  {#each moves as m (m.key)}
-                    <div class="fact"><span>{m.icon}</span><span class="mono">{m.time}</span><span>{m.label}</span></div>
-                  {/each}
-                  {#if stay}
-                    <div class="fact"><span>🏨</span><span>{stay.place.name}</span></div>
-                  {:else if missingStay(sel)}
-                    <div class="fact warn-text"><span>⚠</span><span>{$t('organizer.no_stay')}</span></div>
-                  {/if}
-                </div>
-              {/if}
-
-              <div
-                class="day-items"
-                class:drop={dropTarget === `list-${sel}`}
-                role="list"
-                ondragover={overHandler(`list-${sel}`)}
-                ondragleave={leaveHandler(`list-${sel}`)}
-                ondrop={(e) => { e.preventDefault(); dropOn(sel); }}
-              >
-                {#each itemsOn(sel) as item (item.id)}
-                  {@render planItem(item, sel)}
-                {/each}
-                <input
-                  class="item-draft"
-                  placeholder={$t('organizer.add_item')}
-                  bind:value={dayDraft}
-                  onkeydown={(e) => { if (e.key === 'Enter') addItem(sel); }}
-                />
-              </div>
-
-              <textarea
-                class="note"
-                rows="2"
-                placeholder={$t('organizer.note_placeholder')}
-                value={notes[sel] ?? ''}
-                onblur={(e) => saveNote(sel, (e.currentTarget as HTMLTextAreaElement).value)}
-              ></textarea>
-            </section>
-          {/if}
-        {/if}
-      </div>
-
-      <aside class="side">
-        <div class="map-box">
-          <button class="map-overview btn btn-secondary btn-sm" class:active={overview} onclick={() => (overview = true)}>🗺 {$t('organizer.whole_route')}</button>
-          <PlanMap cities={mapCities} points={mapPoints} lines={mapLines} focus={mapFocus} onCityClick={cityClicked} onPointClick={pointClicked} />
-        </div>
-
-        <section class="panel">
-          <div class="tabs" role="tablist">
-            <button role="tab" class:active={sideTab === 'ideas'} aria-selected={sideTab === 'ideas'} onclick={() => (sideTab = 'ideas')}>💡 {$t('organizer.ideas')} <span class="badge">{itemsOn(null).length}</span></button>
-            <button role="tab" class:active={sideTab === 'tasks'} aria-selected={sideTab === 'tasks'} onclick={() => (sideTab = 'tasks')}>✅ {$t('organizer.before_trip')} <span class="badge">{openTasks}</span></button>
-          </div>
-
-          {#if sideTab === 'ideas'}
-            <div
-              class="tab-body"
-              class:drop={dropTarget === IDEAS}
-              role="list"
-              ondragover={overHandler(IDEAS)}
-              ondragleave={leaveHandler(IDEAS)}
-              ondrop={(e) => { e.preventDefault(); dropOn(null); }}
+      <!-- Board -->
+      {#if days.length === 0}
+        <p class="muted board-empty">{$t('organizer.no_days')}</p>
+      {:else}
+        <div class="board" style="--cols:{days.length}">
+          <div class="lane-label corner"></div>
+          {#each days as date, i (date)}
+            <button
+              class="day-head"
+              class:weekend={[0, 6].includes(new Date(`${date}T12:00:00`).getDay())}
+              class:focused={focusDay === date}
+              title={$t('organizer.show_on_map')}
+              onclick={() => toggleFocus(date)}
             >
-              <p class="hint">{$t('organizer.ideas_hint')}</p>
-              {#each itemsOn(null) as item (item.id)}
-                {@render planItem(item, null)}
+              <span class="day-num">{$t('planner.day_prefix')} {i + 1}</span>
+              <span class="day-date">{weekday(date)} {dayMonth(date)}</span>
+            </button>
+          {/each}
+
+          <div class="lane-label">{$t('organizer.city')}</div>
+          {#each days as date (date)}
+            <div class="cell city-cell">
+              {#each stopsOn(date) as s (s.id)}
+                <span class="city-tag" style="--stop:{stopColor(s)}">{s.name}</span>
+              {:else}
+                <span class="muted small">—</span>
+              {/each}
+            </div>
+          {/each}
+
+          <div class="lane-label">{$t('organizer.transport')}</div>
+          {#each days as date (date)}
+            <div class="cell">
+              {#each movesOn(date) as m (m.key)}
+                <div class="move"><span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}</div>
+              {/each}
+            </div>
+          {/each}
+
+          <div class="lane-label">{$t('organizer.stay')}</div>
+          {#each days as date (date)}
+            {@const stay = stayFor(date)}
+            <div class="cell">
+              {#if stay}
+                <div class="stay" title={stay.place.address ?? ''}>🏨 {stay.place.name}</div>
+              {:else if missingStay(date)}
+                <div class="no-stay">⚠ {$t('organizer.no_stay')}</div>
+              {/if}
+            </div>
+          {/each}
+
+          <div class="lane-label">{$t('organizer.todo_lane')}</div>
+          {#each days as date (date)}
+            <div
+              class="cell items-cell"
+              class:drop={dropTarget === date}
+              role="list"
+              ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
+              ondragleave={() => { if (dropTarget === date) dropTarget = null; }}
+              ondrop={(e) => { e.preventDefault(); dropOn(date, null); }}
+            >
+              {#each itemsOn(date) as item (item.id)}
+                {@render planItem(item, date)}
               {/each}
               <input
                 class="item-draft"
-                placeholder={$t('organizer.add_idea')}
-                bind:value={ideaDraft}
-                onkeydown={(e) => { if (e.key === 'Enter') addItem(null); }}
+                placeholder={$t('organizer.add_item')}
+                bind:value={drafts[date]}
+                onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
               />
             </div>
-          {:else}
-            <div class="tab-body">
-              {#each tasks as task (task.id)}
-                <div class="task" class:done={task.done}>
-                  <input type="checkbox" checked={task.done} onchange={() => toggleTask(task)} />
-                  <span class="task-text">{task.text}</span>
-                  <select class="assignee" value={personKey(task.assignee_type, task.assignee_id)} onchange={(e) => assign(task, (e.currentTarget as HTMLSelectElement).value)}>
-                    <option value="">—</option>
-                    {#each people as p (personKey(p.type, p.id))}
-                      <option value={personKey(p.type, p.id)}>{p.name}</option>
-                    {/each}
-                  </select>
-                  <button class="icon-btn" aria-label={$t('organizer.remove')} onclick={() => deleteTask(task)}>×</button>
-                </div>
-              {/each}
-              <input class="item-draft" placeholder={$t('organizer.add_task')} bind:value={taskDraft} onkeydown={(e) => { if (e.key === 'Enter') addTask(); }} />
+          {/each}
+
+          <div class="lane-label">{$t('organizer.notes')}</div>
+          {#each days as date (date)}
+            <div class="cell">
+              <textarea
+                class="note"
+                rows="3"
+                placeholder="…"
+                value={notes[date] ?? ''}
+                onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
+              ></textarea>
             </div>
-          {/if}
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Side panels -->
+      <aside class="side">
+        <section
+          class="panel"
+          class:drop={dropTarget === IDEAS}
+          role="list"
+          ondragover={(e) => { e.preventDefault(); dropTarget = IDEAS; }}
+          ondragleave={() => { if (dropTarget === IDEAS) dropTarget = null; }}
+          ondrop={(e) => { e.preventDefault(); dropOn(null, null); }}
+        >
+          <h2>💡 {$t('organizer.ideas')}</h2>
+          <p class="hint">{$t('organizer.ideas_hint')}</p>
+          {#each itemsOn(null) as item (item.id)}
+            {@render planItem(item, null)}
+          {/each}
+          <input
+            class="item-draft"
+            placeholder={$t('organizer.add_idea')}
+            bind:value={drafts[IDEAS]}
+            onkeydown={(e) => { if (e.key === 'Enter') addItem(null); }}
+          />
+        </section>
+
+        <section class="panel">
+          <h2>✅ {$t('organizer.before_trip')}</h2>
+          {#each tasks as task (task.id)}
+            <div class="task" class:done={task.done}>
+              <input type="checkbox" checked={task.done} onchange={() => toggleTask(task)} />
+              <span class="task-text">{task.text}</span>
+              <select
+                class="assignee"
+                value={personKey(task.assignee_type, task.assignee_id)}
+                onchange={(e) => assign(task, (e.currentTarget as HTMLSelectElement).value)}
+              >
+                <option value="">—</option>
+                {#each people as p (personKey(p.type, p.id))}
+                  <option value={personKey(p.type, p.id)}>{p.name}</option>
+                {/each}
+              </select>
+              <button class="icon-btn" aria-label={$t('organizer.remove')} onclick={() => deleteTask(task)}>×</button>
+            </div>
+          {/each}
+          <input
+            class="item-draft"
+            placeholder={$t('organizer.add_task')}
+            bind:value={taskDraft}
+            onkeydown={(e) => { if (e.key === 'Enter') addTask(); }}
+          />
         </section>
       </aside>
     </div>
 
+    <section class="map-section" aria-label={$t('organizer.map')}>
+      <div class="map-head">
+        <h2>🗺 {$t('organizer.map')}</h2>
+        <span class="hint">
+          {#if focusDay}{weekday(focusDay)} {dayMonth(focusDay)}{#if cityOf(focusDay)} · {cityOf(focusDay)?.name}{/if}{:else}{$t('organizer.map_hint')}{/if}
+        </span>
+        {#if focusDay}
+          <button class="btn btn-secondary btn-sm" onclick={() => (focusDay = null)}>{$t('organizer.whole_route')}</button>
+        {/if}
+      </div>
+      <div class="map-box">
+        <PlanMap cities={mapCities} points={mapPoints} lines={mapLines} focus={mapFocus} onCityClick={cityClicked} onPointClick={pointClicked} />
+      </div>
+    </section>
+
     {#if editing}
       <div class="modal-backdrop" role="presentation" onclick={() => (editing = null)}>
-        <div class="modal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === 'Escape') editing = null; }}>
-          <form class="modal-form" onsubmit={(e) => { e.preventDefault(); saveEditing(); }}>
+        <div
+          class="modal"
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={(e) => { if (e.key === 'Escape') editing = null; }}
+        >
+        <form class="modal-form" onsubmit={(e) => { e.preventDefault(); saveEditing(); }}>
+          <label class="field">
+            <span class="form-label">{$t('organizer.item_title')}</span>
+            <input class="form-input" bind:value={editing.title} required />
+          </label>
+          <div class="field">
+            <span class="form-label">{$t('organizer.place')}</span>
+            <PlaceInput
+              kind="poi"
+              value={editing.place_name ?? ''}
+              lat={editing.lat}
+              lon={editing.lon}
+              placeholder={$t('organizer.place_placeholder')}
+              onchange={(p) => { if (editing) { editing.place_name = p.name; editing.lat = p.lat; editing.lon = p.lon; } }}
+            />
+          </div>
+          <div class="row">
             <label class="field">
-              <span class="form-label">{$t('organizer.item_title')}</span>
-              <input class="form-input" bind:value={editing.title} required />
+              <span class="form-label">{$t('organizer.day')}</span>
+              <select class="form-input" bind:value={editing.date}>
+                <option value={null}>{$t('organizer.no_day')}</option>
+                {#each days as d (d)}
+                  <option value={d}>{weekday(d)} {dayMonth(d)}</option>
+                {/each}
+              </select>
             </label>
-            <div class="field">
-              <span class="form-label">{$t('organizer.place')}</span>
-              <PlaceInput
-                kind="poi"
-                value={editing.place_name ?? ''}
-                lat={editing.lat}
-                lon={editing.lon}
-                placeholder={$t('organizer.place_placeholder')}
-                onchange={(p) => { if (editing) { editing.place_name = p.name; editing.lat = p.lat; editing.lon = p.lon; } }}
-              />
-            </div>
-            <div class="row">
-              <label class="field">
-                <span class="form-label">{$t('organizer.day')}</span>
-                <select class="form-input" bind:value={editing.date}>
-                  <option value={null}>{$t('organizer.no_day')}</option>
-                  {#each days as d (d)}
-                    <option value={d}>{fmt(d, { weekday: 'short', day: 'numeric', month: 'short' })}</option>
-                  {/each}
-                </select>
-              </label>
-              <label class="field">
-                <span class="form-label">{$t('organizer.time')}</span>
-                <input class="form-input" type="time" bind:value={editing.time} />
-              </label>
-              <label class="field">
-                <span class="form-label">{$t('organizer.status')}</span>
-                <select class="form-input" bind:value={editing.status}>
-                  {#each STATUSES as s (s)}
-                    <option value={s}>{$t(`organizer.status_${s}`)}</option>
-                  {/each}
-                </select>
-              </label>
-            </div>
             <label class="field">
-              <span class="form-label">{$t('organizer.notes')}</span>
-              <textarea class="form-input" rows="3" bind:value={editing.notes}></textarea>
+              <span class="form-label">{$t('organizer.time')}</span>
+              <input class="form-input" type="time" bind:value={editing.time} />
             </label>
-            <div class="form-actions">
-              <button class="btn btn-primary btn-sm" type="submit">{$t('organizer.save')}</button>
-              <button class="btn btn-danger btn-sm" type="button" onclick={() => editing && deleteItem(editing)}>{$t('organizer.remove')}</button>
-            </div>
-          </form>
+            <label class="field">
+              <span class="form-label">{$t('organizer.status')}</span>
+              <select class="form-input" bind:value={editing.status}>
+                {#each STATUSES as s (s)}
+                  <option value={s}>{$t(`organizer.status_${s}`)}</option>
+                {/each}
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span class="form-label">{$t('organizer.notes')}</span>
+            <textarea class="form-input" rows="4" bind:value={editing.notes}></textarea>
+          </label>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" type="submit">{$t('organizer.save')}</button>
+            <button class="btn btn-danger btn-sm" type="button" onclick={() => editing && deleteItem(editing)}>{$t('organizer.remove')}</button>
+          </div>
+        </form>
         </div>
       </div>
     {/if}
@@ -800,7 +775,6 @@
 </div>
 
 {#snippet planItem(item: PlanItem, date: string | null)}
-  {@const n = mapNumber(item, date)}
   <div
     class="item status-{item.status}"
     class:dragging={dragId === item.id}
@@ -808,29 +782,31 @@
     role="listitem"
     ondragstart={(e) => { dragId = item.id; e.dataTransfer?.setData('text/plain', item.id); }}
     ondragend={() => { dragId = null; dropTarget = null; }}
-    ondragover={(e) => { if (dragId) e.preventDefault(); }}
+    ondragover={(e) => { e.preventDefault(); dropTarget = date ?? IDEAS; }}
     ondrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOn(date, item.id); }}
   >
-    <button class="status-dot" title={$t(`organizer.status_${item.status}`)} aria-label={$t(`organizer.status_${item.status}`)} onclick={() => cycleStatus(item)}></button>
+    <button
+      class="status-dot"
+      title={$t(`organizer.status_${item.status}`)}
+      aria-label={$t(`organizer.status_${item.status}`)}
+      onclick={() => cycleStatus(item)}
+    ></button>
     <button class="item-body" onclick={() => (editing = { ...item })}>
-      <span class="item-line">
-        {#if item.time}<span class="item-time">{item.time}</span>{/if}
-        <span class="item-title">{item.title}</span>
-      </span>
-      {#if item.place_name || item.notes}
-        <span class="item-sub">
-          {#if item.place_name}<span>📍 {#if n}<b>{n}</b> · {/if}{item.place_name}</span>{/if}
-          {#if item.notes}<span class="item-notes">{item.notes}</span>{/if}
-        </span>
+      {#if item.time}<span class="item-time">{item.time}</span>{/if}
+      <span class="item-title">{item.title}</span>
+      {#if item.notes}<span class="item-has-notes" title={item.notes}>📝</span>{/if}
+      {#if item.place_name}
+        {@const n = mapNumber(item, date)}
+        <span class="item-place">📍 {#if n}<b>{n}</b> · {/if}{item.place_name}</span>
       {/if}
     </button>
-    <span class="status-tag">{$t(`organizer.status_${item.status}`)}</span>
   </div>
 {/snippet}
 
 <style>
   .planner-page {
     padding: var(--space-md) var(--space-lg) var(--space-xl);
+    max-width: none;
   }
   .plan-header {
     display: flex;
@@ -855,23 +831,26 @@
     gap: var(--space-md);
     font-size: 0.85rem;
     color: var(--text-secondary);
-    flex-wrap: wrap;
   }
   .stats strong {
     color: var(--text-primary);
     font-size: 1.05rem;
   }
-  .stats .warn strong,
-  .warn-text,
-  .warn-ic {
+  .stats .warn strong {
     color: var(--warning-text, var(--warning));
+  }
+  h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 0 var(--space-sm);
   }
   .muted {
     color: var(--text-muted);
   }
-  .mono {
-    font-family: var(--font-mono);
-    color: var(--text-secondary);
+  .small {
+    font-size: 0.75rem;
   }
   .route {
     background: var(--bg-card);
@@ -891,26 +870,22 @@
   }
   .stop-chip {
     display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 12px 5px 5px;
+    align-items: baseline;
+    gap: 6px;
+    padding: 6px 12px;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--stop) 45%, transparent);
+    border: 1px solid color-mix(in srgb, var(--stop) 50%, transparent);
     background: color-mix(in srgb, var(--stop) 12%, var(--bg-card));
     color: var(--text-primary);
     cursor: pointer;
     font: inherit;
   }
-  .stop-num {
-    width: 22px;
-    height: 22px;
+  .stop-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--stop);
-    color: #fff;
-    font-size: 0.75rem;
-    font-weight: 700;
-    display: grid;
-    place-items: center;
+    align-self: center;
   }
   .stop-name {
     font-weight: 600;
@@ -940,171 +915,127 @@
   }
   .workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(360px, 1fr);
+    grid-template-columns: minmax(0, 1fr) 300px;
     gap: var(--space-md);
     align-items: start;
   }
-  .main-col {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-    min-width: 0;
-  }
-  .empty {
+  .board-empty {
     padding: var(--space-lg);
   }
-
-  /* Calendar */
-  .calendar {
+  .board {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: 96px repeat(var(--cols), 190px);
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    max-height: calc(100vh - 230px);
+    overflow-y: auto;
   }
-  .cal-weekday {
-    font-size: 0.7rem;
+  .lane-label,
+  .day-head,
+  .cell {
+    border-right: 1px solid var(--border-light, var(--border));
+    border-bottom: 1px solid var(--border-light, var(--border));
+    padding: 8px;
+    min-width: 0;
+  }
+  .lane-label {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-secondary, var(--bg-card));
+    font-size: 0.72rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
-    padding: 0 4px;
   }
-  .day {
-    all: unset;
-    box-sizing: border-box;
+  .corner {
+    top: 0;
+    z-index: 3;
+  }
+  .day-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-secondary, var(--bg-card));
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    min-height: 82px;
-    padding: 6px 8px;
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-top: 4px solid var(--stop);
+  }
+  button.day-head {
+    appearance: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    border-top: 0;
+    border-left: 0;
     cursor: pointer;
-    min-width: 0;
   }
-  .day:hover {
-    box-shadow: var(--shadow-card);
+  .day-head.focused {
+    box-shadow: inset 0 -3px 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary, var(--bg-card)));
   }
-  .day.weekend {
-    background: var(--bg-subtle, var(--bg-card));
+  .day-head.weekend {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary, var(--bg-card)));
   }
-  .day.selected {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .day-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 4px;
+  .day-num {
+    font-size: 0.7rem;
+    color: var(--text-muted);
   }
   .day-date {
-    font-weight: 700;
-    font-size: 0.85rem;
-  }
-  .day-n {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-  }
-  .day-city {
-    font-size: 0.75rem;
     font-weight: 600;
-    color: color-mix(in srgb, var(--stop) 70%, var(--text-primary));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .day-icons {
+  .city-cell {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
-    align-items: center;
-    font-size: 0.8rem;
-    margin-top: auto;
   }
-  .day-count {
-    margin-left: auto;
-    font-size: 0.7rem;
-    font-weight: 700;
-    background: var(--accent);
-    color: var(--accent-on, #fff);
-    border-radius: 999px;
-    padding: 0 6px;
+  .city-tag {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--stop) 18%, transparent);
+    border-left: 3px solid var(--stop);
   }
-  .cal-blank {
-    min-height: 82px;
+  .stay {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .move,
+  .stay,
+  .no-stay {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    margin-bottom: 4px;
+  }
+  .move-time {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+  }
+  .no-stay {
+    color: var(--warning-text, var(--warning));
+  }
+  .items-cell {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .drop {
-    outline: 2px dashed var(--accent) !important;
-    outline-offset: -2px;
+    outline: 2px dashed var(--accent);
+    outline-offset: -3px;
   }
-
-  /* Day panel */
-  .day-panel {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-  }
-  .day-panel-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-md);
-    border-left: 6px solid var(--stop);
-    background: color-mix(in srgb, var(--stop) 8%, var(--bg-card));
-  }
-  .day-panel-head h2 {
-    margin: 2px 0 0;
-    font-size: 1.15rem;
-  }
-  .dp-weekday {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-  .dp-nav {
-    display: flex;
-    gap: 4px;
-  }
-  .facts {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--border-light, var(--border));
-    font-size: 0.85rem;
-  }
-  .fact {
-    display: flex;
-    gap: 8px;
-  }
-  .day-items {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: var(--space-md);
-    min-height: 80px;
-  }
-  .note {
-    display: block;
-    width: calc(100% - 2 * var(--space-md));
-    margin: 0 var(--space-md) var(--space-md);
-    box-sizing: border-box;
-    resize: vertical;
-    font: inherit;
-    font-size: 0.85rem;
-    padding: 8px;
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-primary);
-  }
-
   .item {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: var(--radius-md);
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: var(--radius-sm);
     background: var(--bg-subtle, var(--surface-alt));
     border: 1px solid var(--border-light, var(--border));
     cursor: grab;
@@ -1114,8 +1045,8 @@
   }
   .status-dot {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     margin-top: 2px;
     border-radius: 50%;
     border: 2px solid var(--text-muted);
@@ -1142,65 +1073,51 @@
     all: unset;
     flex: 1;
     min-width: 0;
+    font-size: 0.8rem;
+    line-height: 1.35;
     cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .item-line {
-    font-size: 0.88rem;
     overflow-wrap: anywhere;
   }
   .item-time {
     font-family: var(--font-mono);
     color: var(--text-secondary);
-    margin-right: 6px;
+    margin-right: 4px;
   }
-  .item-sub {
-    display: flex;
-    flex-direction: column;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-  .item-notes {
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .status-tag {
-    flex: none;
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-    margin-top: 3px;
-  }
-  .status-booked .status-tag {
-    color: var(--success-text, var(--success));
-  }
-  .status-todo .status-tag {
-    color: var(--warning-text, var(--warning));
+  .item-has-notes {
+    margin-left: 4px;
+    font-size: 0.7rem;
   }
   .item-draft {
     width: 100%;
     box-sizing: border-box;
     font: inherit;
-    font-size: 0.85rem;
-    padding: 8px 10px;
+    font-size: 0.8rem;
+    padding: 5px 6px;
     border: 1px dashed var(--border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-primary);
   }
-  .item-draft:focus,
-  .note:focus {
+  .item-draft:focus {
     outline: none;
     border-style: solid;
     border-color: var(--accent);
   }
-
-  /* Side */
+  .note {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font: inherit;
+    font-size: 0.78rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+  }
+  .note:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
   .side {
     display: flex;
     flex-direction: column;
@@ -1208,62 +1125,17 @@
     position: sticky;
     top: var(--space-md);
   }
-  .map-overview {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 500;
-    box-shadow: var(--shadow-card);
-  }
-  .map-box {
-    position: relative;
-    height: 52vh;
-    min-height: 340px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-  }
   .panel {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
-  }
-  .tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border);
-  }
-  .tabs button {
-    all: unset;
-    flex: 1;
-    text-align: center;
-    padding: 10px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-  }
-  .tabs button.active {
-    color: var(--text-primary);
-    border-bottom-color: var(--accent);
-  }
-  .badge {
-    font-size: 0.7rem;
-    background: var(--bg-subtle, var(--surface-alt));
-    border-radius: 999px;
-    padding: 0 6px;
-    margin-left: 4px;
-  }
-  .tab-body {
+    padding: var(--space-md);
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: var(--space-md);
-    max-height: 32vh;
-    overflow-y: auto;
   }
   .hint {
-    margin: 0 0 4px;
+    margin: -4px 0 4px;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -1271,7 +1143,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
   }
   .task-text {
     flex: 1;
@@ -1303,13 +1175,16 @@
     background: rgb(0 0 0 / 0.4);
     display: grid;
     place-items: center;
-    z-index: 1000;
+    z-index: 50;
   }
   .modal {
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
-    width: min(520px, calc(100vw - 32px));
+    width: min(440px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
     box-shadow: var(--shadow-elevated);
   }
   .modal-form {
@@ -1323,9 +1198,8 @@
   }
   .row .field {
     flex: 1;
-    min-width: 0;
   }
-  @media (max-width: 1000px) {
+  @media (max-width: 900px) {
     .planner-page {
       padding: var(--space-md);
     }
@@ -1335,5 +1209,32 @@
     .side {
       position: static;
     }
+  }
+  .item-place {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .map-section {
+    margin-top: var(--space-md);
+  }
+  .map-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-sm);
+  }
+  .map-head h2 {
+    margin: 0;
+  }
+  .map-head .hint {
+    flex: 1;
+    margin: 0;
+  }
+  .map-box {
+    height: 480px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
   }
 </style>

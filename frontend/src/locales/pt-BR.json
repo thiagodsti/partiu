@@ -830,9 +830,9 @@
   "organizer.no_days": "Defina as datas da viagem ou adicione uma cidade ao roteiro para começar.",
   "organizer.no_stay": "sem hospedagem",
   "organizer.notes": "Notas",
-  "organizer.add_item": "+ adicionar atividade (ex.: 07:20 Muralha) e Enter",
+  "organizer.add_item": "+ adicionar (ex.: 07:20 Muralha)",
   "organizer.ideas": "Ideias sem dia",
-  "organizer.ideas_hint": "Arraste uma ideia para um dia do calendário quando decidir.",
+  "organizer.ideas_hint": "Arraste para um dia quando decidir.",
   "organizer.add_idea": "+ nova ideia",
   "organizer.before_trip": "A fazer antes",
   "organizer.add_task": "+ nova tarefa",
@@ -847,8 +847,11 @@
   "organizer.place_placeholder": "Buscar ponto turístico, restaurante…",
   "organizer.day": "Dia",
   "organizer.no_day": "Sem dia (ideia)",
-  "organizer.note_placeholder": "Notas do dia…",
-  "organizer.prev_day": "Dia anterior",
-  "organizer.next_day": "Próximo dia",
-  "organizer.whole_route": "Roteiro todo"
+  "organizer.whole_route": "Roteiro todo",
+  "organizer.todo_lane": "O que fazer",
+  "organizer.transport": "Transporte",
+  "organizer.stay": "Hospedagem",
+  "organizer.map": "Mapa do planejamento",
+  "organizer.map_hint": "Tudo que tem lugar. Clique no cabeçalho de um dia para focar nele.",
+  "organizer.show_on_map": "Mostrar este dia no mapa"
 }
