@@ -524,17 +524,31 @@ uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-htm
 
 ## LLM fallback — findings & limitations
 
-Measured in November 2026 with `eval_llm_corpus` on a CPU-only server (i7-7820HQ, 4 cores, no GPU): 40 mails from the corpus, 25 with 53 legs the airline rules read (14 airlines) and 15 with none.
+Measured in November 2026 with `eval_llm_corpus`: 40 mails from the corpus, 25 with 53 legs the airline rules read (14 airlines) and 15 with none. The tool scores **exactly what a sync would store** — every check in `llm._rejection`, the route fix, airport timezones and the plausibility gate run on a mail's legs together. Earlier figures in this section's history (45/53) were taken without the plausibility gate, which drops any leg with no arrival time; the old prompt scores 38/53 (server) and 42/53 (laptop) when measured the same way.
 
-| Model | Legs right | Wrong legs | Mails fully right | Negatives with a leg | Seconds per mail (median) |
-|---|---|---|---|---|---|
-| `qwen3:4b-instruct` | 45/53 (85%) | 2 | 20/25 | 2/15 | ~68 |
-| `qwen3:4b-instruct`, without the route check | 42/53 (79%) | 6 | 17/25 | 2/15 | ~68 |
-| `granite4:tiny-h` (7B MoE) | 38/53 (72%) | 13 | 14/25 | 1/15 | ~25 |
-| `gemma3:4b` ¹ | 26/53 (49%) | 11 | 10/25 | 1/15 | ~63 |
-| `qwen3:4b-instruct`, before the fixes below | 0/53 | 0 | 0/25 | 0/15 | ~45 |
+Runs used the same model file on a CPU-only server (i7-7820HQ, where this runs) and, for speed, on an M2 laptop; a control run of `qwen3:4b-instruct` on both agreed within one leg. Treat one or two legs either way as noise.
 
-¹ Answers taken with the leg fields required but before the context and body fixes; `qwen3:4b-instruct` under the same conditions scores 35/53.
+| `qwen3:4b-instruct`, full sync path | Legs right | Wrong legs | Mails fully right | Negatives with a leg |
+|---|---|---|---|---|
+| **current** (neutral prompt example, arrival required, airport check) | **40/53** | 2 | 16/25 | 0/15 |
+| airports limited to a list of the mail's airports (tried, dropped) | 40–41/53 | 2 | 16/25 | 0/15 |
+| two questions: places first, then flights (tried, dropped) | 41/53 | 3 | 16/25 | 0/15 |
+| before any of the fixes below | 0/53 | 0 | 0/25 | 0/15 |
+
+The two wrong legs left are Azul's AD4849 answered as AZ4849 (ITA's code); Azul has its own rule, so in production its mails never reach the fallback. Two of the misses are a Qatar itinerary whose legs the model lists out of date order, so `validate_flights`' year roll moves the December legs into the next year. About 68 s per mail on the server (11 s on the laptop).
+
+Two ideas were measured and not kept. **Limiting the answer's airports to the ones the mail names** (an `enum` in the schema) gained nothing over the check below, and the fuller the list the more wrong choices it offers: a passenger named Barbara is Santa Barbara (SBA), "Brasil" is part of an airport name in Boa Vista, `BRL` (the currency) is Burlington. **Asking in two steps** — the places first, copied as written and resolved by Partiu, then the flights in the same conversation (Ollama reuses the cached email, so the second question costs about 30% more time, not double) — lists places cleanly but did not move the score.
+
+Other models, scored before the airport check and the full-path change, so compare them with each other rather than with the table above:
+
+| Model | Legs right | Wrong legs | Seconds per mail (server) |
+|---|---|---|---|
+| `qwen3:4b-instruct` | 42/53 | 6 | ~68 |
+| `granite4:tiny-h` (7B MoE, ~1B active) | 38/53 | 13 | ~25 |
+| `NuExtract-2.0-4B` (verbatim airport names + `resolve_iata`) | 33/53 | 4 | ~35 |
+| `gemma3:4b` | 26/53 | 11 | ~63 |
+| `qwen3:4b-instruct` at Q8_0 (laptop) | 40/53 | 9 | — |
+| `qwen3.5:4b`, `phi4-mini`, `LFM2.5-1.2B` | stopped early, behind `qwen3:4b-instruct` on the same mails | | |
 
 The fixes. Requiring the leg fields is what took it off zero; the others together added the rest:
 
@@ -544,6 +558,10 @@ The fixes. Requiring the leg fields is what took it off zero; the others togethe
 - **Prefixing digits-only flight numbers** with the airline code the model returned (`"783"` + `"TP"`).
 - **"Manage your booking" no longer ends the body.** It sits above the itinerary in some mails (Vueling), which left the model 379 characters of greeting.
 - **Reversed routes are turned around** from known routes (see below): +3 legs right, wrong legs 6 → 2.
+- **Arrival time required, never null.** The plausibility gate drops every leg without one, and given the choice the model left it out of legs whose mail prints it (Ryanair, LATAM, Finnair).
+- **Both airports must be named in the mail.** `_airport_in_text` keeps an airport only when it is one of the mail's `airport_candidates`: a code printed as a word of its own, or a locating word of the airport's name, city or aliases (a word shared by more than five airports, like "santa", counts for nothing). That drops LATAM's Florianópolis answered as FLY (Finley, Australia) and invented city codes (STO, CAT, MIL); on the corpus's 192 legs it rejected none of the 384 real airports.
+- **Answers are capped at 2,048 tokens.** The longest real answer was 1,451; a looping model once wrote 20,000 tokens of the same list.
+- **A neutral example in the prompt.** The flight-number rule used to illustrate itself with Azul's `"4849"` → `"AD4849"`, a flight in the eval sample; it now uses `XY1234`, so the score measures an airline the prompt has not seen.
 - **The flight number must appear in the mail.** This drops invented numbers (`VP1234` for a Vueling round trip, `NK117` in a Norwegian reminder) and, on this sample, nothing that was right. Airports are not checked that way: many mails print only city names and the model maps those correctly.
 
 What is still wrong, and why the fallback stays a last resort:

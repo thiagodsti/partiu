@@ -46,8 +46,9 @@ Look for keywords "Voo", "Vuelo", "Flight", "Vol", "Flug", "Fly" followed by dig
 those digits are the flight number. Also look for 3-5 digit numbers that appear \
 alongside or immediately before/after a departure airport, arrival airport, or \
 departure time — those are flight numbers. \
-Always prefix with the airline's 2-letter IATA code: e.g. digits "4849" from an \
-Azul email → "AD4849"; find the IATA code from the airline name or sender domain. \
+Always prefix with the airline's 2-letter IATA code: e.g. digits "1234" from an \
+email by an airline whose code is "XY" → "XY1234"; find the IATA code from the \
+airline name or sender domain. \
 If the code already has a 2-letter prefix (e.g. "SK117"), keep it as-is. \
 Remove spaces: "LH 809" → "LH809". \
 Booking references (short alphanumeric codes like "TESTR5") are NOT flight numbers. \
@@ -121,7 +122,10 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
                     "dep_airport": {"type": ["string", "null"]},
                     "arr_airport": {"type": ["string", "null"]},
                     "dep_datetime": {"type": ["string", "null"]},
-                    "arr_datetime": {"type": ["string", "null"]},
+                    # A string, never null: validate_flights drops every leg without
+                    # an arrival time, and given the choice the model left it out
+                    # of legs whose mail prints it (Ryanair, LATAM, Finnair).
+                    "arr_datetime": {"type": "string"},
                     "dep_date": {"type": ["string", "null"]},
                     "airline_name": {"type": ["string", "null"]},
                     "airline_code": {"type": ["string", "null"]},
@@ -137,6 +141,7 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
                     "dep_airport",
                     "arr_airport",
                     "dep_datetime",
+                    "arr_datetime",
                     "dep_date",
                     "airline_code",
                 ],
@@ -146,8 +151,108 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
 }
 
 
+def _airport_index() -> tuple[frozenset[str], dict[str, set[str]], dict[str, set[str]]]:
+    """Airport codes, and what in a mail can name each airport.
+
+    Returns (codes, words, phrases): ``words`` maps every locating word of an
+    airport's name, city or aliases (``_significant_tokens``, the filter
+    ``resolve_iata`` uses, so "airport" or "international" name nothing) to
+    codes; ``phrases`` maps whole folded city names and aliases ("sao paulo",
+    "milan bergamo") to codes. Only airports with scheduled service, which an
+    airline itinerary always uses — unless the table has none flagged, as on
+    an install that never ran the ranking backfill.
+
+    Read on every call (tens of ms): one call per mail, next to a model that
+    takes a minute, and no cache to go stale when the airports change.
+    """
+    from ...database import db_conn
+    from ...parsers.shared import _significant_tokens
+
+    codes: set[str] = set()
+    words: dict[str, set[str]] = {}
+    phrases: dict[str, set[str]] = {}
+    try:
+        with db_conn() as conn:
+            scheduled = conn.execute(
+                "SELECT 1 FROM airports WHERE scheduled_service = 1 LIMIT 1"
+            ).fetchone()
+            where = "WHERE scheduled_service = 1" if scheduled else ""
+            rows = conn.execute(
+                f"SELECT iata_code, name_folded, city_folded FROM airports {where}"
+            ).fetchall()
+            aliases = conn.execute("SELECT alias, iata_code FROM airport_aliases").fetchall()
+    except Exception as e:  # noqa: BLE001 - no airport data: no candidates
+        logger.debug("airport candidates unavailable (%s)", e)
+        return frozenset(), {}, {}
+    for code, name, city in rows:
+        codes.add(code)
+        for value in (name, city):
+            for token in _significant_tokens(value or ""):
+                words.setdefault(token, set()).add(code)
+        if city:
+            phrases.setdefault(city, set()).add(code)
+    for alias, code in aliases:
+        if code not in codes:
+            continue
+        phrases.setdefault(alias, set()).add(code)
+        for token in _significant_tokens(alias or ""):
+            words.setdefault(token, set()).add(code)
+    return frozenset(codes), words, phrases
+
+
+_MAX_AIRPORTS_PER_WORD = 5
+
+
+def airport_candidates(text: str) -> list[str]:
+    """Every airport the mail names: printed codes, and words of airport names.
+
+    A code counts when printed as a word of its own; a name when a locating
+    word of an airport's name, city or aliases is in the mail, or one to three
+    consecutive words are a whole city name or alias ("sao paulo" → GRU and
+    CGH). Noise comes along — PIX (the payment method) is Pico Island, the
+    Portuguese word "nome" is Nome, Alaska — which only adds a choice the
+    model has no reason to take. On the 192 corpus legs the right airport was
+    in the list every time (median 23 candidates per mail).
+
+    Only used to check an answer (``_airport_in_text``). Offering the list to
+    the model as the schema's choices was measured and dropped: no gain over
+    the check alone (40-41 of 53 legs either way), and the fuller the list the
+    more wrong choices it offers — a passenger named Barbara is Santa Barbara
+    (SBA), "Brasil" is an airport name in Boa Vista.
+    """
+    from ...parsers.shared import _significant_tokens
+    from ...utils import fold_text
+
+    codes, words, phrases = _airport_index()
+    found = {t for t in re.findall(r"(?<![A-Za-z])([A-Z]{3})(?![A-Za-z])", text) if t in codes}
+    folded = fold_text(text)
+    for token in set(_significant_tokens(folded)):
+        airports = words.get(token, set())
+        # A word shared by many airports ("santa" names 29) locates nothing and
+        # would only bury the right airport in noise. Five keeps every corpus
+        # airport (Stockholm alone names ARN, BMA, NYO and VST) at a median of
+        # 23 candidates per mail; three already loses Arlanda.
+        if len(airports) <= _MAX_AIRPORTS_PER_WORD:
+            found |= airports
+    plain = re.findall(r"[a-z0-9]+", folded)
+    for n in (2, 3):
+        for i in range(len(plain) - n + 1):
+            found |= phrases.get(" ".join(plain[i : i + n]), set())
+    return sorted(found)
+
+
+# A four-leg itinerary is about 530 tokens of JSON and the longest answer seen
+# was 1,451. Without a cap a model that loops (granite4:tiny-h once wrote
+# 20,000 tokens of the same list) holds the CPU until the client timeout.
+_MAX_ANSWER_TOKENS = 2048
+
+
 def _call_ollama(
-    prompt: str, model: str, ollama_url: str, timeout: int = 180, num_ctx: int | None = None
+    prompt: str,
+    model: str,
+    ollama_url: str,
+    timeout: int = 180,
+    num_ctx: int | None = None,
 ) -> str | None:
     """Send a chat completion request to Ollama and return the raw response text.
 
@@ -172,7 +277,7 @@ def _call_ollama(
             # mail, ending in an empty answer, against 73 s without. Models
             # that do not think accept the flag and ignore it.
             "think": False,
-            "options": {"temperature": 0, "num_ctx": num_ctx},
+            "options": {"temperature": 0, "num_ctx": num_ctx, "num_predict": _MAX_ANSWER_TOKENS},
             "format": _FLIGHT_SCHEMA,
         }
     ).encode()
@@ -227,6 +332,38 @@ def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
     fn = _clean_flight_number(flight.get("flight_number"))
     digits = re.sub(r"^[A-Z0-9]{2}(?=\d)", "", fn).lstrip("0")
     return digits.isdigit() and re.search(rf"(?<!\d)0*{digits}(?!\d)", text) is not None
+
+
+def _rejection(flight: dict[str, Any], mail_text: str) -> str:
+    """Why an LLM leg cannot be kept, or "" when it passes every check.
+
+    Prefixes a digits-only flight number first. The one place these checks
+    are chained, so the eval tool scores exactly what the sync would keep.
+    """
+    _prefix_flight_number(flight)
+    if not _validate_flight(flight):
+        return "failed validation"
+    if not _flight_number_in_text(flight, mail_text):
+        return "flight number not in the email"
+    for field in ("dep_airport", "arr_airport"):
+        if not _airport_in_text(flight.get(field) or "", mail_text):
+            return f"{field} not named in the email"
+    return ""
+
+
+def _airport_in_text(code: str, text: str) -> bool:
+    """True when the mail names this airport, by the same rule as the answer schema.
+
+    The model maps city names to codes, mostly right ("Sicily-Catania" → CTA)
+    but not always: LATAM's "Florianópolis" came back as FLY, Finley in
+    Australia, and asking it to map cities made it invent city codes (STO,
+    CAT). An airport is kept exactly when it is one of the mail's
+    ``airport_candidates``. With no airport data at all, nothing can be checked.
+    """
+    codes, _, _ = _airport_index()
+    if not codes:
+        return True
+    return (code or "").upper() in airport_candidates(text)
 
 
 def _validate_flight(flight: dict[str, Any]) -> bool:
@@ -443,7 +580,10 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
     )
 
     raw = _call_ollama(
-        prompt, settings.OLLAMA_MODEL, settings.OLLAMA_URL, timeout=settings.OLLAMA_TIMEOUT
+        prompt,
+        settings.OLLAMA_MODEL,
+        settings.OLLAMA_URL,
+        timeout=settings.OLLAMA_TIMEOUT,
     )
     if not raw:
         return []
@@ -467,12 +607,9 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         # Backfill booking_reference from top-level if missing
         if not f.get("booking_reference") and booking_ref:
             f["booking_reference"] = booking_ref
-        _prefix_flight_number(f)
-        if not _validate_flight(f):
-            logger.debug("LLM flight failed validation: %s", f)
-            continue
-        if not _flight_number_in_text(f, mail_text):
-            logger.debug("LLM flight number not found in the email: %s", f)
+        reason = _rejection(f, mail_text)
+        if reason:
+            logger.debug("LLM flight dropped (%s): %s", reason, f)
             continue
         results.append(fix_reversed_route(_normalise_flight(f, "", "")))
 

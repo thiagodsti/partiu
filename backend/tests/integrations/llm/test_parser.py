@@ -8,6 +8,8 @@ import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _email(body="", html=None, date=None):
     from backend.parsers.email_connector import EmailMessage
@@ -145,3 +147,154 @@ class TestThinking:
     def test_reasoning_is_turned_off(self):
         payload = TestRequest()._payload()
         assert payload["think"] is False
+
+
+class TestAirportNamedInTheMail:
+    """A code is kept when printed, or when a word of its name/city/aliases is."""
+
+    @pytest.fixture
+    def airports(self, test_db):
+        from backend.database import db_write
+        from backend.utils import fold_text
+
+        rows = [
+            ("FLN", "Hercílio Luz International Airport", "Florianópolis"),
+            ("FLY", "Finley Airport", ""),
+            ("BGY", "Il Caravaggio International Airport", "Orio al Serio (BG)"),
+            ("ARN", "Stockholm-Arlanda Airport", "Stockholm"),
+        ]
+        with db_write() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, name_folded,"
+                " city_folded) VALUES (?, ?, ?, ?, ?)",
+                [(c, n, city, fold_text(n), fold_text(city)) for c, n, city in rows],
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO airport_aliases (alias, iata_code) VALUES ('bergamo', 'BGY')"
+            )
+        return test_db
+
+    def test_printed_code_is_kept(self, airports):
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert _airport_in_text("ARN", "Departure ARN 06:15")
+
+    def test_city_name_is_kept_accents_folded(self, airports):
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert _airport_in_text("FLN", "Voo de ida 8:00 São Paulo 9:15 Florianópolis")
+
+    def test_alias_is_kept(self, airports):
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert _airport_in_text("BGY", "Milan (Bergamo) 17:55")
+
+    def test_real_airport_the_mail_never_names_is_dropped(self, airports):
+        """LATAM's Florianópolis read as FLY, Finley in Australia."""
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert not _airport_in_text("FLY", "Voo de ida 8:00 São Paulo 9:15 Florianópolis")
+
+    def test_unknown_code_is_dropped(self, airports):
+        """City codes the model invents (STO for Stockholm) are not airports."""
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert not _airport_in_text("STO", "Stockholm 07:15")
+
+    def test_empty_airports_table_checks_nothing(self, test_db):
+        from backend.integrations.llm.parser import _airport_in_text
+
+        assert _airport_in_text("STO", "Stockholm 07:15")
+
+    def test_llm_leg_with_an_unnamed_airport_is_dropped(self, airports):
+        email = _email(body="Voo 4849 São Paulo 13:20 Florianópolis 14:35")
+        flights, _ = _run(_answer(dep_airport="ARN", arr_airport="FLY"), email)
+        assert flights == []
+
+
+class TestAirportCandidates:
+    """The airports a mail names, offered to the model as the only choices."""
+
+    @pytest.fixture
+    def airports(self, test_db):
+        from backend.database import db_write
+        from backend.utils import fold_text
+
+        rows = [
+            ("FLN", "Florianópolis"),
+            ("GRU", "São Paulo"),
+            ("CGH", "São Paulo"),
+            ("VCP", "Campinas"),
+            ("FLY", "Finley"),
+        ]
+        with db_write() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, city_folded,"
+                " scheduled_service) VALUES (?, ?, ?, ?, 1)",
+                [(c, c, city, fold_text(city)) for c, city in rows],
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO airport_aliases (alias, iata_code) VALUES ('viracopos', 'VCP')"
+            )
+        return test_db
+
+    def test_codes_city_names_and_aliases(self, airports):
+        from backend.integrations.llm.parser import airport_candidates
+
+        text = "Voo 4849 VCP 13:20 Florianópolis 14:35, conexão São Paulo, Viracopos"
+        assert airport_candidates(text) == ["CGH", "FLN", "GRU", "VCP"]
+
+    def test_unknown_code_is_not_a_candidate(self, airports):
+        from backend.integrations.llm.parser import airport_candidates
+
+        assert airport_candidates("Pago com PIX, ref ABC") == []
+
+    def test_arrival_time_is_required_and_never_null(self):
+        from backend.integrations.llm.parser import _FLIGHT_SCHEMA
+
+        leg = _FLIGHT_SCHEMA["properties"]["flights"]["items"]
+        assert "arr_datetime" in leg["required"]
+        assert leg["properties"]["arr_datetime"] == {"type": "string"}
+
+
+class TestCandidatesAndCheckAgree:
+    """The post-answer check accepts exactly the mail's candidate airports."""
+
+    @pytest.fixture
+    def airports(self, test_db):
+        from backend.database import db_write
+        from backend.utils import fold_text
+
+        rows = [
+            ("LIN", "Milano Linate Airport", "Segrate (MI)"),
+            ("FRA", "Frankfurt am Main Airport", "Frankfurt"),
+            ("ARN", "Stockholm-Arlanda Airport", "Stockholm"),
+        ]
+        with db_write() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO airports (iata_code, name, city_name, name_folded,"
+                " city_folded, scheduled_service) VALUES (?, ?, ?, ?, ?, 1)",
+                [(c, n, city, fold_text(n), fold_text(city)) for c, n, city in rows],
+            )
+        return test_db
+
+    def test_airport_named_only_by_a_word_of_its_name_is_a_candidate(self, airports):
+        """ "Linate" alone names LIN, though it is neither a city nor an alias."""
+        from backend.integrations.llm.parser import _airport_in_text, airport_candidates
+
+        text = "LH 247 Linate 06:10 → Frankfurt 07:40, then Stockholm"
+        assert "LIN" in airport_candidates(text)
+        assert _airport_in_text("LIN", text)
+
+    def test_check_accepts_exactly_the_candidates(self, airports):
+        from backend.integrations.llm.parser import _airport_in_text, airport_candidates
+
+        text = "Frankfurt 07:40 → Stockholm 09:55"
+        for code in ("LIN", "FRA", "ARN"):
+            assert _airport_in_text(code, text) == (code in airport_candidates(text))
+
+
+class TestAnswerLength:
+    def test_answer_is_capped(self):
+        payload = TestRequest()._payload()
+        assert payload["options"]["num_predict"] == 2048
