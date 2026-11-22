@@ -635,95 +635,113 @@
     </section>
 
     <div class="workspace">
-      <!-- Board -->
-      {#if days.length === 0}
-        <p class="muted board-empty">{$t('organizer.no_days')}</p>
-      {:else}
-        <div class="board" style="--cols:{days.length}">
-          <div class="lane-label corner"></div>
-          {#each days as date, i (date)}
-            <button
-              style={frame(date, 'top')}
-              class="day-head"
-              class:weekend={[0, 6].includes(new Date(`${date}T12:00:00`).getDay())}
-              class:focused={focusDay === date}
-              title={$t('organizer.show_on_map')}
-              onclick={() => toggleFocus(date)}
-            >
-              <span class="day-num">{$t('planner.day_prefix')} {i + 1}</span>
-              <span class="day-date">{weekday(date)} {dayMonth(date)}</span>
-            </button>
-          {/each}
+      <div class="main-col">
+        <!-- Board -->
+        {#if days.length === 0}
+          <p class="muted board-empty">{$t('organizer.no_days')}</p>
+        {:else}
+          <div class="board" style="--cols:{days.length}">
+            <div class="lane-label corner"></div>
+            {#each days as date, i (date)}
+              <button
+                style={frame(date, 'top')}
+                class="day-head"
+                class:weekend={[0, 6].includes(new Date(`${date}T12:00:00`).getDay())}
+                class:focused={focusDay === date}
+                title={$t('organizer.show_on_map')}
+                onclick={() => toggleFocus(date)}
+              >
+                <span class="day-num">{$t('planner.day_prefix')} {i + 1}</span>
+                <span class="day-date">{weekday(date)} {dayMonth(date)}</span>
+              </button>
+            {/each}
 
-          <div class="lane-label">{$t('organizer.city')}</div>
-          {#each days as date (date)}
-            <div class="cell city-cell" style={frame(date, 'mid')}>
-              {#each stopsOn(date) as s (s.id)}
-                <span class="city-tag" style="--stop:{stopColor(s)}">{s.name}</span>
-              {:else}
-                <span class="muted small">—</span>
-              {/each}
-            </div>
-          {/each}
+            <div class="lane-label">{$t('organizer.city')}</div>
+            {#each days as date (date)}
+              <div class="cell city-cell" style={frame(date, 'mid')}>
+                {#each stopsOn(date) as s (s.id)}
+                  <span class="city-tag" style="--stop:{stopColor(s)}">{s.name}</span>
+                {:else}
+                  <span class="muted small">—</span>
+                {/each}
+              </div>
+            {/each}
 
-          <div class="lane-label">{$t('organizer.transport')}</div>
-          {#each days as date (date)}
-            <div class="cell" style={frame(date, 'mid')}>
-              {#each movesOn(date) as m (m.key)}
-                <div class="move"><span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}</div>
-              {/each}
-            </div>
-          {/each}
+            <div class="lane-label">{$t('organizer.transport')}</div>
+            {#each days as date (date)}
+              <div class="cell" style={frame(date, 'mid')}>
+                {#each movesOn(date) as m (m.key)}
+                  <div class="move"><span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}</div>
+                {/each}
+              </div>
+            {/each}
 
-          <div class="lane-label">{$t('organizer.stay')}</div>
-          {#each days as date (date)}
-            {@const stay = stayFor(date)}
-            <div class="cell" style={frame(date, 'mid')}>
-              {#if stay}
-                <div class="stay" title={stay.place.address ?? ''}>🏨 {stay.place.name}</div>
-              {:else if missingStay(date)}
-                <div class="no-stay">⚠ {$t('organizer.no_stay')}</div>
-              {/if}
-            </div>
-          {/each}
+            <div class="lane-label">{$t('organizer.stay')}</div>
+            {#each days as date (date)}
+              {@const stay = stayFor(date)}
+              <div class="cell" style={frame(date, 'mid')}>
+                {#if stay}
+                  <div class="stay" title={stay.place.address ?? ''}>🏨 {stay.place.name}</div>
+                {:else if missingStay(date)}
+                  <div class="no-stay">⚠ {$t('organizer.no_stay')}</div>
+                {/if}
+              </div>
+            {/each}
 
-          <div class="lane-label">{$t('organizer.todo_lane')}</div>
-          {#each days as date (date)}
-            <div
-              class="cell items-cell"
-              style={frame(date, 'mid')}
-              class:drop={dropTarget === date}
-              role="list"
-              ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
-              ondragleave={() => { if (dropTarget === date) dropTarget = null; }}
-              ondrop={(e) => { e.preventDefault(); dropOn(date, null); }}
-            >
-              {#each itemsOn(date) as item (item.id)}
-                {@render planItem(item, date)}
-              {/each}
-              <input
-                class="item-draft"
-                placeholder={$t('organizer.add_item')}
-                bind:value={drafts[date]}
-                onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
-              />
-            </div>
-          {/each}
+            <div class="lane-label">{$t('organizer.todo_lane')}</div>
+            {#each days as date (date)}
+              <div
+                class="cell items-cell"
+                style={frame(date, 'mid')}
+                class:drop={dropTarget === date}
+                role="list"
+                ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
+                ondragleave={() => { if (dropTarget === date) dropTarget = null; }}
+                ondrop={(e) => { e.preventDefault(); dropOn(date, null); }}
+              >
+                {#each itemsOn(date) as item (item.id)}
+                  {@render planItem(item, date)}
+                {/each}
+                <input
+                  class="item-draft"
+                  placeholder={$t('organizer.add_item')}
+                  bind:value={drafts[date]}
+                  onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
+                />
+              </div>
+            {/each}
 
-          <div class="lane-label">{$t('organizer.notes')}</div>
-          {#each days as date (date)}
-            <div class="cell" style={frame(date, 'bottom')}>
-              <textarea
-                class="note"
-                rows="3"
-                placeholder="…"
-                value={notes[date] ?? ''}
-                onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
-              ></textarea>
-            </div>
-          {/each}
+            <div class="lane-label">{$t('organizer.notes')}</div>
+            {#each days as date (date)}
+              <div class="cell" style={frame(date, 'bottom')}>
+                <textarea
+                  class="note"
+                  rows="3"
+                  placeholder="…"
+                  value={notes[date] ?? ''}
+                  onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
+                ></textarea>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+
+      <section class="map-section" aria-label={$t('organizer.map')}>
+        <div class="map-head">
+          <h2>🗺 {$t('organizer.map')}</h2>
+          <span class="hint">
+            {#if focusDay}{weekday(focusDay)} {dayMonth(focusDay)}{#if cityOf(focusDay)} · {cityOf(focusDay)?.name}{/if}{:else}{$t('organizer.map_hint')}{/if}
+          </span>
+          {#if focusDay}
+            <button class="btn btn-secondary btn-sm" onclick={() => (focusDay = null)}>{$t('organizer.whole_route')}</button>
+          {/if}
         </div>
-      {/if}
+        <div class="map-box">
+          <PlanMap cities={mapCities} points={mapPoints} lines={mapLines} focus={mapFocus} onCityClick={cityClicked} onPointClick={pointClicked} />
+        </div>
+      </section>
+      </div>
 
       <!-- Side panels -->
       <aside class="side">
@@ -776,6 +794,7 @@
           />
         </section>
 
+
         <section class="panel">
           <h2>✅ {$t('organizer.before_trip')}</h2>
           {#each tasks as task (task.id)}
@@ -827,21 +846,6 @@
         </section>
       </aside>
     </div>
-
-    <section class="map-section" aria-label={$t('organizer.map')}>
-      <div class="map-head">
-        <h2>🗺 {$t('organizer.map')}</h2>
-        <span class="hint">
-          {#if focusDay}{weekday(focusDay)} {dayMonth(focusDay)}{#if cityOf(focusDay)} · {cityOf(focusDay)?.name}{/if}{:else}{$t('organizer.map_hint')}{/if}
-        </span>
-        {#if focusDay}
-          <button class="btn btn-secondary btn-sm" onclick={() => (focusDay = null)}>{$t('organizer.whole_route')}</button>
-        {/if}
-      </div>
-      <div class="map-box">
-        <PlanMap cities={mapCities} points={mapPoints} lines={mapLines} focus={mapFocus} onCityClick={cityClicked} onPointClick={pointClicked} />
-      </div>
-    </section>
 
     {#if editing}
       <div class="modal-backdrop" role="presentation" onclick={() => (editing = null)}>
@@ -1265,8 +1269,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
-    position: sticky;
-    top: var(--space-md);
   }
   .panel {
     background: var(--bg-card);
@@ -1349,9 +1351,6 @@
     .workspace {
       grid-template-columns: 1fr;
     }
-    .side {
-      position: static;
-    }
   }
   .item-place {
     display: block;
@@ -1360,7 +1359,13 @@
     margin-top: 2px;
   }
   .map-section {
-    margin-top: var(--space-md);
+    min-width: 0;
+  }
+  .main-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    min-width: 0;
   }
   .map-head {
     display: flex;
