@@ -18,6 +18,13 @@ did not already find, and every extra day is a chance to swallow a neighbouring
 trip. The sixth booking had no flights within a month in either direction — a
 drive to Italy — which is the case trip creation exists for.
 
+**A stay inside a trip's span joins it** when no flight is near it: the flight
+window only finds the stays at a trip's ends, where the traveller flies in or
+out, so a night in Xi'an in the middle of a Stockholm → Beijing fortnight opened
+a trip of its own. See ``_find_trip_containing_stay``. The country gate below
+does not apply to it: a trip that covers both nights is the trip the traveller
+is on, wherever the hotel is.
+
 **Bracketing was considered and dropped.** The intuition is that a stay sits
 between an outbound and a return, so a stay-trip should adopt flights falling
 *outside* its span. Real itineraries do not look like that: the traveller flies
@@ -27,8 +34,9 @@ are *inside* the stay, and plain span overlap finds them.
 **The country gate is free insurance.** The markup names the property's country
 and the airports table names each airport's, so a stay only joins a trip that
 touched its country. It never once blocked a true match in the corpus, and it
-is what stops a Lisbon weekend being absorbed by a Tokyo trip that happens to
-straddle the same fortnight.
+is what stops a Lisbon weekend being absorbed by a Tokyo trip whose flights
+fall near it. It guards the flight window only: a stay wholly inside a trip's
+span joins that trip regardless.
 
 What this cannot do is **remove** a booking. No cancellation or alteration mail
 appeared anywhere in the corpus, so there is nothing to parse for it; in the
@@ -133,7 +141,7 @@ def _find_trip_for_stay(user_id: int, stay: dict) -> str | None:
             (user_id, lo, hi, country, country, country),
         ).fetchall()
     if not rows:
-        return None
+        return _find_trip_containing_stay(user_id, stay)
     if len(rows) > 1:
         logger.info(
             "Lodging import: %d trips match stay '%s'; taking the one with most flights",
@@ -141,6 +149,43 @@ def _find_trip_for_stay(user_id: int, stay: dict) -> str | None:
             stay["name"][:40],
         )
     return rows[0]["trip_id"]
+
+
+def _find_trip_containing_stay(user_id: int, stay: dict) -> str | None:
+    """The trip whose span holds the whole stay, when no flight is near it.
+
+    The flight window finds a stay at either end of a trip, where the traveller
+    flies in or out. A stay in the middle of a long one has no flight anywhere
+    near: a Xi'an night on 27 March 2027, inside a Stockholm → Beijing trip of
+    23 March to 9 April, found nothing and opened a trip of its own. A traveller
+    is on one trip at a time, so a trip that already covers both nights is
+    where the stay belongs, whatever its country: no country gate here, since a
+    trip covering those dates is the trip the traveller is on (a train from
+    Beijing to Hong Kong crosses into another country code on the same trip).
+    The flight window keeps its gate, because there the trip is only near the
+    stay. Trips should not overlap; if two do, the shortest is the most
+    specific, and a stay belongs to one trip, so it takes that one.
+    """
+    check_in = stay["check_in_datetime"][:10]
+    check_out = stay["check_out_datetime"][:10]
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT t.id AS trip_id
+                 FROM trips t
+                WHERE t.user_id = ?
+                  AND t.start_date IS NOT NULL AND t.end_date IS NOT NULL
+                  AND t.start_date <= ? AND t.end_date >= ?
+                ORDER BY julianday(t.end_date) - julianday(t.start_date), t.start_date
+                LIMIT 1""",
+            (user_id, check_in, check_out),
+        ).fetchone()
+    if row:
+        logger.info(
+            "Lodging import: stay '%s' falls inside trip %s; joining it",
+            stay["name"][:40],
+            row["trip_id"],
+        )
+    return row["trip_id"] if row else None
 
 
 def _trip_name_for_stay(stay: dict) -> str:
