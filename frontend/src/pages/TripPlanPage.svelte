@@ -344,6 +344,17 @@
 
   // ---- Day notes --------------------------------------------------------------
 
+  // On a phone the board's columns do not fit, so the days are listed one
+  // under the other instead; same data, same editors.
+  const NARROW = '(max-width: 760px)';
+  let narrow = $state(typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
+  $effect(() => {
+    const mq = window.matchMedia(NARROW);
+    const on = () => (narrow = mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  });
+
   const pendingSaves = new Set<Promise<unknown>>();
 
   async function saveNote(date: string, content: string) {
@@ -519,6 +530,10 @@
 
   function toggleFocus(date: string) {
     focusDay = focusDay === date ? null : date;
+    // On a phone the map is far below the day; bring it into view.
+    if (narrow && focusDay) {
+      document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   /** Where you sleep on `date`, else where the day starts. */
@@ -715,6 +730,75 @@
         <!-- Board -->
         {#if days.length === 0}
           <p class="muted board-empty">{$t('organizer.no_days')}</p>
+        {:else if narrow}
+          <div class="day-list">
+            {#each days as date, i (date)}
+              {@const city = cityOf(date)}
+              {@const stay = stayFor(date)}
+              <article class="day-card-m" style={city ? `--frame:${stopColor(city)}` : ''}>
+                <header class="dm-head">
+                  <div>
+                    <span class="day-num">{$t('planner.day_prefix')} {i + 1}</span>
+                    <span class="dm-date">{weekday(date)} {dayMonth(date)}</span>
+                  </div>
+                  <div class="dm-cities">
+                    {#each stopsOn(date) as s (s.id)}
+                      <span class="city-tag" style="--stop:{stopColor(s)}">{s.name}</span>
+                    {/each}
+                  </div>
+                  <button class="dm-map" class:on={focusDay === date} aria-label={$t('organizer.show_on_map')} onclick={() => toggleFocus(date)}>🗺</button>
+                </header>
+
+                {#if movesOn(date).length}
+                  <div class="dm-section">
+                    {#each movesOn(date) as m (m.key)}
+                      {#if m.flight}
+                        <a class="move editable" href="#/trips/{params.id}/flights/{m.flight.id}/edit?from=planner">
+                          <span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}
+                        </a>
+                      {:else if m.segment}
+                        {@const seg = m.segment}
+                        <button class="move editable" onclick={() => legsEditor?.openEdit(seg)}>
+                          <span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}
+                        </button>
+                      {/if}
+                    {/each}
+                  </div>
+                {/if}
+
+                {#if stay || missingStay(date)}
+                  <div class="dm-section">
+                    {#if stay}
+                      <button class="stay editable" onclick={() => staysEditor?.openEdit(stay)}>🏨 {stay.place.name}</button>
+                    {:else}
+                      <button class="no-stay editable" onclick={() => addStay(date)}>⚠ {$t('organizer.no_stay')} · <u>{$t('organizer.add_stay')}</u></button>
+                    {/if}
+                  </div>
+                {/if}
+
+                <div class="dm-section dm-items" role="list">
+                  {#each itemsOn(date) as item (item.id)}
+                    {@render planItem(item, date)}
+                  {/each}
+                  <input
+                    class="item-draft"
+                    placeholder={$t('organizer.add_item')}
+                    bind:value={drafts[date]}
+                    enterkeyhint="done"
+                    onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
+                  />
+                </div>
+
+                <textarea
+                  class="note dm-note"
+                  rows="2"
+                  placeholder={$t('organizer.notes') + '…'}
+                  value={notes[date] ?? ''}
+                  onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
+                ></textarea>
+              </article>
+            {/each}
+          </div>
         {:else}
           <div class="board" style="--cols:{days.length}">
             <div class="lane-label corner"></div>
@@ -1473,6 +1557,123 @@
     }
     .workspace {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* Phone: days as stacked cards, framed in their city's colour. */
+  .day-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+  .day-card-m {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--frame, var(--border));
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .dm-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--frame, transparent) 12%, var(--bg-card));
+  }
+  .dm-head > div:first-child {
+    display: flex;
+    flex-direction: column;
+  }
+  .dm-date {
+    font-weight: 700;
+  }
+  .dm-cities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .dm-map {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    font-size: 1rem;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .dm-map.on {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-card));
+  }
+  .dm-section {
+    padding: 6px 10px;
+    border-top: 1px solid var(--border-light, var(--border));
+  }
+  .dm-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dm-note {
+    display: block;
+    width: 100%;
+    border-top: 1px solid var(--border-light, var(--border));
+    border-radius: 0;
+    padding: 8px 10px;
+    min-height: 44px;
+  }
+  @media (max-width: 760px) {
+    .plan-header {
+      align-items: flex-start;
+    }
+    .plan-header h1 {
+      font-size: 1.3rem;
+    }
+    .autosave,
+    .side-toggle {
+      display: none;
+    }
+    .save-box {
+      margin-left: 0;
+    }
+    .stats {
+      gap: var(--space-sm);
+      font-size: 0.78rem;
+    }
+    .route {
+      padding: var(--space-sm);
+    }
+    .stop-chip {
+      padding: 4px 10px;
+    }
+    .stop-form .field {
+      flex: 1 1 140px;
+    }
+    .map-box {
+      height: 340px;
+    }
+    .map-head {
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+    }
+    .item-body,
+    .item-draft,
+    .note {
+      font-size: 16px; /* below 16px iOS zooms in on focus */
+    }
+    .editable {
+      font-size: 0.85rem;
+      padding: 6px 4px;
+    }
+    .modal {
+      padding: var(--space-md);
+    }
+    .row {
+      flex-wrap: wrap;
+    }
+    .row .field {
+      flex: 1 1 120px;
     }
   }
   .item-place {
