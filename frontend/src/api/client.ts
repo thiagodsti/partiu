@@ -4,6 +4,10 @@
  */
 
 import type {
+  PlanItem,
+  PlanStop,
+  PlanTask,
+  TripPlan,
   ApiKey,
   ApiKeyScope,
   CreatedApiKey,
@@ -377,6 +381,25 @@ export const notificationsApi = {
   markAllRead: () => post<{ ok: boolean; marked: number }>('/api/notifications/inbox/read-all'),
   markRead: (id: number) => post<{ ok: boolean }>(`/api/notifications/inbox/${id}/read`),
   deleteNotification: (id: number) => del<null>(`/api/notifications/inbox/${id}`),
+};
+
+export const plannerApi = {
+  get: (tripId: string) => get<TripPlan>(`/api/trips/${tripId}/plan`),
+  createStop: (tripId: string, data: Omit<PlanStop, 'id' | 'notes'> & { notes?: string | null }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/stops`, data),
+  updateStop: (tripId: string, id: string, data: Partial<Omit<PlanStop, 'id'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/stops/${id}`, data),
+  deleteStop: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/stops/${id}`),
+  createItem: (tripId: string, data: Partial<Omit<PlanItem, 'id' | 'sort_order'>> & { title: string }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/items`, data),
+  updateItem: (tripId: string, id: string, data: Partial<Omit<PlanItem, 'id'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/items/${id}`, data),
+  deleteItem: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/items/${id}`),
+  createTask: (tripId: string, data: { text: string; assignee_type?: 'user' | 'guest' | null; assignee_id?: number | null }) =>
+    post<{ id: string }>(`/api/trips/${tripId}/plan/tasks`, data),
+  updateTask: (tripId: string, id: string, data: Partial<Omit<PlanTask, 'id' | 'sort_order'>>) =>
+    patch<null>(`/api/trips/${tripId}/plan/tasks/${id}`, data),
+  deleteTask: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/tasks/${id}`),
 };
 
 export const dayNotesApi = {
