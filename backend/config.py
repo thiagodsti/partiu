@@ -36,8 +36,12 @@ class Settings:
     PHOTON_URL: str = os.getenv("PHOTON_URL", "https://photon.komoot.io")
 
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    # Context window per request. The system prompt alone is ~1000 tokens and
+    # Ollama's default is 4096, which long itineraries overflow (Ollama then
+    # answers 400). The longest mail of the 372-mail corpus needs ~4.3k tokens.
+    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
     # Optional announcement banner shown to all users (empty = no banner)
     ANNOUNCEMENT: str = os.getenv("ANNOUNCEMENT", "")
     # CARTO basemap API key for the trip map's tiles. CARTO started watermarking
