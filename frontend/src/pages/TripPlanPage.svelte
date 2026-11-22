@@ -36,13 +36,29 @@
   import PlanMap, { type MapCity, type MapLine, type MapPoint } from '../components/PlanMap.svelte';
   import { formatTime, localDateKey } from '../lib/utils';
   import { toasts } from '../lib/toastStore';
-  import { parseDayNote, serializeDayNote } from '../lib/dayNotes';
+  import { parseDayNote, serializeDayNote, type LegacyChecklistItem } from '../lib/dayNotes';
   import { stopColor as sharedStopColor } from '../lib/planColors';
 
   interface Props {
     params: { id: string };
   }
   const { params }: Props = $props();
+
+  /** Every write still in flight — notes and planner rows alike — so "Save
+   * and back" leaves only once they have all landed. */
+  const pendingSaves = new Set<Promise<unknown>>();
+  function track<T>(p: Promise<T>): Promise<T> {
+    pendingSaves.add(p);
+    p.finally(() => pendingSaves.delete(p)).catch(() => {});
+    return p;
+  }
+  /** plannerApi with every call tracked. */
+  const api = Object.fromEntries(
+    Object.entries(plannerApi).map(([k, fn]) => [
+      k,
+      (...args: unknown[]) => track((fn as (...a: unknown[]) => Promise<unknown>)(...args)),
+    ]),
+  ) as unknown as typeof plannerApi;
 
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -74,7 +90,10 @@
       items = plan.items;
       tasks = plan.tasks;
       people = ppl;
-      notes = Object.fromEntries(dn.map((n) => [n.date, parseDayNote(n.content).note]));
+      const parsed = dn.map((n) => [n.date, parseDayNote(n.content)] as const);
+      notes = Object.fromEntries(parsed.map(([d, c]) => [d, c.note]));
+      savedNotes = { ...notes };
+      legacyItems = Object.fromEntries(parsed.map(([d, c]) => [d, c.items]));
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -98,6 +117,9 @@
       trip?.start_date ?? trip?.planned_start_date,
       trip?.end_date ?? trip?.planned_end_date,
       ...stops.flatMap((s) => [s.start_date, s.end_date]),
+      // A dated item keeps its day on the board even after the route that
+      // reached it shrinks, rather than vanishing from every list.
+      ...items.map((i) => i.date),
     ].filter((d): d is string => !!d);
     if (bounds.length === 0) return [];
     bounds.sort();
@@ -217,8 +239,8 @@
       end_date: stopForm.end,
     };
     try {
-      if (stopForm.id) await plannerApi.updateStop(params.id, stopForm.id, data);
-      else await plannerApi.createStop(params.id, data);
+      if (stopForm.id) await api.updateStop(params.id, stopForm.id, data);
+      else await api.createStop(params.id, data);
       stopForm = null;
       stops = (await plannerApi.get(params.id)).stops;
     } catch (err) {
@@ -228,7 +250,7 @@
 
   async function deleteStop() {
     if (!stopForm?.id) return;
-    await plannerApi.deleteStop(params.id, stopForm.id);
+    await api.deleteStop(params.id, stopForm.id);
     stops = stops.filter((s) => s.id !== stopForm?.id);
     stopForm = null;
   }
@@ -262,7 +284,7 @@
     const { title, time } = parseDraft(raw);
     drafts[key] = '';
     try {
-      const { id } = await plannerApi.createItem(params.id, { title, time, date, status: date ? 'todo' : 'idea' });
+      const { id } = await api.createItem(params.id, { title, time, date, status: date ? 'todo' : 'idea' });
       const order = itemsOn(date).length;
       items = [
         ...items,
@@ -276,19 +298,25 @@
   async function cycleStatus(item: PlanItem) {
     const next = STATUSES[(STATUSES.indexOf(item.status) + 1) % STATUSES.length];
     item.status = next;
-    await plannerApi.updateItem(params.id, item.id, { status: next });
+    await api.updateItem(params.id, item.id, { status: next });
   }
 
   let editing = $state<PlanItem | null>(null);
 
   async function saveEditing() {
     if (!editing) return;
-    const e = { ...editing, time: editing.time || null, place_name: editing.place_name || null };
-    const idx = items.findIndex((i) => i.id === e.id);
-    if (idx >= 0) items[idx] = e;
-    editing = null;
+    const e = {
+      ...editing,
+      title: editing.title.trim(),
+      time: editing.time || null,
+      place_name: editing.place_name || null,
+    };
+    if (!e.title) {
+      toasts.show($t('organizer.title_required'), 'error');
+      return;
+    }
     try {
-      await plannerApi.updateItem(params.id, e.id, {
+      await api.updateItem(params.id, e.id, {
         title: e.title,
         time: e.time,
         notes: e.notes,
@@ -298,16 +326,19 @@
         lat: e.place_name ? e.lat : null,
         lon: e.place_name ? e.lon : null,
       });
+      // Only now: a rejected save keeps the dialog and the draft open.
+      const idx = items.findIndex((i) => i.id === e.id);
+      if (idx >= 0) items[idx] = e;
+      editing = null;
     } catch (err) {
       toasts.show((err as Error).message, 'error');
-      load();
     }
   }
 
   async function deleteItem(item: PlanItem) {
     items = items.filter((i) => i.id !== item.id);
     editing = null;
-    await plannerApi.deleteItem(params.id, item.id);
+    await api.deleteItem(params.id, item.id);
   }
 
   // Drag and drop: an item moves to a day (or back to the ideas) at a position.
@@ -331,7 +362,7 @@
       if (dateChanged) patch.date = date;
       it.sort_order = order;
       if (dateChanged) it.date = date;
-      changes.push(plannerApi.updateItem(params.id, it.id, patch));
+      changes.push(api.updateItem(params.id, it.id, patch));
     });
     items = [...items];
     try {
@@ -355,17 +386,88 @@
     return () => mq.removeEventListener('change', on);
   });
 
-  const pendingSaves = new Set<Promise<unknown>>();
 
-  async function saveNote(date: string, content: string) {
-    if ((notes[date] ?? '') === content) return;
+  /** What the server last confirmed per day, apart from the text on screen:
+   * a failed save must stay different from it so the next blur retries. */
+  let savedNotes: Record<string, string> = {};
+  /** A legacy checklist still inside a day's note (see lib/dayNotes). */
+  let legacyItems: Record<string, LegacyChecklistItem[]> = {};
+  /** One save at a time per day, in order, so an older text can never land
+   * after a newer one. */
+  const noteChains: Record<string, Promise<unknown>> = {};
+
+  function saveNote(date: string, content: string): Promise<unknown> {
     notes[date] = content;
-    const save = dayNotesApi.upsert(params.id, date, serializeDayNote(content));
-    pendingSaves.add(save);
-    try {
-      await save;
-    } finally {
-      pendingSaves.delete(save);
+    const run = async () => {
+      if ((savedNotes[date] ?? '') === content) return;
+      try {
+        await dayNotesApi.upsert(params.id, date, serializeDayNote(content, legacyItems[date]));
+        savedNotes[date] = content;
+      } catch (err) {
+        toasts.show(`${$t('organizer.note_not_saved')} (${(err as Error).message})`, 'error');
+        throw err;
+      }
+    };
+    const next = (noteChains[date] ?? Promise.resolve()).catch(() => {}).then(run);
+    noteChains[date] = next;
+    return track(next);
+  }
+
+  // ---- Dialog focus -----------------------------------------------------------
+  //
+  // Opening a dialog moves focus to its first field, and closing it returns
+  // focus to whatever opened it, so the keyboard never keeps working the board
+  // behind an open dialog.
+
+  let returnFocus: HTMLElement | null = null;
+  function dialogFocus(node: HTMLElement) {
+    returnFocus = document.activeElement as HTMLElement | null;
+    queueMicrotask(() => {
+      const first = node.querySelector<HTMLElement>('input, select, textarea, button:not(.modal-close)');
+      first?.focus();
+    });
+    return {
+      destroy() {
+        returnFocus?.focus?.();
+        returnFocus = null;
+      },
+    };
+  }
+
+  // The booking dialog stays mounted (its editors keep their state), so it
+  // takes focus when a form opens and gives it back when the form closes.
+  let bookingReturn: HTMLElement | null = null;
+  $effect(() => {
+    const open = stayFormOpen || legFormOpen;
+    if (open && !bookingReturn) {
+      bookingReturn = (document.activeElement as HTMLElement | null) ?? document.body;
+      tick().then(() =>
+        document
+          .querySelector<HTMLElement>('.booking-modal input, .booking-modal select, .booking-modal textarea')
+          ?.focus(),
+      );
+    } else if (!open && bookingReturn) {
+      bookingReturn.focus?.();
+      bookingReturn = null;
+    }
+  });
+
+  /** Keeps Tab inside an open dialog. */
+  function trapTab(e: KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    const box = e.currentTarget as HTMLElement;
+    const focusable = [...box.querySelectorAll<HTMLElement>('input, select, textarea, button, a[href]')].filter(
+      (el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
     }
   }
 
@@ -397,7 +499,9 @@
   async function saveAndBack() {
     (document.activeElement as HTMLElement | null)?.blur();
     await tick();
-    await Promise.allSettled([...pendingSaves]);
+    const results = await Promise.allSettled([...pendingSaves]);
+    // Something did not save: stay, so the user can see the error and retry.
+    if (results.some((r) => r.status === 'rejected')) return;
     window.location.hash = `#/trips/${params.id}`;
   }
 
@@ -413,13 +517,13 @@
     const text = taskDraft.trim();
     if (!text) return;
     taskDraft = '';
-    const { id } = await plannerApi.createTask(params.id, { text });
+    const { id } = await api.createTask(params.id, { text });
     tasks = [...tasks, { id, text, done: false, assignee_type: null, assignee_id: null, sort_order: tasks.length }];
   }
 
   async function toggleTask(task: PlanTask) {
     task.done = !task.done;
-    await plannerApi.updateTask(params.id, task.id, { done: task.done });
+    await api.updateTask(params.id, task.id, { done: task.done });
   }
 
   async function assign(task: PlanTask, key: string) {
@@ -427,7 +531,7 @@
     task.assignee_type = (type as 'user' | 'guest' | null) ?? null;
     task.assignee_id = id ? Number(id) : null;
     try {
-      await plannerApi.updateTask(params.id, task.id, {
+      await api.updateTask(params.id, task.id, {
         assignee_type: task.assignee_type,
         assignee_id: task.assignee_id,
       });
@@ -438,7 +542,7 @@
 
   async function deleteTask(task: PlanTask) {
     tasks = tasks.filter((x) => x.id !== task.id);
-    await plannerApi.deleteTask(params.id, task.id);
+    await api.deleteTask(params.id, task.id);
   }
 
   const openTasks = $derived(tasks.filter((x) => !x.done).length);
@@ -495,7 +599,7 @@
     placeSearchKey++;
     const data = { title: p.name, place_name: p.name, lat: p.lat, lon: p.lon, date: null, status: 'idea' as const };
     try {
-      const { id } = await plannerApi.createItem(params.id, data);
+      const { id } = await api.createItem(params.id, data);
       items = [...items, { id, ...data, time: null, notes: null, sort_order: itemsOn(null).length }];
     } catch (err) {
       toasts.show((err as Error).message, 'error');
@@ -740,7 +844,7 @@
       {/if}
     </section>
 
-    <div class="workspace" class:side-hidden={sideHidden}>
+    <div class="workspace" class:side-hidden={sideHidden && !narrow}>
       <div class="main-col">
         <!-- Board -->
         {#if days.length === 0}
@@ -764,8 +868,7 @@
                   <button class="dm-map" class:on={focusDay === date} aria-label={$t('organizer.show_on_map')} onclick={() => toggleFocus(date)}>🗺</button>
                 </header>
 
-                {#if movesOn(date).length}
-                  <div class="dm-section">
+                <div class="dm-section">
                     {#each movesOn(date) as m (m.key)}
                       {#if m.flight}
                         <a class="move editable" href="#/trips/{params.id}/flights/{m.flight.id}/edit?from=planner">
@@ -778,8 +881,8 @@
                         </button>
                       {/if}
                     {/each}
+                    <a class="dm-add-transport" href="#/trips/{params.id}/add-transport?from=planner">+ {$t('organizer.add_transport')}</a>
                   </div>
-                {/if}
 
                 {#if stay || missingStay(date)}
                   <div class="dm-section">
@@ -931,7 +1034,7 @@
       </div>
 
       <!-- Side panels -->
-      <aside class="side" hidden={sideHidden}>
+      <aside class="side" hidden={sideHidden && !narrow}>
         <section
           class="panel"
           class:drop={dropTarget === PLACES}
@@ -1046,7 +1149,7 @@
         aria-modal="true"
         tabindex="-1"
         onclick={(e) => e.stopPropagation()}
-        onkeydown={() => {}}
+        onkeydown={trapTab}
       >
         <button class="modal-close" type="button" aria-label={$t('organizer.close')} onclick={closeBookingEditors}>✕</button>
         <TripStays
@@ -1077,7 +1180,8 @@
           aria-modal="true"
           tabindex="-1"
           onclick={(e) => e.stopPropagation()}
-          onkeydown={() => {}}
+          onkeydown={trapTab}
+          use:dialogFocus
         >
         <button class="modal-close" type="button" aria-label={$t('organizer.close')} onclick={() => (editing = null)}>✕</button>
         <form class="modal-form" onsubmit={(e) => { e.preventDefault(); saveEditing(); }}>
@@ -1848,5 +1952,12 @@
   }
   .modal-delete {
     margin-left: auto;
+  }
+  .dm-add-transport {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 4px 0;
   }
 </style>

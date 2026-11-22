@@ -72,15 +72,19 @@ def upgrade() -> None:
         for n, entry in enumerate(entries, start=int(last) + 1):
             conn.execute(
                 sa.text(
-                    """INSERT INTO trip_plan_items (id, trip_id, date, title, status,
+                    """INSERT INTO trip_plan_items (id, trip_id, date, title, notes, status,
                            sort_order, created_by, created_at, updated_at)
-                       VALUES (:id, :t, :d, :title, :status, :n, :by, :now, :now)"""
+                       VALUES (:id, :t, :d, :title, :notes, :status, :n, :by, :now, :now)"""
                 ),
                 {
                     "id": str(uuid.uuid4()),
                     "t": row.trip_id,
                     "d": row.date,
+                    # Titles are capped at 300 characters; a longer entry keeps
+                    # its full text in the item's notes, since the checklist it
+                    # came from is cleared below.
                     "title": str(entry["text"]).strip()[:300],
+                    "notes": text if len(text := str(entry["text"]).strip()) > 300 else None,
                     "status": "done" if entry.get("checked") else "todo",
                     "n": n,
                     "by": row.updated_by,

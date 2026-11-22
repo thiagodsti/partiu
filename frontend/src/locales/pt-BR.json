@@ -866,5 +866,8 @@
   "organizer.add_stay": "adicionar hospedagem",
   "organizer.autosaved": "Tudo é salvo automaticamente",
   "organizer.save_and_back": "Salvar e voltar à viagem",
-  "organizer.close": "Fechar"
+  "organizer.close": "Fechar",
+  "planner.items_unavailable": "Não foi possível carregar as atividades deste dia. Recarregue a página.",
+  "organizer.title_required": "Dê um título à atividade.",
+  "organizer.note_not_saved": "A nota não foi salva"
 }

@@ -35,6 +35,9 @@ export function parseDayNote(raw: string | null | undefined): DayNoteContent {
   }
 }
 
-export function serializeDayNote(note: string): string {
-  return JSON.stringify({ note, items: [] });
+/** `legacy` is whatever checklist the stored note still carries (written by
+ * an older, cached client after migration 0041); it is written back untouched
+ * so saving the note never drops it. */
+export function serializeDayNote(note: string, legacy: LegacyChecklistItem[] = []): string {
+  return JSON.stringify({ note, items: legacy });
 }

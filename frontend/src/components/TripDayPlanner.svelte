@@ -91,9 +91,18 @@
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
-  const allDays = $derived(
-    trip.start_date && trip.end_date ? getDayRange(trip.start_date, trip.end_date) : []
-  );
+  /* The trip's own span, widened by the planner's route and dated items — the
+   * same rule the planner's board uses, so a day planned there past the trip's
+   * last booking still gets a card here. */
+  const allDays = $derived.by(() => {
+    const bounds = [
+      trip.start_date,
+      trip.end_date,
+      ...stops.flatMap((s) => [s.start_date, s.end_date]),
+      ...Object.keys(itemsByDate),
+    ].filter((d): d is string => !!d).sort();
+    return bounds.length ? getDayRange(bounds[0], bounds[bounds.length - 1]) : [];
+  });
   const days = $derived(onlyDate ? allDays.filter((d) => d === onlyDate) : allDays);
   const flightMap = $derived(groupFlightsByDate(trip.flights ?? []));
   const segmentMap = $derived(groupSegmentsByDate(segments));
@@ -105,12 +114,13 @@
   let itemsByDate = $state<Record<string, PlanItem[]>>({});
   /** The planner's route, for each day's city tags and colour. */
   let stops = $state<PlanStop[]>([]);
+  let itemsUnavailable = $state(false);
 
   /** The cities a day touches, the one slept in first (it colours the card). */
-  function citiesOn(date: string): { name: string; color: string }[] {
+  function citiesOn(date: string): { id: string; name: string; color: string }[] {
     const on = stops.filter((s) => s.start_date <= date && date <= s.end_date);
     on.sort((a, b) => Number(b.start_date <= date && date < b.end_date) - Number(a.start_date <= date && date < a.end_date));
-    return on.map((s) => ({ name: s.name, color: stopColor(stops, s) }));
+    return on.map((s) => ({ id: s.id, name: s.name, color: stopColor(stops, s) }));
   }
   let loaded = $state(false);
   let loadError = $state<string | null>(null);
@@ -130,6 +140,7 @@
       }
       itemsByDate = byDate;
       stops = plan?.stops ?? [];
+      itemsUnavailable = plan === null;
       onLoaded?.(map);
     } catch {
       loadError = 'Failed to load planner notes.';
@@ -139,7 +150,7 @@
 </script>
 
 <div class="planner">
-  {#if !trip.start_date || !trip.end_date}
+  {#if loaded && allDays.length === 0}
     <p class="planner-empty">{$t('planner.no_dates')}</p>
   {:else if loadError}
     <p class="planner-empty" style="color:var(--danger)">{loadError}</p>
@@ -157,6 +168,7 @@
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         planItems={itemsByDate[date] ?? []}
         cities={citiesOn(date)}
+        {itemsUnavailable}
         dayNumber={allDays.indexOf(date) + 1}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}

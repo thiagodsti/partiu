@@ -46,6 +46,7 @@ class TestChecklistsBecomePlanItems:
                                     {"text": "Cidade Proibida", "checked": True},
                                     {"text": "  ", "checked": False},
                                     {"text": "Pato de Pequim", "checked": False},
+                                    {"text": "x" * 320, "checked": False},
                                 ],
                             }
                         ),
@@ -80,8 +81,14 @@ class TestChecklistsBecomePlanItems:
         assert [tuple(r) for r in items] == [
             ("2027-03-25", "Cidade Proibida", "done", 0, 1),
             ("2027-03-25", "Pato de Pequim", "todo", 1, 1),
+            ("2027-03-25", "x" * 300, "todo", 2, 1),
             ("2027-03-26", "Muralha", "todo", 0, 1),
         ]
         assert json.loads(notes["2027-03-25"]) == {"note": "Levar casaco", "items": []}
+        with db.db_conn() as conn:
+            long_notes = conn.execute(
+                "SELECT notes FROM trip_plan_items WHERE title = ?", ("x" * 300,)
+            ).fetchone()[0]
+        assert long_notes == "x" * 320
         assert json.loads(notes["2027-03-26"]) == {"note": "old", "items": []}
         assert notes["2027-03-27"] == "plain text note"

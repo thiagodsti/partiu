@@ -17,6 +17,10 @@ describe('parseDayNote', () => {
     expect(parseDayNote('42')).toEqual({ note: '42', items: [] });
     expect(parseDayNote('')).toEqual({ note: '', items: [] });
   });
+  it('keeps a legacy checklist when saving the note', () => {
+    const legacy = [{ text: 'old', checked: false }];
+    expect(parseDayNote(serializeDayNote('n', legacy))).toEqual({ note: 'n', items: legacy });
+  });
   it('round-trips through serializeDayNote', () => {
     expect(parseDayNote(serializeDayNote('Levar casaco')).note).toBe('Levar casaco');
   });

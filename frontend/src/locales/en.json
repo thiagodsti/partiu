@@ -866,5 +866,8 @@
   "organizer.add_stay": "add a stay",
   "organizer.autosaved": "Everything saves automatically",
   "organizer.save_and_back": "Save and back to trip",
-  "organizer.close": "Close"
+  "organizer.close": "Close",
+  "planner.items_unavailable": "Couldn't load this day's plan. Reload the page.",
+  "organizer.title_required": "Give the item a title.",
+  "organizer.note_not_saved": "The note was not saved"
 }

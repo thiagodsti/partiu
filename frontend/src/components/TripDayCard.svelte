@@ -32,7 +32,10 @@
     planItems?: PlanItem[];
     /** The route's cities on this day, the one slept in first; it colours
      * the card the way the planner frames its days. */
-    cities?: { name: string; color: string }[];
+    cities?: { id: string; name: string; color: string }[];
+    /** The planner's items could not be loaded: show that rather than an
+     * empty, editable list that would hide what is really there. */
+    itemsUnavailable?: boolean;
     dayNumber?: number;
     /** Kept for callers; the card is always editable now, so these only
      * matter for printing, where the edit controls are hidden by CSS. */
@@ -51,6 +54,7 @@
     planItems = [],
     cities = [],
     dayNumber,
+    itemsUnavailable = false,
   }: Props = $props();
 
   const SEGMENT_ICONS: Record<SegmentType, string> = {
@@ -293,9 +297,13 @@
     }
   }
 
-  async function renameItem(item: PlanItem, title: string) {
-    const clean = title.trim();
-    if (!clean) return deleteItem(item);
+  async function renameItem(item: PlanItem, el: HTMLTextAreaElement) {
+    const clean = el.value.trim();
+    // Clearing the text is not a delete — that is the ✕ — so put it back.
+    if (!clean) {
+      el.value = item.title;
+      return;
+    }
     if (clean === item.title) return;
     item.title = clean;
     await plannerApi.updateItem(tripId, item.id, { title: clean }).catch(() => {});
@@ -324,7 +332,7 @@
   async function doSave() {
     saving = true;
     try {
-      await dayNotesApi.upsert(tripId, date, serializeDayNote(note));
+      await dayNotesApi.upsert(tripId, date, serializeDayNote(note, initialContent.items));
       saved = true;
       setTimeout(() => { saved = false; }, 1500);
     } catch {
@@ -342,7 +350,7 @@
       <span class="dc-date">{formatDayHeader()}</span>
     </div>
     <div class="dc-cities">
-      {#each cities as c (c.name)}
+      {#each cities as c (c.id)}
         <span class="dc-city" style="--stop:{c.color}">{c.name}</span>
       {/each}
     </div>
@@ -386,6 +394,9 @@
     </div>
   {/if}
 
+  {#if itemsUnavailable}
+    <div class="dc-section dc-unavailable">{$t('planner.items_unavailable')}</div>
+  {:else}
   <div class="dc-section dc-items">
     {#each items as item (item.id)}
       <div class="dc-item status-{item.status}">
@@ -405,7 +416,7 @@
               value={item.title}
               use:autogrow
               aria-label={$t('organizer.item_title')}
-              onblur={(e) => renameItem(item, (e.currentTarget as HTMLTextAreaElement).value)}
+              onblur={(e) => renameItem(item, e.currentTarget as HTMLTextAreaElement)}
             ></textarea>
           </div>
           {#if item.place_name}<span class="dc-place">📍 {item.place_name}</span>{/if}
@@ -422,6 +433,7 @@
       onblur={addItem}
     />
   </div>
+  {/if}
 
   <textarea
     class="dc-note"
@@ -495,6 +507,9 @@
     color: var(--text-muted);
     font-size: 0.78rem;
     margin: 0 4px;
+  }
+  .dc-unavailable {
+    color: var(--warning-text, var(--warning));
   }
   .dc-items {
     display: flex;
