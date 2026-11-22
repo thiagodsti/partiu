@@ -1146,3 +1146,68 @@ def _airport_distance(iata_a: str, iata_b: str) -> float:
         return 6371 * 2 * math.asin(math.sqrt(h))
     except Exception:
         return 1.0
+
+
+# ---------------------------------------------------------------------------
+# Money
+# ---------------------------------------------------------------------------
+#
+# Booking platforms print a total as "SEK 2,003.00" (Trip.com) or "€ 69.23"
+# (Booking.com). Only symbols that name one currency are read: "$", "¥" and
+# "kr" each stand for several, and a wrong currency is worse than no amount,
+# since the expense it becomes would be counted against the wrong budget.
+
+_MONEY_SYMBOLS = {"€": "EUR", "£": "GBP", "R$": "BRL", "US$": "USD"}
+_MONEY_RE = re.compile(
+    r"(?<![\w-])(?P<cur>[A-Z]{3}|R\$|US\$|€|£)\s?(?P<num>\d[\d.,\u00a0\u202f ]*\d|\d)(?![\w%])"
+    r"|(?<![\w-])(?P<num2>\d[\d.,\u00a0\u202f ]*\d|\d)\s?(?P<cur2>[A-Z]{3}|€|£)(?![\w])"
+)
+
+
+def _parse_number(raw: str) -> float | None:
+    """ "2,003.00", "1.234,56", "1 234,56" and "69.23" as floats.
+
+    With both separators present the last one is the decimal point. With only
+    one, it is decimal when exactly two digits follow it and a thousands
+    separator otherwise ("1,234" is one thousand, not one point two).
+    """
+    text = re.sub(r"[\s\u00a0\u202f]", "", raw)
+    last_dot, last_comma = text.rfind("."), text.rfind(",")
+    if last_dot >= 0 and last_comma >= 0:
+        decimal = "." if last_dot > last_comma else ","
+        thousands = "," if decimal == "." else "."
+        text = text.replace(thousands, "").replace(decimal, ".")
+    elif last_dot >= 0 or last_comma >= 0:
+        sep = "." if last_dot >= 0 else ","
+        head, _, tail = text.rpartition(sep)
+        if len(tail) == 2 and text.count(sep) == 1:
+            text = f"{head}.{tail}"
+        else:
+            text = text.replace(sep, "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def parse_money(text: str) -> tuple[float, str] | None:
+    """The first unambiguous positive amount in ``text``, as (amount, ISO code).
+
+    Returns None for a negative amount (a discount line), an ambiguous symbol,
+    or a three-letter code the expenses feature does not support.
+    """
+    from ..expenses.domain import SUPPORTED_CURRENCIES
+
+    for m in _MONEY_RE.finditer(text or ""):
+        start = m.start()
+        if start > 0 and text[start - 1] in "-−":
+            continue
+        cur = m.group("cur") or m.group("cur2")
+        num = m.group("num") or m.group("num2")
+        code = _MONEY_SYMBOLS.get(cur, cur)
+        if code not in SUPPORTED_CURRENCIES:
+            continue
+        amount = _parse_number(num)
+        if amount is not None and amount > 0:
+            return round(amount, 2), code
+    return None

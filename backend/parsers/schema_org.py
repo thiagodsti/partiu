@@ -308,7 +308,33 @@ def _reservation_to_stay(obj: dict) -> dict | None:
         "check_out_datetime": check_out,
         "booking_reference": _text(obj.get("reservationNumber")) or None,
         "contact": _text(target.get("telephone")) or None,
+        "price": _lodging_price(obj),
     }
+
+
+def _lodging_price(obj: dict) -> tuple[float, str] | None:
+    """``totalPrice`` + ``priceCurrency``, when the publisher states both.
+
+    None of the measured Airbnb records carries a price, so this reads only the
+    plain shape the spec gives (a number, or a PriceSpecification with ``price``)
+    and an ISO currency code; anything else is no price rather than a guess.
+    """
+    from ..expenses.domain import SUPPORTED_CURRENCIES
+
+    total = obj.get("totalPrice")
+    currency = _text(obj.get("priceCurrency"))
+    if isinstance(total, dict):
+        currency = currency or _text(total.get("priceCurrency"))
+        total = total.get("price")
+    raw = str(total) if isinstance(total, int | float) else _text(total)
+    try:
+        amount = float(raw.replace(",", ""))
+    except ValueError:
+        return None
+    code = currency.upper()
+    if amount <= 0 or code not in SUPPORTED_CURRENCIES:
+        return None
+    return round(amount, 2), code
 
 
 def extract_lodging_reservations(email_msg) -> list[dict]:

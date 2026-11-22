@@ -40,6 +40,10 @@ Four decisions are deliberate:
   than none.
 - The **country** is printed as a name inside the address, never as a code, and
   is left to the importer's geocode for the same reason ``booking_com`` does.
+- The **price is the "Total"** at the foot of "Price details", which is what
+  was charged: the room rate above it is before Trip.com's discounts ("China
+  travel deal -SEK 687.00", ...), and the cancellation fees and per-person
+  breakfast prices elsewhere in the mail are not the booking's cost.
 
 Trip.com also sells flights and trains from other ``trip.com`` mailboxes; the
 hotel template is recognised by its own subject and "Booking details" block, so
@@ -52,7 +56,7 @@ from datetime import date as date_type
 
 from .engine import parse_flight_date
 from .schema_org import DEFAULT_CHECK_IN_TIME, DEFAULT_CHECK_OUT_TIME
-from .shared import html_to_text
+from .shared import html_to_text, parse_money
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +137,18 @@ def _room_type(lines: list[str]) -> str | None:
     return None
 
 
+def _price(lines: list[str]) -> tuple[float, str] | None:
+    """The "Total" of the price block: "Total / Prepay Online / SEK 2,003.00"."""
+    start = next((i for i, ln in enumerate(lines) if ln == "Price details"), -1)
+    if start < 0:
+        return None
+    for value in _after(lines[start:], "Total", 2):
+        money = parse_money(value)
+        if money:
+            return money
+    return None
+
+
 def _contact(lines: list[str]) -> str | None:
     for line in lines:
         m = _PHONE_RE.match(line)
@@ -190,5 +206,6 @@ def extract_trip_com_stays(email_msg) -> list[dict]:
         "contact": _contact(lines),
         "room_type": _room_type(lines),
         "guests": None,
+        "price": _price(lines),
     }
     return [stay]

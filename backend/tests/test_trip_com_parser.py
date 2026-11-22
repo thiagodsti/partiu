@@ -54,6 +54,17 @@ Twin Room with Sea View
 1 Room 3 nights
 Guest names
 Test Passenger
+Price details
+1 Room × 3 nights
+SEK 3,000.00
+Summer deal
+-SEK 500.00
+Prepay Online
+Paid
+SEK 2,500.00
+Total
+Prepay Online
+SEK 2,500.00
 """
 
 
@@ -99,6 +110,23 @@ class TestRealConfirmation:
         (stay,) = extract_trip_com_stays(trip_email)
         assert stay["country_code"] is None
         assert stay["guests"] is None
+
+
+class TestPrice:
+    def test_the_real_total_is_what_was_paid(self, trip_email):
+        """After the discounts, not the SEK 3,428 room rate, a cancellation fee
+        or the CNY breakfast price elsewhere in the mail."""
+        (stay,) = extract_trip_com_stays(trip_email)
+        assert stay["price"] == (2003.0, "SEK")
+
+    def test_the_synthetic_total(self):
+        (stay,) = extract_trip_com_stays(_Email())
+        assert stay["price"] == (2500.0, "SEK")
+
+    def test_no_price_block_means_no_price(self):
+        text = TEXT.split("Price details")[0]
+        (stay,) = extract_trip_com_stays(_Email(text))
+        assert stay["price"] is None
 
 
 class TestSyntheticTemplate:

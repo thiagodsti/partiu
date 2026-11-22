@@ -39,7 +39,7 @@ from datetime import date as date_type
 
 from .engine import parse_flight_date
 from .schema_org import DEFAULT_CHECK_IN_TIME, DEFAULT_CHECK_OUT_TIME
-from .shared import html_to_text
+from .shared import html_to_text, parse_money
 
 logger = logging.getLogger(__name__)
 
@@ -204,5 +204,8 @@ def extract_booking_com_stays(email_msg) -> list[dict]:
         "contact": _contact(_field(fields, "Phone", extra=1)),
         "room_type": room or None,
         "guests": _guest_count(_field(fields, "You booked for", extra=1)),
+        # "Total price" closes "Price details" and includes VAT and city tax;
+        # the room rate above it does not, and "Cancellation cost" is a fee.
+        "price": parse_money(_field(lines, "Total price", extra=1)),
     }
     return [stay]
