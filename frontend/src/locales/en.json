@@ -865,5 +865,6 @@
   "organizer.add_transport": "transport",
   "organizer.add_stay": "add a stay",
   "organizer.autosaved": "Everything saves automatically",
-  "organizer.save_and_back": "Save and back to trip"
+  "organizer.save_and_back": "Save and back to trip",
+  "organizer.close": "Close"
 }

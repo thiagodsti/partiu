@@ -865,5 +865,6 @@
   "organizer.add_transport": "transporte",
   "organizer.add_stay": "adicionar hospedagem",
   "organizer.autosaved": "Tudo é salvo automaticamente",
-  "organizer.save_and_back": "Salvar e voltar à viagem"
+  "organizer.save_and_back": "Salvar e voltar à viagem",
+  "organizer.close": "Fechar"
 }

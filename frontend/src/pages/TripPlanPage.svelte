@@ -382,6 +382,11 @@
 
   /** A new stay for the night of `date`, running to the end of that city's
    * stop when there is one. */
+  function closeBookingEditors() {
+    staysEditor?.closeForm();
+    legsEditor?.closeForm();
+  }
+
   function addStay(date: string) {
     const stop = stops.find((s) => s.start_date <= date && date < s.end_date);
     staysEditor?.openAdd(date, stop?.end_date ?? addDays(date, 1));
@@ -644,6 +649,16 @@
     return itemsOn(date).indexOf(item) + 1;
   }
 </script>
+
+<!-- Esc closes whichever dialog is open, wherever focus happens to be: the
+     booking editors open from a board button, which keeps the focus. -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key !== 'Escape') return;
+    if (editing) editing = null;
+    else if (stayFormOpen || legFormOpen) closeBookingEditors();
+  }}
+/>
 
 <div class="planner-page">
   {#if loading}
@@ -1019,8 +1034,21 @@
       </aside>
     </div>
 
-    <div class="modal-backdrop" class:closed={!stayFormOpen && !legFormOpen} role="presentation">
-      <div class="modal booking-modal" role="dialog" aria-modal="true">
+    <div
+      class="modal-backdrop"
+      class:closed={!stayFormOpen && !legFormOpen}
+      role="presentation"
+      onclick={closeBookingEditors}
+    >
+      <div
+        class="modal booking-modal"
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={() => {}}
+      >
+        <button class="modal-close" type="button" aria-label={$t('organizer.close')} onclick={closeBookingEditors}>✕</button>
         <TripStays
           bind:this={staysEditor}
           editorOnly
@@ -1049,8 +1077,9 @@
           aria-modal="true"
           tabindex="-1"
           onclick={(e) => e.stopPropagation()}
-          onkeydown={(e) => { if (e.key === 'Escape') editing = null; }}
+          onkeydown={() => {}}
         >
+        <button class="modal-close" type="button" aria-label={$t('organizer.close')} onclick={() => (editing = null)}>✕</button>
         <form class="modal-form" onsubmit={(e) => { e.preventDefault(); saveEditing(); }}>
           <label class="field">
             <span class="form-label">{$t('organizer.item_title')}</span>
@@ -1097,7 +1126,8 @@
           </label>
           <div class="form-actions">
             <button class="btn btn-primary btn-sm" type="submit">{$t('organizer.save')}</button>
-            <button class="btn btn-danger btn-sm" type="button" onclick={() => editing && deleteItem(editing)}>{$t('organizer.remove')}</button>
+            <button class="btn btn-secondary btn-sm" type="button" onclick={() => (editing = null)}>{$t('organizer.cancel')}</button>
+            <button class="btn btn-danger btn-sm modal-delete" type="button" onclick={() => editing && deleteItem(editing)}>{$t('organizer.remove')}</button>
           </div>
         </form>
         </div>
@@ -1527,9 +1557,15 @@
     background: rgb(0 0 0 / 0.4);
     display: grid;
     place-items: center;
-    z-index: 50;
+    /* Above the app's tab bar (120) and side rail, which otherwise cover the
+       dialog's buttons on a phone. */
+    z-index: 500;
+    padding: 16px 0;
   }
   .modal {
+    position: relative;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -1769,8 +1805,36 @@
     display: none;
   }
   .booking-modal {
+    padding-top: 48px;
     width: min(640px, calc(100vw - 32px));
     max-height: calc(100vh - 64px);
     overflow-y: auto;
+  }
+  .modal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    cursor: pointer;
+  }
+  .modal-close:hover {
+    background: var(--bg-subtle, var(--surface-alt));
+    color: var(--text-primary);
+  }
+  /* The item dialog's first field sits under the close button otherwise. */
+  .modal-form {
+    padding-top: 18px;
+  }
+  .modal-delete {
+    margin-left: auto;
   }
 </style>

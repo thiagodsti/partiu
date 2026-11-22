@@ -247,7 +247,7 @@
     showForm = true;
   }
 
-  function closeForm() {
+  export function closeForm() {
     showForm = false;
     editingId = null;
     formError = null;
