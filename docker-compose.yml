@@ -14,7 +14,7 @@ services:
   # Optional: LLM fallback for parsing emails from unknown airlines.
   # To enable: uncomment this service AND set OLLAMA_URL=http://ollama:11434
   # in your .env file. On first start, pull a model:
-  #   docker compose exec ollama ollama pull qwen2.5:1.5b
+  #   docker compose exec ollama ollama pull qwen3:4b-instruct
   # ---------------------------------------------------------------------------
   # ollama:
   #   image: ollama/ollama

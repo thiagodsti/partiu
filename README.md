@@ -276,7 +276,8 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
 | `PHOTON_URL` | | Geocoder for the station, hotel and address pickers (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and type places as plain text — note that a place with no coordinates gets no map pin, no timezone conversion, and does not count toward visited countries |
 | `OLLAMA_URL` | | Ollama endpoint for the LLM parsing fallback (e.g. `http://ollama:11434`). Unset, the fallback is disabled and only the built-in airline rules run |
-| `OLLAMA_MODEL` | | Model for the fallback (default: `qwen2.5:1.5b`) |
+| `OLLAMA_MODEL` | | Model for the fallback (default: `qwen3:4b-instruct`) |
+| `OLLAMA_NUM_CTX` | | Context window sent with every request, in tokens (default: `8192`). Ollama's own default of 4096 is too small for long itineraries, and Ollama refuses rather than truncates |
 | `SECURE_COOKIES` | | Set to `false` when testing over plain HTTP on a local network. Leave `true` in production |
 | `ANNOUNCEMENT` | | A short message shown as a banner to every signed-in user |
 | `DEMO_MODE` | | Set to `true` on a public demo instance: the login page prints the shared demo credentials with a one-click sign-in, a permanent banner says the account is shared, the sign-in throttles are relaxed, and credential/account changes are refused (see below). Off by default, and while it is off the endpoint serving the credentials returns nothing |
@@ -455,6 +456,16 @@ uv run python -m backend.tools.corpus_report --quiet --json data/corpus_rows.jso
 
 Name resolution needs a populated `airports` table, so point `--db` at a real database (default `data/partiu.db`).
 
+### eval_llm_corpus — score the LLM fallback with an answer key
+
+Samples the cached corpus (two mails per airline rule plus fifteen with nothing travel-shaped), runs the production prompt over each, and scores every leg against what the airline rules extract: right only when flight number, both airports and departure date all match. Wrong legs and legs reported in the negatives are counted apart, since a wrong leg lands in a trip looking ordinary. The sample is seeded, so two runs see the same mails and a prompt change can be measured before it ships.
+
+```bash
+uv run python -m backend.tools.eval_llm_corpus --model qwen3:4b-instruct
+uv run python -m backend.tools.eval_llm_corpus --model qwen3:4b-instruct \
+    --ollama-url http://server:11434 --json data/eval_llm.json
+```
+
 ### eval_eml_files — test models against .eml files
 
 Runs one or two Ollama models against a list of `.eml` files and prints a side-by-side comparison. Useful for evaluating LLM prompt changes against known flight emails.
@@ -512,23 +523,33 @@ uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-htm
 
 ## LLM fallback — findings & limitations
 
-The LLM fallback was evaluated against 114 real flight emails using two small local models via [Ollama](https://ollama.com):
+Measured in November 2026 with `eval_llm_corpus` on a CPU-only server (i7-7820HQ, 4 cores, no GPU): 40 mails from the corpus, 25 with 53 legs the airline rules read (14 airlines) and 15 with none.
 
-| Model | Extracted | Invalid data | Rejected |
-|---|---|---|---|
-| `qwen2.5:1.5b` | 0 (0%) | 2 (2%) | 112 (98%) |
-| `qwen2.5:0.5b` | 21 (18%) | 57 (50%) | 36 (32%) |
+| Model | Legs right | Wrong legs | Mails fully right | Negatives with a leg | Seconds per mail (median) |
+|---|---|---|---|---|---|
+| `qwen3:4b-instruct` | 42/53 (79%) | 6 | 17/25 | 2/15 | ~68 |
+| `gemma3:4b` ¹ | 26/53 (49%) | 11 | 10/25 | 1/15 | ~63 |
+| `qwen3:4b-instruct`, before the fixes below | 0/53 | 0 | 0/25 | 0/15 | ~45 |
 
-**Key findings:**
+¹ Answers taken with the leg fields required but before the context and body fixes; `qwen3:4b-instruct` under the same conditions scores 35/53.
 
-- **`qwen2.5:1.5b`** is too conservative — it rejects nearly everything, including obvious booking confirmation emails.
-- **`qwen2.5:0.5b`** finds more flights but has a high invalid-data rate: it frequently confuses booking references with flight numbers, uses city names instead of IATA codes, and invents today's date instead of reading the date from the email. Most of these are caught by validation and never reach the DB.
-- The validation layer (IATA format checks, required fields, airport DB lookup) is the critical safety net — it prevents hallucinated data from being imported regardless of model quality.
-- For structured HTML airline emails (which is most of them), a dedicated rule-based parser will always outperform a small local LLM. The LLM is only useful for plain-text or unusual formats.
+The fixes. Requiring the leg fields is what took it off zero; the others together added the rest:
 
-**Conclusion:** the LLM fallback is not reliable enough to replace parser rules for known airlines. It may work better with a larger or more capable model (e.g. `llama3`, `mistral`, or a cloud API), but this has not been tested.
+- **Required leg fields.** The JSON schema listed the leg fields without requiring them, and small models stop after the flight number (`{"flight_number": "AD4849"}`), so every leg failed validation.
+- **`num_ctx`.** Ollama's default window is 4096 tokens, the system prompt alone is about 1000, and Ollama answers 400 to a request that does not fit. The longest itineraries (a four-leg BA/Iberia e-ticket) never reached the model.
+- **The email's own date** in the prompt instead of the sync date, which is what the year of a `02/03`-style date is derived from.
+- **Prefixing digits-only flight numbers** with the airline code the model returned (`"783"` + `"TP"`).
+- **"Manage your booking" no longer ends the body.** It sits above the itinerary in some mails (Vueling), which left the model 379 characters of greeting.
+- **The flight number must appear in the mail.** This drops invented numbers (`VP1234` for a Vueling round trip, `NK117` in a Norwegian reminder) and, on this sample, nothing that was right. Airports are not checked that way: many mails print only city names and the model maps those correctly.
 
-To improve results, edit the system prompt in `backend/integrations/llm/parser.py` (`_PROMPT_SYSTEM`) and re-run `eval_eml_files` against known flight emails to measure the impact.
+What is still wrong, and why the fallback stays a last resort:
+
+- **Inverted routes** are the main remaining error (4 of the 6 wrong legs; the other two are LATAM's FLN read as FLY, a real airport in Australia): Azul (`Seu voo para Florianópolis` above `VCP … FLN`) and ITA (`FCO LIN`) come back as FLN→VCP and LIN→FCO every time. A prompt rule about direction did not change that over the full sample, nor did renaming the fields to `from_`/`to_` on the Azul mails (in these runs Ollama wrote the required keys in alphabetical order, so `arr_airport` comes first, which looked like the cause).
+- **Long multi-leg itineraries** lose legs (Qatar, Kiwi.com).
+- **Mails with city names only and no codes** (an SAS receipt PDF) come back as no flight.
+- **At about a minute per mail on a CPU**, it is fine for the incremental sync's handful of unknown mails, not for a backfill.
+
+Validation (IATA format, flight number shape, plausibility, the grounding check) is still the safety net, but an inverted route passes all of it. A larger model or a GPU would likely do better; neither has been measured.
 
 ---
 

@@ -106,7 +106,7 @@ def llm_available() -> bool:
     return bool(settings.OLLAMA_URL)
 
 
-_FLIGHT_SCHEMA = {
+_FLIGHT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["has_flight"],
     "properties": {
@@ -129,14 +129,36 @@ _FLIGHT_SCHEMA = {
                     "seat": {"type": ["string", "null"]},
                     "cabin_class": {"type": ["string", "null"]},
                 },
+                # Without this a small model answers {"flight_number": "AD4849"}
+                # and stops: nothing in a schema obliges it to write a field it
+                # merely lists, and every such leg fails validation.
+                "required": [
+                    "flight_number",
+                    "dep_airport",
+                    "arr_airport",
+                    "dep_datetime",
+                    "dep_date",
+                    "airline_code",
+                ],
             },
         },
     },
 }
 
 
-def _call_ollama(prompt: str, model: str, ollama_url: str, timeout: int = 180) -> str | None:
-    """Send a chat completion request to Ollama and return the raw response text."""
+def _call_ollama(
+    prompt: str, model: str, ollama_url: str, timeout: int = 180, num_ctx: int | None = None
+) -> str | None:
+    """Send a chat completion request to Ollama and return the raw response text.
+
+    num_ctx is sent on every request: Ollama's default window (4096 tokens) is
+    smaller than the system prompt plus a long itinerary, and Ollama answers 400
+    to a request that does not fit rather than truncating it.
+    """
+    if num_ctx is None:
+        from ...config import settings
+
+        num_ctx = settings.OLLAMA_NUM_CTX
     payload = json.dumps(
         {
             "model": model,
@@ -145,7 +167,7 @@ def _call_ollama(prompt: str, model: str, ollama_url: str, timeout: int = 180) -
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
-            "options": {"temperature": 0},
+            "options": {"temperature": 0, "num_ctx": num_ctx},
             "format": _FLIGHT_SCHEMA,
         }
     ).encode()
@@ -169,11 +191,44 @@ def _call_ollama(prompt: str, model: str, ollama_url: str, timeout: int = 180) -
         return None
 
 
+def _clean_flight_number(value: Any) -> str:
+    """Uppercase, without spaces of either kind: the one form every check compares."""
+    return str(value or "").upper().replace(" ", "").replace("\xa0", "")
+
+
+def _prefix_flight_number(flight: dict[str, Any]) -> None:
+    """Prefix a digits-only flight number with the airline code the model gave.
+
+    Small models often copy "783" as printed next to a "TP" logo; the prompt asks
+    for "TP783", but the code is in the same answer, so repair it here.
+    """
+    fn = _clean_flight_number(flight.get("flight_number"))
+    code = str(flight.get("airline_code") or "").strip().upper()
+    if fn.isdigit() and re.fullmatch(r"[A-Z0-9]{2}", code):
+        flight["flight_number"] = code + fn
+
+
+def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
+    """True when the leg's flight number appears in the mail (subject and body).
+
+    The model is asked to copy, not to infer, and a small one invents: a Vueling
+    round trip came back as "VP1234" both ways, a Norwegian reminder as "NK117".
+    Both pass _validate_flight. The digits may carry leading zeros or a space
+    after the airline code ("AY0806", "QR 168"), and must not be part of a longer
+    number. Airports are not checked the same way: many mails print only city
+    names ("Stockholm-Arlanda", "Sicily-Catania") and the model maps those to
+    the right codes.
+    """
+    fn = _clean_flight_number(flight.get("flight_number"))
+    digits = re.sub(r"^[A-Z0-9]{2}(?=\d)", "", fn).lstrip("0")
+    return digits.isdigit() and re.search(rf"(?<!\d)0*{digits}(?!\d)", text) is not None
+
+
 def _validate_flight(flight: dict[str, Any]) -> bool:
     """Basic sanity checks so we don't insert obviously wrong data."""
     dep = (flight.get("dep_airport") or "").upper()
     arr = (flight.get("arr_airport") or "").upper()
-    fn = (flight.get("flight_number") or "").upper().replace(" ", "").replace("\xa0", "")
+    fn = _clean_flight_number(flight.get("flight_number"))
     # All three are required
     if not dep or not arr or not fn:
         return False
@@ -267,7 +322,6 @@ _END_OF_CONTENT_RE = re.compile(
     r"|registration:\s+amtsgericht|executive\s+board:"
     # Post-itinerary service/marketing section headers
     r"|\w[\w\s]{2,30}online\s+services"  # e.g. "Lufthansa Online Services"
-    r"|manage\s+(?:your\s+)?booking"
     r"|flight\s+services\s*$"  # standalone "Flight services" header
     r"|current\s+entry\s+regulations"
     r"|information\s+regarding\s+(?:medical|health|mask)"
@@ -282,7 +336,7 @@ _END_OF_CONTENT_RE = re.compile(
 # Individual noise lines to remove throughout the body (mid-email links, labels, legal)
 _NOISE_LINE_RE = re.compile(
     r"^\s*(?:unsubscribe|terms\s+and\s+conditions|privacy\s+policy|legal\s+notice"
-    r"|manage\s+(?:your\s+)?(?:email|preferences|subscription)"
+    r"|manage\s+(?:your\s+)?(?:email|preferences|subscription|booking)"
     r"|you\s+(?:are\s+)?(?:receiving|subscribed)"
     r"|©|\u00a9|all\s+rights\s+reserved"
     r"|this\s+(?:email|message)\s+(?:was\s+sent|is\s+(?:auto|confirm))"
@@ -366,12 +420,17 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
 
     from datetime import UTC, datetime
 
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    # The prompt derives the year of "02/03"-style dates from this, so it has to be
+    # the date the email was sent, not the date of the sync.
+    email_date = (email_msg.date or datetime.now(UTC)).strftime("%Y-%m-%d")
 
     body_text = build_llm_body(email_msg)
+    # What the flight number is checked against: the mail only, not the prompt,
+    # whose generated "Email date: 2026-…" line would ground an invented AD2026.
+    mail_text = f"{email_msg.subject or ''}\n{body_text}"
 
     prompt = _PROMPT_USER_TEMPLATE.format(
-        today=today,
+        today=email_date,
         sender=email_msg.sender or "",
         subject=email_msg.subject or "",
         body=body_text,
@@ -402,8 +461,12 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         # Backfill booking_reference from top-level if missing
         if not f.get("booking_reference") and booking_ref:
             f["booking_reference"] = booking_ref
+        _prefix_flight_number(f)
         if not _validate_flight(f):
             logger.debug("LLM flight failed validation: %s", f)
+            continue
+        if not _flight_number_in_text(f, mail_text):
+            logger.debug("LLM flight number not found in the email: %s", f)
             continue
         results.append(_normalise_flight(f, "", ""))
 
