@@ -537,8 +537,13 @@ export const stationsApi = {
  * stationsApi because the station search is tag-filtered to stations — a hotel
  * reaching it would land in the train-station dropdown. */
 export const placesApi = {
-  search: (q: string, kind: 'stay' | 'poi' = 'stay') =>
-    get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}&kind=${kind}`),
+  /* `near` biases the ranking towards a point: the organizer passes the middle
+   * of the trip's route, so a sight's name finds the one on this trip. */
+  search: (q: string, kind: 'stay' | 'poi' = 'stay', near?: { lat: number; lon: number } | null) =>
+    get<PlaceResult[]>(
+      `/api/places/search?q=${encodeURIComponent(q)}&kind=${kind}` +
+        (near ? `&lat=${near.lat.toFixed(2)}&lon=${near.lon.toFixed(2)}` : ''),
+    ),
 };
 
 /** Cities, towns and villages — a trip's own ends. Separate from placesApi

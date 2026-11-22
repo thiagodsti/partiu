@@ -20,9 +20,11 @@
      * name — the country is what makes the leg count toward visited countries,
      * and the address is what makes the calendar entry tappable into maps. */
     onchange: (place: PickedPlace) => void;
+    /** Ranks results near this point first ('stay' and 'poi' only). */
+    near?: { lat: number; lon: number } | null;
   }
 
-  const { value, lat, lon, kind, placeholder = '', id, onchange }: Props = $props();
+  const { value, lat, lon, kind, placeholder = '', id, onchange, near = null }: Props = $props();
 
   let results = $state<PlaceResult[]>([]);
   let open = $state(false);
@@ -93,7 +95,7 @@
       // usually only findable as the latter. Stations stay tag-filtered.
       const found =
         kind === 'stay' || kind === 'poi'
-          ? await placesApi.search(q, kind)
+          ? await placesApi.search(q, kind, near)
           : kind === 'city'
             ? await citiesApi.search(q)
             : await stationsApi.search(q, kind);

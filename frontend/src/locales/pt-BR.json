@@ -832,7 +832,7 @@
   "organizer.notes": "Notas",
   "organizer.add_item": "+ adicionar (ex.: 07:20 Muralha)",
   "organizer.ideas": "Ideias sem dia",
-  "organizer.ideas_hint": "Arraste para um dia quando decidir.",
+  "organizer.ideas_hint": "Texto livre, sem lugar. Arraste para um dia quando decidir.",
   "organizer.add_idea": "+ nova ideia",
   "organizer.before_trip": "A fazer antes",
   "organizer.add_task": "+ nova tarefa",
@@ -853,5 +853,10 @@
   "organizer.stay": "Hospedagem",
   "organizer.map": "Mapa do planejamento",
   "organizer.map_hint": "Tudo que tem lugar. Clique no cabeçalho de um dia para focar nele.",
-  "organizer.show_on_map": "Mostrar este dia no mapa"
+  "organizer.show_on_map": "Mostrar este dia no mapa",
+  "organizer.places": "Lugares a visitar",
+  "organizer.places_hint": "Busque um lugar: ele já vai pro mapa. Arraste para um dia quando decidir.",
+  "organizer.add_place": "+ buscar lugar (ex.: Summer Palace)",
+  "organizer.add_person": "+ Adicionar pessoa…",
+  "organizer.person_name": "Nome e Enter"
 }

@@ -243,6 +243,23 @@ class TestPlaceSearch:
         assert "tourism:hotel" not in tags
         assert fetch.call_count == 2
 
+    def test_near_biases_the_search_and_keys_the_cache(self):
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("summer palace bias", "poi", near=(39.904, 116.407))
+            client.search_places("summer palace bias", "poi")
+
+        first = dict(fetch.call_args_list[0].args[0])
+        assert (first["lat"], first["lon"]) == (39.9, 116.4)
+        # The unbiased search is a different cache entry, so it is fetched too.
+        assert "lat" not in dict(fetch.call_args_list[-1].args[0])
+
     def test_a_full_tagged_result_set_costs_one_request(self):
         from unittest.mock import patch
 

@@ -92,6 +92,8 @@ def search_places(
     q: str = "",
     limit: int = 8,
     kind: Literal["stay", "poi"] = "stay",
+    lat: float | None = None,
+    lon: float | None = None,
     user: dict = Depends(get_current_user),
 ):
     """Accommodation and address type-ahead for the stay picker, or sights and
@@ -102,5 +104,6 @@ def search_places(
     has. Returns [] when the geocoder is disabled or unreachable — the form
     falls back to free-text entry.
     """
-    results = photon.search_places(q, kind, limit)
+    near = (lat, lon) if lat is not None and lon is not None else None
+    results = photon.search_places(q, kind, limit, near=near)
     return [PlaceSearchResultDTO(**{k: v for k, v in r.items() if k != "osm_id"}) for r in results]

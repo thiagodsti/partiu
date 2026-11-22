@@ -14,6 +14,7 @@
     staysApi,
     dayNotesApi,
     expensesApi,
+    guestsApi,
     plannerApi,
   } from '../api/client';
   import type {
@@ -383,6 +384,67 @@
 
   const openTasks = $derived(tasks.filter((x) => !x.done).length);
 
+  // ---- Places to visit ----------------------------------------------------------
+  //
+  // An unscheduled item with a place is a "place to visit"; one without is an
+  // idea. Same rows, two lists: the places one adds through the sights search,
+  // so each arrives with coordinates and is on the map at once.
+
+  const PLACES = '__places__';
+  const ideas = $derived(itemsOn(null).filter((i) => i.lat == null));
+  const places = $derived(itemsOn(null).filter((i) => i.lat != null));
+
+  /** The middle of the route, to rank sights near this trip first. */
+  const routeCenter = $derived.by<{ lat: number; lon: number } | null>(() => {
+    const pts = [
+      ...stops.map((s) => [s.lat, s.lon]),
+      ...stays.map((s) => [s.place.lat, s.place.lon]),
+    ].filter((p): p is [number, number] => p[0] != null && p[1] != null);
+    if (!pts.length) return null;
+    return {
+      lat: pts.reduce((a, p) => a + p[0], 0) / pts.length,
+      lon: pts.reduce((a, p) => a + p[1], 0) / pts.length,
+    };
+  });
+
+  /** Remounts the search box after a pick, which clears it. */
+  let placeSearchKey = $state(0);
+
+  async function addPlace(p: PickedPlace) {
+    if (p.lat == null || p.lon == null) return;
+    placeSearchKey++;
+    const data = { title: p.name, place_name: p.name, lat: p.lat, lon: p.lon, date: null, status: 'idea' as const };
+    try {
+      const { id } = await plannerApi.createItem(params.id, data);
+      items = [...items, { id, ...data, time: null, notes: null, sort_order: itemsOn(null).length }];
+    } catch (err) {
+      toasts.show((err as Error).message, 'error');
+    }
+  }
+
+  // ---- People ---------------------------------------------------------------------
+
+  const NEW_PERSON = '__new__';
+  let newPersonFor = $state<string | null>(null);
+  let newPersonName = $state('');
+
+  /** Add a companion to the trip as a guest (the same people expenses can
+   * split with), then assign the task to them. */
+  async function addPerson(task: PlanTask) {
+    const name = newPersonName.trim();
+    newPersonFor = null;
+    newPersonName = '';
+    if (!name) return;
+    try {
+      const guest = await guestsApi.create(name);
+      await guestsApi.addToTrip(params.id, guest.id);
+      people = await expensesApi.participants(params.id);
+      await assign(task, personKey('guest', guest.id));
+    } catch (err) {
+      toasts.show((err as Error).message, 'error');
+    }
+  }
+
   // ---- Map --------------------------------------------------------------------
   //
   // Everything in the plan that has a place: the route's cities in order, the
@@ -647,6 +709,34 @@
       <aside class="side">
         <section
           class="panel"
+          class:drop={dropTarget === PLACES}
+          role="list"
+          ondragover={(e) => { e.preventDefault(); dropTarget = PLACES; }}
+          ondragleave={() => { if (dropTarget === PLACES) dropTarget = null; }}
+          ondrop={(e) => { e.preventDefault(); dropOn(null, null); }}
+        >
+          <h2>📍 {$t('organizer.places')}</h2>
+          <p class="hint">{$t('organizer.places_hint')}</p>
+          {#each places as item (item.id)}
+            {@render planItem(item, null)}
+          {/each}
+          {#key placeSearchKey}
+            <div class="place-search" data-testid="place-search">
+              <PlaceInput
+                kind="poi"
+                value=""
+                lat={null}
+                lon={null}
+                near={routeCenter}
+                placeholder={$t('organizer.add_place')}
+                onchange={addPlace}
+              />
+            </div>
+          {/key}
+        </section>
+
+        <section
+          class="panel"
           class:drop={dropTarget === IDEAS}
           role="list"
           ondragover={(e) => { e.preventDefault(); dropTarget = IDEAS; }}
@@ -655,7 +745,7 @@
         >
           <h2>💡 {$t('organizer.ideas')}</h2>
           <p class="hint">{$t('organizer.ideas_hint')}</p>
-          {#each itemsOn(null) as item (item.id)}
+          {#each ideas as item (item.id)}
             {@render planItem(item, null)}
           {/each}
           <input
@@ -675,15 +765,38 @@
               <select
                 class="assignee"
                 value={personKey(task.assignee_type, task.assignee_id)}
-                onchange={(e) => assign(task, (e.currentTarget as HTMLSelectElement).value)}
+                onchange={(e) => {
+                  const el = e.currentTarget as HTMLSelectElement;
+                  if (el.value === NEW_PERSON) {
+                    el.value = personKey(task.assignee_type, task.assignee_id);
+                    newPersonFor = task.id;
+                  } else {
+                    assign(task, el.value);
+                  }
+                }}
               >
                 <option value="">—</option>
                 {#each people as p (personKey(p.type, p.id))}
                   <option value={personKey(p.type, p.id)}>{p.name}</option>
                 {/each}
+                <option value={NEW_PERSON}>{$t('organizer.add_person')}</option>
               </select>
               <button class="icon-btn" aria-label={$t('organizer.remove')} onclick={() => deleteTask(task)}>×</button>
             </div>
+            {#if newPersonFor === task.id}
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                class="item-draft new-person"
+                placeholder={$t('organizer.person_name')}
+                bind:value={newPersonName}
+                autofocus
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') addPerson(task);
+                  if (e.key === 'Escape') newPersonFor = null;
+                }}
+                onblur={() => addPerson(task)}
+              />
+            {/if}
           {/each}
           <input
             class="item-draft"
@@ -729,6 +842,7 @@
             <span class="form-label">{$t('organizer.place')}</span>
             <PlaceInput
               kind="poi"
+              near={routeCenter}
               value={editing.place_name ?? ''}
               lat={editing.lat}
               lon={editing.lon}
@@ -1236,5 +1350,12 @@
     height: 480px;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
+  }
+  .place-search {
+    margin-top: 2px;
+  }
+  .new-person {
+    margin-left: 22px;
+    width: calc(100% - 22px);
   }
 </style>

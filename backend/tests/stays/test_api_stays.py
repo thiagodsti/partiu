@@ -224,6 +224,9 @@ class TestPlaceSearch:
             assert auth_client.get("/api/places/search?q=forbidden&kind=poi").status_code == 200
             assert auth_client.get("/api/places/search?q=hotel").status_code == 200
         assert [c.args[1] for c in search.call_args_list] == ["poi", "stay"]
+        with patch("backend.stays.routes.photon.search_places", return_value=[]) as search:
+            auth_client.get("/api/places/search?q=summer palace&kind=poi&lat=39.9&lon=116.4")
+        assert search.call_args.kwargs["near"] == (39.9, 116.4)
         assert auth_client.get("/api/places/search?q=x&kind=city").status_code == 422
 
     def test_geocoder_failure_returns_empty_list_not_an_error(self, auth_client):

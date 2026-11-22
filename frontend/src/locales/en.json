@@ -832,7 +832,7 @@
   "organizer.notes": "Notes",
   "organizer.add_item": "+ add (e.g. 07:20 Great Wall)",
   "organizer.ideas": "Unscheduled ideas",
-  "organizer.ideas_hint": "Drag onto a day once you decide.",
+  "organizer.ideas_hint": "Free text, no place. Drag onto a day once you decide.",
   "organizer.add_idea": "+ new idea",
   "organizer.before_trip": "Before the trip",
   "organizer.add_task": "+ new task",
@@ -853,5 +853,10 @@
   "organizer.stay": "Stay",
   "organizer.map": "Plan map",
   "organizer.map_hint": "Everything with a place. Click a day's header to focus on it.",
-  "organizer.show_on_map": "Show this day on the map"
+  "organizer.show_on_map": "Show this day on the map",
+  "organizer.places": "Places to visit",
+  "organizer.places_hint": "Search a place: it goes on the map. Drag onto a day once you decide.",
+  "organizer.add_place": "+ search a place (e.g. Summer Palace)",
+  "organizer.add_person": "+ Add person…",
+  "organizer.person_name": "Name and Enter"
 }
