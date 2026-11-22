@@ -31,7 +31,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
 - Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
 - Built-in parser rules for 19 airlines (see [Supported airlines](#supported-airlines))
-- **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, or the shared GDS receipt parser. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
+- **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, the shared GDS receipt parser, or the schema.org flight markup an airline embeds for Gmail's flight cards. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
 - **Boarding-pass mails enrich the leg you already have**: Lufthansa and LATAM passes fill seat, gate, terminal, cabin, booking reference and passenger on the stored flight — only fields that are still empty, and never a new flight, since a pass carries no arrival time
 - **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — the HTML table form, the compact one-line-per-leg form found in PDF attachments, and the fixed-column plain-text form some airlines send in a monospace body, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
 - **Turkish Airlines ticket mails**: TK sends its own branded "Ticket Details" document rather than a GDS receipt, so it gets a dedicated parser that reads both of its renderings — the HTML itinerary and, if that is missing, the attached `TicketDetails.pdf` — including connections, overnight arrivals and the Turkish-language version
@@ -47,6 +47,7 @@ Want to try it before self-hosting? A public demo is available at:
 - **Car rental confirmations import themselves** for Hertz, Sixt and Europcar (see [Car rental](#car-rental))
 - **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
 - **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
+- **schema.org flight markup** for airlines with no rule: many airlines embed a typed `FlightReservation` block (Ryanair, Lufthansa, TAP and Austrian do), and when the rules and the GDS parser find nothing it is read directly — flight number, airports by IATA code, times with their offsets. A leg whose markup lacks an airport code or a clock time is left out rather than guessed
 - **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
 - LLM fallback is used only for incremental sync, not full rescans
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
@@ -498,7 +499,7 @@ uv run python -m backend.tools.compare_eval \
 
 ### inspect_eml — run one .eml through the full pipeline
 
-Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → GDS e-ticket parser → LLM) and shows which step extracted data and what would be stored.
+Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → GDS e-ticket parser → schema.org markup → LLM) and shows which step extracted data and what would be stored.
 
 ```bash
 uv run python -m backend.tools.inspect_eml ~/Downloads/flight.eml

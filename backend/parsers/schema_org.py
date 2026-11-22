@@ -46,7 +46,7 @@ from html.parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["extract_lodging_reservations"]
+__all__ = ["extract_flight_reservations", "extract_lodging_reservations"]
 
 # A bare date carries no time, so the booking's own convention is unknowable and
 # these stand in. They mirror TripStays.svelte's DEFAULT_CHECK_IN /
@@ -344,3 +344,141 @@ def extract_lodging_reservations(email_msg) -> list[dict]:
         seen.add(key)
         stays.append(stay)
     return stays
+
+
+# ---------------------------------------------------------------------------
+# Flights
+# ---------------------------------------------------------------------------
+#
+# The same markup, for flights. Airlines ship it so Gmail can show a flight
+# card: Ryanair, Lufthansa, TAP and Austrian all do, as microdata, one
+# FlightReservation per leg (and per passenger). Every one of those already has
+# its own rule here, so this tier exists for the airline that does not: it runs
+# only when the rules and the e-ticket reader found nothing, ahead of the LLM,
+# because a typed record cannot invert a route or invent a flight number.
+#
+# Times are the one place this differs from the lodging reader: an offset is
+# **honoured**, not dropped. Airbnb's offsets were the recipient's locale and
+# wrong; the airlines' were right in every mail measured (Lufthansa's
+# "20240329T054500Z" is the 06:45 Arlanda departure in true UTC, Austrian's
+# "+01:00" is Frankfurt in January). A time without an offset is local to its
+# airport, as everywhere else. Either way the leg leaves here in UTC, flagged so
+# apply_airport_timezones does not localise it a second time.
+
+_FLIGHT_MARKER = "FlightReservation"
+_IATA = re.compile(r"[A-Z]{3}")
+_AIRLINE_CODE = re.compile(r"[A-Z0-9]{2}")
+# ISO 8601 basic format, as Lufthansa writes it: 20240329T054500Z
+_BASIC_STAMP = re.compile(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z|[+-]\d{2}:?\d{2})?")
+
+
+def _airport_code(airport) -> str:
+    """The airport's IATA code, only when the markup states one.
+
+    Names are not resolved: Ryanair marks a Bergamo arrival as just "Milan",
+    which resolves to Malpensa. A leg missing from the trip is visible; one at
+    the wrong airport is not.
+    """
+    if not isinstance(airport, dict):
+        return ""
+    for value in (airport.get("iataCode"), airport.get("name")):
+        code = _text(value).upper()
+        if _IATA.fullmatch(code):
+            return code
+    return ""
+
+
+def _flight_time(value, airport: str) -> datetime | None:
+    """A departure or arrival time as aware UTC, or None without a clock time."""
+    from ..airports.timezone import localize_to_utc
+
+    text = _text(value)
+    basic = _BASIC_STAMP.fullmatch(text)
+    if basic:
+        y, mo, d, h, mi, sec, off = basic.groups()
+        text = f"{y}-{mo}-{d}T{h}:{mi}:{sec or '00'}{off or ''}"
+    if ":" not in text:
+        # A bare date ("2019-01-24") or a label ("23FEB") says nothing about when.
+        return None
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        logger.debug("schema.org: unrecognised flight time %r", text)
+        return None
+    return localize_to_utc(stamp, airport)
+
+
+def _reservation_to_flight(obj: dict) -> dict | None:
+    from ..utils.dates import FLIGHT_NUMBER_RE
+
+    status = _text(obj.get("reservationStatus"))
+    if status and _CANCELLED.search(status):
+        logger.info("schema.org: skipping cancelled flight reservation")
+        return None
+
+    flight = obj.get("reservationFor")
+    flight = flight if isinstance(flight, dict) else {}
+    airline = flight.get("airline")
+    airline = airline if isinstance(airline, dict) else {}
+    airline_code = _text(airline.get("iataCode")).upper()
+    if not _AIRLINE_CODE.fullmatch(airline_code):
+        airline_code = ""
+
+    number = re.sub(r"[\s\xa0-]", "", _text(flight.get("flightNumber"))).upper()
+    if number.isdigit() and airline_code:
+        number = airline_code + number
+    if not FLIGHT_NUMBER_RE.match(number):
+        return None
+
+    dep = _airport_code(flight.get("departureAirport"))
+    arr = _airport_code(flight.get("arrivalAirport"))
+    if not dep or not arr or dep == arr:
+        return None
+    dep_dt = _flight_time(flight.get("departureTime"), dep)
+    if dep_dt is None:
+        return None
+
+    return {
+        "flight_number": number,
+        "departure_airport": dep,
+        "arrival_airport": arr,
+        "departure_datetime": dep_dt,
+        "arrival_datetime": _flight_time(flight.get("arrivalTime"), arr),
+        "booking_reference": _text(obj.get("reservationNumber")),
+        "passenger_name": _text(obj.get("underName")),
+        "seat": _text(obj.get("airplaneSeat")),
+        "cabin_class": _text(obj.get("airplaneSeatClass")),
+        "airline_name": _text(airline.get("name")) or airline_code,
+        "airline_code": airline_code or number[:2],
+        "departure_terminal": _text(flight.get("departureTerminal")),
+        "arrival_terminal": _text(flight.get("arrivalTerminal")),
+        "departure_gate": _text(flight.get("departureGate")),
+        "arrival_gate": _text(flight.get("arrivalGate")),
+        "_times_already_utc": True,
+    }
+
+
+def extract_flight_reservations(email_msg) -> list[dict]:
+    """Return every flight leg this email declares in schema.org markup.
+
+    One dict per leg in the rule parsers' shape, times in UTC. A leg
+    restated per passenger is returned once. ``[]`` without typed markup.
+    """
+    body = getattr(email_msg, "html_body", None) or getattr(email_msg, "body", "") or ""
+    if _FLIGHT_MARKER not in body:
+        return []
+
+    flights: list[dict] = []
+    seen: set[tuple] = set()
+    for obj in _json_ld_items(body) + _microdata_items(body):
+        if _type_of(obj) != _FLIGHT_MARKER:
+            continue
+        flight = _reservation_to_flight(obj)
+        if flight is None:
+            continue
+        key = (flight["flight_number"], flight["departure_airport"], flight["departure_datetime"])
+        if key in seen:
+            continue
+        seen.add(key)
+        flights.append(flight)
+    return flights

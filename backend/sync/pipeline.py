@@ -22,6 +22,7 @@ from ..parsers.engine import (
     merge_flights,
 )
 from ..parsers.gds_eticket import extract_gds_eticket
+from ..parsers.schema_org import extract_flight_reservations
 from ..parsers.validation import validate_flights
 from ..settings.repository import SettingsRepository
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
@@ -816,6 +817,15 @@ def _process_emails(
             gds_flights = extract_gds_eticket(email_msg, rule)
             if gds_flights:
                 flights_data = merge_flights(flights_data, gds_flights)
+
+            # 3. schema.org FlightReservation markup, for the airline with no
+            #    rule. Typed data, so nothing to guess, but only when the tiers
+            #    above found nothing: on the 19 corpus mails that carry it (all
+            #    from airlines with rules) every leg it read matched the rule's
+            #    exactly, and it reads fewer of them, since it leaves out any
+            #    leg whose markup lacks an airport code or a clock time.
+            if not flights_data:
+                flights_data = extract_flight_reservations(email_msg)
 
             # There used to be a third tier here: generic line scanners that
             # anchored on any flight-number-shaped token and guessed the rest
