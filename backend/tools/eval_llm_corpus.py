@@ -27,9 +27,11 @@ mails with no legs, stays or rentals; a reminder about a real trip can still
 make the model report real flights there, so read those rows before calling
 them hallucinations.
 
-The prompt, schema, body builder, validator, Ollama call and the reversed-route
-check (integrations/routes/, a no-op until the route data has been downloaded)
-are production's, so a prompt change can be measured before it ships. On a CPU-only box expect
+Everything between the model's answer and a stored leg is production's: the
+prompt, schema, body builder and Ollama call, the checks in
+``llm._rejection``, the reversed-route fix (a no-op until the route data has
+been downloaded), airport timezones and the plausibility gate. So a prompt or
+model change can be measured before it ships. On a CPU-only box expect
 roughly a minute per mail for a 4B model.
 """
 
@@ -95,8 +97,10 @@ def pick_sample(rows: list[dict], per_rule: int, negatives: int, seed: int) -> l
 
 def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> dict:
     """Run the production prompt over one mail and compare with the rule legs."""
+    from backend.airports.timezone import apply_airport_timezones
     from backend.integrations.llm import parser as llm
     from backend.integrations.routes.check import fix_reversed_route
+    from backend.parsers.validation import validate_flights
 
     body = llm.build_llm_body(email_msg)
     prompt = llm._PROMPT_USER_TEMPLATE.format(
@@ -107,7 +111,9 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
     )
     mail_text = f"{email_msg.subject or ''}\n{body}"
     t0 = time.monotonic()
-    raw = llm._call_ollama(prompt, model, ollama_url, timeout=timeout)
+    raw = llm._call_ollama(
+        prompt, model, ollama_url, timeout=timeout, schema=llm.flight_schema(mail_text)
+    )
     elapsed = time.monotonic() - t0
     try:
         data = json.loads(raw) if raw else {}
@@ -121,23 +127,21 @@ def score(email_msg, row: dict, model: str, ollama_url: str, timeout: int) -> di
                 continue
             if not f.get("booking_reference") and ref:
                 f["booking_reference"] = ref
-            llm._prefix_flight_number(f)
-            if llm._validate_flight(f) and llm._flight_number_in_text(f, mail_text):
-                fixed = fix_reversed_route(
-                    {
-                        "flight_number": llm._clean_flight_number(f.get("flight_number")),
-                        "departure_airport": (f.get("dep_airport") or "").upper(),
-                        "arrival_airport": (f.get("arr_airport") or "").upper(),
-                    }
+            if llm._rejection(f, mail_text):
+                continue
+            # The rest of the sync's path: route check, airport timezones and
+            # the plausibility gate, which drops e.g. an arrival before departure.
+            leg = fix_reversed_route(llm._normalise_flight(f, "", ""))
+            if not validate_flights([apply_airport_timezones(leg)], source="eval"):
+                continue
+            got.add(
+                _leg_key(
+                    leg["flight_number"],
+                    leg["departure_airport"],
+                    leg["arrival_airport"],
+                    f.get("dep_datetime") or f.get("dep_date"),
                 )
-                got.add(
-                    _leg_key(
-                        fixed["flight_number"],
-                        fixed["departure_airport"],
-                        fixed["arrival_airport"],
-                        f.get("dep_datetime") or f.get("dep_date"),
-                    )
-                )
+            )
     truth = (
         {_leg_key(fn, dep, arr, _local_date(when, dep)) for fn, dep, arr, when in row["legs"]}
         if row["kind"] == "pos"

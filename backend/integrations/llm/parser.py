@@ -13,6 +13,7 @@ Usage (programmatic):
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -46,8 +47,9 @@ Look for keywords "Voo", "Vuelo", "Flight", "Vol", "Flug", "Fly" followed by dig
 those digits are the flight number. Also look for 3-5 digit numbers that appear \
 alongside or immediately before/after a departure airport, arrival airport, or \
 departure time — those are flight numbers. \
-Always prefix with the airline's 2-letter IATA code: e.g. digits "4849" from an \
-Azul email → "AD4849"; find the IATA code from the airline name or sender domain. \
+Always prefix with the airline's 2-letter IATA code: e.g. digits "1234" from an \
+email by an airline whose code is "XY" → "XY1234"; find the IATA code from the \
+airline name or sender domain. \
 If the code already has a 2-letter prefix (e.g. "SK117"), keep it as-is. \
 Remove spaces: "LH 809" → "LH809". \
 Booking references (short alphanumeric codes like "TESTR5") are NOT flight numbers. \
@@ -121,7 +123,10 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
                     "dep_airport": {"type": ["string", "null"]},
                     "arr_airport": {"type": ["string", "null"]},
                     "dep_datetime": {"type": ["string", "null"]},
-                    "arr_datetime": {"type": ["string", "null"]},
+                    # A string, never null: validate_flights drops every leg without
+                    # an arrival time, and given the choice the model left it out
+                    # of legs whose mail prints it (Ryanair, LATAM, Finnair).
+                    "arr_datetime": {"type": "string"},
                     "dep_date": {"type": ["string", "null"]},
                     "airline_name": {"type": ["string", "null"]},
                     "airline_code": {"type": ["string", "null"]},
@@ -137,6 +142,7 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
                     "dep_airport",
                     "arr_airport",
                     "dep_datetime",
+                    "arr_datetime",
                     "dep_date",
                     "airline_code",
                 ],
@@ -146,8 +152,79 @@ _FLIGHT_SCHEMA: dict[str, Any] = {
 }
 
 
+def _airport_lookup() -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    """Scheduled-service IATA codes, and folded city names / aliases → codes.
+
+    Read on every call (about 14 ms): one call per mail, next to a model
+    that takes a minute, and no cache to go stale when the airports change.
+    """
+    from ...database import db_conn
+
+    codes: set[str] = set()
+    names: dict[str, set[str]] = {}
+    try:
+        with db_conn() as conn:
+            for code, city in conn.execute(
+                "SELECT iata_code, city_folded FROM airports WHERE scheduled_service = 1"
+            ):
+                codes.add(code)
+                if city:
+                    names.setdefault(city, set()).add(code)
+            for alias, code in conn.execute("SELECT alias, iata_code FROM airport_aliases"):
+                names.setdefault(alias, set()).add(code)
+    except Exception as e:  # noqa: BLE001 - no airport data: no candidates
+        logger.debug("airport candidates unavailable (%s)", e)
+    return frozenset(codes), {k: frozenset(v) for k, v in names.items()}
+
+
+def airport_candidates(text: str) -> list[str]:
+    """Every airport the mail names: printed codes, and city or airport names.
+
+    A code counts when it is printed as a word of its own and is a scheduled-
+    service airport; a name when one to three consecutive words, folded, are a
+    city or an alias in the airports tables ("florianopolis" → FLN, "sao paulo"
+    → GRU and CGH). Noise comes along — PIX (the payment method) is Pico Island,
+    the Portuguese word "nome" is Nome, Alaska — which only adds a choice the
+    model has no reason to take. On the 192 corpus legs the right airport was
+    in the list every time (median 7 candidates per mail).
+    """
+    from ...utils import fold_text
+
+    codes, names = _airport_lookup()
+    found = {t for t in re.findall(r"(?<![A-Za-z])([A-Z]{3})(?![A-Za-z])", text) if t in codes}
+    words = re.findall(r"[a-z0-9]+", fold_text(text))
+    for n in (1, 2, 3):
+        for i in range(len(words) - n + 1):
+            found |= names.get(" ".join(words[i : i + n]), frozenset())
+    return sorted(found)
+
+
+def flight_schema(mail_text: str) -> dict[str, Any]:
+    """The answer schema for one mail: airports limited to the ones it names.
+
+    Ollama then cannot write an airport the mail never mentions — LATAM's
+    Florianópolis as FLY, Stockholm as STO — and the model only has to decide
+    which named airport is which end of the leg. With fewer than two
+    candidates there is nothing to choose from, and the airports stay free
+    (the _airport_in_text check still applies).
+    """
+    candidates = airport_candidates(mail_text)
+    if len(candidates) < 2:
+        return _FLIGHT_SCHEMA
+    schema = copy.deepcopy(_FLIGHT_SCHEMA)
+    legs = schema["properties"]["flights"]["items"]["properties"]
+    for field in ("dep_airport", "arr_airport"):
+        legs[field] = {"type": "string", "enum": candidates}
+    return schema
+
+
 def _call_ollama(
-    prompt: str, model: str, ollama_url: str, timeout: int = 180, num_ctx: int | None = None
+    prompt: str,
+    model: str,
+    ollama_url: str,
+    timeout: int = 180,
+    num_ctx: int | None = None,
+    schema: dict[str, Any] | None = None,
 ) -> str | None:
     """Send a chat completion request to Ollama and return the raw response text.
 
@@ -173,7 +250,7 @@ def _call_ollama(
             # that do not think accept the flag and ignore it.
             "think": False,
             "options": {"temperature": 0, "num_ctx": num_ctx},
-            "format": _FLIGHT_SCHEMA,
+            "format": schema or _FLIGHT_SCHEMA,
         }
     ).encode()
 
@@ -227,6 +304,63 @@ def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
     fn = _clean_flight_number(flight.get("flight_number"))
     digits = re.sub(r"^[A-Z0-9]{2}(?=\d)", "", fn).lstrip("0")
     return digits.isdigit() and re.search(rf"(?<!\d)0*{digits}(?!\d)", text) is not None
+
+
+def _rejection(flight: dict[str, Any], mail_text: str) -> str:
+    """Why an LLM leg cannot be kept, or "" when it passes every check.
+
+    Prefixes a digits-only flight number first. The one place these checks
+    are chained, so the eval tool scores exactly what the sync would keep.
+    """
+    _prefix_flight_number(flight)
+    if not _validate_flight(flight):
+        return "failed validation"
+    if not _flight_number_in_text(flight, mail_text):
+        return "flight number not in the email"
+    for field in ("dep_airport", "arr_airport"):
+        if not _airport_in_text(flight.get(field) or "", mail_text):
+            return f"{field} not named in the email"
+    return ""
+
+
+def _airport_in_text(code: str, text: str) -> bool:
+    """True when the mail names this airport: its code, or a word of its name.
+
+    The model maps city names to codes, mostly right ("Sicily-Catania" → CTA)
+    but not always: LATAM's "Florianópolis" came back as FLY, Finley in
+    Australia, and asking it to map cities made it invent city codes (STO,
+    CAT). A code is kept when it is printed as a word of its own, or when a
+    locating word of the airport's name, city or aliases is in the mail
+    (Arlanda, Bergamo, Florianópolis). An unknown code is rejected, except
+    on an empty airports table, where nothing can be checked.
+    """
+    from ...database import db_conn
+    from ...parsers.shared import _significant_tokens
+    from ...utils import fold_text
+
+    code = (code or "").upper()
+    if re.search(rf"(?<![A-Za-z]){code}(?![A-Za-z])", text):
+        return True
+    try:
+        with db_conn() as conn:
+            names = conn.execute(
+                "SELECT name_folded, city_folded FROM airports WHERE iata_code = ?", (code,)
+            ).fetchall()
+            if not names:
+                return conn.execute("SELECT 1 FROM airports LIMIT 1").fetchone() is None
+            aliases = conn.execute(
+                "SELECT alias FROM airport_aliases WHERE iata_code = ?", (code,)
+            ).fetchall()
+    except Exception as e:  # noqa: BLE001 - no airport data: nothing to check against
+        logger.debug("airport check skipped for %s (%s)", code, e)
+        return True
+    tokens = {
+        t
+        for row in [*names, *aliases]
+        for value in row
+        for t in _significant_tokens(fold_text(value))
+    }
+    return bool(tokens & set(_significant_tokens(fold_text(text))))
 
 
 def _validate_flight(flight: dict[str, Any]) -> bool:
@@ -443,7 +577,11 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
     )
 
     raw = _call_ollama(
-        prompt, settings.OLLAMA_MODEL, settings.OLLAMA_URL, timeout=settings.OLLAMA_TIMEOUT
+        prompt,
+        settings.OLLAMA_MODEL,
+        settings.OLLAMA_URL,
+        timeout=settings.OLLAMA_TIMEOUT,
+        schema=flight_schema(mail_text),
     )
     if not raw:
         return []
@@ -467,12 +605,9 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         # Backfill booking_reference from top-level if missing
         if not f.get("booking_reference") and booking_ref:
             f["booking_reference"] = booking_ref
-        _prefix_flight_number(f)
-        if not _validate_flight(f):
-            logger.debug("LLM flight failed validation: %s", f)
-            continue
-        if not _flight_number_in_text(f, mail_text):
-            logger.debug("LLM flight number not found in the email: %s", f)
+        reason = _rejection(f, mail_text)
+        if reason:
+            logger.debug("LLM flight dropped (%s): %s", reason, f)
             continue
         results.append(fix_reversed_route(_normalise_flight(f, "", "")))
 
