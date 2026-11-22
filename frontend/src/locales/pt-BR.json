@@ -869,5 +869,8 @@
   "organizer.close": "Fechar",
   "planner.items_unavailable": "Não foi possível carregar as atividades deste dia. Recarregue a página.",
   "organizer.title_required": "Dê um título à atividade.",
-  "organizer.note_not_saved": "A nota não foi salva"
+  "organizer.note_not_saved": "A nota não foi salva",
+  "organizer.not_all_saved": "Algumas mudanças não foram salvas. Verifique a conexão e tente de novo.",
+  "organizer.notes_unavailable": "Não foi possível carregar as notas. Recarregue a página para editá-las.",
+  "organizer.reload_to_check": "Uma mudança não foi salva. Recarregue a página para ver o que ficou salvo."
 }

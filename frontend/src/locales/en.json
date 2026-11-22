@@ -869,5 +869,8 @@
   "organizer.close": "Close",
   "planner.items_unavailable": "Couldn't load this day's plan. Reload the page.",
   "organizer.title_required": "Give the item a title.",
-  "organizer.note_not_saved": "The note was not saved"
+  "organizer.note_not_saved": "The note was not saved",
+  "organizer.not_all_saved": "Some changes were not saved. Check the connection and try again.",
+  "organizer.notes_unavailable": "Couldn't load the notes. Reload the page to edit them.",
+  "organizer.reload_to_check": "A change was not saved. Reload the page to see what was kept."
 }

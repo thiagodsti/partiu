@@ -47,9 +47,16 @@
   /** Every write still in flight — notes and planner rows alike — so "Save
    * and back" leaves only once they have all landed. */
   const pendingSaves = new Set<Promise<unknown>>();
-  function track<T>(p: Promise<T>): Promise<T> {
+  /** Set by any write that failed and not since repaired; "Save and back"
+   * will not leave the page while it is set, and the header says so. */
+  let writeFailed = $state(false);
+  /** `sticky`: a failure marks the page as not fully saved until a reload.
+   * Note saves pass false — they are retried from `unsavedNotes` instead. */
+  function track<T>(p: Promise<T>, sticky = true): Promise<T> {
     pendingSaves.add(p);
-    p.finally(() => pendingSaves.delete(p)).catch(() => {});
+    p.catch(() => {
+      if (sticky) writeFailed = true;
+    }).finally(() => pendingSaves.delete(p));
     return p;
   }
   /** plannerApi with every call tracked. */
@@ -80,7 +87,7 @@
         segmentsApi.list(params.id).catch(() => [] as TripSegment[]),
         staysApi.list(params.id).catch(() => [] as TripStay[]),
         plannerApi.get(params.id),
-        dayNotesApi.list(params.id).catch(() => []),
+        dayNotesApi.list(params.id).catch(() => null),
         expensesApi.participants(params.id).catch(() => [] as Participant[]),
       ]);
       trip = tr;
@@ -90,7 +97,10 @@
       items = plan.items;
       tasks = plan.tasks;
       people = ppl;
-      const parsed = dn.map((n) => [n.date, parseDayNote(n.content)] as const);
+      // An unreadable note list must not look empty: saving into it would
+      // overwrite what is stored. The notes stay read-only until a reload.
+      notesUnavailable = dn === null;
+      const parsed = (dn ?? []).map((n) => [n.date, parseDayNote(n.content)] as const);
       notes = Object.fromEntries(parsed.map(([d, c]) => [d, c.note]));
       savedNotes = { ...notes };
       legacyItems = Object.fromEntries(parsed.map(([d, c]) => [d, c.items]));
@@ -296,9 +306,15 @@
   }
 
   async function cycleStatus(item: PlanItem) {
-    const next = STATUSES[(STATUSES.indexOf(item.status) + 1) % STATUSES.length];
+    const prev = item.status;
+    const next = STATUSES[(STATUSES.indexOf(prev) + 1) % STATUSES.length];
     item.status = next;
-    await api.updateItem(params.id, item.id, { status: next });
+    try {
+      await api.updateItem(params.id, item.id, { status: next });
+    } catch (err) {
+      item.status = prev;
+      toasts.show((err as Error).message, 'error');
+    }
   }
 
   let editing = $state<PlanItem | null>(null);
@@ -389,7 +405,10 @@
 
   /** What the server last confirmed per day, apart from the text on screen:
    * a failed save must stay different from it so the next blur retries. */
-  let savedNotes: Record<string, string> = {};
+  let savedNotes = $state<Record<string, string>>({});
+  let notesUnavailable = $state(false);
+  /** Days whose text on screen differs from what the server confirmed. */
+  const unsavedNotes = $derived(Object.keys(notes).filter((d) => (notes[d] ?? '') !== (savedNotes[d] ?? '')));
   /** A legacy checklist still inside a day's note (see lib/dayNotes). */
   let legacyItems: Record<string, LegacyChecklistItem[]> = {};
   /** One save at a time per day, in order, so an older text can never land
@@ -397,12 +416,13 @@
   const noteChains: Record<string, Promise<unknown>> = {};
 
   function saveNote(date: string, content: string): Promise<unknown> {
+    if (notesUnavailable) return Promise.resolve();
     notes[date] = content;
     const run = async () => {
       if ((savedNotes[date] ?? '') === content) return;
       try {
         await dayNotesApi.upsert(params.id, date, serializeDayNote(content, legacyItems[date]));
-        savedNotes[date] = content;
+        savedNotes = { ...savedNotes, [date]: content };
       } catch (err) {
         toasts.show(`${$t('organizer.note_not_saved')} (${(err as Error).message})`, 'error');
         throw err;
@@ -410,7 +430,7 @@
     };
     const next = (noteChains[date] ?? Promise.resolve()).catch(() => {}).then(run);
     noteChains[date] = next;
-    return track(next);
+    return track(next, false);
   }
 
   // ---- Dialog focus -----------------------------------------------------------
@@ -499,9 +519,19 @@
   async function saveAndBack() {
     (document.activeElement as HTMLElement | null)?.blur();
     await tick();
-    const results = await Promise.allSettled([...pendingSaves]);
-    // Something did not save: stay, so the user can see the error and retry.
-    if (results.some((r) => r.status === 'rejected')) return;
+    // A note whose save failed earlier gets another try now.
+    for (const date of unsavedNotes) saveNote(date, notes[date] ?? '');
+    // Wait until nothing is in flight, including writes started meanwhile.
+    while (pendingSaves.size) await Promise.allSettled([...pendingSaves]);
+    if (writeFailed) {
+      // A failed item write is not replayed; a reload shows what was kept.
+      toasts.show($t('organizer.reload_to_check'), 'error');
+      return;
+    }
+    if (unsavedNotes.length) {
+      toasts.show($t('organizer.not_all_saved'), 'error');
+      return;
+    }
     window.location.hash = `#/trips/${params.id}`;
   }
 
@@ -776,7 +806,11 @@
         <h1>{$t('organizer.title')}</h1>
       </div>
       <div class="save-box">
-        <span class="autosave">✓ {$t('organizer.autosaved')}</span>
+        {#if writeFailed || unsavedNotes.length}
+          <span class="autosave failed">⚠ {$t('organizer.not_all_saved')}</span>
+        {:else}
+          <span class="autosave">✓ {$t('organizer.autosaved')}</span>
+        {/if}
         <button class="btn btn-primary btn-sm" data-testid="save-and-back" onclick={saveAndBack}>{$t('organizer.save_and_back')}</button>
       </div>
       <div class="stats">
@@ -912,6 +946,8 @@
                   rows="2"
                   placeholder={$t('organizer.notes') + '…'}
                   value={notes[date] ?? ''}
+                  readonly={notesUnavailable}
+                  title={notesUnavailable ? $t('organizer.notes_unavailable') : undefined}
                   onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
                 ></textarea>
               </article>
@@ -1009,6 +1045,8 @@
                   rows="3"
                   placeholder="…"
                   value={notes[date] ?? ''}
+                  readonly={notesUnavailable}
+                  title={notesUnavailable ? $t('organizer.notes_unavailable') : undefined}
                   onblur={(e) => saveNote(date, (e.currentTarget as HTMLTextAreaElement).value)}
                 ></textarea>
               </div>
@@ -1916,6 +1954,9 @@
   .autosave {
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+  .autosave.failed {
+    color: var(--warning-text, var(--warning));
   }
   .modal-backdrop.closed {
     display: none;
