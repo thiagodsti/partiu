@@ -537,7 +537,8 @@ export const stationsApi = {
  * stationsApi because the station search is tag-filtered to stations — a hotel
  * reaching it would land in the train-station dropdown. */
 export const placesApi = {
-  search: (q: string) => get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, kind: 'stay' | 'poi' = 'stay') =>
+    get<PlaceResult[]>(`/api/places/search?q=${encodeURIComponent(q)}&kind=${kind}`),
 };
 
 /** Cities, towns and villages — a trip's own ends. Separate from placesApi

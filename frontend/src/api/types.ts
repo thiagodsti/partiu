@@ -276,7 +276,7 @@ export interface PlaceResult {
 /** Kept as the old name so existing station callers read unchanged. */
 export type StationResult = PlaceResult;
 
-export type PlaceInputKind = SegmentType | 'stay' | 'city';
+export type PlaceInputKind = SegmentType | 'stay' | 'city' | 'poi';
 
 /** What PlaceInput hands back when the user picks a result or types freely. */
 export interface PickedPlace {
@@ -623,6 +623,10 @@ export interface PlanItem {
   time: string | null;
   title: string;
   notes: string | null;
+  /** Where it happens, picked from the sights search; puts it on the map. */
+  place_name: string | null;
+  lat: number | null;
+  lon: number | null;
   status: PlanItemStatus;
   sort_order: number;
 }

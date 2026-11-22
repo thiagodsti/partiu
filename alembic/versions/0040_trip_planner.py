@@ -5,7 +5,7 @@ data does not give: **where you will be each night** before any hotel is
 booked (`trip_plan_stops`, an ordered route of cities with arrival and
 departure dates), **what you mean to do each day** as separate, movable items
 rather than one free-text note (`trip_plan_items`; a NULL `date` is an idea not
-yet placed on a day), and **what must be done before leaving**, with who is
+yet placed on a day; an optional place puts it on the organizer's map), and **what must be done before leaving**, with who is
 doing it (`trip_plan_tasks`; the assignee is a trip participant, a user or a
 guest, as on expenses).
 
@@ -56,6 +56,9 @@ def upgrade() -> None:
             time TEXT,
             title TEXT NOT NULL,
             notes TEXT,
+            place_name TEXT,
+            lat REAL,
+            lon REAL,
             status TEXT NOT NULL DEFAULT 'idea',
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,

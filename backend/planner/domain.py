@@ -31,6 +31,9 @@ class PlanItem:
     time: str | None
     title: str
     notes: str | None
+    place_name: str | None
+    lat: float | None
+    lon: float | None
     status: str
     sort_order: int
 

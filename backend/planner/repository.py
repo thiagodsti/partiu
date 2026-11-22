@@ -14,7 +14,17 @@ from .domain import PlanItem, PlanStop, PlanTask
 # Columns a caller may update, per table. Anything else (id, trip_id,
 # created_by, created_at) is immutable.
 _STOP_COLUMNS = ("name", "lat", "lon", "country_code", "start_date", "end_date", "notes")
-_ITEM_COLUMNS = ("date", "time", "title", "notes", "status", "sort_order")
+_ITEM_COLUMNS = (
+    "date",
+    "time",
+    "title",
+    "notes",
+    "place_name",
+    "lat",
+    "lon",
+    "status",
+    "sort_order",
+)
 _TASK_COLUMNS = ("text", "done", "assignee_user_id", "assignee_guest_id")
 
 
@@ -40,6 +50,9 @@ def _item(row: sqlite3.Row) -> PlanItem:
         time=row["time"],
         title=row["title"],
         notes=row["notes"],
+        place_name=row["place_name"],
+        lat=row["lat"],
+        lon=row["lon"],
         status=row["status"],
         sort_order=row["sort_order"],
     )
@@ -135,9 +148,10 @@ class PlannerRepository:
                 (trip_id, values.get("date")),
             ).fetchone()[0]
             conn.execute(
-                """INSERT INTO trip_plan_items (id, trip_id, date, time, title, notes, status,
-                       sort_order, created_by, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO trip_plan_items (id, trip_id, date, time, title, notes,
+                       place_name, lat, lon, status, sort_order, created_by, created_at,
+                       updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     item_id,
                     trip_id,
@@ -145,6 +159,9 @@ class PlannerRepository:
                     values.get("time"),
                     values["title"],
                     values.get("notes"),
+                    values.get("place_name"),
+                    values.get("lat"),
+                    values.get("lon"),
                     values["status"],
                     last + 1,
                     user_id,

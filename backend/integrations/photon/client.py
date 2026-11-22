@@ -67,6 +67,9 @@ _OSM_TAGS: dict[str, tuple[str, ...]] = {
     # starts at a door rather than a town — the same shape as "stay", which is
     # why both get the untagged second pass below.
     "car": ("place",),
+    # Things to see and do on a trip plan: sights, museums, parks, restaurants.
+    # Filtered by key, since the values under each are far too many to list.
+    "poi": ("tourism", "historic", "leisure", "amenity", "natural"),
 }
 
 # Kinds whose tagged results are settlements rather than venues.
@@ -318,7 +321,7 @@ def search_places(query: str, kind: str | None = None, limit: int = 8) -> list[d
         for result in results:
             result["category"] = "place"
 
-    if kind in ("stay", "car") and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
+    if kind in ("stay", "car", "poi") and len(results) < _ADDRESS_FALLBACK_THRESHOLD:
         _collect(
             _fetch(params_for(False), "/api/", f"address lookup for {query!r}"),
             limit,

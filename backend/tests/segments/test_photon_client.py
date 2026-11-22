@@ -226,6 +226,23 @@ class TestPlaceSearch:
         second_call_tags = [v for k, v in fetch.call_args_list[1].args[0] if k == "osm_tag"]
         assert second_call_tags == []
 
+    def test_poi_kind_searches_sights_with_an_address_fallback(self):
+        """The organizer's plan items: sights, parks and restaurants, by key."""
+        from unittest.mock import patch
+
+        from backend.integrations.photon import client
+
+        with (
+            patch.object(client.settings, "PHOTON_URL", "http://photon.test"),
+            patch.object(client, "_fetch", return_value=[]) as fetch,
+        ):
+            client.search_places("forbidden city", "poi")
+
+        tags = [v for k, v in fetch.call_args_list[0].args[0] if k == "osm_tag"]
+        assert {"tourism", "historic", "amenity"} <= set(tags)
+        assert "tourism:hotel" not in tags
+        assert fetch.call_count == 2
+
     def test_a_full_tagged_result_set_costs_one_request(self):
         from unittest.mock import patch
 

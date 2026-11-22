@@ -212,3 +212,22 @@ class TestTripDeletion:
                 "SELECT COUNT(*) FROM trip_plan_items WHERE trip_id = ?", (trip_id,)
             ).fetchone()[0]
         assert n == 0
+
+
+class TestItemPlace:
+    def test_an_item_carries_a_place_for_the_map(self, auth_client):
+        trip_id = _trip(auth_client)
+        base = f"/api/trips/{trip_id}/plan/items"
+        item_id = auth_client.post(
+            base,
+            json={
+                "title": "Cidade Proibida",
+                "place_name": "Forbidden City",
+                "lat": 39.916,
+                "lon": 116.397,
+            },
+        ).json()["id"]
+        (item,) = _plan(auth_client, trip_id)["items"]
+        assert (item["place_name"], item["lat"], item["lon"]) == ("Forbidden City", 39.916, 116.397)
+        auth_client.patch(f"{base}/{item_id}", json={"place_name": None, "lat": None, "lon": None})
+        assert _plan(auth_client, trip_id)["items"][0]["lat"] is None

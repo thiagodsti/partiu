@@ -25,6 +25,9 @@ class PlanItemDTO(BaseModel):
     time: str | None
     title: str
     notes: str | None
+    place_name: str | None
+    lat: float | None
+    lon: float | None
     status: str
     sort_order: int
 
@@ -69,6 +72,9 @@ class CreateItemDTO(BaseModel):
     date: str | None = Field(default=None, pattern=_DATE)
     time: str | None = Field(default=None, pattern=_TIME)
     notes: str | None = Field(default=None, max_length=2000)
+    place_name: str | None = Field(default=None, max_length=300)
+    lat: float | None = None
+    lon: float | None = None
     status: str = "idea"
 
 
@@ -80,6 +86,9 @@ class UpdateItemDTO(BaseModel):
     date: str | None = Field(default=None, pattern=_DATE)
     time: str | None = Field(default=None, pattern=_TIME)
     notes: str | None = Field(default=None, max_length=2000)
+    place_name: str | None = Field(default=None, max_length=300)
+    lat: float | None = None
+    lon: float | None = None
     status: str | None = None
     sort_order: int | None = None
 

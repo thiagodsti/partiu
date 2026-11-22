@@ -71,7 +71,7 @@
 
   /** The station wording is wrong on an accommodation form, where the thing
    * being picked is a hotel or a street. */
-  const isStay = $derived(kind === 'stay');
+  const isStay = $derived(kind === 'stay' || kind === 'poi');
   const isCity = $derived(kind === 'city');
 
   async function runSearch(q: string) {
@@ -92,8 +92,8 @@
       // Stays search accommodation *and* plain addresses; a private rental is
       // usually only findable as the latter. Stations stay tag-filtered.
       const found =
-        kind === 'stay'
-          ? await placesApi.search(q)
+        kind === 'stay' || kind === 'poi'
+          ? await placesApi.search(q, kind)
           : kind === 'city'
             ? await citiesApi.search(q)
             : await stationsApi.search(q, kind);

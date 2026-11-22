@@ -12,6 +12,8 @@ Trip stays API routes — accommodation booked for a trip.
 `integrations/photon`, which is where the shared lookup logic actually sits.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_current_user
@@ -89,14 +91,16 @@ def search_places(
     request: Request,
     q: str = "",
     limit: int = 8,
+    kind: Literal["stay", "poi"] = "stay",
     user: dict = Depends(get_current_user),
 ):
-    """Accommodation and address type-ahead for the stay picker.
+    """Accommodation and address type-ahead for the stay picker, or sights and
+    restaurants (``kind=poi``) for the trip organizer's plan items.
 
     Returns both categories: hotels are in OSM and searchable by name, but a
     private rental generally is not, so the address is the only handle the guest
     has. Returns [] when the geocoder is disabled or unreachable — the form
     falls back to free-text entry.
     """
-    results = photon.search_places(q, "stay", limit)
+    results = photon.search_places(q, kind, limit)
     return [PlaceSearchResultDTO(**{k: v for k, v in r.items() if k != "osm_id"}) for r in results]
