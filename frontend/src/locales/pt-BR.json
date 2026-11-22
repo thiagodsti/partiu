@@ -812,8 +812,8 @@
   "api_keys.revoke": "Revogar",
   "api_keys.revoke_confirm": "Revogar \"{name}\"? Tudo que usa essa chave para de funcionar na hora.",
   "demo.locked_api_keys": "Não é possível criar chaves de API na demo.",
-  "organizer.open": "Organizar viagem",
-  "organizer.title": "Organizador",
+  "organizer.open": "Planejador",
+  "organizer.title": "Planejador",
   "organizer.days": "dias",
   "organizer.cities": "cidades",
   "organizer.nights_without_stay": "noites sem hospedagem",
@@ -860,5 +860,10 @@
   "organizer.add_person": "+ Adicionar pessoa…",
   "organizer.person_name": "Nome e Enter",
   "organizer.hide_lists": "Esconder listas",
-  "organizer.show_lists": "Mostrar listas"
+  "organizer.show_lists": "Mostrar listas",
+  "organizer.edit": "Editar",
+  "organizer.add_transport": "transporte",
+  "organizer.add_stay": "adicionar hospedagem",
+  "organizer.autosaved": "Tudo é salvo automaticamente",
+  "organizer.save_and_back": "Salvar e voltar à viagem"
 }

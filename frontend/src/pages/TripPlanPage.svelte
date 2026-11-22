@@ -29,7 +29,10 @@
     PlanTask,
     PickedPlace,
   } from '../api/types';
+  import { tick } from 'svelte';
   import PlaceInput from '../components/PlaceInput.svelte';
+  import TripStays from '../components/TripStays.svelte';
+  import TripTransport from '../components/TripTransport.svelte';
   import PlanMap, { type MapCity, type MapLine, type MapPoint } from '../components/PlanMap.svelte';
   import { formatTime, localDateKey } from '../lib/utils';
   import { toasts } from '../lib/toastStore';
@@ -121,6 +124,8 @@
     icon: string;
     label: string;
     time: string;
+    flight?: Flight;
+    segment?: TripSegment;
   }
 
   function movesOn(date: string): Move[] {
@@ -133,6 +138,7 @@
         label: `${f.flight_number} ${f.departure_airport}→${f.arrival_airport}`,
         time: formatTime(f.departure_datetime, f.departure_timezone),
         sort: f.departure_datetime ?? '',
+        flight: f,
       });
     }
     for (const s of segments) {
@@ -144,6 +150,7 @@
         label: `${s.departure.name} → ${s.arrival.name}`,
         time: formatTime(s.departure_datetime, s.departure.timezone),
         sort: s.departure_datetime,
+        segment: s,
       });
     }
     return out.sort((a, b) => a.sort.localeCompare(b.sort));
@@ -336,10 +343,45 @@
 
   // ---- Day notes --------------------------------------------------------------
 
+  const pendingSaves = new Set<Promise<unknown>>();
+
   async function saveNote(date: string, content: string) {
     if ((notes[date] ?? '') === content) return;
     notes[date] = content;
-    await dayNotesApi.upsert(params.id, date, content);
+    const save = dayNotesApi.upsert(params.id, date, content);
+    pendingSaves.add(save);
+    try {
+      await save;
+    } finally {
+      pendingSaves.delete(save);
+    }
+  }
+
+  // ---- Bookings: the trip page's own editors, in a dialog ---------------------
+  //
+  // Stays and ground legs are edited with the same forms as on the trip page
+  // (TripStays / TripTransport in editor-only mode), so there is one editor
+  // per thing. Flights keep their own edit page, which is far richer.
+
+  let staysEditor: ReturnType<typeof TripStays> | undefined = $state();
+  let legsEditor: ReturnType<typeof TripTransport> | undefined = $state();
+  let stayFormOpen = $state(false);
+  let legFormOpen = $state(false);
+
+  /** A new stay for the night of `date`, running to the end of that city's
+   * stop when there is one. */
+  function addStay(date: string) {
+    const stop = stops.find((s) => s.start_date <= date && date < s.end_date);
+    staysEditor?.openAdd(date, stop?.end_date ?? addDays(date, 1));
+  }
+
+  /** Everything saves as it is changed; this waits for anything still in
+   * flight (a note being typed) and goes back to the trip. */
+  async function saveAndBack() {
+    (document.activeElement as HTMLElement | null)?.blur();
+    await tick();
+    await Promise.allSettled([...pendingSaves]);
+    window.location.hash = `#/trips/${params.id}`;
   }
 
   // ---- Tasks ------------------------------------------------------------------
@@ -598,6 +640,10 @@
         <a href="#/trips/{params.id}" class="back">← {trip.name}</a>
         <h1>{$t('organizer.title')}</h1>
       </div>
+      <div class="save-box">
+        <span class="autosave">✓ {$t('organizer.autosaved')}</span>
+        <button class="btn btn-primary btn-sm" data-testid="save-and-back" onclick={saveAndBack}>{$t('organizer.save_and_back')}</button>
+      </div>
       <div class="stats">
         <span><strong>{days.length}</strong> {$t('organizer.days')}</span>
         <span><strong>{stops.length}</strong> {$t('organizer.cities')}</span>
@@ -700,8 +746,18 @@
             {#each days as date (date)}
               <div class="cell" style={frame(date, 'mid')}>
                 {#each movesOn(date) as m (m.key)}
-                  <div class="move"><span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}</div>
+                  {#if m.flight}
+                    <a class="move editable" href="#/trips/{params.id}/flights/{m.flight.id}/edit" title={$t('organizer.edit')}>
+                      <span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}
+                    </a>
+                  {:else if m.segment}
+                    {@const seg = m.segment}
+                    <button class="move editable" title={$t('organizer.edit')} onclick={() => legsEditor?.openEdit(seg)}>
+                      <span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}
+                    </button>
+                  {/if}
                 {/each}
+                <a class="cell-add" href="#/trips/{params.id}/add-transport">+ {$t('organizer.add_transport')}</a>
               </div>
             {/each}
 
@@ -710,9 +766,11 @@
               {@const stay = stayFor(date)}
               <div class="cell" style={frame(date, 'mid')}>
                 {#if stay}
-                  <div class="stay" title={stay.place.address ?? ''}>🏨 {stay.place.name}</div>
+                  <button class="stay editable" title={stay.place.address ?? $t('organizer.edit')} onclick={() => staysEditor?.openEdit(stay)}>🏨 {stay.place.name}</button>
                 {:else if missingStay(date)}
-                  <div class="no-stay">⚠ {$t('organizer.no_stay')}</div>
+                  <button class="no-stay editable" onclick={() => addStay(date)}>⚠ {$t('organizer.no_stay')} · <u>{$t('organizer.add_stay')}</u></button>
+                {:else if date !== days[days.length - 1]}
+                  <button class="cell-add" onclick={() => addStay(date)}>+ {$t('organizer.add_stay')}</button>
                 {/if}
               </div>
             {/each}
@@ -874,6 +932,28 @@
           />
         </section>
       </aside>
+    </div>
+
+    <div class="modal-backdrop" class:closed={!stayFormOpen && !legFormOpen} role="presentation">
+      <div class="modal booking-modal" role="dialog" aria-modal="true">
+        <TripStays
+          bind:this={staysEditor}
+          editorOnly
+          {trip}
+          {flights}
+          {segments}
+          onchange={(list) => (stays = list)}
+          onformchange={(open) => (stayFormOpen = open)}
+        />
+        <TripTransport
+          bind:this={legsEditor}
+          editorOnly
+          {trip}
+          {flights}
+          onchange={(list) => (segments = list)}
+          onformchange={(open) => (legFormOpen = open)}
+        />
+      </div>
     </div>
 
     {#if editing}
@@ -1432,5 +1512,62 @@
   .new-person {
     margin-left: 22px;
     width: calc(100% - 22px);
+  }
+  .editable {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: 0.78rem;
+    color: inherit;
+    text-decoration: none;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 2px 4px;
+    margin: 0 -4px 4px;
+    cursor: pointer;
+  }
+  .editable:hover {
+    border-color: var(--border);
+    background: var(--bg-card);
+  }
+  .no-stay.editable {
+    color: var(--warning-text, var(--warning));
+  }
+  .cell-add {
+    display: inline-block;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    padding: 0;
+    text-decoration: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .cell:hover .cell-add,
+  .cell-add:focus-visible {
+    opacity: 1;
+  }
+  .save-box {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-left: auto;
+  }
+  .autosave {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .modal-backdrop.closed {
+    display: none;
+  }
+  .booking-modal {
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
   }
 </style>

@@ -18,9 +18,14 @@
     /** Called after load and after every mutation, so the trip page can feed
      * the map and the day planner without fetching the list a second time. */
     onchange?: (segments: TripSegment[]) => void;
+    /** Render only the ground-leg editor, opened from outside through
+     * `openEdit` — the trip planner shows it in a dialog over its board. */
+    editorOnly?: boolean;
+    /** Told whenever the editor opens or closes. */
+    onformchange?: (open: boolean) => void;
   }
 
-  const { trip, flights, flightBasePath = 'trips', onchange }: Props = $props();
+  const { trip, flights, flightBasePath = 'trips', onchange, editorOnly = false, onformchange }: Props = $props();
 
   const TYPES: SegmentType[] = ['train', 'bus', 'ferry', 'car'];
 
@@ -115,7 +120,11 @@
 
   load();
 
-  function openEdit(s: TripSegment) {
+  $effect(() => {
+    onformchange?.(showForm);
+  });
+
+  export function openEdit(s: TripSegment) {
     form = formFromSegment(s);
     editingId = s.id;
     formError = null;
@@ -198,7 +207,9 @@
   <p class="transport-empty" style="color:var(--danger)">{loadError}</p>
 {/if}
 
-{#if buckets.hasFlights}
+{#if editorOnly}
+  <!-- The planner draws its own board; only the editor below is wanted. -->
+{:else if buckets.hasFlights}
   <LegDivider label={$t('trip.outbound')} legs={buckets.outbound} />
   {@render legList(buckets.outbound)}
 
@@ -308,7 +319,7 @@
       {/if}
     </div>
   </div>
-{:else}
+{:else if !editorOnly}
   <!-- Adding happens on its own page, where one type picker covers flights and
        ground legs alike; this inline form is only ever an editor now. -->
   <a href="#/trips/{trip.id}/add-transport" class="btn btn-secondary btn-sm transport-add">

@@ -812,8 +812,8 @@
   "api_keys.revoke": "Revoke",
   "api_keys.revoke_confirm": "Revoke \"{name}\"? Anything using it will stop working immediately.",
   "demo.locked_api_keys": "API keys can't be created on the demo.",
-  "organizer.open": "Plan trip",
-  "organizer.title": "Organizer",
+  "organizer.open": "Planner",
+  "organizer.title": "Planner",
   "organizer.days": "days",
   "organizer.cities": "cities",
   "organizer.nights_without_stay": "nights without a stay",
@@ -860,5 +860,10 @@
   "organizer.add_person": "+ Add person…",
   "organizer.person_name": "Name and Enter",
   "organizer.hide_lists": "Hide lists",
-  "organizer.show_lists": "Show lists"
+  "organizer.show_lists": "Show lists",
+  "organizer.edit": "Edit",
+  "organizer.add_transport": "transport",
+  "organizer.add_stay": "add a stay",
+  "organizer.autosaved": "Everything saves automatically",
+  "organizer.save_and_back": "Save and back to trip"
 }

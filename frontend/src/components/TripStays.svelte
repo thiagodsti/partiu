@@ -14,9 +14,14 @@
     /** Called after load and after every mutation, so the trip page can feed
      * the day planner without fetching the list a second time. */
     onchange?: (stays: TripStay[]) => void;
+    /** Render only the form, opened from outside through `openAdd` /
+     * `openEdit` — the trip planner shows it in a dialog over its own board. */
+    editorOnly?: boolean;
+    /** Told whenever the form opens or closes. */
+    onformchange?: (open: boolean) => void;
   }
 
-  const { trip, flights, segments, onchange }: Props = $props();
+  const { trip, flights, segments, onchange, editorOnly = false, onformchange }: Props = $props();
 
   const KINDS: StayKind[] = ['hotel', 'airbnb', 'hostel', 'other'];
 
@@ -212,7 +217,13 @@
 
   load();
 
-  function openAdd() {
+  $effect(() => {
+    onformchange?.(showForm);
+  });
+
+  /** `checkIn`/`checkOut` (YYYY-MM-DD) seed the dates when the caller knows
+   * them — the planner's "no stay" night does. */
+  export function openAdd(checkIn?: string, checkOut?: string) {
     form = emptyForm();
     // Seed both ends, which is right far more often than an empty field is — a
     // stay is usually booked for the trip it is on, and runs from arrival to
@@ -222,12 +233,14 @@
     if (trip.start_date) form.check_in_datetime = `${trip.start_date}T${DEFAULT_CHECK_IN}`;
     const out = lastTravelDate ?? trip.end_date;
     if (out) form.check_out_datetime = `${out}T${DEFAULT_CHECK_OUT}`;
+    if (checkIn) form.check_in_datetime = `${checkIn}T${DEFAULT_CHECK_IN}`;
+    if (checkOut) form.check_out_datetime = `${checkOut}T${DEFAULT_CHECK_OUT}`;
     editingId = null;
     formError = null;
     showForm = true;
   }
 
-  function openEdit(s: TripStay) {
+  export function openEdit(s: TripStay) {
     form = formFromStay(s);
     editingId = s.id;
     formError = null;
@@ -297,15 +310,17 @@
   <p class="stays-empty" style="color:var(--danger)">{loadError}</p>
 {/if}
 
+{#if !editorOnly}
 {#each stays as stay (stay.id)}
   <StayRow {stay} onedit={openEdit} warning={warningFor(stay)} />
 {/each}
+{/if}
 
-{#if stays.length === 0 && !loading && !loadError}
+{#if stays.length === 0 && !loading && !loadError && !editorOnly}
   <p class="stays-empty">{$t('stays.empty')}</p>
 {/if}
 
-{#if gaps.length > 0}
+{#if gaps.length > 0 && !editorOnly}
   <p class="stays-gaps">
     {$t(gaps.length === 1 ? 'stays.gaps' : 'stays.gaps_plural', { values: { count: gaps.length } })}
     <span class="stays-gap-dates">{gaps.map((d) => formatDate(d)).join(', ')}</span>
@@ -420,8 +435,8 @@
       {/if}
     </div>
   </div>
-{:else}
-  <button class="btn btn-secondary btn-sm stays-add" onclick={openAdd}>
+{:else if !editorOnly}
+  <button class="btn btn-secondary btn-sm stays-add" onclick={() => openAdd()}>
     + {$t('stays.add')}
   </button>
 {/if}
