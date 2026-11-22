@@ -37,6 +37,7 @@
   import { formatTime, localDateKey } from '../lib/utils';
   import { toasts } from '../lib/toastStore';
   import { parseDayNote, serializeDayNote } from '../lib/dayNotes';
+  import { stopColor as sharedStopColor } from '../lib/planColors';
 
   interface Props {
     params: { id: string };
@@ -107,8 +108,7 @@
     return out;
   });
 
-  const STOP_COLORS = ['#e76f51', '#2a9d8f', '#e9c46a', '#8e7dbe', '#f4a261', '#457b9d', '#90be6d', '#d1495b'];
-  const stopColor = (s: PlanStop) => STOP_COLORS[stops.indexOf(s) % STOP_COLORS.length];
+  const stopColor = (s: PlanStop) => sharedStopColor(stops, s);
 
   function stopsOn(date: string): PlanStop[] {
     return stops.filter((s) => s.start_date <= date && date <= s.end_date);

@@ -5,7 +5,6 @@
   import { staysForDay, rentalsForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
-  import Checkbox from './Checkbox.svelte';
 
   interface ChecklistItem {
     text: string;
@@ -31,7 +30,13 @@
      * (migration 0041 folded the old per-card checklists into it), so adding,
      * ticking or renaming here shows in the planner and the other way round. */
     planItems?: PlanItem[];
-    initiallyExpanded: boolean;
+    /** The route's cities on this day, the one slept in first; it colours
+     * the card the way the planner frames its days. */
+    cities?: { name: string; color: string }[];
+    dayNumber?: number;
+    /** Kept for callers; the card is always editable now, so these only
+     * matter for printing, where the edit controls are hidden by CSS. */
+    initiallyExpanded?: boolean;
     forceExpanded?: boolean;
   }
 
@@ -44,8 +49,8 @@
     carRentals = [],
     initialContent,
     planItems = [],
-    initiallyExpanded,
-    forceExpanded = false,
+    cities = [],
+    dayNumber,
   }: Props = $props();
 
   const SEGMENT_ICONS: Record<SegmentType, string> = {
@@ -75,7 +80,7 @@
   let items = $state<PlanItem[]>(untrack(() => planItems.map((i) => ({ ...i }))));
   let draft = $state('');
   const isDone = (i: PlanItem) => i.status === 'done';
-  let expanded = $state(untrack(() => initiallyExpanded));
+  const STATUSES: PlanItem['status'][] = ['idea', 'todo', 'booked', 'done'];
   let saving = $state(false);
   let saved = $state(false);
 
@@ -267,10 +272,9 @@
 
   // ---- Mutations ----
 
-  async function toggleItem(item: PlanItem) {
-    // Ticking is "done"; unticking goes back to "to book / buy" rather than
-    // to "idea", since an item on a day has been decided on.
-    item.status = isDone(item) ? 'todo' : 'done';
+  /** The same status dot as the planner: idea → to book → booked → done. */
+  async function cycleStatus(item: PlanItem) {
+    item.status = STATUSES[(STATUSES.indexOf(item.status) + 1) % STATUSES.length];
     await plannerApi.updateItem(tripId, item.id, { status: item.status }).catch(() => {});
   }
 
@@ -331,372 +335,278 @@
   }
 </script>
 
-<div class="day-card" class:expanded={expanded || forceExpanded}>
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="day-card-header" onclick={() => (expanded = !expanded)}>
-    <div class="day-card-header-left">
-      <span class="day-label">{formatDayHeader()}</span>
-      {#each stayDay.nights as n (n.stay.id)}
-        <span class="day-stay-band">
-          {STAY_ICONS[n.stay.kind] ?? '📍'}
-          {n.stay.place.name}
-          <span class="day-stay-night">
-            {$t('stays.night_of', { values: { night: n.night, nights: n.nights } })}
+<div class="day-card" style={cities[0] ? `--frame:${cities[0].color}` : ''}>
+  <header class="dc-head">
+    <div class="dc-when">
+      {#if dayNumber}<span class="dc-num">{$t('planner.day_prefix')} {dayNumber}</span>{/if}
+      <span class="dc-date">{formatDayHeader()}</span>
+    </div>
+    <div class="dc-cities">
+      {#each cities as c (c.name)}
+        <span class="dc-city" style="--stop:{c.color}">{c.name}</span>
+      {/each}
+    </div>
+    {#if saving}
+      <span class="save-status saving">{$t('planner.saving')}</span>
+    {:else if saved}
+      <span class="save-status saved">✓</span>
+    {/if}
+  </header>
+
+  {#if entries.length > 0}
+    <div class="dc-section">
+      {#each entries as entry (entry.id)}
+        <!-- day-flight-row / day-stay-band: the names the E2E specs select on. -->
+        <div class="dc-move day-flight-row">
+          <span class="dc-icon">{entry.icon}</span>
+          <span>
+            <strong>{entry.title}</strong>
+            {#if entry.note}<span class="dc-move-note">{entry.note}</span>{/if}
+            {entry.route}
           </span>
-        </span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  {#if stayDay.nights.length > 0 || rentalDay.held.length > 0}
+    <div class="dc-section">
+      {#each stayDay.nights as n (n.stay.id)}
+        <div class="dc-stay day-stay-band">
+          {STAY_ICONS[n.stay.kind] ?? '📍'} {n.stay.place.name}
+          <span class="dc-stay-night">{$t('stays.night_of', { values: { night: n.night, nights: n.nights } })}</span>
+        </div>
       {/each}
       {#each rentalDay.held as h (h.rental.id)}
-        <span class="day-stay-band">
-          🚗
-          {h.rental.vendor}
-          <span class="day-stay-night">
-            {$t('car_rentals.day_of', { values: { day: h.day, days: h.days } })}
-          </span>
-        </span>
+        <div class="dc-stay day-stay-band">
+          🚗 {h.rental.vendor}
+          <span class="dc-stay-night">{$t('car_rentals.day_of', { values: { day: h.day, days: h.days } })}</span>
+        </div>
       {/each}
     </div>
-    <div class="day-header-right">
-      {#if saving}
-        <span class="save-status saving">{$t('planner.saving')}</span>
-      {:else if saved}
-        <span class="save-status saved">✓</span>
-      {/if}
-      <span class="day-chevron">{expanded || forceExpanded ? '▲' : '▼'}</span>
-    </div>
-  </div>
+  {/if}
 
-  <div class="day-card-body">
-    <!-- Travel for the day — flights and ground legs, always read-only -->
-    {#if entries.length > 0}
-      <div class="day-flights">
-        {#each entries as entry (entry.id)}
-          <div class="day-flight-row">
-            <span class="day-flight-badge" class:is-flight={entry.isFlight}>{entry.icon}</span>
-            <span class="day-flight-info">
-              <strong>{entry.title}</strong>
-              {#if entry.note}<span class="day-flight-note">{entry.note}</span>{/if}
-              {entry.route}
-            </span>
-          </div>
-        {/each}
-      </div>
-    {/if}
-
-    {#if expanded || forceExpanded}
-      <!-- Edit mode -->
-      <textarea
-        class="note-textarea"
-        placeholder={$t('planner.note_placeholder')}
-        value={note}
-        oninput={(e) => onNoteInput((e.currentTarget as HTMLTextAreaElement).value)}
-        rows={3}
-      ></textarea>
-      <div class="checklist">
-        {#each items as item (item.id)}
-          <div class="checklist-item">
-            <Checkbox
-              checked={isDone(item)}
-              label={isDone(item) ? $t('planner.uncheck') : $t('planner.check')}
-              onToggle={() => toggleItem(item)}
-            />
-            {#if item.time}<span class="check-time">{item.time}</span>{/if}
+  <div class="dc-section dc-items">
+    {#each items as item (item.id)}
+      <div class="dc-item status-{item.status}">
+        <button
+          class="dc-dot"
+          title={$t(`organizer.status_${item.status}`)}
+          aria-label={$t(`organizer.status_${item.status}`)}
+          onclick={() => cycleStatus(item)}
+        ></button>
+        <div class="dc-item-body">
+          <div class="dc-item-line">
+            {#if item.time}<span class="dc-time">{item.time}</span>{/if}
             <textarea
-              class="check-input"
+              class="dc-title"
               class:done={isDone(item)}
-              placeholder={$t('planner.checklist_item_placeholder')}
               rows={1}
               value={item.title}
               use:autogrow
+              aria-label={$t('organizer.item_title')}
               onblur={(e) => renameItem(item, (e.currentTarget as HTMLTextAreaElement).value)}
             ></textarea>
-            <button
-              class="check-item-delete"
-              onclick={() => deleteItem(item)}
-              aria-label={$t('planner.delete_item')}
-            >✕</button>
           </div>
-        {/each}
-        <input
-          class="check-input check-new"
-          placeholder={'+ ' + $t('planner.add_item')}
-          bind:value={draft}
-          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
-          onblur={addItem}
-        />
-      </div>
-    {:else}
-      <!-- Read mode: show all content without edit controls -->
-      {#if note.trim()}
-        <p class="note-read">{note}</p>
-      {/if}
-      {#if items.length > 0}
-        <div class="checklist">
-          {#each items as item (item.id)}
-            <div class="checklist-item">
-              <Checkbox
-                checked={isDone(item)}
-                label={isDone(item) ? $t('planner.uncheck') : $t('planner.check')}
-                onToggle={() => toggleItem(item)}
-              />
-              <span class="check-text" class:done={isDone(item)}>
-                {#if item.time}<span class="check-time">{item.time}</span>{/if}
-                {item.title}
-                {#if item.place_name}<span class="check-place">📍 {item.place_name}</span>{/if}
-              </span>
-            </div>
-          {/each}
+          {#if item.place_name}<span class="dc-place">📍 {item.place_name}</span>{/if}
         </div>
-      {/if}
-      {#if !note.trim() && items.length === 0 && entries.length === 0 && stayDay.nights.length === 0}
-        <!-- A button, not a span: this text *is* the invitation to plan the
-             day, and it sits in the body rather than the header, so the
-             header's click handler never reached it. Tapping the words that
-             say "tap to plan" did nothing at all. -->
-        <button type="button" class="note-hint" onclick={() => (expanded = true)}>
-          {$t('planner.add_notes_hint')}
-        </button>
-      {/if}
-    {/if}
+        <button class="dc-delete" onclick={() => deleteItem(item)} aria-label={$t('planner.delete_item')}>✕</button>
+      </div>
+    {/each}
+    <input
+      class="dc-add"
+      placeholder={$t('organizer.add_item')}
+      bind:value={draft}
+      enterkeyhint="done"
+      onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
+      onblur={addItem}
+    />
   </div>
+
+  <textarea
+    class="dc-note"
+    placeholder={$t('planner.note_placeholder')}
+    value={note}
+    rows={1}
+    use:autogrow
+    oninput={(e) => onNoteInput((e.currentTarget as HTMLTextAreaElement).value)}
+  ></textarea>
 </div>
 
 <style>
   .day-card {
+    background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
+    border-left: 5px solid var(--frame, var(--border));
+    border-radius: var(--radius-md);
     overflow: hidden;
-    background: var(--surface);
   }
-
-  .day-card-header {
+  .dc-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
     gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    cursor: pointer;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--frame, transparent) 12%, var(--bg-card));
   }
-
-  .day-card-header:active {
-    background: var(--surface-hover, rgba(0,0,0,0.04));
-  }
-
-  .day-card-header-left {
+  .dc-when {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-width: 0;
   }
-
-  /* Sits in the always-visible header: "where am I sleeping on the 14th" is
-     the question the planner is opened to answer, so it must not need a click. */
-  .day-stay-band {
+  .dc-num {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+  .dc-date {
+    font-weight: 700;
+  }
+  .dc-cities {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    align-items: baseline;
-    font-size: 0.76rem;
-    color: var(--text-muted, #64748b);
-  }
-
-  .day-stay-night {
-    opacity: 0.85;
-  }
-
-  .day-label {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--text);
-  }
-
-  .note-read {
-    font-size: 0.9rem;
-    line-height: 1.55;
-    color: var(--text);
-    margin: 0;
-    white-space: pre-wrap;
-  }
-
-  .check-text {
     flex: 1;
-    font-size: 0.9rem;
-    color: var(--text);
+    justify-content: flex-end;
   }
-
-  .check-text.done {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .note-hint {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 2px 0;
-    background: none;
-    border: none;
-    font-family: inherit;
+  .dc-city {
     font-size: 0.78rem;
-    color: var(--text-muted);
-    font-style: italic;
-    cursor: pointer;
-    touch-action: manipulation;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--stop) 18%, transparent);
+    border-left: 3px solid var(--stop);
   }
-
-  .note-hint:hover {
-    color: var(--text-secondary);
-  }
-
-  .day-header-right {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    flex-shrink: 0;
-  }
-
   .save-status { font-size: 0.72rem; }
-  .check-time {
-    font-family: var(--font-mono);
-    font-size: 0.8em;
-    color: var(--text-secondary);
-    margin-right: 6px;
-  }
-  .check-place {
-    display: block;
-    font-size: 0.75em;
-    color: var(--text-secondary);
-  }
-  .check-new {
-    width: 100%;
-    margin-top: 4px;
-  }
   .save-status.saving { color: var(--text-muted); }
   .save-status.saved { color: var(--success, #16a34a); font-weight: 600; }
 
-  .day-chevron {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-  }
-
-  .day-card-body {
-    border-top: 1px solid var(--border);
-    padding: var(--space-sm) var(--space-md) var(--space-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-  }
-
-  .day-flights {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    background: var(--surface-2, var(--bg));
-    border-radius: var(--radius-sm, 6px);
-    padding: var(--space-sm);
-  }
-
-  .day-flight-row {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-xs);
+  .dc-section {
+    padding: 6px 12px;
+    border-top: 1px solid var(--border-light, var(--border));
     font-size: 0.85rem;
   }
-
-  /* Station names are far longer than IATA codes, so ground legs must wrap. */
-  .day-flight-badge { flex-shrink: 0; }
-  .day-flight-badge.is-flight { color: var(--primary, #3b82f6); }
-  /* The "arrives" / "in transit" marker on the days of a leg after its first —
-     muted, because the leg itself is the content and this only says which end
-     of it this day holds. */
-  .day-flight-note {
+  .dc-move,
+  .dc-stay {
+    display: flex;
+    gap: 6px;
+    padding: 3px 0;
+    line-height: 1.35;
+  }
+  .dc-move-note,
+  .dc-stay-night {
     color: var(--text-muted);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
+    margin: 0 4px;
   }
-
-  .day-flight-info { color: var(--text); }
-
-  .note-textarea {
-    width: 100%;
-    box-sizing: border-box;
-    font-family: inherit;
-    font-size: 1rem; /* must be ≥16px to prevent iOS auto-zoom on focus */
-    line-height: 1.55;
-    padding: var(--space-sm);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
-    background: var(--input-bg, var(--surface));
-    color: var(--text);
-    resize: vertical;
-    touch-action: manipulation;
-  }
-
-  .note-textarea:focus {
-    outline: none;
-    border-color: var(--primary, #3b82f6);
-  }
-
-  .checklist {
+  .dc-items {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
-    padding: var(--space-sm);
+    gap: 6px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
-
-  .checklist-item {
+  .dc-item {
     display: flex;
     align-items: flex-start;
-    gap: var(--space-xs);
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle, var(--surface-alt));
+    border: 1px solid var(--border-light, var(--border));
   }
-
-
-  .check-input {
+  .dc-dot {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    border-radius: 50%;
+    border: 2px solid var(--text-muted);
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+  .status-todo .dc-dot { border-color: var(--warning); }
+  .status-booked .dc-dot { border-color: var(--success); background: var(--success); }
+  .status-done .dc-dot { border-color: var(--text-muted); background: var(--text-muted); }
+  .dc-item-body {
     flex: 1;
     min-width: 0;
+  }
+  .dc-item-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .dc-time {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .dc-title {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 16px; /* iOS zooms in on anything smaller */
+    line-height: 1.3;
     border: none;
     background: transparent;
-    font-size: 1rem; /* must be ≥16px to prevent iOS auto-zoom on focus */
-    font-family: inherit;
-    line-height: 1.4;
-    color: var(--text);
-    padding: 2px 0;
-    outline: none;
+    color: var(--text-primary);
     resize: none;
+    padding: 0;
     overflow: hidden;
-    touch-action: manipulation;
   }
-
-  .check-input.done {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .check-item-delete {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    padding: 2px 4px;
+  .dc-title:focus { outline: none; }
+  .dc-title.done { text-decoration: line-through; color: var(--text-muted); }
+  .dc-place {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
     margin-top: 2px;
-    flex-shrink: 0;
-    border-radius: 4px;
-    touch-action: manipulation;
   }
-
-  .check-item-delete:hover { color: var(--danger, #dc2626); }
+  .dc-delete {
+    flex: none;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .dc-delete:hover { color: var(--danger, #dc2626); }
+  .dc-add {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 16px;
+    padding: 7px 10px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+  }
+  .dc-add:focus,
+  .dc-note:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .dc-note {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 40px;
+    font: inherit;
+    font-size: 16px;
+    padding: 8px 12px;
+    border: none;
+    border-top: 1px solid var(--border-light, var(--border));
+    background: transparent;
+    color: var(--text-primary);
+    resize: none;
+  }
 
   @media print {
     .save-status,
-    .check-new,
-    .check-item-delete,
-    .day-chevron { display: none !important; }
-
-    .day-card { break-inside: avoid; border: 1px solid #ccc; }
+    .dc-add,
+    .dc-delete { display: none !important; }
+    .dc-note:placeholder-shown { display: none; }
+    .day-card { break-inside: avoid; border: 1px solid #ccc; border-left: 5px solid var(--frame, #ccc); }
   }
 </style>

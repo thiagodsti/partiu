@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote, PlanItem } from '../api/types';
+  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote, PlanItem, PlanStop } from '../api/types';
+  import { stopColor } from '../lib/planColors';
   import { dayNotesApi, plannerApi } from '../api/client';
   import { parseDayNote } from '../lib/dayNotes';
   import { t } from '../lib/i18n';
@@ -102,12 +103,21 @@
   /** The planner's items by day: the day cards show and edit the same list
    * the planner does, so what is added on one page is on the other. */
   let itemsByDate = $state<Record<string, PlanItem[]>>({});
+  /** The planner's route, for each day's city tags and colour. */
+  let stops = $state<PlanStop[]>([]);
+
+  /** The cities a day touches, the one slept in first (it colours the card). */
+  function citiesOn(date: string): { name: string; color: string }[] {
+    const on = stops.filter((s) => s.start_date <= date && date <= s.end_date);
+    on.sort((a, b) => Number(b.start_date <= date && date < b.end_date) - Number(a.start_date <= date && date < a.end_date));
+    return on.map((s) => ({ name: s.name, color: stopColor(stops, s) }));
+  }
   let loaded = $state(false);
   let loadError = $state<string | null>(null);
 
   onMount(async () => {
     try {
-      const [rows, plan]: [TripDayNote[], { items: PlanItem[] } | null] = await Promise.all([
+      const [rows, plan]: [TripDayNote[], { items: PlanItem[]; stops: PlanStop[] } | null] = await Promise.all([
         dayNotesApi.list(trip.id),
         plannerApi.get(trip.id).catch(() => null),
       ]);
@@ -119,6 +129,7 @@
         if (it.date) (byDate[it.date] ??= []).push(it);
       }
       itemsByDate = byDate;
+      stops = plan?.stops ?? [];
       onLoaded?.(map);
     } catch {
       loadError = 'Failed to load planner notes.';
@@ -145,6 +156,8 @@
         {carRentals}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
         planItems={itemsByDate[date] ?? []}
+        cities={citiesOn(date)}
+        dayNumber={allDays.indexOf(date) + 1}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}
       />
