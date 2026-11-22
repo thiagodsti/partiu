@@ -2,14 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import AddTransportPage from './AddTransportPage.svelte';
 
-const { mockPush, mockCreateFlight, mockCreateSegment, mockGetTrip } = vi.hoisted(() => ({
+const { mockPush, mockCreateFlight, mockCreateSegment, mockGetTrip, query } = vi.hoisted(() => ({
+  query: { value: '' },
   mockPush: vi.fn(),
   mockCreateFlight: vi.fn(),
   mockCreateSegment: vi.fn(),
   mockGetTrip: vi.fn(),
 }));
 
-vi.mock('svelte-spa-router', () => ({ push: mockPush }));
+vi.mock('svelte-spa-router', () => ({
+  push: mockPush,
+  querystring: {
+    subscribe: (fn: (v: string) => void) => {
+      fn(query.value);
+      return () => {};
+    },
+  },
+}));
 vi.mock('../api/client', () => ({
   flightsApi: { create: mockCreateFlight },
   segmentsApi: { create: mockCreateSegment },
@@ -134,6 +143,17 @@ describe('AddTransportPage', () => {
     const { container } = render(AddTransportPage, { props: { params: DEFAULT_PARAMS } });
     const cancelLink = container.querySelector('a.btn-secondary') as HTMLAnchorElement;
     expect(cancelLink.getAttribute('href')).toBe('#/trips/trip-42');
+  });
+
+  it('cancel link points back to the planner when opened from it', () => {
+    query.value = 'from=planner';
+    try {
+      const { container } = render(AddTransportPage, { props: { params: DEFAULT_PARAMS } });
+      const cancelLink = container.querySelector('a.btn-secondary') as HTMLAnchorElement;
+      expect(cancelLink.getAttribute('href')).toBe('#/trips/trip-42/plan');
+    } finally {
+      query.value = '';
+    }
   });
 
   describe('flight', () => {

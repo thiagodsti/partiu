@@ -2,15 +2,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import EditFlightPage from './EditFlightPage.svelte';
 
-const { mockPush, mockGet, mockUpdate } = vi.hoisted(() => ({
+const { mockPush, mockGet, mockUpdate, query } = vi.hoisted(() => ({
   mockPush: vi.fn(),
   mockGet: vi.fn(),
   mockUpdate: vi.fn(),
+  /** The route's querystring, read once per render by the store below. */
+  query: { value: '' },
 }));
 
 vi.mock('svelte-spa-router', async () => {
   const { readable: r } = await import('svelte/store');
-  return { push: mockPush, location: r('/trips/trip-42/flights/flight-7/edit') };
+  return {
+    push: mockPush,
+    location: r('/trips/trip-42/flights/flight-7/edit'),
+    querystring: {
+      subscribe: (fn: (v: string) => void) => {
+        fn(query.value);
+        return () => {};
+      },
+    },
+  };
 });
 vi.mock('../api/client', () => ({
   flightsApi: { get: mockGet, update: mockUpdate },
@@ -55,6 +66,7 @@ function renderPage() {
 describe('EditFlightPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    query.value = '';
     mockGet.mockResolvedValue({ ...FLIGHT });
   });
 
@@ -145,5 +157,17 @@ describe('EditFlightPage', () => {
     await waitFor(() => expect(container.querySelector('a.btn-secondary')).toBeInTheDocument());
     const cancelLink = container.querySelector('a.btn-secondary') as HTMLAnchorElement;
     expect(cancelLink.getAttribute('href')).toBe('#/trips/trip-42/flights/flight-7');
+  });
+
+  it('goes back to the planner when opened from it', async () => {
+    query.value = 'from=planner';
+    mockUpdate.mockResolvedValue({ id: 'flight-7' });
+    const { container } = renderPage();
+
+    await waitFor(() => expect(container.querySelector('form')).toBeInTheDocument());
+    const cancelLink = container.querySelector('a.btn-secondary') as HTMLAnchorElement;
+    expect(cancelLink.getAttribute('href')).toBe('#/trips/trip-42/plan');
+    await fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/trips/trip-42/plan'));
   });
 });

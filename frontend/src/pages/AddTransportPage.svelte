@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from 'svelte-spa-router';
+  import { push, querystring } from 'svelte-spa-router';
   import { flightsApi, segmentsApi, tripsApi } from '../api/client';
   import type { SegmentWriteData, SegmentPlaceInput } from '../api/client';
   import type { SegmentType } from '../api/types';
@@ -14,7 +14,11 @@
   }
   const { params }: Props = $props();
 
-  const backUrl = $derived(`#/trips/${params.tripId}`);
+  // Opened from the trip planner (`?from=planner`), saving or leaving goes
+  // back there rather than to the trip page.
+  const fromPlanner = $derived(new URLSearchParams($querystring ?? '').get('from') === 'planner');
+  const returnPath = $derived(fromPlanner ? `/trips/${params.tripId}/plan` : `/trips/${params.tripId}`);
+  const backUrl = $derived(`#${returnPath}`);
 
   /* The trip's own span bounds both pickers. It is safe to bound with because
    * `_recompute_span` unions the *declared* dates (`planned_start_date` /
@@ -170,7 +174,7 @@
       } else {
         await segmentsApi.create(params.tripId, segmentPayload());
       }
-      await push(`/trips/${params.tripId}`);
+      await push(returnPath);
     } catch (err) {
       error = (err as Error).message;
     } finally {

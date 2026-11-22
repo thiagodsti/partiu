@@ -747,7 +747,7 @@
               <div class="cell" style={frame(date, 'mid')}>
                 {#each movesOn(date) as m (m.key)}
                   {#if m.flight}
-                    <a class="move editable" href="#/trips/{params.id}/flights/{m.flight.id}/edit" title={$t('organizer.edit')}>
+                    <a class="move editable" href="#/trips/{params.id}/flights/{m.flight.id}/edit?from=planner" title={$t('organizer.edit')}>
                       <span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}
                     </a>
                   {:else if m.segment}
@@ -757,7 +757,7 @@
                     </button>
                   {/if}
                 {/each}
-                <a class="cell-add" href="#/trips/{params.id}/add-transport">+ {$t('organizer.add_transport')}</a>
+                <a class="cell-add" href="#/trips/{params.id}/add-transport?from=planner">+ {$t('organizer.add_transport')}</a>
               </div>
             {/each}
 
