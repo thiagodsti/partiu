@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Flight, TripSegment, SegmentType, TripStay, StayKind, TripCarRental } from '../api/types';
-  import { dayNotesApi } from '../api/client';
+  import type { Flight, TripSegment, SegmentType, TripStay, StayKind, TripCarRental, PlanItem } from '../api/types';
+  import { dayNotesApi, plannerApi } from '../api/client';
+  import { serializeDayNote } from '../lib/dayNotes';
   import { staysForDay, rentalsForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
   import { untrack } from 'svelte';
   import { t, locale } from '../lib/i18n';
@@ -26,6 +27,10 @@
     stays?: TripStay[];
     carRentals?: TripCarRental[];
     initialContent: DayContent;
+    /** The planner's items on this day. The card's checklist *is* this list
+     * (migration 0041 folded the old per-card checklists into it), so adding,
+     * ticking or renaming here shows in the planner and the other way round. */
+    planItems?: PlanItem[];
     initiallyExpanded: boolean;
     forceExpanded?: boolean;
   }
@@ -38,6 +43,7 @@
     stays = [],
     carRentals = [],
     initialContent,
+    planItems = [],
     initiallyExpanded,
     forceExpanded = false,
   }: Props = $props();
@@ -66,7 +72,9 @@
   // ---- Local state (isolated per card) ----
   // untrack: intentionally snapshot props at mount, changes after mount are ignored
   let note = $state(untrack(() => initialContent.note));
-  let items = $state<ChecklistItem[]>(untrack(() => initialContent.items.map((i) => ({ ...i }))));
+  let items = $state<PlanItem[]>(untrack(() => planItems.map((i) => ({ ...i }))));
+  let draft = $state('');
+  const isDone = (i: PlanItem) => i.status === 'done';
   let expanded = $state(untrack(() => initiallyExpanded));
   let saving = $state(false);
   let saved = $state(false);
@@ -259,20 +267,39 @@
 
   // ---- Mutations ----
 
-  function toggleItem(idx: number) {
-    items[idx] = { ...items[idx], checked: !items[idx].checked };
-    scheduleSave();
+  async function toggleItem(item: PlanItem) {
+    // Ticking is "done"; unticking goes back to "to book / buy" rather than
+    // to "idea", since an item on a day has been decided on.
+    item.status = isDone(item) ? 'todo' : 'done';
+    await plannerApi.updateItem(tripId, item.id, { status: item.status }).catch(() => {});
   }
 
-
-  function addItem() {
-    items = [...items, { text: '', checked: false }];
-    scheduleSave();
+  async function addItem() {
+    const title = draft.trim();
+    if (!title) return;
+    draft = '';
+    try {
+      const { id } = await plannerApi.createItem(tripId, { title, date, status: 'todo' });
+      items = [
+        ...items,
+        { id, title, date, time: null, notes: null, place_name: null, lat: null, lon: null, status: 'todo', sort_order: items.length },
+      ];
+    } catch {
+      draft = title;
+    }
   }
 
-  function deleteItem(idx: number) {
-    items = items.filter((_, i) => i !== idx);
-    scheduleSave();
+  async function renameItem(item: PlanItem, title: string) {
+    const clean = title.trim();
+    if (!clean) return deleteItem(item);
+    if (clean === item.title) return;
+    item.title = clean;
+    await plannerApi.updateItem(tripId, item.id, { title: clean }).catch(() => {});
+  }
+
+  async function deleteItem(item: PlanItem) {
+    items = items.filter((i) => i.id !== item.id);
+    await plannerApi.deleteItem(tripId, item.id).catch(() => {});
   }
 
   function onNoteInput(value: string) {
@@ -293,7 +320,7 @@
   async function doSave() {
     saving = true;
     try {
-      await dayNotesApi.upsert(tripId, date, JSON.stringify({ note, items }));
+      await dayNotesApi.upsert(tripId, date, serializeDayNote(note));
       saved = true;
       setTimeout(() => { saved = false; }, 1500);
     } catch {
@@ -366,32 +393,37 @@
         rows={3}
       ></textarea>
       <div class="checklist">
-        {#each items as item, idx (idx)}
+        {#each items as item (item.id)}
           <div class="checklist-item">
             <Checkbox
-              checked={item.checked}
-              label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
-              onToggle={() => toggleItem(idx)}
+              checked={isDone(item)}
+              label={isDone(item) ? $t('planner.uncheck') : $t('planner.check')}
+              onToggle={() => toggleItem(item)}
             />
+            {#if item.time}<span class="check-time">{item.time}</span>{/if}
             <textarea
               class="check-input"
-              class:done={item.checked}
+              class:done={isDone(item)}
               placeholder={$t('planner.checklist_item_placeholder')}
               rows={1}
-              bind:value={items[idx].text}
+              value={item.title}
               use:autogrow
-              oninput={scheduleSave}
+              onblur={(e) => renameItem(item, (e.currentTarget as HTMLTextAreaElement).value)}
             ></textarea>
             <button
               class="check-item-delete"
-              onclick={() => deleteItem(idx)}
+              onclick={() => deleteItem(item)}
               aria-label={$t('planner.delete_item')}
             >✕</button>
           </div>
         {/each}
-        <button class="add-item-btn" onclick={addItem}>
-          + {$t('planner.add_item')}
-        </button>
+        <input
+          class="check-input check-new"
+          placeholder={'+ ' + $t('planner.add_item')}
+          bind:value={draft}
+          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
+          onblur={addItem}
+        />
       </div>
     {:else}
       <!-- Read mode: show all content without edit controls -->
@@ -400,14 +432,18 @@
       {/if}
       {#if items.length > 0}
         <div class="checklist">
-          {#each items as item, idx (idx)}
+          {#each items as item (item.id)}
             <div class="checklist-item">
               <Checkbox
-                checked={item.checked}
-                label={item.checked ? $t('planner.uncheck') : $t('planner.check')}
-                onToggle={() => toggleItem(idx)}
+                checked={isDone(item)}
+                label={isDone(item) ? $t('planner.uncheck') : $t('planner.check')}
+                onToggle={() => toggleItem(item)}
               />
-              <span class="check-text" class:done={item.checked}>{item.text || '…'}</span>
+              <span class="check-text" class:done={isDone(item)}>
+                {#if item.time}<span class="check-time">{item.time}</span>{/if}
+                {item.title}
+                {#if item.place_name}<span class="check-place">📍 {item.place_name}</span>{/if}
+              </span>
             </div>
           {/each}
         </div>
@@ -523,6 +559,21 @@
   }
 
   .save-status { font-size: 0.72rem; }
+  .check-time {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    color: var(--text-secondary);
+    margin-right: 6px;
+  }
+  .check-place {
+    display: block;
+    font-size: 0.75em;
+    color: var(--text-secondary);
+  }
+  .check-new {
+    width: 100%;
+    margin-top: 4px;
+  }
   .save-status.saving { color: var(--text-muted); }
   .save-status.saved { color: var(--success, #16a34a); font-weight: 600; }
 
@@ -640,21 +691,9 @@
 
   .check-item-delete:hover { color: var(--danger, #dc2626); }
 
-  .add-item-btn {
-    align-self: flex-start;
-    margin-top: 2px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.82rem;
-    color: var(--primary, #3b82f6);
-    padding: 2px 0;
-    touch-action: manipulation;
-  }
-
   @media print {
     .save-status,
-    .add-item-btn,
+    .check-new,
     .check-item-delete,
     .day-chevron { display: none !important; }
 

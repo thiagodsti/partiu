@@ -36,6 +36,7 @@
   import PlanMap, { type MapCity, type MapLine, type MapPoint } from '../components/PlanMap.svelte';
   import { formatTime, localDateKey } from '../lib/utils';
   import { toasts } from '../lib/toastStore';
+  import { parseDayNote, serializeDayNote } from '../lib/dayNotes';
 
   interface Props {
     params: { id: string };
@@ -72,7 +73,7 @@
       items = plan.items;
       tasks = plan.tasks;
       people = ppl;
-      notes = Object.fromEntries(dn.map((n) => [n.date, n.content]));
+      notes = Object.fromEntries(dn.map((n) => [n.date, parseDayNote(n.content).note]));
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -348,7 +349,7 @@
   async function saveNote(date: string, content: string) {
     if ((notes[date] ?? '') === content) return;
     notes[date] = content;
-    const save = dayNotesApi.upsert(params.id, date, content);
+    const save = dayNotesApi.upsert(params.id, date, serializeDayNote(content));
     pendingSaves.add(save);
     try {
       await save;

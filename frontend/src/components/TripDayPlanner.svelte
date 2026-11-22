@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote } from '../api/types';
-  import { dayNotesApi } from '../api/client';
+  import type { Trip, Flight, TripSegment, TripStay, TripCarRental, TripDayNote, PlanItem } from '../api/types';
+  import { dayNotesApi, plannerApi } from '../api/client';
+  import { parseDayNote } from '../lib/dayNotes';
   import { t } from '../lib/i18n';
   import TripDayCard, { type DayContent } from './TripDayCard.svelte';
   import { legDateKeys, localDateKey } from '../lib/utils';
@@ -84,25 +85,6 @@
     );
   }
 
-  function parseContent(raw: string): DayContent {
-    if (!raw) return { note: '', items: [] };
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return { note: parsed.note ?? '', items: parsed.items ?? [] };
-      }
-      // Legacy block array
-      if (Array.isArray(parsed)) {
-        const textBlock = parsed.find((b: { type: string }) => b.type === 'text');
-        const checkBlock = parsed.find((b: { type: string }) => b.type === 'checklist');
-        return { note: textBlock?.value ?? '', items: checkBlock?.items ?? [] };
-      }
-    } catch {
-      return { note: raw, items: [] };
-    }
-    return { note: '', items: [] };
-  }
-
   function todayStr(): string {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -117,15 +99,26 @@
   const today = todayStr();
 
   let contentByDate = $state<Record<string, DayContent>>({});
+  /** The planner's items by day: the day cards show and edit the same list
+   * the planner does, so what is added on one page is on the other. */
+  let itemsByDate = $state<Record<string, PlanItem[]>>({});
   let loaded = $state(false);
   let loadError = $state<string | null>(null);
 
   onMount(async () => {
     try {
-      const rows: TripDayNote[] = await dayNotesApi.list(trip.id);
+      const [rows, plan]: [TripDayNote[], { items: PlanItem[] } | null] = await Promise.all([
+        dayNotesApi.list(trip.id),
+        plannerApi.get(trip.id).catch(() => null),
+      ]);
       const map: Record<string, DayContent> = {};
-      for (const row of rows) map[row.date] = parseContent(row.content);
+      for (const row of rows) map[row.date] = parseDayNote(row.content);
       contentByDate = map;
+      const byDate: Record<string, PlanItem[]> = {};
+      for (const it of plan?.items ?? []) {
+        if (it.date) (byDate[it.date] ??= []).push(it);
+      }
+      itemsByDate = byDate;
       onLoaded?.(map);
     } catch {
       loadError = 'Failed to load planner notes.';
@@ -151,6 +144,7 @@
         {stays}
         {carRentals}
         initialContent={contentByDate[date] ?? { note: '', items: [] }}
+        planItems={itemsByDate[date] ?? []}
         initiallyExpanded={collapseAll ? false : date === today}
         {forceExpanded}
       />
