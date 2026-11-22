@@ -1660,6 +1660,18 @@
     min-height: 44px;
   }
   @media (max-width: 760px) {
+    .planner-page {
+      padding: var(--space-sm) var(--space-sm) var(--space-xl);
+    }
+    .panel,
+    .route {
+      padding: 12px;
+    }
+    .dm-head,
+    .dm-section {
+      padding-left: 10px;
+      padding-right: 10px;
+    }
     .plan-header {
       align-items: flex-start;
     }

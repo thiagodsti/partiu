@@ -602,6 +602,14 @@
     resize: none;
   }
 
+  @media (max-width: 640px) {
+    .dc-head { padding: 6px 10px; }
+    .dc-section { padding: 6px 10px; }
+    .dc-items { padding-top: 6px; padding-bottom: 6px; }
+    .dc-item { padding: 5px 6px; gap: 6px; }
+    .dc-note { padding: 8px 10px; }
+  }
+
   @media print {
     .save-status,
     .dc-add,
