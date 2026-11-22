@@ -419,6 +419,7 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
       - The output fails validation
     """
     from ...config import settings
+    from ..routes.check import fix_reversed_route
 
     if not settings.OLLAMA_URL:
         return []
@@ -473,6 +474,6 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         if not _flight_number_in_text(f, mail_text):
             logger.debug("LLM flight number not found in the email: %s", f)
             continue
-        results.append(_normalise_flight(f, "", ""))
+        results.append(fix_reversed_route(_normalise_flight(f, "", "")))
 
     return results

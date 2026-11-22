@@ -25,6 +25,7 @@ def start_scheduler():
     from .database import get_global_setting
     from .integrations.aircraft.status_sync import run_flight_status_sync
     from .integrations.aircraft.sync import run_aircraft_sync
+    from .integrations.routes.data import refresh_routes
     from .notifications.reminder_job import run_push_notifications
     from .sync.pipeline import run_email_sync
 
@@ -67,12 +68,37 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Known flight routes, for turning a reversed LLM leg around. Only worth a
+    # download when the LLM fallback is on; weekly, counted from the last
+    # successful refresh so frequent restarts neither skip nor repeat it.
+    if settings.OLLAMA_URL:
+        _scheduler.add_job(
+            refresh_routes,
+            trigger=IntervalTrigger(days=7),
+            id="flight_routes_refresh",
+            name="Flight Routes Refresh",
+            replace_existing=True,
+            next_run_time=_next_routes_refresh(get_global_setting("flight_routes_updated_at", "")),
+        )
+
     _scheduler.start()
     logger.info(
         "Scheduler started — email sync every %d minutes, aircraft sync daily, "
         "push notifications every 30 minutes, flight status sync every 60 minutes",
         sync_interval,
     )
+
+
+def _next_routes_refresh(updated_at: str):
+    """Now when the routes were never stored or are a week old, else a week after."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    try:
+        due = datetime.fromisoformat(updated_at) + timedelta(days=7)
+    except ValueError:
+        return now
+    return max(now, due)
 
 
 def stop_scheduler():
