@@ -1188,8 +1188,9 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: var(--bg-card);
-    max-height: calc(100vh - 230px);
-    overflow-y: auto;
+    /* No height cap: the board grows with its busiest day and the page scrolls.
+       A capped board scrolled inside itself, which hid the notes row and the
+       bottom of the city frames below a scrollbar that was easy to miss. */
   }
   .lane-label,
   .day-head,
