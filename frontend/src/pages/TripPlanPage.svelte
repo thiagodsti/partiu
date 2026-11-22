@@ -465,6 +465,24 @@
     );
   }
 
+  /** A frame in the city's colour around each run of days in that city, so
+   * "all of this is Beijing" reads at a glance. A day belongs to the city you
+   * sleep in, so a travel day opens the next city's frame. Drawn with inset
+   * shadows, which need no layout space and sit inside the sticky header. */
+  function frame(date: string, pos: 'top' | 'mid' | 'bottom'): string {
+    const c = cityOf(date);
+    if (!c) return '';
+    const i = days.indexOf(date);
+    const col = stopColor(c);
+    const sh: string[] = [];
+    if (i === 0 || cityOf(days[i - 1]) !== c) sh.push(`inset 3px 0 0 ${col}`);
+    if (i === days.length - 1 || cityOf(days[i + 1]) !== c) sh.push(`inset -3px 0 0 ${col}`);
+    if (pos === 'top') sh.push(`inset 0 3px 0 ${col}`);
+    if (pos === 'bottom') sh.push(`inset 0 -3px 0 ${col}`);
+    sh.push('inset 0 0 0 transparent');
+    return `--frame:${col};--frame-shadow:${sh.join(',')}`;
+  }
+
   const mapCities = $derived<MapCity[]>(
     stops
       .map((s, i) => ({ s, i }))
@@ -625,6 +643,7 @@
           <div class="lane-label corner"></div>
           {#each days as date, i (date)}
             <button
+              style={frame(date, 'top')}
               class="day-head"
               class:weekend={[0, 6].includes(new Date(`${date}T12:00:00`).getDay())}
               class:focused={focusDay === date}
@@ -638,7 +657,7 @@
 
           <div class="lane-label">{$t('organizer.city')}</div>
           {#each days as date (date)}
-            <div class="cell city-cell">
+            <div class="cell city-cell" style={frame(date, 'mid')}>
               {#each stopsOn(date) as s (s.id)}
                 <span class="city-tag" style="--stop:{stopColor(s)}">{s.name}</span>
               {:else}
@@ -649,7 +668,7 @@
 
           <div class="lane-label">{$t('organizer.transport')}</div>
           {#each days as date (date)}
-            <div class="cell">
+            <div class="cell" style={frame(date, 'mid')}>
               {#each movesOn(date) as m (m.key)}
                 <div class="move"><span>{m.icon}</span> <span class="move-time">{m.time}</span> {m.label}</div>
               {/each}
@@ -659,7 +678,7 @@
           <div class="lane-label">{$t('organizer.stay')}</div>
           {#each days as date (date)}
             {@const stay = stayFor(date)}
-            <div class="cell">
+            <div class="cell" style={frame(date, 'mid')}>
               {#if stay}
                 <div class="stay" title={stay.place.address ?? ''}>🏨 {stay.place.name}</div>
               {:else if missingStay(date)}
@@ -672,6 +691,7 @@
           {#each days as date (date)}
             <div
               class="cell items-cell"
+              style={frame(date, 'mid')}
               class:drop={dropTarget === date}
               role="list"
               ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
@@ -692,7 +712,7 @@
 
           <div class="lane-label">{$t('organizer.notes')}</div>
           {#each days as date (date)}
-            <div class="cell">
+            <div class="cell" style={frame(date, 'bottom')}>
               <textarea
                 class="note"
                 rows="3"
@@ -1086,9 +1106,18 @@
     border-left: 0;
     cursor: pointer;
   }
-  .day-head.focused {
-    box-shadow: inset 0 -3px 0 var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary, var(--bg-card)));
+  .cell[style*='--frame'] {
+    box-shadow: var(--frame-shadow);
+    background: color-mix(in srgb, var(--frame) 6%, transparent);
+  }
+  .day-head[style*='--frame'] {
+    box-shadow: var(--frame-shadow);
+    background: color-mix(in srgb, var(--frame) 16%, var(--bg-secondary, var(--bg-card)));
+  }
+  .day-head.focused,
+  .day-head.focused[style*='--frame'] {
+    box-shadow: var(--frame-shadow, inset 0 0 0 transparent), inset 0 -4px 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary, var(--bg-card)));
   }
   .day-head.weekend {
     background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary, var(--bg-card)));
