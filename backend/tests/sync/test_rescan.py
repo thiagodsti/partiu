@@ -152,3 +152,64 @@ class TestParserVersionRescan:
         run_email_sync_for_user(_creds())
         assert datetime.now(UTC) - fake_imap[-1]["since_date"] < timedelta(days=2)
         conn.close()
+
+
+@pytest.fixture
+def llm_flags(monkeypatch):
+    """Record the use_llm each sync passes on, while still processing the mail."""
+    from backend.sync import pipeline
+
+    seen = []
+    real = pipeline._process_emails
+
+    def spy(emails, user_id, *args, **kwargs):
+        seen.append(kwargs.get("use_llm"))
+        return real(emails, user_id, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_process_emails", spy)
+    return seen
+
+
+@pytest.mark.usefixtures("test_db")
+class TestLlmOnIncrementalSyncsOnly:
+    """The LLM costs about a minute per unknown mail on a CPU: a sync that reads
+    the whole lookback window must not send it hundreds."""
+
+    def test_first_sync_skips_the_llm(self, test_db, fake_imap, llm_flags):
+        from backend.sync.pipeline import run_email_sync_for_user
+
+        conn = _user(test_db)
+        run_email_sync_for_user(_creds())
+        assert llm_flags == [False]
+        conn.close()
+
+    def test_incremental_sync_uses_the_llm(self, test_db, fake_imap, llm_flags):
+        from backend.sync.pipeline import run_email_sync_for_user
+
+        conn = _user(test_db)
+        run_email_sync_for_user(_creds())
+        run_email_sync_for_user(_creds())
+        assert llm_flags == [False, True]
+        conn.close()
+
+    def test_full_sync_skips_the_llm(self, test_db, fake_imap, llm_flags):
+        from backend.sync.pipeline import run_email_sync_for_user
+        from backend.sync.repository import SyncRepository
+
+        conn = _user(test_db)
+        run_email_sync_for_user(_creds())
+        SyncRepository().reset_last_synced(1)
+        run_email_sync_for_user(_creds())
+        assert llm_flags == [False, False]
+        conn.close()
+
+    def test_parser_version_rescan_skips_the_llm(self, test_db, fake_imap, llm_flags):
+        from backend.sync.pipeline import run_email_sync_for_user
+        from backend.sync.repository import SyncRepository
+
+        conn = _user(test_db)
+        run_email_sync_for_user(_creds())
+        SyncRepository().upsert_state(1, parser_version="0")
+        run_email_sync_for_user(_creds())
+        assert llm_flags == [False, False]
+        conn.close()
