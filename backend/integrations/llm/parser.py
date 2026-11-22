@@ -106,7 +106,7 @@ def llm_available() -> bool:
     return bool(settings.OLLAMA_URL)
 
 
-_FLIGHT_SCHEMA = {
+_FLIGHT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["has_flight"],
     "properties": {
