@@ -48,7 +48,7 @@ Want to try it before self-hosting? A public demo is available at:
 - **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
 - **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
 - **schema.org flight markup** for airlines with no rule: many airlines embed a typed `FlightReservation` block (Ryanair, Lufthansa, TAP and Austrian do), and when the rules and the GDS parser find nothing it is read directly — flight number, airports by IATA code, times with their offsets. A leg whose markup lacks an airport code or a clock time is left out rather than guessed
-- **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently
+- **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort; output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently. A leg whose route is the exact reverse of the known route for its flight number is turned around, from a weekly local copy of [Virtual Radar Server's standing data](https://github.com/vradarserver/standing-data) (CC0); nothing is looked up online during a sync
 - LLM fallback is used only for incremental sync, not full rescans
 - Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
 - Blocked sender domains: admin-configurable list of domains (e.g. Airbnb, Booking.com) that are silently skipped during sync
@@ -528,7 +528,9 @@ Measured in November 2026 with `eval_llm_corpus` on a CPU-only server (i7-7820HQ
 
 | Model | Legs right | Wrong legs | Mails fully right | Negatives with a leg | Seconds per mail (median) |
 |---|---|---|---|---|---|
-| `qwen3:4b-instruct` | 42/53 (79%) | 6 | 17/25 | 2/15 | ~68 |
+| `qwen3:4b-instruct` | 45/53 (85%) | 2 | 20/25 | 2/15 | ~68 |
+| `qwen3:4b-instruct`, without the route check | 42/53 (79%) | 6 | 17/25 | 2/15 | ~68 |
+| `granite4:tiny-h` (7B MoE) | 38/53 (72%) | 13 | 14/25 | 1/15 | ~25 |
 | `gemma3:4b` ¹ | 26/53 (49%) | 11 | 10/25 | 1/15 | ~63 |
 | `qwen3:4b-instruct`, before the fixes below | 0/53 | 0 | 0/25 | 0/15 | ~45 |
 
@@ -541,16 +543,17 @@ The fixes. Requiring the leg fields is what took it off zero; the others togethe
 - **The email's own date** in the prompt instead of the sync date, which is what the year of a `02/03`-style date is derived from.
 - **Prefixing digits-only flight numbers** with the airline code the model returned (`"783"` + `"TP"`).
 - **"Manage your booking" no longer ends the body.** It sits above the itinerary in some mails (Vueling), which left the model 379 characters of greeting.
+- **Reversed routes are turned around** from known routes (see below): +3 legs right, wrong legs 6 → 2.
 - **The flight number must appear in the mail.** This drops invented numbers (`VP1234` for a Vueling round trip, `NK117` in a Norwegian reminder) and, on this sample, nothing that was right. Airports are not checked that way: many mails print only city names and the model maps those correctly.
 
 What is still wrong, and why the fallback stays a last resort:
 
-- **Inverted routes** are the main remaining error (4 of the 6 wrong legs; the other two are LATAM's FLN read as FLY, a real airport in Australia): Azul (`Seu voo para Florianópolis` above `VCP … FLN`) and ITA (`FCO LIN`) come back as FLN→VCP and LIN→FCO every time. A prompt rule about direction did not change that over the full sample, nor did renaming the fields to `from_`/`to_` on the Azul mails (in these runs Ollama wrote the required keys in alphabetical order, so `arr_airport` comes first, which looked like the cause).
+- **Inverted routes** were the main error: Azul (`Seu voo para Florianópolis` above `VCP … FLN`) and ITA (`FCO LIN`) come back as FLN→VCP and LIN→FCO every time, with every model tried. A prompt rule about direction did not change that, nor did renaming the fields to `from_`/`to_`. They are now turned around from known routes: `integrations/routes/` keeps a local copy of Virtual Radar Server's standing data (about 630,000 callsign routes, refreshed weekly while `OLLAMA_URL` is set, a failed download keeping the previous copy) and swaps a leg only when its route is the **exact reverse** of a known one. It never rejects or changes anything else: airlines reuse flight numbers, and 8 of the corpus's 81 distinct legs differ from the data while being right; 12 are not in it at all (mostly LATAM). On the sample, all five inverted legs were fixed and no right leg was touched. The two wrong legs left are LATAM's FLN read as FLY, a real airport in Australia.
 - **Long multi-leg itineraries** lose legs (Qatar, Kiwi.com).
 - **Mails with city names only and no codes** (an SAS receipt PDF) come back as no flight.
 - **At about a minute per mail on a CPU**, it is fine for the incremental sync's handful of unknown mails, not for a backfill.
 
-Validation (IATA format, flight number shape, plausibility, the grounding check) is still the safety net, but an inverted route passes all of it. A larger model or a GPU would likely do better; neither has been measured.
+Validation (IATA format, flight number shape, plausibility, the grounding check) is still the safety net. Models that fit a 16 GB CPU-only server were compared on the same sample and none beat `qwen3:4b-instruct`: `granite4:tiny-h` is three times faster but its errors are wrong airports rather than inversions, so the route check cannot fix them; `NuExtract-2.0-4B`, `gemma3:4b`, `qwen3.5:4b` (which must run with `think: false`), `phi4-mini`, `qwen3:4b-instruct` at Q8_0 and `LFM2.5-1.2B` all scored lower.
 
 ---
 
