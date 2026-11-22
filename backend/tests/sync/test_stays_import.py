@@ -185,8 +185,9 @@ class TestFlightsFirst:
         assert stay["kind"] == "airbnb"
 
     def test_a_trip_in_the_wrong_country_is_not_joined(self, conn):
-        """The country gate: a Tokyo trip straddling the same fortnight must not
-        swallow a Lisbon booking."""
+        """The country gate on the flight window: a Tokyo trip whose flights fall
+        near a Lisbon booking must not swallow it. The booking runs past the trip
+        (to 16 April), so it is not inside its span either."""
         from backend.sync.grouping import auto_group_flights
         from backend.sync.stays_import import import_lodging_from_email
 
@@ -199,7 +200,7 @@ class TestFlightsFirst:
         _add_flight(conn, user_id, "HND", "ARN", back, back + timedelta(hours=12), ref="PNR002")
         auto_group_flights(user_id=user_id)
 
-        import_lodging_from_email(_lodging_email(), user_id)
+        import_lodging_from_email(_lodging_email(checkout="2026-04-16T11:00"), user_id)
 
         (stay,) = _stays(conn, user_id)
         japan_trip = conn.execute(
@@ -456,3 +457,109 @@ class TestTripComConfirmation:
 
         # A rescan reads the same mail again and must not duplicate the stay.
         assert _process_emails([email], user_id, skip_dedup=True)["stays_created"] == 0
+
+
+class TestStayInsideATrip:
+    """A stay in the middle of a long trip has no flight near it."""
+
+    def _beijing_trip(self, conn, user_id):
+        from backend.sync.grouping import auto_group_flights
+
+        _add_airport(conn, "ARN", "SE", "Stockholm")
+        _add_airport(conn, "PEK", "CN", "Beijing")
+        out = datetime(2027, 3, 23, 17, 30, tzinfo=UTC)
+        back = datetime(2027, 4, 9, 8, 0, tzinfo=UTC)
+        _add_flight(conn, user_id, "ARN", "PEK", out, out + timedelta(hours=10), ref="XUOTN4")
+        _add_flight(conn, user_id, "PEK", "ARN", back, back + timedelta(hours=11), ref="XUOTN4")
+        auto_group_flights(user_id=user_id)
+        return conn.execute("SELECT id FROM trips").fetchone()["id"]
+
+    def test_a_mid_trip_stay_joins_the_trip_around_it(self, conn):
+        """The Xi'an night of 27 March 2027 used to open a trip of its own."""
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        trip_id = self._beijing_trip(conn, user_id)
+        import_lodging_from_email(
+            _lodging_email(
+                ref="XIAN0001",
+                name="Nanfeng Hotel",
+                city="Xi'an",
+                country="CN",
+                checkin="2027-03-27T14:00",
+                checkout="2027-03-28T12:00",
+            ),
+            user_id,
+        )
+        (stay,) = _stays(conn, user_id)
+        assert stay["trip_id"] == trip_id
+        assert conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"] == 1
+
+    def test_a_stay_without_a_country_joins_the_trip_around_it(self, conn):
+        """Trip.com confirmations carry no country."""
+        from backend.sync.stays_import import _find_trip_for_stay
+
+        user_id = _make_user(conn)
+        trip_id = self._beijing_trip(conn, user_id)
+        stay = {
+            "name": "Nanfeng Hotel",
+            "check_in_datetime": "2027-03-27T14:00",
+            "check_out_datetime": "2027-03-28T12:00",
+            "country_code": None,
+        }
+        assert _find_trip_for_stay(user_id, stay) == trip_id
+
+    def test_a_stay_in_another_country_mid_trip_still_joins(self, conn):
+        """One trip at a time: a Hong Kong night reached by train from Beijing
+        is the same trip, whatever the country."""
+        from backend.sync.stays_import import import_lodging_from_email
+
+        user_id = _make_user(conn)
+        trip_id = self._beijing_trip(conn, user_id)
+        import_lodging_from_email(
+            _lodging_email(
+                ref="HKG0001",
+                name="Harbour Hotel",
+                city="Hong Kong",
+                country="HK",
+                checkin="2027-03-30T14:00",
+                checkout="2027-04-01T12:00",
+            ),
+            user_id,
+        )
+        (stay,) = _stays(conn, user_id)
+        assert stay["trip_id"] == trip_id
+        assert conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"] == 1
+
+    def test_a_stay_running_past_the_trip_is_not_inside_it(self, conn):
+        from backend.sync.stays_import import _find_trip_containing_stay
+
+        user_id = _make_user(conn)
+        self._beijing_trip(conn, user_id)
+        stay = {
+            "name": "Late Hotel",
+            "check_in_datetime": "2027-04-20T14:00",
+            "check_out_datetime": "2027-04-22T12:00",
+            "country_code": "CN",
+        }
+        assert _find_trip_containing_stay(user_id, stay) is None
+
+    def test_the_shortest_trip_around_the_stay_wins(self, conn):
+        from backend.sync.stays_import import _find_trip_containing_stay
+
+        user_id = _make_user(conn)
+        long_trip = self._beijing_trip(conn, user_id)
+        now = datetime.now(UTC).isoformat()
+        conn.execute(
+            "INSERT INTO trips (id, name, user_id, start_date, end_date, is_auto_generated,"
+            " created_at, updated_at) VALUES ('short', 'Short', ?, '2027-03-26', '2027-03-29', 1, ?, ?)",
+            (user_id, now, now),
+        )
+        conn.commit()
+        stay = {
+            "name": "Nanfeng Hotel",
+            "check_in_datetime": "2027-03-27T14:00",
+            "check_out_datetime": "2027-03-28T12:00",
+            "country_code": None,
+        }
+        assert _find_trip_containing_stay(user_id, stay) == "short" != long_trip
