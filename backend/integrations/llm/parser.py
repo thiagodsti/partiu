@@ -167,6 +167,11 @@ def _call_ollama(
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
+            # Hybrid models (qwen3.5) reason before answering unless told not
+            # to: on a CPU that was 19 minutes and 6,400 tokens for one Azul
+            # mail, ending in an empty answer, against 73 s without. Models
+            # that do not think accept the flag and ignore it.
+            "think": False,
             "options": {"temperature": 0, "num_ctx": num_ctx},
             "format": _FLIGHT_SCHEMA,
         }

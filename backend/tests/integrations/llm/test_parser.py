@@ -139,3 +139,9 @@ class TestGrounding:
         email = _email(body="Voo 4849 VCP FLN", date=datetime(2026, 1, 5, tzinfo=UTC))
         flights, _ = _run(_answer(flight_number="AD2026"), email)
         assert flights == []
+
+
+class TestThinking:
+    def test_reasoning_is_turned_off(self):
+        payload = TestRequest()._payload()
+        assert payload["think"] is False
