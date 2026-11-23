@@ -27,6 +27,7 @@ vi.mock('../api/client', () => ({
     list: mockDocList,
     upload: vi.fn(),
     viewUrl: (id: string, page = 0) => `/api/documents/${id}/view?page=${page}`,
+    downloadUrl: (id: string) => `/api/documents/${id}/download`,
     delete: vi.fn(),
   },
   boardingPassesApi: {
@@ -371,5 +372,58 @@ describe('TripDetailPage', () => {
     expect(
       container.querySelector('.trip-section-header .trip-rating-stars'),
     ).toBeInTheDocument();
+  });
+
+  describe('document viewer', () => {
+    const DOC = {
+      id: 'doc-1',
+      trip_id: 'trip-1',
+      filename: 'Warranty card.pdf',
+      mime_type: 'application/pdf',
+      file_size: 1000,
+      page_count: 1,
+      created_at: '2026-11-23T10:00:00Z',
+    };
+
+    async function openViewer() {
+      mockGet.mockResolvedValue(TRIP);
+      mockDocList.mockResolvedValue([DOC]);
+      const view = render(TripDetailPage, { props: { params: { id: 'trip-1' } } });
+      const thumb = await waitFor(() => {
+        const el = view.container.querySelector('.doc-thumb');
+        expect(el).toBeInTheDocument();
+        return el as HTMLElement;
+      });
+      await fireEvent.click(thumb);
+      return { ...view, thumb };
+    }
+
+    it('offers the original file for download under its name', async () => {
+      const { getByTestId } = await openViewer();
+      const link = getByTestId('doc-download');
+      expect(link.getAttribute('href')).toBe('/api/documents/doc-1/download');
+      expect(link.getAttribute('download')).toBe('Warranty card.pdf');
+    });
+
+    it('zooms in and out from a keyboard-reachable button', async () => {
+      const { getByTestId, container } = await openViewer();
+      const toggle = getByTestId('doc-zoom');
+      expect(toggle.tagName).toBe('BUTTON');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+      await fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      expect(container.querySelector('.doc-modal-img')?.classList.contains('zoomed')).toBe(true);
+      await fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('opens the next document fitted again', async () => {
+      const { getByTestId, container, thumb } = await openViewer();
+      await fireEvent.click(getByTestId('doc-zoom'));
+      const close = container.querySelector('.doc-modal-actions .btn-secondary:last-child') as HTMLElement;
+      await fireEvent.click(close);
+      await fireEvent.click(thumb);
+      expect(getByTestId('doc-zoom').getAttribute('aria-pressed')).toBe('false');
+    });
   });
 });

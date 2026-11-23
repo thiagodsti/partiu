@@ -1336,16 +1336,24 @@
         </div>
       </div>
       <div class="doc-modal-body">
-        <!-- The whole page fits first; a click zooms to full width (and back). -->
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-        <img
-          src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
-          alt={viewingDoc.filename}
-          class="doc-modal-img zoomable"
-          class:zoomed={docZoomed}
+        <!-- The whole page fits first; the page itself is the zoom button
+             (full width and back), so it works by keyboard as well. -->
+        <button
+          type="button"
+          class="doc-zoom-toggle"
+          aria-pressed={docZoomed}
+          aria-label={$t("trip.doc_zoom")}
           title={$t("trip.doc_zoom")}
+          data-testid="doc-zoom"
           onclick={() => (docZoomed = !docZoomed)}
-        />
+        >
+          <img
+            src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
+            alt={viewingDoc.filename}
+            class="doc-modal-img zoomable"
+            class:zoomed={docZoomed}
+          />
+        </button>
       </div>
     </div>
   </div>

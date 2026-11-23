@@ -272,10 +272,8 @@ test('unauthenticated upload is rejected', async () => {
 // ---------------------------------------------------------------------------
 
 test('the document viewer downloads the original file', async ({ page }) => {
-  const ownerCtx = await ensureUsers();
-  test.skip(!ownerCtx, 'Could not set up test users — skipping document tests');
-  await ownerCtx!.dispose();
-
+  // The account comes from global setup; signInPage fails the test, rather
+  // than skipping it, if signing in does not work.
   await signInPage(page, OWNER_USER, OWNER_PASS);
   const trip = await (await page.request.post('/api/trips', { data: { name: 'E2E Doc Download' } })).json();
   const pngBytes = Buffer.from(
