@@ -872,5 +872,7 @@
   "organizer.note_not_saved": "The note was not saved",
   "organizer.not_all_saved": "Some changes were not saved. Check the connection and try again.",
   "organizer.notes_unavailable": "Couldn't load the notes. Reload the page to edit them.",
-  "organizer.reload_to_check": "A change was not saved. Reload the page to see what was kept."
+  "organizer.reload_to_check": "A change was not saved. Reload the page to see what was kept.",
+  "trip.doc_download": "Download the original file",
+  "trip.doc_zoom": "Click to zoom in or out"
 }

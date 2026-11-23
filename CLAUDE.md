@@ -309,7 +309,7 @@ Runs: backend tests (70% coverage gate) + frontend lint/type-check + E2E tests (
 ### Boarding passes & documents
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
 - Manual boarding pass image upload (PNG, JPEG, WebP)
-- Trip documents: upload PDFs/images up to 20 MB; multi-page PDF viewer
+- Trip documents: upload PDFs/images up to 20 MB; multi-page PDF viewer. `GET /api/documents/{id}/view` only ever serves a rendered page image, so `GET /api/documents/{id}/download` (same access rule) returns the stored file as an attachment under its original name. The viewer image is a plain block with `margin: auto`, never centred by a flex box: a page taller than the dialog overflowed a centred flex container upwards and its top could not be scrolled to. It fits the page to the dialog and zooms to full width on click; thumbnails are 3:4 and anchored at the top
 - BCBP parsing: passenger name and seat extracted automatically
 - Boarding-pass mails from Lufthansa and LATAM enrich the stored leg (seat, gate, terminal, cabin, reference, passenger) — only empty fields, never a new flight
 

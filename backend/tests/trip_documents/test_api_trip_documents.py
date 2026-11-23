@@ -64,7 +64,8 @@ class TestListDocuments:
 class TestUploadDocument:
     def test_upload_png(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         r = auth_client.post(
@@ -76,7 +77,8 @@ class TestUploadDocument:
 
     def test_upload_pdf(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         r = auth_client.post(
@@ -90,7 +92,8 @@ class TestUploadDocument:
 
     def test_upload_appears_in_list(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         auth_client.post(
@@ -122,7 +125,8 @@ class TestUploadDocument:
 class TestViewDocument:
     def test_view_image(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -136,7 +140,8 @@ class TestViewDocument:
 
     def test_view_pdf_renders_as_image(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -153,10 +158,66 @@ class TestViewDocument:
         assert r.status_code == 404
 
 
+class TestDownloadDocument:
+    """The original file back, as uploaded — the view only returns rendered pages."""
+
+    def test_download_returns_the_original_pdf(self, auth_client, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
+        )
+        trip_id = _make_trip(auth_client)
+        pdf = _minimal_pdf()
+        up = auth_client.post(
+            f"/api/trips/{trip_id}/documents",
+            files={"file": ("Warranty.pdf", io.BytesIO(pdf), "application/pdf")},
+        )
+        r = auth_client.get(f"/api/documents/{up.json()['id']}/download")
+        assert r.status_code == 200
+        assert r.content == pdf
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.headers["content-disposition"].startswith("attachment")
+        assert "Warranty.pdf" in r.headers["content-disposition"]
+
+    def test_a_non_ascii_name_survives(self, auth_client, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
+        )
+        trip_id = _make_trip(auth_client)
+        up = auth_client.post(
+            f"/api/trips/{trip_id}/documents",
+            files={"file": ("Passagem São Paulo.png", io.BytesIO(_minimal_png()), "image/png")},
+        )
+        r = auth_client.get(f"/api/documents/{up.json()['id']}/download")
+        assert r.status_code == 200
+        assert (
+            "filename*=utf-8''Passagem%20S%C3%A3o%20Paulo.png" in r.headers["content-disposition"]
+        )
+
+    def test_not_found_and_unauthenticated(self, auth_client, client):
+        assert auth_client.get(f"/api/documents/{uuid.uuid4()}/download").status_code == 404
+        assert client.get(f"/api/documents/{uuid.uuid4()}/download").status_code == 401
+
+    def test_another_user_cannot_download(self, api_app, auth_client, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
+        )
+        trip_id = _make_trip(auth_client)
+        up = auth_client.post(
+            f"/api/trips/{trip_id}/documents",
+            files={"file": ("t.png", io.BytesIO(_minimal_png()), "image/png")},
+        )
+        c2 = _make_second_user_client(api_app, auth_client)
+        assert c2.get(f"/api/documents/{up.json()['id']}/download").status_code == 404
+
+
 class TestDeleteDocument:
     def test_delete_removes_from_list(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -173,7 +234,8 @@ class TestDeleteDocument:
 
     def test_delete_removes_file_from_disk(self, auth_client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -195,7 +257,8 @@ class TestDeleteDocument:
 
     def test_cannot_access_without_auth(self, auth_client, tmp_path, monkeypatch, client):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -231,9 +294,12 @@ class TestDocumentSecurity:
         r = client.delete(f"/api/documents/{uuid.uuid4()}")
         assert r.status_code == 401
 
-    def test_user_cannot_upload_to_other_users_trip(self, api_app, auth_client, tmp_path, monkeypatch):
+    def test_user_cannot_upload_to_other_users_trip(
+        self, api_app, auth_client, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         # Admin (user A) owns this trip
         trip_id = _make_trip(auth_client)
@@ -246,9 +312,12 @@ class TestDocumentSecurity:
         )
         assert r.status_code == 404
 
-    def test_user_cannot_list_other_users_trip_documents(self, api_app, auth_client, tmp_path, monkeypatch):
+    def test_user_cannot_list_other_users_trip_documents(
+        self, api_app, auth_client, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
 
@@ -256,9 +325,12 @@ class TestDocumentSecurity:
         r = c2.get(f"/api/trips/{trip_id}/documents")
         assert r.status_code == 404
 
-    def test_user_cannot_view_other_users_document(self, api_app, auth_client, tmp_path, monkeypatch):
+    def test_user_cannot_view_other_users_document(
+        self, api_app, auth_client, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(
@@ -271,9 +343,12 @@ class TestDocumentSecurity:
         r = c2.get(f"/api/documents/{doc_id}/view")
         assert r.status_code == 404
 
-    def test_user_cannot_delete_other_users_document(self, api_app, auth_client, tmp_path, monkeypatch):
+    def test_user_cannot_delete_other_users_document(
+        self, api_app, auth_client, tmp_path, monkeypatch
+    ):
         monkeypatch.setattr(
-            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir", lambda self: tmp_path
+            "backend.trip_documents.repository.TripDocumentRepository.get_storage_dir",
+            lambda self: tmp_path,
         )
         trip_id = _make_trip(auth_client)
         up = auth_client.post(

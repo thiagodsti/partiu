@@ -291,6 +291,11 @@
     documents.length === 0 && tripBoardingPasses.length === 0,
   );
   let viewingDoc = $state<TripDocument | null>(null);
+  let docZoomed = $state(false);
+  $effect(() => {
+    void viewingDoc;
+    docZoomed = false;
+  });
   let viewingBp = $state<TripBoardingPass | null>(null);
   let viewingPage = $state(0);
 
@@ -1312,6 +1317,14 @@
               onclick={() => viewingPage++}>›</button
             >
           {/if}
+          <a
+            class="btn btn-secondary btn-sm"
+            href={tripDocumentsApi.downloadUrl(viewingDoc.id)}
+            download={viewingDoc.filename}
+            title={$t("trip.doc_download")}
+            aria-label={$t("trip.doc_download")}
+            data-testid="doc-download">⬇</a
+          >
           <button
             class="btn btn-danger btn-sm"
             onclick={() => deleteDoc(viewingDoc!.id)}>🗑</button
@@ -1323,10 +1336,15 @@
         </div>
       </div>
       <div class="doc-modal-body">
+        <!-- The whole page fits first; a click zooms to full width (and back). -->
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <img
           src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
           alt={viewingDoc.filename}
-          class="doc-modal-img"
+          class="doc-modal-img zoomable"
+          class:zoomed={docZoomed}
+          title={$t("trip.doc_zoom")}
+          onclick={() => (docZoomed = !docZoomed)}
         />
       </div>
     </div>

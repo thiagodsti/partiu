@@ -8,6 +8,7 @@
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { ACCOUNTS } from './support/accounts';
+import { signInPage } from './support/session';
 
 const BASE = 'http://localhost:8000';
 
@@ -264,4 +265,36 @@ test('unauthenticated upload is rejected', async () => {
   await ownerCtx!.delete(`/api/trips/${trip.id}`);
   await anonCtx.dispose();
   await ownerCtx!.dispose();
+});
+
+// ---------------------------------------------------------------------------
+// Test: the viewer offers the original file back
+// ---------------------------------------------------------------------------
+
+test('the document viewer downloads the original file', async ({ page }) => {
+  const ownerCtx = await ensureUsers();
+  test.skip(!ownerCtx, 'Could not set up test users — skipping document tests');
+  await ownerCtx!.dispose();
+
+  await signInPage(page, OWNER_USER, OWNER_PASS);
+  const trip = await (await page.request.post('/api/trips', { data: { name: 'E2E Doc Download' } })).json();
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const up = await page.request.post(`/api/trips/${trip.id}/documents`, {
+    multipart: { file: { name: 'Warranty card.png', mimeType: 'image/png', buffer: pngBytes } },
+  });
+  expect(up.status()).toBe(201);
+
+  await page.goto(`/#/trips/${trip.id}`);
+  await page.locator('.doc-thumb', { hasText: 'Warranty card.png' }).click();
+  const downloading = page.waitForEvent('download');
+  await page.getByTestId('doc-download').click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe('Warranty card.png');
+  const fs = await import('node:fs');
+  expect(fs.readFileSync((await download.path())!)).toEqual(pngBytes);
+
+  await page.request.delete(`/api/trips/${trip.id}`);
 });

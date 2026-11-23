@@ -138,7 +138,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Extracts boarding passes from confirmation emails (BCBP barcode format)
 - Mobile boarding passes (currently Lufthansa) fill in the seat, gate, terminal and cabin on a flight you already have — they never create one, since a boarding pass carries no arrival time
 - Manual upload of boarding pass images (PNG, JPEG, WebP)
-- Upload trip documents: PDFs and images, up to 20 MB each, with multi-page PDF viewer
+- Upload trip documents: PDFs and images, up to 20 MB each, with multi-page PDF viewer that fits the whole page (click to zoom to full width) and a download button for the original file; thumbnails show the top of the page
 - Passenger name and seat parsed from BCBP data
 
 ### Trip sharing & collaboration

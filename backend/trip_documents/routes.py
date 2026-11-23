@@ -4,11 +4,12 @@ Trip documents API — user-uploaded files (PDFs, images) attached to a trip.
   GET    /api/trips/{trip_id}/documents          — list documents for a trip
   POST   /api/trips/{trip_id}/documents          — upload a document
   GET    /api/documents/{doc_id}/view            — render as image (?page=N for PDFs)
+  GET    /api/documents/{doc_id}/download        — the original file, as an attachment
   DELETE /api/documents/{doc_id}                 — delete
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from ..auth import get_current_user
 from . import trip_document_service
@@ -76,6 +77,21 @@ def view_document(
     except AccessDeniedError:
         raise HTTPException(status_code=403, detail="Access denied")
     return Response(content=image_bytes, media_type=media_type)
+
+
+@router.get("/api/documents/{doc_id}/download")
+def download_document(doc_id: str, user: dict = Depends(get_current_user)):
+    try:
+        path, filename, mime = trip_document_service.get_original(doc_id, user["id"])
+    except DocumentNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found")
+    except FileNotFoundOnDiskError:
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    except AccessDeniedError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    # FileResponse writes Content-Disposition: attachment with the original
+    # name (RFC 5987-encoded when it is not plain ASCII).
+    return FileResponse(path, media_type=mime, filename=filename)
 
 
 @router.delete("/api/documents/{doc_id}", status_code=204)

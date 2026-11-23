@@ -294,6 +294,8 @@ export const tripDocumentsApi = {
     return res.json();
   },
   viewUrl: (docId: string, page = 0) => `/api/documents/${docId}/view?page=${page}`,
+  /** The file as uploaded (the view only serves rendered pages). */
+  downloadUrl: (docId: string) => `/api/documents/${docId}/download`,
   delete: (docId: string) => del<null>(`/api/documents/${docId}`),
 };
 
