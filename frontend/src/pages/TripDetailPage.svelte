@@ -291,6 +291,11 @@
     documents.length === 0 && tripBoardingPasses.length === 0,
   );
   let viewingDoc = $state<TripDocument | null>(null);
+  let docZoomed = $state(false);
+  $effect(() => {
+    void viewingDoc;
+    docZoomed = false;
+  });
   let viewingBp = $state<TripBoardingPass | null>(null);
   let viewingPage = $state(0);
 
@@ -1312,6 +1317,14 @@
               onclick={() => viewingPage++}>›</button
             >
           {/if}
+          <a
+            class="btn btn-secondary btn-sm"
+            href={tripDocumentsApi.downloadUrl(viewingDoc.id)}
+            download={viewingDoc.filename}
+            title={$t("trip.doc_download")}
+            aria-label={$t("trip.doc_download")}
+            data-testid="doc-download">⬇</a
+          >
           <button
             class="btn btn-danger btn-sm"
             onclick={() => deleteDoc(viewingDoc!.id)}>🗑</button
@@ -1323,11 +1336,24 @@
         </div>
       </div>
       <div class="doc-modal-body">
-        <img
-          src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
-          alt={viewingDoc.filename}
-          class="doc-modal-img"
-        />
+        <!-- The whole page fits first; the page itself is the zoom button
+             (full width and back), so it works by keyboard as well. -->
+        <button
+          type="button"
+          class="doc-zoom-toggle"
+          aria-pressed={docZoomed}
+          aria-label={$t("trip.doc_zoom")}
+          title={$t("trip.doc_zoom")}
+          data-testid="doc-zoom"
+          onclick={() => (docZoomed = !docZoomed)}
+        >
+          <img
+            src={tripDocumentsApi.viewUrl(viewingDoc.id, viewingPage)}
+            alt={viewingDoc.filename}
+            class="doc-modal-img zoomable"
+            class:zoomed={docZoomed}
+          />
+        </button>
       </div>
     </div>
   </div>

@@ -77,6 +77,21 @@ class TripDocumentService:
         media_type = _VIEW_MEDIA_TYPES.get(suffix, "image/png")
         return file_path.read_bytes(), media_type
 
+    def get_original(self, doc_id: str, user_id: int):
+        """The stored file as uploaded: (path, original filename, MIME type).
+
+        The view endpoint only ever returns a rendered page image, so a PDF
+        could be looked at but never got back — this is what downloading it
+        serves. Same access rule as viewing.
+        """
+        doc = self._repository.get_readable(doc_id, user_id)
+        if doc is None:
+            raise DocumentNotFoundError(doc_id)
+        file_path = self._repository.safe_file_path(doc.file_path)
+        if not file_path.exists():
+            raise FileNotFoundOnDiskError(doc_id)
+        return file_path, doc.filename, doc.mime_type
+
     def delete(self, doc_id: str, user_id: int) -> None:
         doc = self._repository.get_owned(doc_id, user_id)
         if doc is None:
