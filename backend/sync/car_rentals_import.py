@@ -30,6 +30,7 @@ from datetime import date, timedelta
 
 from ..database import db_conn, db_write
 from ..parsers.car_rental import extract_car_rentals
+from ..parsers.kitinerary import extract_kitinerary_rentals
 from ..utils import now_iso
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,9 @@ def import_car_rentals_from_email(email_msg, user_id: int) -> list[str]:
     """
     from ..car_rentals.service import car_rental_service
 
-    rentals = extract_car_rentals(email_msg)
+    # The three vendors we read ourselves first; KDE Itinerary's extractors
+    # cover the rest of the rental companies.
+    rentals = extract_car_rentals(email_msg) or extract_kitinerary_rentals(email_msg)
     if not rentals:
         return []
 

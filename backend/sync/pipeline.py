@@ -29,6 +29,7 @@ from ..parsers.validation import validate_flights
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 from .car_rentals_import import import_car_rentals_from_email
 from .grouping import auto_group_flights
+from .kitinerary_import import import_kitinerary_bookings, import_kitinerary_ground_legs
 from .repository import SyncRepository
 from .stays_import import import_lodging_from_email
 
@@ -907,6 +908,19 @@ def _process_emails(
     except Exception as e:
         logger.error("User %d: Grouping error: %s", user_id, e, exc_info=True)
 
+    # --- What else KDE Itinerary read: ground legs, then planner bookings ---
+    # After grouping, so a train or a concert finds the trip this same sync
+    # just built from the flights. Legs first: a booking needs a trip covering
+    # its day, and a train journey may be what opens it. KItinerary ran at
+    # most once per email (cached), so this costs no extra subprocesses.
+    segments_created = plan_items_created = 0
+    for email_msg in emails:
+        try:
+            segments_created += len(import_kitinerary_ground_legs(email_msg, user_id))
+            plan_items_created += len(import_kitinerary_bookings(email_msg, user_id))
+        except Exception as e:  # noqa: BLE001 - never let one email stop the sync
+            logger.error("User %d: KItinerary import error: %s", user_id, e, exc_info=True)
+
     return {
         "emails_processed": emails_processed,
         "flights_created": flights_created,
@@ -915,6 +929,8 @@ def _process_emails(
         "flights_rescheduled": flights_rescheduled,
         "stays_created": stays_created,
         "car_rentals_created": car_rentals_created,
+        "segments_created": segments_created,
+        "plan_items_created": plan_items_created,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,

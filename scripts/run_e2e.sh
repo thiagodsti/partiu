@@ -42,6 +42,10 @@ export SECRET_KEY="${SECRET_KEY:-e2e-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \
 # DEMO_MODE=false: a demo refuses the account creation global setup does, and a
 # root .env written for a demo instance would otherwise switch it on here.
 export DB_PATH="${SCRATCH}/partiu.db" DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false DEMO_MODE=false
+# KDE Itinerary's extractor is x86_64-only and ships in the Docker image, so the
+# suite runs against a stand-in that answers for one marked email only (see the
+# script, and tests/kitinerary-import.spec.ts).
+export KITINERARY_EXTRACTOR="${KITINERARY_EXTRACTOR:-${ROOT}/frontend/tests/fixtures/fake-kitinerary-extractor}"
 
 # Bind first, then exec uvicorn on the inherited socket. Binding fails at once
 # if anything holds the port — no check-then-start window for another instance.
