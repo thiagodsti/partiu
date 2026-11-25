@@ -12,7 +12,7 @@ Fixture: tests/fixtures/norwegian_resehandlingar_2024_anonymized.json
   matched the rule and the marker and still yielded nothing for three bookings.
   D82603  ARN→HEL  29 Jul 2024  07:45→09:40
   D82614  HEL→ARN  31 Jul 2024  15:40→15:40  (equal local times: a real 1h flight
-                                             across a 1h offset, see CLAUDE.md)
+                                             across a 1h offset, see AGENTS.md)
   Booking reference: TESTRF; first passenger DOE/JOHN
 """
 
