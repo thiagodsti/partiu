@@ -175,7 +175,24 @@ def kitinerary_items(email_msg) -> list[dict]:
 
 
 def _email_text(email_msg) -> str:
-    return f"{getattr(email_msg, 'subject', '') or ''}\n{getattr(email_msg, 'body', '') or ''}"
+    """Everything the email says, for checking a place is named in it.
+
+    The subject, the body (which, as fetched, already folds in the text of PDF
+    attachments) and the HTML — a ticket whose stations appear only in its
+    HTML or its attached PDF must not be refused for it.
+    """
+    parts = [getattr(email_msg, "subject", "") or "", getattr(email_msg, "body", "") or ""]
+    html = getattr(email_msg, "html_body", None)
+    if html:
+        from .email_connector import html_to_text
+
+        parts.append(html_to_text(html))
+    for pdf in getattr(email_msg, "pdf_attachments", None) or []:
+        if isinstance(pdf, bytes):
+            from .email_connector import _extract_text_from_pdf
+
+            parts.append(_extract_text_from_pdf(pdf) or "")
+    return "\n".join(parts)
 
 
 def _named_in_email(flight: dict, email_msg) -> bool:
@@ -412,8 +429,10 @@ def rentals_from_items(items: list[dict]) -> list[dict]:
         if not (vendor and pickup_time and dropoff_time):
             continue
         pickup_name = pickup["name"] or pickup["address"] or pickup["city"] or ""
-        dropoff_name = dropoff["name"] or dropoff["address"] or dropoff["city"] or pickup_name
-        if not pickup_name:
+        # No return location stated is not "the same counter": guessing an
+        # endpoint is what the vendor readers in car_rental.py refuse too.
+        dropoff_name = dropoff["name"] or dropoff["address"] or dropoff["city"] or ""
+        if not pickup_name or not dropoff_name:
             continue
         vehicle = " ".join(
             p

@@ -24,13 +24,15 @@ trip planner, on their own day, which the trip page's day cards show too. They
 no trip covering its day is skipped.
 
 Both are idempotent and only ever add, like every importer here: the same leg
-(type, departure place, date and number) or the same booking (trip, day, title)
-is not created twice, and nothing is deleted.
+(type, departure place, local departure minute and number) or the same booking
+(any of the user's trips, day, title) is not created twice, and nothing is
+deleted.
 """
 
 import logging
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..database import db_conn, db_write
 from ..parsers.kitinerary import extract_kitinerary_bookings, extract_kitinerary_ground_legs
@@ -53,34 +55,49 @@ def _shift(iso_date: str, days: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _existing_leg(user_id: int, leg: dict) -> bool:
-    """Whether this leg is already on one of the user's trips.
+def _local_wall_clock(utc_iso: str, timezone: str | None) -> str:
+    """A stored UTC instant as wall clock at its own place ("2026-03-13T07:30").
 
-    Keyed on type, departure place and day (±1, since the stored instant is
-    UTC and the leg's date is local), and on the service number when both
-    sides have one — two trains from the same station on the same day are two
-    legs.
+    A leg saved without a timezone (no coordinates) was stored as typed, so its
+    stored value already is the wall clock.
+    """
+    stamp = datetime.fromisoformat(utc_iso)
+    if timezone:
+        try:
+            stamp = stamp.astimezone(ZoneInfo(timezone))
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    return stamp.replace(tzinfo=None).isoformat(timespec="minutes")
+
+
+def _existing_leg_trip(user_id: int, leg: dict) -> str | None:
+    """The trip already holding this exact leg, or None.
+
+    The same type, departure place, local departure minute and (when both
+    sides have one) service number. Exact, not "same day": SJ 10 runs every
+    day, and the March 14 departure is a different leg from the March 13 one.
+    The stored instant is UTC, so the ±1 day SQL window only narrows the
+    candidates; the comparison is on each one's own local wall clock.
     """
     day = leg["departure_datetime"][:10]
     with db_conn() as conn:
-        row = conn.execute(
-            """SELECT 1 FROM trip_segments s JOIN trips t ON t.id = s.trip_id
-               WHERE t.user_id = ? AND s.type = ?
-                 AND LOWER(s.departure_place) = LOWER(?)
-                 AND DATE(s.departure_datetime) BETWEEN ? AND ?
-                 AND (s.number IS NULL OR ? IS NULL OR s.number = ?)
-               LIMIT 1""",
-            (
-                user_id,
-                leg["type"],
-                leg["departure"]["name"],
-                _shift(day, -1),
-                _shift(day, 1),
-                leg.get("number"),
-                leg.get("number"),
-            ),
-        ).fetchone()
-    return row is not None
+        rows = conn.execute(
+            """SELECT s.trip_id, s.departure_datetime, s.departure_timezone, s.number
+                 FROM trip_segments s JOIN trips t ON t.id = s.trip_id
+                WHERE t.user_id = ? AND s.type = ?
+                  AND LOWER(s.departure_place) = LOWER(?)
+                  AND DATE(s.departure_datetime) BETWEEN ? AND ?""",
+            (user_id, leg["type"], leg["departure"]["name"], _shift(day, -1), _shift(day, 1)),
+        ).fetchall()
+    for row in rows:
+        if row["number"] and leg.get("number") and row["number"] != leg["number"]:
+            continue
+        if (
+            _local_wall_clock(row["departure_datetime"], row["departure_timezone"])
+            == leg["departure_datetime"][:16]
+        ):
+            return row["trip_id"]
+    return None
 
 
 def _trip_by_reference(user_id: int, reference: str | None) -> str | None:
@@ -188,54 +205,77 @@ def _geocode(place: dict, kind: str) -> dict:
 
 
 def import_kitinerary_ground_legs(email_msg, user_id: int) -> list[str]:
-    """Create the train, bus and ferry legs this email books. Returns their ids."""
+    """Create the train, bus and ferry legs this email books. Returns their ids.
+
+    The whole journey decides the trip — legs already imported included — and
+    only the missing legs are created. A leg already on a trip anchors the rest
+    of its email to that trip, so a return re-read after its outbound was saved
+    (or a retry after a partial save) does not open a second trip. Legs are
+    validated before any trip is chosen or created, so an email whose legs all
+    fail validation leaves no empty trip behind.
+    """
     from ..segments.service import segment_service
 
-    legs = [
-        leg for leg in extract_kitinerary_ground_legs(email_msg) if not _existing_leg(user_id, leg)
-    ]
-    if not legs:
+    journey = sorted(
+        extract_kitinerary_ground_legs(email_msg), key=lambda leg: leg["departure_datetime"]
+    )
+    if not journey:
         return []
-    legs.sort(key=lambda leg: leg["departure_datetime"])
-    first_day = legs[0]["departure_datetime"][:10]
-    last_day = max(leg["arrival_datetime"][:10] for leg in legs)
 
+    anchor_trip: str | None = None
+    payloads: list[tuple[dict, dict]] = []
+    for leg in journey:
+        existing = _existing_leg_trip(user_id, leg)
+        if existing:
+            anchor_trip = anchor_trip or existing
+            continue
+        data = {
+            "type": leg["type"],
+            "operator": leg.get("operator"),
+            "number": leg.get("number"),
+            "booking_reference": leg.get("booking_reference"),
+            "departure": _geocode(leg["departure"], leg["type"]),
+            "arrival": _geocode(leg["arrival"], leg["type"]),
+            "departure_datetime": leg["departure_datetime"],
+            "arrival_datetime": leg["arrival_datetime"],
+            "seat": leg.get("seat"),
+        }
+        try:
+            segment_service.validate_segment(data)
+        except ValueError as exc:
+            logger.info("KItinerary import: skipping a %s leg: %s", leg["type"], exc)
+            continue
+        payloads.append((leg, data))
+    if not payloads:
+        return []
+
+    first_day = journey[0]["departure_datetime"][:10]
+    last_day = max(leg["arrival_datetime"][:10] for leg in journey)
     try:
         trip_id = (
-            next(
+            anchor_trip
+            or next(
                 (
                     t
-                    for t in (_trip_by_reference(user_id, leg["booking_reference"]) for leg in legs)
+                    for t in (
+                        _trip_by_reference(user_id, leg["booking_reference"]) for leg in journey
+                    )
                     if t
                 ),
                 None,
             )
             or _trip_by_contents(user_id, first_day, last_day)
             or _trip_containing(user_id, first_day, last_day)
-            or _create_trip(user_id, legs[0])
+            or _create_trip(user_id, journey[0])
         )
     except Exception as exc:  # noqa: BLE001 - one bad booking must not stop the sync
         logger.error("User %d: KItinerary trip matching failed: %s", user_id, exc, exc_info=True)
         return []
 
     created: list[str] = []
-    for leg in legs:
+    for leg, data in payloads:
         try:
-            segment_id = segment_service.create_segment(
-                trip_id,
-                user_id,
-                {
-                    "type": leg["type"],
-                    "operator": leg.get("operator"),
-                    "number": leg.get("number"),
-                    "booking_reference": leg.get("booking_reference"),
-                    "departure": _geocode(leg["departure"], leg["type"]),
-                    "arrival": _geocode(leg["arrival"], leg["type"]),
-                    "departure_datetime": leg["departure_datetime"],
-                    "arrival_datetime": leg["arrival_datetime"],
-                    "seat": leg.get("seat"),
-                },
-            )
+            segment_id = segment_service.create_segment(trip_id, user_id, data)
             created.append(segment_id)
             logger.info(
                 "User %d: imported %s %s → %s (%s) into trip %s",
@@ -256,12 +296,18 @@ def import_kitinerary_ground_legs(email_msg, user_id: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _existing_item(trip_id: str, booking: dict) -> bool:
+def _existing_item(user_id: int, booking: dict) -> bool:
+    """Whether this booking is already in one of the user's planners.
+
+    Checked across every trip, before a trip is chosen: if a shorter trip
+    covering the day appears after the first import, a re-read must not add a
+    second copy there while the first stays where it was put.
+    """
     with db_conn() as conn:
         row = conn.execute(
-            """SELECT 1 FROM trip_plan_items
-               WHERE trip_id = ? AND date = ? AND LOWER(title) = LOWER(?) LIMIT 1""",
-            (trip_id, booking["date"], booking["title"]),
+            """SELECT 1 FROM trip_plan_items i JOIN trips t ON t.id = i.trip_id
+               WHERE t.user_id = ? AND i.date = ? AND LOWER(i.title) = LOWER(?) LIMIT 1""",
+            (user_id, booking["date"], booking["title"]),
         ).fetchone()
     return row is not None
 
@@ -274,6 +320,8 @@ def import_kitinerary_bookings(email_msg, user_id: int) -> list[str]:
     created: list[str] = []
     for booking in extract_kitinerary_bookings(email_msg):
         try:
+            if _existing_item(user_id, booking):
+                continue
             trip_id = _trip_containing(user_id, booking["date"], booking["date"])
             if trip_id is None:
                 logger.info(
@@ -281,8 +329,6 @@ def import_kitinerary_bookings(email_msg, user_id: int) -> list[str]:
                     booking["title"][:40],
                     booking["date"],
                 )
-                continue
-            if _existing_item(trip_id, booking):
                 continue
             item_id = planner_service.create_item(trip_id, user_id, {**booking, "status": "booked"})
             created.append(item_id)

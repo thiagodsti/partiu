@@ -910,16 +910,23 @@ def _process_emails(
 
     # --- What else KDE Itinerary read: ground legs, then planner bookings ---
     # After grouping, so a train or a concert finds the trip this same sync
-    # just built from the flights. Legs first: a booking needs a trip covering
-    # its day, and a train journey may be what opens it. KItinerary ran at
-    # most once per email (cached), so this costs no extra subprocesses.
+    # just built from the flights. Two passes, every email's legs before any
+    # email's bookings: a booking needs a trip covering its day, and the train
+    # journey that opens that trip may sit in a later email of the same sync.
+    # KItinerary ran at most once per email (cached), so this costs no extra
+    # subprocesses.
     segments_created = plan_items_created = 0
-    for email_msg in emails:
-        try:
-            segments_created += len(import_kitinerary_ground_legs(email_msg, user_id))
-            plan_items_created += len(import_kitinerary_bookings(email_msg, user_id))
-        except Exception as e:  # noqa: BLE001 - never let one email stop the sync
-            logger.error("User %d: KItinerary import error: %s", user_id, e, exc_info=True)
+    for importer in (import_kitinerary_ground_legs, import_kitinerary_bookings):
+        for email_msg in emails:
+            try:
+                n = len(importer(email_msg, user_id))
+            except Exception as e:  # noqa: BLE001 - never let one email stop the sync
+                logger.error("User %d: KItinerary import error: %s", user_id, e, exc_info=True)
+                continue
+            if importer is import_kitinerary_ground_legs:
+                segments_created += n
+            else:
+                plan_items_created += n
 
     return {
         "emails_processed": emails_processed,

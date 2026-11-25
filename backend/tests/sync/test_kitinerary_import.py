@@ -342,3 +342,86 @@ class TestStaysAndRentalsFromKitinerary:
             "546323",
             "Honda Civic",
         )
+
+
+class TestReviewFollowUps:
+    def test_the_same_train_on_the_next_day_is_a_new_leg(self, test_db):
+        user_id = _user(test_db)
+        _import_legs(user_id, [_leg(ref=None)])
+        (second,) = _import_legs(
+            user_id, [_leg(when="2026-03-14T07:30", until="2026-03-14T12:30", ref=None)]
+        )
+        assert len(_rows(test_db, "SELECT id FROM trip_segments")) == 2
+
+    def test_a_saved_outbound_anchors_the_return_to_its_trip(self, test_db):
+        user_id = _user(test_db)
+        outbound = _leg(ref=None)
+        back = _leg(
+            "Oslo S",
+            "Stockholm C",
+            "2026-04-20T17:00",
+            "2026-04-20T22:00",
+            ref=None,
+            number="SJ 11",
+        )
+        _import_legs(user_id, [outbound])  # an earlier, partial import
+        (created,) = _import_legs(user_id, [outbound, back])
+        trips = {r["trip_id"] for r in _rows(test_db, "SELECT trip_id FROM trip_segments")}
+        assert len(trips) == 1, "the return must join the outbound's trip, five weeks later or not"
+
+    def test_an_email_whose_legs_all_fail_leaves_no_trip(self, test_db):
+        user_id = _user(test_db)
+        backwards = _leg(when="2026-03-13T12:00", until="2026-03-12T08:00")
+        assert _import_legs(user_id, [backwards]) == []
+        assert _import_legs(user_id, [backwards]) == []
+        assert _rows(test_db, "SELECT id FROM trips WHERE user_id = ?", user_id) == []
+
+    def test_a_booking_is_not_copied_when_a_shorter_trip_appears(self, test_db):
+        user_id = _user(test_db)
+        _trip(test_db, user_id, "Spring", start="2026-03-01", end="2026-03-31")
+        _import_bookings(user_id, [TestBookings.BOOKING])
+        _trip(test_db, user_id, "Weekend", start="2026-03-13", end="2026-03-15")
+        assert _import_bookings(user_id, [TestBookings.BOOKING]) == []
+        assert len(_rows(test_db, "SELECT id FROM trip_plan_items")) == 1
+
+    def test_a_concert_email_before_the_train_email_still_finds_the_trip(self, test_db):
+        """Every email's legs are imported before any email's bookings."""
+        from backend.parsers.email_connector import EmailMessage
+        from backend.sync.pipeline import _process_emails
+
+        user_id = _user(test_db)
+
+        def mail(tag):
+            return EmailMessage(
+                message_id=f"<{tag}-{uuid.uuid4()}@x>",
+                sender="x@x",
+                subject=tag,
+                body="",
+                date=None,
+            )
+
+        concert_mail, train_mail = mail("concert"), mail("train")
+        concert = {
+            **TestBookings.BOOKING,
+            "title": "Concert",
+            "date": "2026-03-13",
+            "time": "20:00",
+        }
+        legs = {id(train_mail): [_leg()]}
+        bookings = {id(concert_mail): [concert]}
+        with (
+            patch.object(
+                kitinerary_import,
+                "extract_kitinerary_ground_legs",
+                side_effect=lambda m: legs.get(id(m), []),
+            ),
+            patch.object(
+                kitinerary_import,
+                "extract_kitinerary_bookings",
+                side_effect=lambda m: bookings.get(id(m), []),
+            ),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline.extract_kitinerary_flights", return_value=[]),
+        ):
+            result = _process_emails([concert_mail, train_mail], user_id)
+        assert (result["segments_created"], result["plan_items_created"]) == (1, 1)

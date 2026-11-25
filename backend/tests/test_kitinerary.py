@@ -454,3 +454,19 @@ class TestStaysRentalsAndBookings:
         kitinerary.extract_kitinerary_bookings(email)
         kitinerary.extract_kitinerary_flights(email)
         assert not log.exists(), "a second subprocess ran for the same email"
+
+
+class TestReviewFollowUps:
+    def test_stations_named_only_in_the_html_still_count(self, use):
+        use(json.dumps([_SNCF_TRAIN]))
+        email = _email(body="Your ticket is attached.", html_body=f"<p>{_SNCF_TEXT}</p>")
+        assert len(kitinerary.extract_kitinerary_ground_legs(email)) == 1
+
+    def test_stations_named_nowhere_are_still_refused(self, use):
+        use(json.dumps([_SNCF_TRAIN]))
+        email = _email(body="Your ticket is attached.", html_body="<p>Bon voyage</p>")
+        assert kitinerary.extract_kitinerary_ground_legs(email) == []
+
+    def test_a_rental_without_a_stated_return_location_is_refused(self):
+        no_dropoff = {k: v for k, v in _RENTAL.items() if k != "dropoffLocation"}
+        assert kitinerary.rentals_from_items([no_dropoff]) == []

@@ -96,6 +96,14 @@ class SegmentService:
         self._repository.delete(segment_id, trip_id)
         self._recompute_trip_span(trip_id)
 
+    def validate_segment(self, data: dict) -> None:
+        """Raise ValueError when ``data`` could not be saved as a segment.
+
+        For importers that must know a leg is saveable before they commit to a
+        trip for it (``sync/kitinerary_import``).
+        """
+        self._build_values(data)
+
     def _build_values(self, data: dict) -> dict:
         segment_type = (data.get("type") or "").strip().lower()
         if segment_type not in SEGMENT_TYPES:
