@@ -167,6 +167,12 @@ def _produced_anything(row: dict) -> bool:
     )
 
 
+def _extracted_flights(row: dict) -> bool:
+    """Whether any reader handed the pipeline a flight, before validation —
+    the condition that decides whether the LLM fallback runs."""
+    return bool(row["rule_legs"] or row["gds_legs"] or row["schema_legs"])
+
+
 def summarise(rows: list[dict]) -> dict:
     """Aggregate per-email rows into the report's numbers and lists."""
     per_rule: dict[str, dict] = {}
@@ -212,9 +218,12 @@ def summarise(rows: list[dict]) -> dict:
         "errors": [r for r in rows if r["error"]],
         "per_rule": dict(sorted(per_rule.items())),
         "unmatched_by_domain": dict(sorted(unmatched.items(), key=lambda kv: -len(kv[1]))),
-        # Mails nothing read that the sync would hand to the LLM: what the
-        # fallback costs, and where a new rule would pay off.
-        "llm_candidates": [r for r in rows if r["llm_candidate"] and not _produced_anything(r)],
+        # Mails the sync would hand to the LLM: what the fallback costs, and
+        # where a new rule would pay off. The pipeline's own condition, which
+        # is narrower than "produced nothing": the LLM runs when no reader
+        # extracted a flight *before validation* — an imported stay does not
+        # stop it, and an extracted leg the plausibility gate later drops does.
+        "llm_candidates": [r for r in rows if r["llm_candidate"] and not _extracted_flights(r)],
     }
 
 

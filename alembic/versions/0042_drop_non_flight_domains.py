@@ -11,7 +11,7 @@ shielded was the LLM fallback, and it is now gated on the email's own content
 one had added.
 
 Measured on the 372-email corpus: with the list gone and the content gate in
-place, the LLM is offered 61 mails where the list let 192 through, while 88 of
+place, the LLM is offered 69 mails where the list let 211 through, while 88 of
 the 90 real flight bookings still pass the gate.
 
 Downgrade recreates the empty table; the entries are not restored.

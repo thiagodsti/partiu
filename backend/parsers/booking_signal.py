@@ -24,8 +24,9 @@ it. Measured on the 372-email corpus (2026-11-25):
 * real flight bookings (mails the airline rules import legs from): 88 of 90
   pass. The two misses are an Azul confirmation that prints its flight numbers
   without the AD prefix — and Azul has a rule;
-* mails nothing imports from: 61 of 263 pass, where the blocked-domain list let
-  192 through, so the LLM sees about a third of the mail it used to;
+* mails no reader extracted a flight from (the pipeline's condition for
+  calling the LLM): 69 of 282 pass, where the blocked-domain list let 211
+  through, so the LLM sees about a third of the mail it used to;
 * mails from the formerly blocked senders: 8 of 71 pass (an Airbnb reminder, a
   Hertz booking, meeting confirmations). Each costs one LLM call, and the LLM's
   own grounding check rejects any leg whose flight number and airports are not
@@ -68,7 +69,9 @@ _REFERENCE_LABEL = re.compile(
 # Mail that mentions a flight to sell something: an upgrade, miles, an offer.
 _MARKETING_SUBJECT = re.compile(
     r"newsletter|unsubscribe|\boffer|oferta|\bsale\b|\bdeal|promo|% off|"
-    r"upgrade|miles\b|milhas|points\b|pontos|tips\b|dicas|rate your|avalie|"
+    # Whole words only: "Smiles" is GOL's loyalty programme, and its
+    # "Smiles - Sua passagem foi emitida" is a booking, not marketing.
+    r"upgrade|\bmiles\b|milhas|\bpoints\b|\bpontos\b|\btips\b|dicas|rate your|avalie|"
     r"survey|pesquisa|how was|como foi",
     re.IGNORECASE,
 )

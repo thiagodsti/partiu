@@ -56,3 +56,15 @@ class TestMayDescribeAFlight:
     def test_swedish_and_turkish_booking_words(self):
         assert may_describe_a_flight("Din bokning", "Bokningsnummer QAJV6E\nDY 4371 ARN-OSL")
         assert may_describe_a_flight("Rezervasyonun onaylandı!", "PC 1234 SAW → ADB")
+
+    def test_smiles_is_a_booking_not_miles_marketing(self):
+        # GOL's loyalty programme is called Smiles; "miles" must match a whole
+        # word or its e-ticket mail never reaches the LLM.
+        assert may_describe_a_flight(
+            "Smiles - Sua passagem foi emitida",
+            "Código da reserva: PVNQDY\nVoo G3 1234 GRU 07:10 FLN 08:25",
+        )
+        assert not may_describe_a_flight(
+            "Earn double miles on your next flight",
+            "Booking reference XYZ123 — LA 8072",
+        )

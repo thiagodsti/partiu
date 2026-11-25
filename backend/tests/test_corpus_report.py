@@ -56,9 +56,18 @@ class TestSummarise:
         # A boarding-pass enrichment counts as having produced something
         assert s["per_rule"]["LA"]["nothing"] == []
         assert set(s["unmatched_by_domain"]) == {"shop.example", "airbnb.com", "maxmilhas.com.br"}
-        # Only a mail nothing read counts as an LLM candidate: the Airbnb stay
-        # was imported, so it is not one.
-        assert [r["domain"] for r in s["llm_candidates"]] == ["maxmilhas.com.br"]
+        # The pipeline's condition: no flight extracted before validation. An
+        # imported stay does not stop the LLM call, so the Airbnb mail counts.
+        assert [r["domain"] for r in s["llm_candidates"]] == ["airbnb.com", "maxmilhas.com.br"]
+
+    def test_an_extracted_leg_the_gate_drops_still_stops_the_llm(self):
+        rows = [
+            _row(domain="x.com", rule_legs=1, valid_legs=0, llm_candidate=True),
+            _row(domain="y.com", gds_legs=2, valid_legs=0, llm_candidate=True),
+            _row(domain="z.com", llm_candidate=True),
+        ]
+        s = corpus_report.summarise(rows)
+        assert [r["domain"] for r in s["llm_candidates"]] == ["z.com"]
 
     def test_errors_are_listed(self):
         s = corpus_report.summarise([_row(error="ValueError: boom")])
