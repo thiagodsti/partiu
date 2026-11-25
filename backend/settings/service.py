@@ -4,7 +4,7 @@ connectivity tests, airport count/reload, and non-flight-domain admin management
 import imaplib
 
 from ..validation import validate_external_host, validate_external_url
-from .domain import NonFlightDomain, UserSettings
+from .domain import UserSettings
 from .errors import AdminRequiredError, SmtpConflictError, ValidationError
 from .repository import SettingsRepository
 
@@ -193,18 +193,6 @@ class SettingsService:
 
     def reload_airports(self) -> int:
         return self._repository.reload_airports()
-
-    def list_non_flight_domains(self) -> list[NonFlightDomain]:
-        return [NonFlightDomain(**d) for d in self._repository.list_non_flight_domains()]
-
-    def add_non_flight_domain(self, domain: str, note: str) -> str:
-        domain = domain.strip().lower()
-        if domain:
-            self._repository.add_non_flight_domain(domain, note)
-        return domain
-
-    def remove_non_flight_domain(self, domain: str) -> None:
-        self._repository.remove_non_flight_domain(domain)
 
     @staticmethod
     def _validate_imap_host(host: str) -> None:

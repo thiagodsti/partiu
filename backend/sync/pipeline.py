@@ -14,6 +14,7 @@ from ..database import get_global_setting
 from ..flights.repository import FlightRepository
 from ..parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from ..parsers.boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
+from ..parsers.booking_signal import may_describe_a_flight
 from ..parsers.builtin_rules import get_builtin_rules
 from ..parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from ..parsers.engine import (
@@ -24,7 +25,6 @@ from ..parsers.engine import (
 from ..parsers.gds_eticket import extract_gds_eticket
 from ..parsers.schema_org import extract_flight_reservations
 from ..parsers.validation import validate_flights
-from ..settings.repository import SettingsRepository
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
 from .car_rentals_import import import_car_rentals_from_email
 from .grouping import auto_group_flights
@@ -34,70 +34,12 @@ from .stays_import import import_lodging_from_email
 logger = logging.getLogger(__name__)
 
 _flight_repository = FlightRepository()
-_settings_repository = SettingsRepository()
 _sync_repository = SyncRepository()
-
-# Hardcoded sender domains that never contain flight bookings (admin can add more
-# via Settings — see SettingsRepository.list_non_flight_domains).
-# Subdomains are also matched (e.g. "property.booking.com" matches "booking.com").
-_NON_FLIGHT_DOMAINS: frozenset[str] = frozenset(
-    [
-        # Accommodation
-        "airbnb.com",
-        "booking.com",
-        "property.booking.com",
-        "reservation.accor-mail.com",
-        # Car rental
-        "emails.hertz.com",
-        "europcar.com",
-        "sixt.com",
-        # Restaurants & events
-        "bookatable.com",
-        "caspeco.net",
-        "boxoffice.axs.nu",
-        "ticketmaster.se",
-        "bookatable.co.uk",
-        # Business / consulting
-        "alphasights.com",
-        # Tech / SaaS
-        "pipdecks.com",
-        "aws-experience.com",
-        # Government / public services
-        "migrationsverket.se",
-        "ventus.com",
-        # Retail
-        "medlem.kjell.com",
-        # Travel aggregators that send non-booking emails
-        "tripit.com",
-        # Schools
-        "folkuniversitetet.se",
-    ]
-)
 
 
 def _sender_domain(sender: str) -> str:
     m = re.search(r"@([\w.-]+)", sender or "")
     return m.group(1).lower() if m else ""
-
-
-def _domain_matches(domain: str, blocked: str) -> bool:
-    return domain == blocked or domain.endswith("." + blocked)
-
-
-def is_non_flight_domain(sender: str) -> bool:
-    """Return True if the sender domain is known to never send flight bookings."""
-    domain = _sender_domain(sender)
-    if not domain:
-        return False
-
-    if any(_domain_matches(domain, d) for d in _NON_FLIGHT_DOMAINS):
-        return True
-
-    try:
-        rows = _settings_repository.list_non_flight_domains()
-        return any(_domain_matches(domain, row["domain"]) for row in rows)
-    except Exception:
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -697,6 +639,7 @@ def _process_emails(
     use_llm: bool = False,
     progress_callback: object = None,
     skip_dedup: bool = False,
+    llm_needs_flight_signal: bool = True,
 ) -> dict:
     """Parse a list of EmailMessage objects and persist flights to the DB.
 
@@ -708,6 +651,10 @@ def _process_emails(
                  full sync, parser-version rescan): too many emails.
         progress_callback: Optional callable(n) called after every 10 emails
                            with the current processed count.
+        llm_needs_flight_signal: Send an email to the LLM only when
+                 ``booking_signal.may_describe_a_flight`` says it could hold a
+                 flight. True for mailbox sync; False for mail a person sends
+                 in on purpose (an uploaded .eml, an SMTP forward).
 
     Returns a summary dict including ``new_flight_ids`` so callers can
     trigger aircraft lookups for freshly inserted flights.
@@ -731,15 +678,12 @@ def _process_emails(
 
     for email_msg in emails:
         # --- Accommodation, from schema.org markup only -------------------
-        # Deliberately ahead of the blocked-domain skip. That list exists
-        # because *heuristic* parsing of accommodation mail produced junk, and
-        # the booking platforms on it (Airbnb, Booking.com) are exactly the
-        # senders that ship typed reservation markup. A structural reader
-        # cannot invent a booking: it finds a typed LodgingReservation or
-        # returns nothing, so the reason for the block does not apply to it.
-        # Idempotency lives in the importer rather than the processed-email
-        # ledger below, because a lodging email is often the same email a
-        # flight was already read from.
+        # Runs on every email, ahead of the processed-email check below. A
+        # structural reader cannot invent a booking: it finds a typed
+        # LodgingReservation (or a known platform's template) or returns
+        # nothing. Idempotency lives in the importer rather than the
+        # processed-email ledger, because a lodging email is often the same
+        # email a flight was already read from.
         try:
             stay_ids = import_lodging_from_email(email_msg, user_id)
             stays_created += len(stay_ids)
@@ -747,22 +691,19 @@ def _process_emails(
             logger.error("User %d: Lodging import error: %s", user_id, e, exc_info=True)
 
         # --- Car rentals, from the three vendors we can read -----------------
-        # Also ahead of the blocked-domain skip, and for exactly the reason the
-        # lodging import is: hertz, sixt and europcar are on that list because
-        # they never contain *flights*, and `extract_car_rentals` is gated on
-        # the sender and on the vendor's own labels rather than guessing — it
-        # finds the booking it knows how to read or returns nothing. Idempotency
-        # lives in the importer, not the processed-email ledger, because a
-        # rental confirmation is often re-read by a full rescan.
+        # Same footing as the lodging import: `extract_car_rentals` is gated on
+        # the sender and on the vendor's own labels rather than guessing, so it
+        # finds the booking it knows how to read or returns nothing.
+        # Idempotency lives in the importer, not the processed-email ledger,
+        # because a rental confirmation is often re-read by a full rescan.
+        # (Until migration 0042 both imports also had to sit ahead of a
+        # blocked-sender skip; that list is gone — see parsers/booking_signal.)
         try:
             rental_ids = import_car_rentals_from_email(email_msg, user_id)
             car_rentals_created += len(rental_ids)
         except Exception as e:  # noqa: BLE001 - never let a rental stop the sync
             logger.error("User %d: Car rental import error: %s", user_id, e, exc_info=True)
 
-        if is_non_flight_domain(email_msg.sender or ""):
-            logger.debug("Skipping email from blocked domain: %s", email_msg.sender)
-            continue
         if (
             not skip_dedup
             and email_msg.message_id
@@ -840,7 +781,14 @@ def _process_emails(
             # it doesn't know.
 
             # --- LLM fallback (incremental sync only, when Ollama is available) ---
-            if not flights_data and _use_llm:
+            if (
+                not flights_data
+                and _use_llm
+                and (
+                    not llm_needs_flight_signal
+                    or may_describe_a_flight(email_msg.subject, email_msg.body)
+                )
+            ):
                 flights_data = llm_extract_flights(email_msg)
                 if flights_data:
                     logger.info(
@@ -1187,7 +1135,7 @@ def process_inbound_email(email_msg, user_id: int | None = None) -> dict:
         return {"status": "error", "error": "Recipient not matched to any user"}
 
     # SMTP inbound: always try LLM — it's a single email, latency is fine.
-    result = _process_emails([email_msg], user_id, use_llm=True)
+    result = _process_emails([email_msg], user_id, use_llm=True, llm_needs_flight_signal=False)
 
     new_flight_ids = []
     if result.get("flights_created", 0) > 0:

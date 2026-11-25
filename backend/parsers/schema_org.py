@@ -4,10 +4,10 @@ Google published an email-markup spec years ago and the booking platforms
 embed it next to the pretty HTML: a machine-readable block naming the property,
 its address, and the dates. Reading that block is categorically different from
 every other parser here — there is nothing to guess at, so this tier either
-finds a typed reservation or returns nothing. That is the whole reason it is
-allowed to run on senders the sync otherwise skips (see ``_NON_FLIGHT_DOMAINS``
-in ``sync/pipeline.py``): the blocklist exists because *heuristic* parsing of
-accommodation mail produced junk, and a structural reader cannot.
+finds a typed reservation or returns nothing. (That is also why it ran ahead
+of the blocked-sender skip while that list existed; migration 0042 retired the
+list, since a structural reader cannot produce the junk it was guarding
+against.)
 
 Deliberately **not gated on sender**. Airbnb is the only platform this was
 measured against — of a 372-email corpus it was the sole source of

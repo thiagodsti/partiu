@@ -65,26 +65,6 @@ class AirportReloadDTO(BaseModel):
     count: int
 
 
-class NonFlightDomainDTO(BaseModel):
-    domain: str
-    note: str
-    created_at: str
-
-
-class AddDomainRequestDTO(BaseModel):
-    domain: str
-    note: str = ""
-
-
-class AddDomainResponseDTO(BaseModel):
-    ok: bool
-    domain: str
-
-
-class OkDTO(BaseModel):
-    ok: bool
-
-
 class IntegrationStatusDTO(BaseModel):
     """One optional integration's configuration state.
 

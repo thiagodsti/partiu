@@ -592,12 +592,6 @@ export const guestsApi = {
     del<null>(`/api/trips/${tripId}/guests/${guestId}`),
 };
 
-export interface NonFlightDomain {
-  domain: string;
-  note: string;
-  created_at: string;
-}
-
 export const packingApi = {
   list: (tripId: string) => get<PackingItem[]>(`/api/trips/${tripId}/packing`),
   create: (tripId: string, text: string) =>
@@ -608,12 +602,6 @@ export const packingApi = {
     del<null>(`/api/trips/${tripId}/packing/${itemId}`),
   clearChecked: (tripId: string) =>
     post<null>(`/api/trips/${tripId}/packing/clear-checked`),
-};
-
-export const nonFlightDomainsApi = {
-  list: () => get<NonFlightDomain[]>('/api/settings/admin/non-flight-domains'),
-  add: (domain: string, note: string = '') => _request<{ domain: string }>('POST', '/api/settings/admin/non-flight-domains', { domain, note }),
-  delete: (domain: string) => del<null>(`/api/settings/admin/non-flight-domains/${encodeURIComponent(domain)}`),
 };
 
 export const integrationsApi = {

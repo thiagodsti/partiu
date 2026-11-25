@@ -298,14 +298,14 @@ class TestRobustness:
 
 
 class TestThroughTheSyncPipeline:
-    """The hook itself: `_process_emails` runs the rental import **ahead of the
-    blocked-domain skip**, exactly as it runs the lodging import.
+    """The hook itself: `_process_emails` runs the rental import on every
+    email, exactly as it runs the lodging import.
 
-    hertz.com, sixt.com and europcar.com are all on `_NON_FLIGHT_DOMAINS`. They
-    are there because they never contain *flights* — and `extract_car_rentals`
-    is gated on the sender and on the vendor's own labels, so it finds the
-    booking it knows how to read or returns nothing. Without this ordering the
-    feature would be dead on arrival for all three vendors.
+    Until migration 0042, hertz.com, sixt.com and europcar.com sat on a
+    blocked-sender list, and the import had to run ahead of that skip or the
+    feature was dead on arrival for all three vendors. The list is gone; this
+    pins that a vendor confirmation still becomes a rental through the real
+    pipeline.
     """
 
     HERTZ_BODY = """My Hertz Reservation
@@ -345,10 +345,10 @@ Drop-off Date & Time
 Mon, Apr 01, 2026 at 11:00 PM
 """
 
-    def test_a_blocked_vendors_confirmation_still_becomes_a_rental(self, test_db):
+    def test_a_vendor_confirmation_becomes_a_rental(self, test_db):
         from backend.parsers.email_connector import EmailMessage
         from backend.sync import car_rentals_import
-        from backend.sync.pipeline import _process_emails, is_non_flight_domain
+        from backend.sync.pipeline import _process_emails
 
         user_id = _user(test_db)
         email = EmailMessage(
@@ -360,9 +360,6 @@ Mon, Apr 01, 2026 at 11:00 PM
             html_body="",
             pdf_attachments=[],
         )
-        # The premise of this test.
-        assert is_non_flight_domain(email.sender) is True
-
         with patch.object(car_rentals_import, "_geocode", return_value=(48.11, 16.57, "AT")):
             result = _process_emails([email], user_id=user_id)
 

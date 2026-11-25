@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, nonFlightDomainsApi, sharesApi, guestsApi, versionApi, integrationsApi, ApiError } from "../api/client";
-  import type { NonFlightDomain } from "../api/client";
+  import { settingsApi, syncApi, authApi, notificationsApi, sharesApi, guestsApi, versionApi, integrationsApi, ApiError } from "../api/client";
   import type { Settings, SyncStatus, NotifPreferences, TrustedUser, Guest, VersionInfo, IntegrationStatus } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -610,43 +609,6 @@
     twoFaSetupActive = false;
     twoFaCode = "";
     twoFaMsg = "";
-  }
-
-  // ---- Non-flight (blocked) domains ----
-  let nonFlightDomains = $state<NonFlightDomain[]>([]);
-  let nonFlightDomainsLoading = $state(false);
-  let newBlockedDomain = $state('');
-  let addingBlockedDomain = $state(false);
-
-  async function loadNonFlightDomains() {
-    nonFlightDomainsLoading = true;
-    try {
-      nonFlightDomains = await nonFlightDomainsApi.list();
-    } catch { /* ignore */ } finally {
-      nonFlightDomainsLoading = false;
-    }
-  }
-
-  if ($currentUser?.is_admin) {
-    loadNonFlightDomains();
-  }
-
-  async function addBlockedDomain() {
-    const d = newBlockedDomain.trim().toLowerCase();
-    if (!d) return;
-    addingBlockedDomain = true;
-    try {
-      await nonFlightDomainsApi.add(d);
-      newBlockedDomain = '';
-      nonFlightDomains = await nonFlightDomainsApi.list();
-    } finally {
-      addingBlockedDomain = false;
-    }
-  }
-
-  async function removeBlockedDomain(domain: string) {
-    await nonFlightDomainsApi.delete(domain);
-    nonFlightDomains = nonFlightDomains.filter(d => d.domain !== domain);
   }
 
   // ---- Trusted users ----
@@ -1343,7 +1305,7 @@
       </div>
     {/if}
 
-    <!-- Admin: blocked sender domains -->
+    <!-- Admin: optional integrations -->
     {#if $currentUser?.is_admin}
       <div class="settings-section">
         <div class="settings-section-title">{$t("settings.integrations")}</div>
@@ -1370,52 +1332,6 @@
             </div>
           {/each}
         {/if}
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">{$t("settings.blocked_domains")}</div>
-        <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
-          {$t("settings.blocked_domains_desc")}
-        </p>
-        {#if nonFlightDomainsLoading}
-          <p style="font-size:0.875rem;color:var(--text-secondary)">Loading…</p>
-        {:else if nonFlightDomains.length === 0}
-          <p style="font-size:0.875rem;color:var(--success)">{$t("settings.blocked_domains_none")}</p>
-        {:else}
-          {#each nonFlightDomains as nfd (nfd.domain)}
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-              <span style="font-size:0.875rem">{nfd.domain}</span>
-              <button
-                class="btn btn-secondary"
-                style="font-size:0.8rem;padding:3px 10px"
-                onclick={() => removeBlockedDomain(nfd.domain)}
-              >
-                {$t("settings.blocked_domains_remove")}
-              </button>
-            </div>
-          {/each}
-        {/if}
-        <div class="form-group" style="margin-top:var(--space-md)">
-          <label class="form-label" for="block-domain">{$t("settings.blocked_domains_add")}</label>
-          <div style="display:flex;gap:8px">
-            <input
-              class="form-input"
-              id="block-domain"
-              type="text"
-              placeholder={$t("settings.blocked_domains_add_placeholder")}
-              bind:value={newBlockedDomain}
-              onkeydown={(e) => e.key === 'Enter' && addBlockedDomain()}
-            />
-            <button
-              class="btn btn-secondary"
-              style="font-size:0.8rem;padding:3px 10px;white-space:nowrap"
-              disabled={addingBlockedDomain || !newBlockedDomain.trim()}
-              onclick={addBlockedDomain}
-            >
-              {addingBlockedDomain ? $t("settings.blocked_domains_adding") : $t("settings.blocked_domains_add")}
-            </button>
-          </div>
-        </div>
       </div>
     {/if}
 

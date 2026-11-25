@@ -32,7 +32,7 @@ import json
 import logging
 import os
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 ROW_FIELDS = (
     "domain",
     "subject",
-    "blocked",
+    "llm_candidate",
     "rule",
     "rule_legs",
     "gds_legs",
@@ -82,6 +82,7 @@ def measure(email_msg, rules) -> dict:
     """Run every tier over one email and report what each produced."""
     from backend.airports.timezone import apply_airport_timezones
     from backend.parsers.booking_com import extract_booking_com_stays
+    from backend.parsers.booking_signal import may_describe_a_flight
     from backend.parsers.car_rental import extract_car_rentals
     from backend.parsers.engine import (
         extract_flights_from_email,
@@ -95,12 +96,13 @@ def measure(email_msg, rules) -> dict:
     )
     from backend.parsers.trip_com import extract_trip_com_stays
     from backend.parsers.validation import validate_flights
-    from backend.sync.pipeline import _sender_domain, is_non_flight_domain
+    from backend.sync.pipeline import _sender_domain
 
     row = {
         "domain": _sender_domain(email_msg.sender or ""),
         "subject": (email_msg.subject or "")[:80],
-        "blocked": is_non_flight_domain(email_msg.sender or ""),
+        # Would the sync offer this email to the LLM if no reader took it?
+        "llm_candidate": may_describe_a_flight(email_msg.subject, email_msg.body),
         "rule": None,
         "rule_legs": 0,
         "gds_legs": 0,
@@ -165,6 +167,12 @@ def _produced_anything(row: dict) -> bool:
     )
 
 
+def _extracted_flights(row: dict) -> bool:
+    """Whether any reader handed the pipeline a flight, before validation —
+    the condition that decides whether the LLM fallback runs."""
+    return bool(row["rule_legs"] or row["gds_legs"] or row["schema_legs"])
+
+
 def summarise(rows: list[dict]) -> dict:
     """Aggregate per-email rows into the report's numbers and lists."""
     per_rule: dict[str, dict] = {}
@@ -195,12 +203,11 @@ def summarise(rows: list[dict]) -> dict:
 
     unmatched: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
-        if not r["rule"] and not r["blocked"]:
+        if not r["rule"]:
             unmatched[r["domain"]].append(r)
 
     return {
         "total": len(rows),
-        "blocked": sum(1 for r in rows if r["blocked"]),
         "rule_matched": sum(1 for r in rows if r["rule"]),
         "emails_with_flights": sum(1 for r in rows if r["valid_legs"]),
         "legs": sum(r["valid_legs"] for r in rows),
@@ -211,17 +218,20 @@ def summarise(rows: list[dict]) -> dict:
         "errors": [r for r in rows if r["error"]],
         "per_rule": dict(sorted(per_rule.items())),
         "unmatched_by_domain": dict(sorted(unmatched.items(), key=lambda kv: -len(kv[1]))),
-        "blocked_producing": [r for r in rows if r["blocked"] and (r["stays"] or r["rentals"])],
-        "blocked_silent": Counter(
-            r["domain"] for r in rows if r["blocked"] and not (r["stays"] or r["rentals"])
-        ),
+        # Mails the sync would hand to the LLM: what the fallback costs, and
+        # where a new rule would pay off. The pipeline's own condition, which
+        # is narrower than "produced nothing": the LLM runs when no reader
+        # extracted a flight *before validation* — an imported stay does not
+        # stop it, and an extracted leg the plausibility gate later drops does.
+        "llm_candidates": [r for r in rows if r["llm_candidate"] and not _extracted_flights(r)],
     }
 
 
 def render(summary: dict, *, quiet: bool = False) -> str:
     """Format the summary as the text the CLI prints."""
     out = [
-        f"emails {summary['total']}  blocked {summary['blocked']}  rule matched {summary['rule_matched']}",
+        f"emails {summary['total']}  rule matched {summary['rule_matched']}  "
+        f"silent but offered to the LLM {len(summary['llm_candidates'])}",
         f"emails with flights {summary['emails_with_flights']}  legs {summary['legs']}",
         f"stays {summary['stays']}  rentals {summary['rentals']}  "
         f"boarding passes {summary['boarding_passes']}  cancellations {summary['cancellations']}",
@@ -244,21 +254,13 @@ def render(summary: dict, *, quiet: bool = False) -> str:
 
     if not quiet:
         out.append("")
-        out.append("no rule, not blocked (domain, count, sample subjects):")
+        out.append("no rule (domain, count, sample subjects):")
         for domain, rs in summary["unmatched_by_domain"].items():
             out.append(f"{len(rs):3} {domain}")
             out += [f"    - [{r['pdfs']}pdf] {r['subject']}" for r in rs[:3]]
         out.append("")
-        out.append("blocked senders that still produced something:")
-        out += [
-            f"  {r['domain']} | {r['subject'][:50]} | stays {r['stays']} rentals {r['rentals']}"
-            for r in summary["blocked_producing"]
-        ]
-        out.append("")
-        out.append(
-            "blocked, produced nothing: "
-            + ", ".join(f"{d} ({n})" for d, n in summary["blocked_silent"].most_common())
-        )
+        out.append("produced nothing, would be offered to the LLM (domain | subject):")
+        out += [f"  {r['domain']} | {r['subject'][:60]}" for r in summary["llm_candidates"]]
     return "\n".join(out)
 
 

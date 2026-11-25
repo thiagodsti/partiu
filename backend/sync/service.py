@@ -119,7 +119,14 @@ class SyncService:
                 )
             )
 
-        result = _process_emails(email_messages, user_id=user_id, use_llm=True, skip_dedup=True)
+        # Uploaded on purpose: skip the may-describe-a-flight gate.
+        result = _process_emails(
+            email_messages,
+            user_id=user_id,
+            use_llm=True,
+            skip_dedup=True,
+            llm_needs_flight_signal=False,
+        )
         return {
             "emails_processed": result["emails_processed"],
             "flights_created": result["flights_created"],

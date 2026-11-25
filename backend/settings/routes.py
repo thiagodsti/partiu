@@ -9,13 +9,9 @@ from ..auth import get_current_user, require_admin
 from ..limiter import limiter
 from . import settings_service
 from .dto import (
-    AddDomainRequestDTO,
-    AddDomainResponseDTO,
     AirportCountDTO,
     AirportReloadDTO,
     IntegrationStatusDTO,
-    NonFlightDomainDTO,
-    OkDTO,
     OkMessageDTO,
     SettingsDTO,
     SettingsUpdateDTO,
@@ -23,7 +19,7 @@ from .dto import (
 )
 from .errors import AdminRequiredError, SmtpConflictError, ValidationError
 from .integrations import integration_statuses
-from .mappers import non_flight_domain_to_dto, settings_to_dto
+from .mappers import settings_to_dto
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -88,11 +84,6 @@ def get_airport_count(user: dict = Depends(get_current_user)):
     )
 
 
-@router.get("/admin/non-flight-domains", response_model=list[NonFlightDomainDTO])
-def list_blocked_domains(user: dict = Depends(require_admin)):
-    return [non_flight_domain_to_dto(d) for d in settings_service.list_non_flight_domains()]
-
-
 @router.get("/admin/integrations", response_model=list[IntegrationStatusDTO])
 def list_integrations(user: dict = Depends(require_admin)):
     """Configuration status of the optional third-party integrations.
@@ -106,18 +97,6 @@ def list_integrations(user: dict = Depends(require_admin)):
         IntegrationStatusDTO(key=s.key, configured=s.configured, state=s.state, env_var=s.env_var)
         for s in integration_statuses()
     ]
-
-
-@router.post("/admin/non-flight-domains", response_model=AddDomainResponseDTO)
-def add_blocked_domain(body: AddDomainRequestDTO, user: dict = Depends(require_admin)):
-    domain = settings_service.add_non_flight_domain(body.domain, body.note)
-    return AddDomainResponseDTO(ok=True, domain=domain)
-
-
-@router.delete("/admin/non-flight-domains/{domain:path}", response_model=OkDTO)
-def delete_blocked_domain(domain: str, user: dict = Depends(require_admin)):
-    settings_service.remove_non_flight_domain(domain)
-    return OkDTO(ok=True)
 
 
 @router.post("/airports/reload", response_model=AirportReloadDTO)
