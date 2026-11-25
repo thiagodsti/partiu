@@ -30,6 +30,7 @@ Want to try it before self-hosting? A public demo is available at:
 ### Email import
 - Reads your Gmail (or any IMAP mailbox) and turns airline confirmation emails into flights: flight number, airports, times, seat, cabin, passenger and booking reference
 - Built-in support for [19 airlines](#supported-airlines), plus a shared parser for the standard e-ticket receipts (Amadeus, Sabre, Travelport) that any airline can issue, and the flight markup many airlines embed for Gmail
+- Hundreds more airlines, rail operators and booking sites out of the box through [KDE Itinerary](https://apps.kde.org/itinerary/)'s extractor, bundled in the Docker image
 - Schedule changes update the flights you already have and show the previous times; cancellation emails mark flights as cancelled (never deleted)
 - Boarding-pass emails (Lufthansa, LATAM) fill in seat, gate and terminal on the flight you already have
 - Hotel bookings from Airbnb, Booking.com and Trip.com, and car rentals from Hertz, Sixt and Europcar, import themselves; a stated price becomes a trip expense
@@ -137,6 +138,7 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `AVIATIONSTACK_API_KEY` | | Free API key for aircraft type lookup |
 | `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
 | `PHOTON_URL` | | Geocoder for the station, hotel and address pickers (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and type places as plain text — note that a place with no coordinates gets no map pin, no timezone conversion, and does not count toward visited countries |
+| `KITINERARY_EXTRACTOR` | | Path to KDE Itinerary's `kitinerary-extractor`, which reads booking emails from airlines Partiu has no rule for. The Docker image ships it (x86_64) and this points at it by default; set it empty only to switch it off |
 | `OLLAMA_URL` | | Ollama endpoint for the LLM parsing fallback (e.g. `http://ollama:11434`). Unset, the fallback is disabled and only the built-in airline rules run |
 | `OLLAMA_MODEL` | | Model for the fallback (default: `qwen3:4b-instruct`) |
 | `OLLAMA_NUM_CTX` | | Context window sent with every request, in tokens (default: `8192`). Ollama's own default of 4096 is too small for long itineraries, and Ollama refuses rather than truncates |
@@ -332,6 +334,7 @@ Run any of them with `uv run python -m backend.tools.<name> --help`.
 | Aircraft data | AviationStack (primary) + OpenSky Network (fallback) |
 | Photo albums | Immich (optional, self-hosted) |
 | Station lookup | Photon / OpenStreetMap (optional, self-hostable) |
+| Extra email extractors | [KItinerary](https://invent.kde.org/pim/kitinerary) (KDE), static build bundled in the image |
 | Maps | Leaflet with CARTO / OpenStreetMap tiles; the planner map uses MapLibre with OpenFreeMap vector tiles |
 
 ---

@@ -22,7 +22,7 @@ export const E2E_BROWSER: E2EAccount = { username: 'e2e_browser', password: 'E2e
 
 export const ACCOUNTS = {
   apiKeysUser: { username: 'e2e_api_keys_user', password: 'E2eApiKeysUser1!' },
-  blockedAdmin: { username: 'e2e_blocked_admin', password: 'E2eBlockedAdmin1!', admin: true },
+  integrationsAdmin: { username: 'e2e_integrations_admin', password: 'E2eIntegrations1!', admin: true },
   blockedRegular: { username: 'e2e_blocked_regular', password: 'E2eBlockedRegular1!' },
   budgetOwner: { username: 'e2e_budget_owner', password: 'E2eBudgetOwner1!' },
   budgetPartner: { username: 'e2e_budget_partner', password: 'E2eBudgetPartner1!' },

@@ -23,6 +23,7 @@ from ..parsers.engine import (
     merge_flights,
 )
 from ..parsers.gds_eticket import extract_gds_eticket
+from ..parsers.kitinerary import extract_kitinerary_flights
 from ..parsers.schema_org import extract_flight_reservations
 from ..parsers.validation import validate_flights
 from ..utils import calc_duration_minutes, calc_flight_status, dt_to_iso, now_iso
@@ -768,6 +769,15 @@ def _process_emails(
             #    leg whose markup lacks an airport code or a clock time.
             if not flights_data:
                 flights_data = extract_flight_reservations(email_msg)
+
+            # 4. KDE Itinerary's extractor, when installed (parsers/kitinerary.py):
+            #    ~370 per-provider extractors for carriers we have no rule for.
+            #    Structural like the tiers above — it finds a template it knows
+            #    or returns nothing — and its JSON-LD goes through the same
+            #    schema.org conversion, so the same refusals apply. A subprocess
+            #    per email, so it only runs when everything above found nothing.
+            if not flights_data:
+                flights_data = extract_kitinerary_flights(email_msg)
 
             # There used to be a third tier here: generic line scanners that
             # anchored on any flight-number-shaped token and guessed the rest

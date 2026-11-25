@@ -35,6 +35,13 @@ class Settings:
     # disable the lookup and leave the picker as plain free-text entry.
     PHOTON_URL: str = os.getenv("PHOTON_URL", "https://photon.komoot.io")
 
+    # KDE Itinerary's extractor, an extraction tier between the schema.org
+    # reader and the LLM (parsers/kitinerary.py). The Docker image installs
+    # KDE's static build here on x86_64; set it empty to switch the tier off.
+    KITINERARY_EXTRACTOR: str = os.getenv(
+        "KITINERARY_EXTRACTOR", "/opt/kitinerary/bin/kitinerary-extractor"
+    )
+
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))

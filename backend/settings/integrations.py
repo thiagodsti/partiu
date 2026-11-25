@@ -57,6 +57,22 @@ def _photon_status() -> IntegrationStatus:
     return IntegrationStatus("photon", True, "self_hosted", "PHOTON_URL")
 
 
+def _kitinerary_status() -> IntegrationStatus:
+    """Installed in the Docker image on x86_64; three states, like Photon.
+
+    Emptying the variable is a deliberate "off"; a path with no executable at it
+    (an arm64 build, a dev checkout) is "not configured" — the admin did not
+    choose that, and installing the binary is the fix.
+    """
+    from ..parsers.kitinerary import available
+
+    if not (settings.KITINERARY_EXTRACTOR or "").strip():
+        return IntegrationStatus("kitinerary", False, "disabled", "KITINERARY_EXTRACTOR")
+    if available():
+        return IntegrationStatus("kitinerary", True, "set", "KITINERARY_EXTRACTOR")
+    return IntegrationStatus("kitinerary", False, "unset", "KITINERARY_EXTRACTOR")
+
+
 def integration_statuses() -> list[IntegrationStatus]:
     """Every optional integration, in the order the Settings panel shows them."""
     return [
@@ -73,6 +89,7 @@ def integration_statuses() -> list[IntegrationStatus]:
             "AVIATIONSTACK_API_KEY",
         ),
         _photon_status(),
+        _kitinerary_status(),
         IntegrationStatus(
             "ollama",
             bool(settings.OLLAMA_URL),

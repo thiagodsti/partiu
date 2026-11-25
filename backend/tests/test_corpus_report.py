@@ -25,6 +25,7 @@ def _row(**overrides):
         "rule_legs": 0,
         "gds_legs": 0,
         "schema_legs": 0,
+        "kit_legs": 0,
         "valid_legs": 0,
         "stays": 0,
         "rentals": 0,
@@ -151,3 +152,16 @@ class TestCli:
     def test_missing_corpus_is_a_clean_exit(self, tmp_path, capsys):
         assert corpus_report.main(["--cache", str(tmp_path / "nope.json")]) == 2
         assert "corpus not found" in capsys.readouterr().err
+
+
+class TestKitineraryColumn:
+    def test_legs_from_kitinerary_alone_are_reported(self):
+        rows = [
+            _row(domain="easyjet.com", kit_legs=2, valid_legs=2, llm_candidate=True),
+            _row(domain="flytap.com", rule="TP", rule_legs=1, valid_legs=1),
+        ]
+        s = corpus_report.summarise(rows)
+        assert [r["domain"] for r in s["kitinerary_emails"]] == ["easyjet.com"]
+        # A leg KDE Itinerary handed over stops the LLM call, like any tier's.
+        assert s["llm_candidates"] == []
+        assert "from KDE Itinerary alone: 1 emails, 2 legs" in corpus_report.render(s, quiet=True)

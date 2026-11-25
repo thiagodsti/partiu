@@ -493,11 +493,22 @@ def extract_flight_reservations(email_msg) -> list[dict]:
     body = getattr(email_msg, "html_body", None) or getattr(email_msg, "body", "") or ""
     if _FLIGHT_MARKER not in body:
         return []
+    return flights_from_items(_json_ld_items(body) + _microdata_items(body))
 
+
+def flights_from_items(items: list[dict]) -> list[dict]:
+    """Turn schema.org objects into flight legs, keeping only FlightReservations.
+
+    The conversion every schema.org source shares — the markup in an email's
+    HTML and KDE Itinerary's JSON-LD output (``parsers/kitinerary.py``) — so
+    both apply the same refusals: no IATA code, no clock time, a cancelled
+    reservation or a malformed flight number means no leg. A leg restated per
+    passenger is returned once.
+    """
     flights: list[dict] = []
     seen: set[tuple] = set()
-    for obj in _json_ld_items(body) + _microdata_items(body):
-        if _type_of(obj) != _FLIGHT_MARKER:
+    for obj in items:
+        if not isinstance(obj, dict) or _type_of(obj) != _FLIGHT_MARKER:
             continue
         flight = _reservation_to_flight(obj)
         if flight is None:
