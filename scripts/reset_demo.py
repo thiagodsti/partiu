@@ -12,6 +12,8 @@ the demo started on, so the reset silently stopped when the demo moved to a
 Debian host. Keeping the logic in the image means the schedule is the only
 thing a host has to provide. `scripts/reset_demo.sh` is now a thin wrapper.
 
+It refuses to run unless DEMO_MODE is on: production uses the same image.
+
 Steps: clear every table not in KEEP, remove uploaded files, then run
 `seed_demo.py` against the server in this container.
 """
@@ -101,7 +103,17 @@ def reseed(base_url: str) -> None:
     subprocess.run([sys.executable, str(seed), base_url], check=True)
 
 
+def demo_mode_on() -> bool:
+    """Whether this container is a demo, read the way backend/config.py does."""
+    return os.getenv("DEMO_MODE", "false").lower() == "true"
+
+
 def main() -> None:
+    # Production and the demo run the same image, so this script is present in
+    # both. Pointed at the wrong compose project it would wipe a real install;
+    # a demo is the one place that is never a loss.
+    if not demo_mode_on():
+        sys.exit("reset_demo: refusing to wipe a server without DEMO_MODE=true")
     db_path = os.getenv("DB_PATH", "/app/data/partiu.db")
     port = os.getenv("APP_PORT", "8000")
     _log("Starting demo reset...")

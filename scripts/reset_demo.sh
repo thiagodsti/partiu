@@ -10,5 +10,8 @@
 
 set -e
 
-cd "${1:-$(dirname "$0")/..}"
+# The current directory by default, never the script's own checkout: the repo
+# root has a compose file of its own, and resetting *that* would wipe whatever
+# install runs there. reset_demo.py also refuses unless DEMO_MODE is on.
+cd "${1:-.}"
 exec docker compose exec -T app python /app/scripts/reset_demo.py

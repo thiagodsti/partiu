@@ -103,6 +103,7 @@ class TestMain:
         db = tmp_path / "partiu.db"
         _make_db(db)
         monkeypatch.setenv("DB_PATH", str(db))
+        monkeypatch.setenv("DEMO_MODE", "true")
         monkeypatch.delenv("SEED_BASE_URL", raising=False)
         monkeypatch.delenv("APP_PORT", raising=False)
 
@@ -120,6 +121,7 @@ class TestMain:
         db = tmp_path / "partiu.db"
         _make_db(db)
         monkeypatch.setenv("DB_PATH", str(db))
+        monkeypatch.setenv("DEMO_MODE", "true")
 
         with patch.object(
             reset_demo.subprocess,
@@ -132,3 +134,28 @@ class TestMain:
                 pass
             else:
                 raise AssertionError("a failed seed must fail the reset, so the timer reports it")
+
+    def test_refuses_a_server_that_is_not_a_demo(self, tmp_path, monkeypatch):
+        """Production runs the same image; pointed at it, the reset must do nothing."""
+        db = tmp_path / "partiu.db"
+        _make_db(db)
+        monkeypatch.setenv("DB_PATH", str(db))
+        monkeypatch.delenv("DEMO_MODE", raising=False)
+
+        with patch.object(reset_demo.subprocess, "run") as run:
+            try:
+                reset_demo.main()
+            except SystemExit as e:
+                assert "DEMO_MODE" in str(e.code)
+            else:
+                raise AssertionError("expected a refusal")
+
+        assert _count(db, "users") == 1
+        assert _count(db, "trips") == 1
+        run.assert_not_called()
+
+    def test_demo_mode_is_read_like_the_app_reads_it(self, monkeypatch):
+        monkeypatch.setenv("DEMO_MODE", "TRUE")
+        assert reset_demo.demo_mode_on()
+        monkeypatch.setenv("DEMO_MODE", "1")
+        assert not reset_demo.demo_mode_on()
