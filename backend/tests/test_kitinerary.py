@@ -151,6 +151,29 @@ class TestExtraction:
         email = _email(body="U2 8205 departs STN 07:05 and lands in Lisbon at 09:50")
         assert len(kitinerary.extract_kitinerary_flights(email)) == 1
 
+    def test_an_ambiguous_city_does_not_confirm_the_airport(self, use, seeded_airports_db):
+        # "Milan" is Linate and Malpensa: it cannot vouch for MXP.
+        leg = json.loads(json.dumps(_LEG))
+        leg["reservationFor"]["arrivalAirport"] = {"@type": "Airport", "iataCode": "MXP"}
+        use(json.dumps([leg]))
+        email = _email(body="U2 8205 London Stansted (STN) 07:05, arriving Milan 09:50")
+        assert kitinerary.extract_kitinerary_flights(email) == []
+
+    def test_the_airport_s_own_name_confirms_it(self, use, seeded_airports_db):
+        leg = json.loads(json.dumps(_LEG))
+        leg["reservationFor"]["arrivalAirport"] = {"@type": "Airport", "iataCode": "MXP"}
+        use(json.dumps([leg]))
+        email = _email(body="U2 8205 London Stansted (STN) 07:05, arriving Milan Malpensa 09:50")
+        assert len(kitinerary.extract_kitinerary_flights(email)) == 1
+
+    def test_without_airport_data_nothing_is_confirmed(self, use, seeded_airports_db):
+        use(json.dumps([_LEG]))
+        with patch(
+            "backend.parsers.airport_grounding.airport_index",
+            return_value=(frozenset(), {}, {}),
+        ):
+            assert kitinerary.extract_kitinerary_flights(_email()) == []
+
     def test_non_flight_results_are_ignored(self, use):
         use(json.dumps([{"@type": "LodgingReservation", "reservationFor": {"name": "Hotel"}}]))
         assert kitinerary.extract_kitinerary_flights(_email()) == []

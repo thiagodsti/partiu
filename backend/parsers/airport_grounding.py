@@ -122,3 +122,35 @@ def airport_in_text(code: str, text: str) -> bool:
     if not codes:
         return True
     return (code or "").upper() in airport_candidates(text)
+
+
+def airport_stated_in_text(code: str, text: str) -> bool:
+    """True when the mail pins this airport down, not merely mentions its city.
+
+    Stricter than ``airport_in_text``, for codes a reader filled in itself
+    (KDE Itinerary's name lookup). The airport counts only when the mail
+    prints its IATA code as a word of its own, or contains a word or a whole
+    phrase of its name, city or aliases that names **this airport alone** —
+    "Malpensa", "Gatwick", "Lisbon". A shared city name does not: "Milan" names
+    LIN, MXP and BGY, so it says nothing about which one, and neither does
+    "London" or "Stockholm". With no airport data nothing can be checked, and
+    the answer is no: this check exists to refuse what cannot be confirmed.
+    """
+    from ..utils import fold_text
+    from .shared import _significant_tokens
+
+    code = (code or "").upper()
+    codes, words, phrases = airport_index()
+    if not codes or code not in codes:
+        return False
+    if re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", text or ""):
+        return True
+    folded = fold_text(text or "")
+    if any(words.get(token) == {code} for token in set(_significant_tokens(folded))):
+        return True
+    plain = re.findall(r"[a-z0-9]+", folded)
+    return any(
+        phrases.get(" ".join(plain[i : i + n])) == {code}
+        for n in (2, 3)
+        for i in range(len(plain) - n + 1)
+    )
