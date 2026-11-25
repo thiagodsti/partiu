@@ -249,8 +249,16 @@ def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
     the right codes.
     """
     fn = _clean_flight_number(flight.get("flight_number"))
+    code = fn[:2]
     digits = re.sub(r"^[A-Z0-9]{2}(?=\d)", "", fn).lstrip("0")
-    return digits.isdigit() and re.search(rf"(?<!\d)0*{digits}(?!\d)", text) is not None
+    if not digits.isdigit():
+        return False
+    if re.search(rf"(?<!\d)0*{digits}(?!\d)", text):
+        return True
+    # An airline code ending in a digit — GOL's G3, Avianca Brasil's O6 — puts a
+    # digit right before the number ("G31234", "O66175"), which the search
+    # above refuses; the whole number, code included, is what to look for then.
+    return re.search(rf"(?<![A-Z0-9]){re.escape(code)}\s?0*{digits}(?!\d)", text) is not None
 
 
 def _rejection(flight: dict[str, Any], mail_text: str) -> str:
@@ -449,21 +457,26 @@ def build_llm_body(email_msg) -> str:
     return body_text
 
 
-def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
-    """
-    Ask the configured Ollama model to extract flights from an email.
+class LlmUnreachableError(Exception):
+    """Ollama is configured but did not answer (down, unreachable, timed out)."""
 
-    Returns a list of normalised flight dicts (same schema as rule-based
-    parsers), or an empty list if:
-      - Ollama is not configured
-      - The model says there are no flights
-      - The output fails validation
+
+def _ask_model(
+    email_msg, extra_context: str = "", raise_unreachable: bool = False
+) -> tuple[list[dict], str]:
+    """Ask the configured model about the email.
+
+    Returns the raw flight objects it answered with (booking reference
+    backfilled from the top level) and the mail text the answers must be
+    checked against. ``([], "")`` when Ollama is not configured or the answer
+    is unusable. ``extra_context`` is appended to the prompt (the review
+    page's hints); it is never part of the checked text, so nothing in it can
+    ground an answer.
     """
     from ...config import settings
-    from ..routes.check import fix_reversed_route
 
     if not settings.OLLAMA_URL:
-        return []
+        return [], ""
 
     from datetime import UTC, datetime
 
@@ -482,6 +495,8 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         subject=email_msg.subject or "",
         body=body_text,
     )
+    if extra_context:
+        prompt = f"{prompt}\n\n{extra_context}"
 
     raw = _call_ollama(
         prompt,
@@ -489,32 +504,112 @@ def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
         settings.OLLAMA_URL,
         timeout=settings.OLLAMA_TIMEOUT,
     )
+    if raw is None and raise_unreachable:
+        # The sync shrugs this off (no LLM legs this time); someone pressing a
+        # button needs to hear that the model is not there, not that the email
+        # holds no flight.
+        raise LlmUnreachableError(settings.OLLAMA_URL)
     if not raw:
-        return []
+        return [], mail_text
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         logger.debug("LLM returned non-JSON: %s", raw[:200])
-        return []
+        return [], mail_text
 
     if not data.get("has_flight"):
-        return []
+        return [], mail_text
 
-    raw_flights = data.get("flights") or []
     booking_ref = data.get("booking_reference") or ""
-
-    results = []
-    for f in raw_flights:
+    flights = []
+    for f in data.get("flights") or []:
         if not isinstance(f, dict):
             continue
-        # Backfill booking_reference from top-level if missing
         if not f.get("booking_reference") and booking_ref:
             f["booking_reference"] = booking_ref
+        flights.append(f)
+    return flights, mail_text
+
+
+def llm_extract_flights(email_msg, timeout: int = 60) -> list[dict]:
+    """
+    Ask the configured Ollama model to extract flights from an email.
+
+    Returns a list of normalised flight dicts (same schema as rule-based
+    parsers), or an empty list if:
+      - Ollama is not configured
+      - The model says there are no flights
+      - The output fails validation
+    """
+    from ..routes.check import fix_reversed_route
+
+    raw_flights, mail_text = _ask_model(email_msg)
+    results = []
+    for f in raw_flights:
         reason = _rejection(f, mail_text)
         if reason:
             logger.debug("LLM flight dropped (%s): %s", reason, f)
             continue
         results.append(fix_reversed_route(_normalise_flight(f, "", "")))
-
     return results
+
+
+def _time_in_text(value: str, text: str) -> bool:
+    """The clock time of an ISO stamp ("…T13:10…") is printed in the mail,
+    as "13:10", "13h10" or "1310"."""
+    m = re.search(r"T(\d{2}):(\d{2})", value or "")
+    if not m:
+        return False
+    h, mi = m.groups()
+    hours = {h, h.lstrip("0") or "0"}
+    return any(re.search(rf"(?<!\d){hh}[:hH.]?{mi}(?!\d)", text) for hh in hours)
+
+
+def llm_draft_flights(email_msg, extra_context: str = "") -> list[dict]:
+    """The model's legs for a person to confirm, not for the sync to store.
+
+    ``llm_extract_flights`` drops a leg when any field fails a check, which is
+    right when nobody looks at the result. On the review page someone does, so
+    a leg is kept and only the fields the email does not support are cleared:
+    a flight number not printed in it, an airport it does not name, a time it
+    does not print. Each cleared field's guess is returned under ``doubts``
+    ({field: guessed value}) so the page can show what the model thought
+    without filling it in. Times are local wall clock ("2025-04-01T13:10").
+    """
+    from ..routes.check import fix_reversed_route
+
+    raw_flights, mail_text = _ask_model(email_msg, extra_context, raise_unreachable=True)
+    drafts = []
+    for f in raw_flights:
+        _prefix_flight_number(f)
+        doubts: dict[str, str] = {}
+        if not _flight_number_in_text(f, mail_text):
+            doubts["flight_number"] = _clean_flight_number(f.get("flight_number"))
+        for raw_key, field in (
+            ("dep_airport", "departure_airport"),
+            ("arr_airport", "arrival_airport"),
+        ):
+            code = (f.get(raw_key) or "").upper()
+            if not code or not _airport_in_text(code, mail_text):
+                doubts[field] = code
+        leg = fix_reversed_route(_normalise_flight(f, "", ""))
+        times = {}
+        for field in ("departure_datetime", "arrival_datetime"):
+            stamp = leg.get(field)
+            value = stamp.strftime("%Y-%m-%dT%H:%M") if stamp else ""
+            if value and not _time_in_text(value, mail_text):
+                doubts[field] = value
+                value = ""
+            times[field] = value
+        draft = {
+            "flight_number": leg["flight_number"],
+            "departure_airport": leg["departure_airport"],
+            "arrival_airport": leg["arrival_airport"],
+            **times,
+            "booking_reference": leg.get("booking_reference") or "",
+        }
+        for field in doubts:
+            draft[field] = ""
+        drafts.append({**draft, "doubts": {k: v for k, v in doubts.items() if v}})
+    return drafts

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from ..airports.timezone import apply_airport_timezones
 from ..database import get_global_setting
+from ..email_review.service import consider_for_review
 from ..flights.repository import FlightRepository
 from ..parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from ..parsers.boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
@@ -678,6 +679,11 @@ def _process_emails(
     rules = get_builtin_rules()
     sorted_rules = sorted(rules, key=lambda r: (-r.priority, r.airline_name))
 
+    # Emails that produced something — a flight, a stay, a rental, an update to
+    # a stored flight, a KDE leg or booking. The rest may be bookings nothing
+    # could read, and are offered for review (email_review) at the end.
+    produced: set[int] = set()
+
     for email_msg in emails:
         # --- Accommodation, from schema.org markup only -------------------
         # Runs on every email, ahead of the processed-email check below. A
@@ -689,6 +695,8 @@ def _process_emails(
         try:
             stay_ids = import_lodging_from_email(email_msg, user_id)
             stays_created += len(stay_ids)
+            if stay_ids:
+                produced.add(id(email_msg))
         except Exception as e:  # noqa: BLE001 - never let accommodation stop the sync
             logger.error("User %d: Lodging import error: %s", user_id, e, exc_info=True)
 
@@ -703,6 +711,8 @@ def _process_emails(
         try:
             rental_ids = import_car_rentals_from_email(email_msg, user_id)
             car_rentals_created += len(rental_ids)
+            if rental_ids:
+                produced.add(id(email_msg))
         except Exception as e:  # noqa: BLE001 - never let a rental stop the sync
             logger.error("User %d: Car rental import error: %s", user_id, e, exc_info=True)
 
@@ -714,6 +724,7 @@ def _process_emails(
             logger.debug(
                 "User %d: Skipping already-processed email %s", user_id, email_msg.message_id
             )
+            produced.add(id(email_msg))
             continue
         try:
             # --- BCBP boarding pass scan (always attempted first) ---
@@ -721,6 +732,7 @@ def _process_emails(
             if bcbp_legs:
                 flights_updated += bcbp_updated
                 emails_processed += 1
+                produced.add(id(email_msg))
 
             # --- Extraction, most trustworthy strategy first ---------------
             # 1. The airline's own rule. Hand-written against real emails for
@@ -733,17 +745,22 @@ def _process_emails(
             # whether or not the rule yielded flights: the email it belongs to
             # usually yields none, which is the point.
             if rule is not None:
-                flights_updated += _apply_boarding_pass_details(rule, email_msg, user_id)
+                enriched = _apply_boarding_pass_details(rule, email_msg, user_id)
+                flights_updated += enriched
                 # Also a statement about flights already stored, and the only
                 # path by which a cancellation ever reaches one. Every parser
                 # here refuses to *create* a cancelled leg; nothing until now
                 # went back to the leg the booking confirmation created weeks
                 # earlier, so a cancelled flight sat in its trip for ever.
-                flights_cancelled += _apply_cancellations(rule, email_msg, user_id)
+                cancelled = _apply_cancellations(rule, email_msg, user_id)
+                flights_cancelled += cancelled
                 # And the third kind of statement about stored flights: "we moved
                 # this booking, see the new itinerary elsewhere". Nothing to
                 # update from, so the legs are flagged and the traveller told.
-                flights_rescheduled += _apply_schedule_change_notices(rule, email_msg, user_id)
+                noticed = _apply_schedule_change_notices(rule, email_msg, user_id)
+                flights_rescheduled += noticed
+                if enriched or cancelled or noticed:
+                    produced.add(id(email_msg))
 
             # 2. GDS e-ticket receipt. Reads the receipt's own structure — a
             #    table cell's column, or a whole matched line — instead of
@@ -818,6 +835,7 @@ def _process_emails(
             flights_data = validate_flights(flights_data, source=email_msg.subject[:60])
             if not flights_data:
                 continue
+            produced.add(id(email_msg))
             if not bcbp_legs:
                 emails_processed += 1
 
@@ -923,10 +941,26 @@ def _process_emails(
             except Exception as e:  # noqa: BLE001 - never let one email stop the sync
                 logger.error("User %d: KItinerary import error: %s", user_id, e, exc_info=True)
                 continue
+            if n:
+                produced.add(id(email_msg))
             if importer is import_kitinerary_ground_legs:
                 segments_created += n
             else:
                 plan_items_created += n
+
+    # --- What nothing could read, offered for review -----------------------
+    # A mail that produced nothing but looks like a flight booking (strict
+    # check, not about a flight already stored, not from an ignored sender)
+    # goes on the review list (email_review), where the traveller can import
+    # it by hand or with the LLM's help, or dismiss it.
+    review_candidates = 0
+    for email_msg in emails:
+        if id(email_msg) in produced:
+            continue
+        try:
+            review_candidates += int(consider_for_review(email_msg, user_id))
+        except Exception as e:  # noqa: BLE001 - never let the review list stop the sync
+            logger.error("User %d: email review error: %s", user_id, e, exc_info=True)
 
     return {
         "emails_processed": emails_processed,
@@ -938,6 +972,7 @@ def _process_emails(
         "car_rentals_created": car_rentals_created,
         "segments_created": segments_created,
         "plan_items_created": plan_items_created,
+        "review_candidates": review_candidates,
         "new_flight_ids": new_flight_ids,
         "grouping": grouping_result,
         "errors": errors,

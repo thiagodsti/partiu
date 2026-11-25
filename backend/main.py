@@ -26,6 +26,7 @@ from .boarding_passes import routes as boarding_passes_routes
 from .car_rentals import routes as car_rentals_routes
 from .database import init_database
 from .day_notes import routes as day_notes_routes
+from .email_review import routes as email_review_routes
 from .expenses import guests_routes
 from .expenses import routes as expenses_routes
 from .flights import routes as flights_routes
@@ -169,6 +170,7 @@ app.include_router(trips_routes.router)
 app.include_router(trips_routes.cities_router)
 app.include_router(flights_routes.router)
 app.include_router(sync_routes.router)
+app.include_router(email_review_routes.router)
 app.include_router(settings_routes.router)
 app.include_router(airports_routes.router)
 app.include_router(stats_routes.router)

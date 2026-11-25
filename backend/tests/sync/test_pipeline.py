@@ -726,3 +726,59 @@ class TestKitineraryTier:
         _, kit, llm = self._run(self._user("kit3"), schema_flights=[], kit_flights=[])
         kit.assert_called_once()
         llm.assert_called_once()
+
+
+class TestReviewCandidates:
+    """Only an email that produced nothing is considered for the review list."""
+
+    def test_an_unread_booking_is_offered_and_a_read_one_is_not(self, test_db):
+        from backend.sync.pipeline import _process_emails
+        from backend.tests.email_review.helpers import email, make_user, seed_airports
+
+        seed_airports(test_db)
+        user_id = make_user(test_db)
+        unread, read = email(), email()
+        leg = {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": datetime(2018, 11, 16, 17, 40, tzinfo=UTC),
+            "arrival_datetime": datetime(2018, 11, 16, 19, 0, tzinfo=UTC),
+            "airline_code": "O6",
+            "airline_name": "Avianca Brasil",
+            "booking_reference": "PVNQDY",
+            "_times_already_utc": True,
+        }
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.extract_gds_eticket", return_value=[]),
+            patch(
+                "backend.sync.pipeline.extract_flight_reservations",
+                side_effect=lambda m: [dict(leg)] if m is read else [],
+            ),
+            patch("backend.sync.pipeline.extract_kitinerary_flights", return_value=[]),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+        ):
+            result = _process_emails([read, unread], user_id)
+        # The read email stored O66175, so the unread one — about the same
+        # flight — is not offered either: nothing reaches the list.
+        assert result["flights_created"] == 1
+        assert result["review_candidates"] == 0
+
+    def test_an_unread_booking_alone_is_offered(self, test_db):
+        from backend.sync.pipeline import _process_emails
+        from backend.tests.email_review.helpers import email, make_user, seed_airports
+
+        seed_airports(test_db)
+        user_id = make_user(test_db)
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.extract_gds_eticket", return_value=[]),
+            patch("backend.sync.pipeline.extract_flight_reservations", return_value=[]),
+            patch("backend.sync.pipeline.extract_kitinerary_flights", return_value=[]),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+        ):
+            result = _process_emails([email()], user_id)
+        assert result["review_candidates"] == 1

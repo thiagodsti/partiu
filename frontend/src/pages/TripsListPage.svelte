@@ -9,6 +9,7 @@
   import TopNav from "../components/TopNav.svelte";
   import TripCard from "../components/TripCard.svelte";
   import SyncStatusBar from "../components/SyncStatusBar.svelte";
+  import ReviewEmailsNotice from "../components/ReviewEmailsNotice.svelte";
   import { toasts } from "../lib/toastStore";
   import { t } from "../lib/i18n";
   import { ImageRefreshManager } from "../lib/imageRefresh.svelte";
@@ -200,6 +201,8 @@
         {/if}
       </button>
     </SyncStatusBar>
+
+    <ReviewEmailsNotice />
 
     <!-- Trips List -->
     {#if !loading && activeTrips.length === 0}

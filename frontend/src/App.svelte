@@ -28,6 +28,7 @@
     '/trips/:tripId/flights/:flightId/edit': wrap({ asyncComponent: () => import('./pages/EditFlightPage.svelte') }),
     '/trips/:tripId/flights/:flightId': wrap({ asyncComponent: () => import('./pages/FlightDetailPage.svelte') }),
     '/trips/:tripId/add-transport': wrap({ asyncComponent: () => import('./pages/AddTransportPage.svelte') }),
+    '/review-emails': wrap({ asyncComponent: () => import('./pages/EmailReviewPage.svelte') }),
     '/stats': wrap({ asyncComponent: () => import('./pages/StatsPage.svelte') }),
     '/stats/map': wrap({ asyncComponent: () => import('./pages/WorldMapPage.svelte') }),
     '/history': wrap({ asyncComponent: () => import('./pages/HistoryPage.svelte') }),

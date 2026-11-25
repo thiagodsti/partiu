@@ -90,3 +90,33 @@ def may_describe_a_flight(subject: str | None, body: str | None) -> bool:
     if not _FLIGHT_NUMBER.search(text):
         return False
     return bool(_FLIGHT_SUBJECT.search(subject) or _REFERENCE_LABEL.search(text))
+
+
+# A subject that is about a booking itself, not a check-in or boarding reminder
+# for one (those are about a flight that, in practice, is already stored).
+_BOOKING_SUBJECT = re.compile(
+    r"confirm|booking|itinerar|e-?ticket|ticket|receipt|reserv|rezerv|"
+    r"passagem|bilhete|recibo|viagem|voo\b|vuelo|billete|"
+    r"bokning|kvitto|resehandling|buchung|réservation|billet|prenotazione|"
+    r"biglietto|bilet",
+    re.IGNORECASE,
+)
+
+
+def looks_like_flight_booking(subject: str | None, body: str | None) -> bool:
+    """The strict test for the review list (email_review): could this be a
+    booking that nothing managed to read?
+
+    Stricter than ``may_describe_a_flight`` because its cost is the traveller's
+    attention, not a CPU minute: all three signals are required — a subject
+    about a booking, a flight number, a booking-reference label — and no
+    marketing words. Measured on the 372-email corpus (2026-11-25): of 201
+    mails nothing imported, 14 pass; after dropping those about a flight
+    already stored (the service's job), 5 remain, 4 of them real missed
+    bookings (MaxMilhas, GOL, a LATAM order).
+    """
+    subject = subject or ""
+    if not _BOOKING_SUBJECT.search(subject) or _MARKETING_SUBJECT.search(subject):
+        return False
+    text = f"{subject}\n{(body or '')[:_BODY_WINDOW]}"
+    return bool(_FLIGHT_NUMBER.search(text) and _REFERENCE_LABEL.search(text))

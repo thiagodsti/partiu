@@ -604,6 +604,47 @@ export const packingApi = {
     post<null>(`/api/trips/${tripId}/packing/clear-checked`),
 };
 
+export interface ReviewHints {
+  flight_numbers: string[];
+  airports: string[];
+  dates: string[];
+  times: string[];
+  booking_reference: string | null;
+  excerpt: string[];
+}
+
+export interface ReviewCandidate {
+  id: string;
+  sender: string | null;
+  subject: string | null;
+  email_date: string | null;
+  hints: ReviewHints;
+  booking_reference: string | null;
+}
+
+export interface ReviewLeg {
+  flight_number: string;
+  departure_airport: string;
+  arrival_airport: string;
+  /** Local time at each airport, "YYYY-MM-DDTHH:MM". */
+  departure_datetime: string;
+  arrival_datetime: string;
+  booking_reference: string;
+}
+
+export const emailReviewApi = {
+  list: () => get<{ items: ReviewCandidate[]; ai_available: boolean }>('/api/email-review'),
+  count: () => get<{ count: number }>('/api/email-review/count'),
+  draft: (id: string) =>
+    post<{ legs: (ReviewLeg & { doubts: Record<string, string> })[] }>(`/api/email-review/${id}/draft`),
+  importLegs: (id: string, legs: ReviewLeg[]) =>
+    post<{ flight_ids: string[]; trip_ids: string[] }>(`/api/email-review/${id}/import`, { legs }),
+  dismiss: (id: string) => post<null>(`/api/email-review/${id}/dismiss`),
+  ignoreSender: (id: string) => post<{ dismissed: number }>(`/api/email-review/${id}/ignore-sender`),
+  ignoredSenders: () => get<{ domain: string; created_at: string }[]>('/api/email-review/ignored-senders'),
+  stopIgnoring: (domain: string) => del<null>(`/api/email-review/ignored-senders/${encodeURIComponent(domain)}`),
+};
+
 export const integrationsApi = {
   list: () => get<IntegrationStatus[]>('/api/settings/admin/integrations'),
 };

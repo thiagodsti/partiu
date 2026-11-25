@@ -128,6 +128,18 @@ class TestGrounding:
         assert _flight_number_in_text({"flight_number": "AY0806"}, "Flight AY 806 to Helsinki")
         assert _flight_number_in_text({"flight_number": "AY806"}, "AY0806 Helsinki")
 
+    def test_an_airline_code_ending_in_a_digit_is_still_found(self):
+        """GOL is G3 and Avianca Brasil O6: the mail prints "G31234", "O66175",
+        so a digit sits right before the number. These were refused until
+        2026-11-25, dropping every such leg the model had read correctly."""
+        from backend.integrations.llm.parser import _flight_number_in_text
+
+        assert _flight_number_in_text({"flight_number": "O66175"}, "Número do voo: O66175")
+        assert _flight_number_in_text({"flight_number": "G31234"}, "Voo G3 1234 GRU-FLN")
+        assert _flight_number_in_text({"flight_number": "G31234"}, "Voo G31234")
+        # Still not part of a longer number or another code.
+        assert not _flight_number_in_text({"flight_number": "G31234"}, "Pedido XG312345")
+
     def test_digits_inside_a_longer_number_do_not_count(self):
         from backend.integrations.llm.parser import _flight_number_in_text
 
@@ -298,3 +310,45 @@ class TestAnswerLength:
     def test_answer_is_capped(self):
         payload = TestRequest()._payload()
         assert payload["options"]["num_predict"] == 2048
+
+
+class TestDraftForTheReviewPage:
+    """llm_draft_flights keeps a leg and clears only the fields the email does
+    not support, recording the model's guess; the sync path still drops it."""
+
+    def _draft(self, answer, email):
+        from backend.integrations.llm import parser
+
+        with (
+            patch("backend.config.settings.OLLAMA_URL", "http://ollama:11434"),
+            patch.object(parser, "_call_ollama", return_value=answer),
+        ):
+            return parser.llm_draft_flights(email)
+
+    def test_an_unsupported_airport_and_time_are_cleared_not_the_leg(self, seeded_airports_db):
+        email = _email(body="Voo 4849 de Florianópolis FLN às 13:20, destino Milão")
+        answer = _answer(
+            flight_number="AD4849",
+            dep_airport="FLN",
+            arr_airport="MXP",
+            dep_datetime="2026-03-02T13:20:00",
+            arr_datetime="2026-03-02T18:10:00",
+        )
+        (leg,) = self._draft(answer, email)
+        assert (leg["flight_number"], leg["departure_airport"]) == ("AD4849", "FLN")
+        assert leg["departure_datetime"] == "2026-03-02T13:20"
+        assert (leg["arrival_airport"], leg["arrival_datetime"]) == ("", "")
+        assert leg["doubts"] == {"arrival_airport": "MXP", "arrival_datetime": "2026-03-02T18:10"}
+
+        # The sync path, which nobody reviews, still refuses the whole leg.
+        flights, _ = _run(answer, email)
+        assert flights == []
+
+    def test_an_unreachable_model_is_an_error_for_the_draft_only(self):
+        from backend.integrations.llm import parser
+
+        email = _email(body="Voo 4849 VCP FLN")
+        with pytest.raises(parser.LlmUnreachableError):
+            self._draft(None, email)
+        flights, _ = _run(None, email)
+        assert flights == []

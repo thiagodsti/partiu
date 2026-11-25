@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { toasts } from "../lib/toastStore";
   import QRCode from "qrcode";
-  import { settingsApi, syncApi, authApi, notificationsApi, sharesApi, guestsApi, versionApi, integrationsApi, ApiError } from "../api/client";
+  import { settingsApi, syncApi, authApi, notificationsApi, sharesApi, emailReviewApi, guestsApi, versionApi, integrationsApi, ApiError } from "../api/client";
   import type { Settings, SyncStatus, NotifPreferences, TrustedUser, Guest, VersionInfo, IntegrationStatus } from "../api/types";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import EmptyState from "../components/EmptyState.svelte";
@@ -611,6 +612,16 @@
     twoFaMsg = "";
   }
 
+  // ---- Ignored senders (email review) ----
+  let ignoredSenders = $state<{ domain: string; created_at: string }[]>([]);
+  emailReviewApi.ignoredSenders().then((r) => (ignoredSenders = r)).catch(() => {});
+
+  async function stopIgnoring(domain: string) {
+    await emailReviewApi.stopIgnoring(domain);
+    ignoredSenders = ignoredSenders.filter((s) => s.domain !== domain);
+    toasts.show($t("settings.ignored_senders_stopped", { values: { domain } }), "success");
+  }
+
   // ---- Trusted users ----
   let trustedUsers = $state<TrustedUser[]>([]);
   let trustedUsersLoading = $state(false);
@@ -936,6 +947,26 @@
           {savingSettings ? $t("settings.saving") : $t("settings.save")}
         </button>
       </form>
+    </div>
+
+    <!-- Ignored senders (email review) -->
+    <div class="settings-section" data-testid="ignored-senders">
+      <div class="settings-section-title">{$t("settings.ignored_senders")}</div>
+      <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:var(--space-md)">
+        {$t("settings.ignored_senders_desc")}
+      </p>
+      {#if ignoredSenders.length === 0}
+        <p style="font-size:0.875rem;color:var(--text-secondary)">{$t("settings.ignored_senders_none")}</p>
+      {:else}
+        {#each ignoredSenders as s (s.domain)}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <span class="mono" style="font-size:0.875rem;overflow-wrap:anywhere">{s.domain}</span>
+            <button class="btn btn-secondary btn-sm" onclick={() => stopIgnoring(s.domain)}>
+              {$t("settings.ignored_senders_stop")}
+            </button>
+          </div>
+        {/each}
+      {/if}
     </div>
 
     <!-- Inbound SMTP Server (admin only — enable/port) -->

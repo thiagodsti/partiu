@@ -15,6 +15,7 @@ const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow 
 vi.mock('../api/client', () => ({
   tripsApi: { list: mockList, refreshImage: mockRefreshImage },
   syncApi: { status: mockSyncStatus, now: mockSyncNow },
+  emailReviewApi: { count: () => Promise.resolve({ count: 0 }) },
 }));
 
 vi.mock('../lib/toastStore', () => ({

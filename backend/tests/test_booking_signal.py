@@ -68,3 +68,31 @@ class TestMayDescribeAFlight:
             "Earn double miles on your next flight",
             "Booking reference XYZ123 — LA 8072",
         )
+
+
+class TestLooksLikeFlightBooking:
+    """The strict test for the review list: subject about a booking, a flight
+    number and a reference label, no marketing."""
+
+    def test_a_missed_booking(self):
+        from backend.parsers.booking_signal import looks_like_flight_booking
+
+        assert looks_like_flight_booking(
+            "Sua passagem foi emitida com sucesso",
+            "Código da reserva: PVNQDY\nNúmero do voo: O66175",
+        )
+
+    def test_a_check_in_reminder_is_not_a_booking(self):
+        from backend.parsers.booking_signal import looks_like_flight_booking
+
+        # Passes the LLM gate (check-in, flight number) but is about a flight
+        # that is, in practice, already stored.
+        assert not looks_like_flight_booking(
+            "Check-in is open for your flight", "Booking reference ABC123, LH 803"
+        )
+
+    def test_all_three_signals_are_required(self):
+        from backend.parsers.booking_signal import looks_like_flight_booking
+
+        assert not looks_like_flight_booking("Your booking", "Thanks for booking with us")
+        assert not looks_like_flight_booking("Your booking", "Booking reference ABC123")

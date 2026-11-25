@@ -38,6 +38,10 @@ const {
 }));
 
 vi.mock('../api/client', () => ({
+  emailReviewApi: {
+    ignoredSenders: () => Promise.resolve([]),
+    stopIgnoring: () => Promise.resolve(null),
+  },
   settingsApi: {
     get: mockSettingsGet,
     update: mockSettingsUpdate,
