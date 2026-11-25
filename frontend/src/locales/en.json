@@ -478,7 +478,7 @@
   "integrations.photon_self_hosted": "Using your own Photon instance for station and accommodation search.",
   "integrations.photon_disabled": "No station or accommodation search. Places save as plain text — no map pin, no timezone conversion, and they will not count toward visited countries.",
   "integrations.kitinerary": "KDE Itinerary extractor",
-  "integrations.kitinerary_set": "Booking emails from airlines without a built-in rule are also read by KDE Itinerary's extractors.",
+  "integrations.kitinerary_set": "Flight bookings from airlines without a built-in rule are also read by KDE Itinerary's extractors.",
   "integrations.kitinerary_unset": "The extractor binary was not found, so only the built-in airline rules read booking emails. The Docker image ships it on x86_64.",
   "integrations.kitinerary_disabled": "Switched off. Only the built-in airline rules read booking emails.",
   "integrations.ollama": "Ollama LLM fallback",

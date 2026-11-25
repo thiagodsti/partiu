@@ -24,7 +24,7 @@ _LEG = {
         "@type": "Flight",
         "airline": {"@type": "Airline", "iataCode": "U2", "name": "easyJet"},
         "flightNumber": "8205",
-        "departureAirport": {"@type": "Airport", "iataCode": "LGW", "name": "London Gatwick"},
+        "departureAirport": {"@type": "Airport", "iataCode": "STN", "name": "London Stansted"},
         "departureTime": {
             "@type": "QDateTime",
             "@value": "2026-03-10T07:05:00+00:00",
@@ -68,7 +68,7 @@ def _email(raw=None, **kw):
         message_id="<kit@test>",
         sender=kw.get("sender", "easyJet <noreply@easyjet.com>"),
         subject=kw.get("subject", "Your booking EZY123"),
-        body=kw.get("body", "plain body"),
+        body=kw.get("body", "U2 8205 London Stansted (STN) 07:05 → Lisbon (LIS) 09:50"),
         date=datetime(2026, 1, 5, 12, 0, tzinfo=UTC),
         html_body=kw.get("html_body", "<p>html body</p>"),
         pdf_attachments=[],
@@ -122,7 +122,7 @@ class TestExtraction:
         (leg,) = kitinerary.extract_kitinerary_flights(_email())
 
         assert leg["flight_number"] == "U28205"
-        assert (leg["departure_airport"], leg["arrival_airport"]) == ("LGW", "LIS")
+        assert (leg["departure_airport"], leg["arrival_airport"]) == ("STN", "LIS")
         assert leg["departure_datetime"] == datetime(2026, 3, 10, 7, 5, tzinfo=UTC)
         assert leg["arrival_datetime"] == datetime(2026, 3, 10, 9, 50, tzinfo=UTC)
         assert leg["booking_reference"] == "TEST42"
@@ -138,6 +138,18 @@ class TestExtraction:
         use(json.dumps([no_time, no_code, cancelled]))
 
         assert kitinerary.extract_kitinerary_flights(_email()) == []
+
+    def test_an_airport_the_email_does_not_name_is_refused(self, use, seeded_airports_db):
+        # KItinerary fills a missing IATA code from the airport's name; Partiu
+        # keeps an airport only when the email itself names it.
+        use(json.dumps([_LEG]))
+        email = _email(body="U2 8205 London Stansted (STN) 07:05, arriving 09:50")
+        assert kitinerary.extract_kitinerary_flights(email) == []
+
+    def test_an_airport_named_by_its_city_is_kept(self, use, seeded_airports_db):
+        use(json.dumps([_LEG]))
+        email = _email(body="U2 8205 departs STN 07:05 and lands in Lisbon at 09:50")
+        assert len(kitinerary.extract_kitinerary_flights(email)) == 1
 
     def test_non_flight_results_are_ignored(self, use):
         use(json.dumps([{"@type": "LodgingReservation", "reservationFor": {"name": "Hotel"}}]))

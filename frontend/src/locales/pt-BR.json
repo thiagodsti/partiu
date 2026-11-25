@@ -478,7 +478,7 @@
   "integrations.photon_self_hosted": "Usando sua própria instância do Photon para buscar estações e hospedagens.",
   "integrations.photon_disabled": "Sem busca de estações ou hospedagens. Os locais são salvos como texto — sem pino no mapa, sem conversão de fuso, e não contam nos países visitados.",
   "integrations.kitinerary": "Extrator do KDE Itinerary",
-  "integrations.kitinerary_set": "E-mails de reserva de companhias sem regra própria também são lidos pelos extratores do KDE Itinerary.",
+  "integrations.kitinerary_set": "Reservas de voo de companhias sem regra própria também são lidas pelos extratores do KDE Itinerary.",
   "integrations.kitinerary_unset": "O executável do extrator não foi encontrado, então só as regras internas leem os e-mails de reserva. A imagem Docker o inclui em x86_64.",
   "integrations.kitinerary_disabled": "Desligado. Só as regras internas leem os e-mails de reserva.",
   "integrations.ollama": "Fallback de LLM (Ollama)",

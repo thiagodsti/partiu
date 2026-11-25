@@ -27,6 +27,14 @@ code, no clock time, a cancelled reservation or a malformed number means no
 leg. Times carry their offset, so legs come back in UTC and flagged
 ``_times_already_utc``; ``validate_flights`` still judges them like any other.
 
+One difference from the markup reader needs a guard of its own: KItinerary
+**fills a missing IATA code from the airport's name** when the name matches a
+single airport, and the CLI has no switch for it. Partiu takes an airport only
+when the email states it (a name like Ryanair's "Milan" resolves to the wrong
+airport), so a leg is kept only when the email names both airports — by code,
+or by a locating word of the airport's name or city — the same check the LLM's
+answers pass (``parsers/airport_grounding``).
+
 Never fatal: a missing binary, a timeout, a crash or unparseable output is
 logged and yields ``[]``, so the LLM still gets its turn.
 """
@@ -39,6 +47,7 @@ from email.message import EmailMessage as MimeMessage
 from email.utils import format_datetime
 
 from ..config import settings
+from .airport_grounding import airport_in_text
 from .schema_org import flights_from_items
 
 logger = logging.getLogger(__name__)
@@ -142,9 +151,26 @@ def run_extractor(email_msg) -> list[dict]:
     return [_flatten_times(item) for item in items if isinstance(item, dict)]
 
 
+def _named_in_email(flight: dict, email_msg) -> bool:
+    """Both airports are named in the email (see the module docstring)."""
+    text = f"{getattr(email_msg, 'subject', '') or ''}\n{getattr(email_msg, 'body', '') or ''}"
+    for field in ("departure_airport", "arrival_airport"):
+        if not airport_in_text(flight[field], text):
+            logger.info(
+                "kitinerary: dropping %s, %s %s is not named in the email",
+                flight["flight_number"],
+                field.split("_")[0],
+                flight[field],
+            )
+            return False
+    return True
+
+
 def extract_kitinerary_flights(email_msg) -> list[dict]:
     """Flight legs KItinerary finds in the email, in the rule parsers' shape."""
-    flights = flights_from_items(run_extractor(email_msg))
+    flights = [
+        f for f in flights_from_items(run_extractor(email_msg)) if _named_in_email(f, email_msg)
+    ]
     if flights:
         logger.info(
             "kitinerary: %d flight(s) from %r",
