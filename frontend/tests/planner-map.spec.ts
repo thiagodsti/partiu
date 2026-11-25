@@ -58,6 +58,10 @@ test('the plan map loads its basemap without CSP violations', async ({ page }) =
   expect(created.ok()).toBeTruthy();
   const tripId = (await created.json()).id as string;
 
+  // MapLibre parses the GeoJSON source in a Web Worker started from a blob:
+  // URL. That worker starting is the observable thing a missing worker-src
+  // prevents, so it is what the test waits for.
+  const workerStarted = page.waitForEvent('worker', { timeout: 15000 });
   await page.goto(`/#/trips/${tripId}/plan`);
   const map = page.locator('.plan-map');
   await expect(map).toBeVisible({ timeout: 15000 });
@@ -65,7 +69,6 @@ test('the plan map loads its basemap without CSP violations', async ({ page }) =
   // The vector basemap, not the raster fallback (WebGL comes from SwiftShader).
   await expect(map.locator('canvas.maplibregl-canvas')).toBeAttached({ timeout: 15000 });
   expect(styleRequested).toBe(true);
-  // Give the worker time to start and parse the source.
-  await page.waitForTimeout(1500);
+  await workerStarted;
   expect(violations).toEqual([]);
 });
