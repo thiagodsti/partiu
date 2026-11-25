@@ -19,10 +19,3 @@ class UserSettings:
     immich_api_key_set: bool
     default_currency: str
     smtp_server_port: int | None  # admin only; None for non-admins
-
-
-@dataclass
-class NonFlightDomain:
-    domain: str
-    note: str
-    created_at: str

@@ -44,21 +44,3 @@ class SettingsRepository:
         repo = AirportRepository()
         repo.load_from_csv_if_empty()
         return repo.count()
-
-    def list_non_flight_domains(self) -> list[dict]:
-        with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT domain, note, created_at FROM non_flight_domains ORDER BY domain"
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def add_non_flight_domain(self, domain: str, note: str = "") -> None:
-        with db_write() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO non_flight_domains (domain, note) VALUES (?, ?)",
-                (domain, note),
-            )
-
-    def remove_non_flight_domain(self, domain: str) -> None:
-        with db_write() as conn:
-            conn.execute("DELETE FROM non_flight_domains WHERE domain = ?", (domain,))

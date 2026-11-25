@@ -195,64 +195,27 @@ class TestAirportSettings:
 # ---------------------------------------------------------------------------
 
 
-class TestNonFlightDomains:
-    def test_list_returns_list(self, auth_client):
-        r = auth_client.get("/api/settings/admin/non-flight-domains")
-        assert r.status_code == 200
-        assert isinstance(r.json(), list)
-        # Each entry has the expected shape
-        if r.json():
-            entry = r.json()[0]
-            assert "domain" in entry
-            assert "note" in entry
-            assert "created_at" in entry
+class TestBlockedSendersAreGone:
+    """The blocked-sender list was retired in migration 0042: the LLM fallback,
+    the one reader it still shielded, is now gated on the email's content
+    (parsers/booking_signal). Fails if the routes or the table come back."""
 
-    def test_add_and_list(self, auth_client):
-        r = auth_client.post(
-            "/api/settings/admin/non-flight-domains",
-            json={"domain": "bookatable.com"},
-        )
-        assert r.status_code == 200
-        assert r.json()["domain"] == "bookatable.com"
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_routes_are_gone(self, auth_client, method):
+        r = getattr(auth_client, method)("/api/settings/admin/non-flight-domains")
+        assert r.status_code in (404, 405)
 
-        r2 = auth_client.get("/api/settings/admin/non-flight-domains")
-        domains = [d["domain"] for d in r2.json()]
-        assert "bookatable.com" in domains
+    def test_table_is_dropped(self, test_db, auth_client):
+        import sqlite3
 
-    def test_add_duplicate_is_idempotent(self, auth_client):
-        auth_client.post("/api/settings/admin/non-flight-domains", json={"domain": "example.com"})
-        r = auth_client.post(
-            "/api/settings/admin/non-flight-domains", json={"domain": "example.com"}
-        )
-        assert r.status_code == 200
-        r2 = auth_client.get("/api/settings/admin/non-flight-domains")
-        assert sum(1 for d in r2.json() if d["domain"] == "example.com") == 1
-
-    def test_delete(self, auth_client):
-        auth_client.post("/api/settings/admin/non-flight-domains", json={"domain": "remove-me.com"})
-        r = auth_client.delete("/api/settings/admin/non-flight-domains/remove-me.com")
-        assert r.status_code == 200
-        r2 = auth_client.get("/api/settings/admin/non-flight-domains")
-        assert all(d["domain"] != "remove-me.com" for d in r2.json())
-
-    def test_non_admin_forbidden(self, auth_client, api_app):
-        auth_client.post("/api/users", json={"username": "regular", "password": "password123"})
-        from fastapi.testclient import TestClient
-
-        with TestClient(api_app, base_url="https://testserver") as c:
-            c.post("/api/auth/login", json={"username": "regular", "password": "password123"})
-            assert c.get("/api/settings/admin/non-flight-domains").status_code == 403
-            assert (
-                c.post(
-                    "/api/settings/admin/non-flight-domains", json={"domain": "x.com"}
-                ).status_code
-                == 403
-            )
-
-    def test_unauthenticated_forbidden(self, client):
-        client.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
-        client.cookies.clear()
-        assert client.get("/api/settings/admin/non-flight-domains").status_code == 401
+        conn = sqlite3.connect(test_db)
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='non_flight_domains'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is None
 
 
 class TestAirportRankingVisibility:

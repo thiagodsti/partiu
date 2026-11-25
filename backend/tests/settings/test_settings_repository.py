@@ -103,47 +103,6 @@ class TestUpdateUserSettings:
         assert row["imap_port"] == 993
 
 
-class TestNonFlightDomains:
-    """The table comes pre-seeded by alembic migration 0010 with the same domains
-    hardcoded in sync/pipeline.py, so `test_db` never starts empty — tests assert
-    relative to that baseline rather than an empty list."""
-
-    def test_seeded_by_migration(self, test_db):
-        from backend.settings.repository import SettingsRepository
-
-        domains = {d["domain"] for d in SettingsRepository().list_non_flight_domains()}
-        assert "booking.com" in domains
-
-    def test_add_then_list(self, test_db):
-        from backend.settings.repository import SettingsRepository
-
-        repo = SettingsRepository()
-        repo.add_non_flight_domain("example.com", "test note")
-
-        domains = {d["domain"]: d for d in repo.list_non_flight_domains()}
-        assert domains["example.com"]["note"] == "test note"
-
-    def test_add_duplicate_ignored(self, test_db):
-        from backend.settings.repository import SettingsRepository
-
-        repo = SettingsRepository()
-        repo.add_non_flight_domain("example.com")
-        before = len(repo.list_non_flight_domains())
-        repo.add_non_flight_domain("example.com")
-
-        assert len(repo.list_non_flight_domains()) == before
-
-    def test_remove(self, test_db):
-        from backend.settings.repository import SettingsRepository
-
-        repo = SettingsRepository()
-        repo.add_non_flight_domain("example.com")
-        repo.remove_non_flight_domain("example.com")
-
-        domains = {d["domain"] for d in repo.list_non_flight_domains()}
-        assert "example.com" not in domains
-
-
 class TestAirportCount:
     def test_reflects_seeded_rows(self, test_db):
         from backend.database import db_write

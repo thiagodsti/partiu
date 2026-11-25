@@ -20,7 +20,7 @@ def _row(**overrides):
     base = {
         "domain": "example.com",
         "subject": "s",
-        "blocked": False,
+        "llm_candidate": False,
         "rule": None,
         "rule_legs": 0,
         "gds_legs": 0,
@@ -45,19 +45,20 @@ class TestSummarise:
             _row(rule="TP", subject="upgrade offer"),
             _row(rule="LA", boarding_passes=1, subject="cartão de embarque"),
             _row(domain="shop.example", subject="order"),
-            _row(domain="airbnb.com", blocked=True, stays=1),
-            _row(domain="tripit.com", blocked=True),
+            _row(domain="airbnb.com", stays=1, llm_candidate=True),
+            _row(domain="maxmilhas.com.br", subject="e-ticket", llm_candidate=True),
         ]
         s = corpus_report.summarise(rows)
-        assert (s["total"], s["blocked"], s["rule_matched"]) == (6, 2, 3)
+        assert (s["total"], s["rule_matched"]) == (6, 3)
         assert (s["emails_with_flights"], s["legs"], s["stays"]) == (1, 2, 1)
         assert s["per_rule"]["TP"]["with_flights"] == 1
         assert [r["subject"] for r in s["per_rule"]["TP"]["nothing"]] == ["upgrade offer"]
         # A boarding-pass enrichment counts as having produced something
         assert s["per_rule"]["LA"]["nothing"] == []
-        assert list(s["unmatched_by_domain"]) == ["shop.example"]
-        assert [r["domain"] for r in s["blocked_producing"]] == ["airbnb.com"]
-        assert dict(s["blocked_silent"]) == {"tripit.com": 1}
+        assert set(s["unmatched_by_domain"]) == {"shop.example", "airbnb.com", "maxmilhas.com.br"}
+        # Only a mail nothing read counts as an LLM candidate: the Airbnb stay
+        # was imported, so it is not one.
+        assert [r["domain"] for r in s["llm_candidates"]] == ["maxmilhas.com.br"]
 
     def test_errors_are_listed(self):
         s = corpus_report.summarise([_row(error="ValueError: boom")])

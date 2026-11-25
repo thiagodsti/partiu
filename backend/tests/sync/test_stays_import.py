@@ -353,29 +353,27 @@ class TestKind:
         assert stay["kind"] == "hotel"
 
 
-class TestBlockedSenderBypass:
-    """Airbnb and Booking.com are on `_NON_FLIGHT_DOMAINS`, and must stay there.
+class TestPlatformMailThroughThePipeline:
+    """Airbnb and Booking.com mail goes through the whole pipeline.
 
-    That list exists because *heuristic* parsing of accommodation mail produced
-    junk — the same reasoning that removed the generic flight scanners. A
-    structural reader is a different thing: it finds a typed LodgingReservation
-    or returns nothing, so it runs ahead of the skip while flight extraction
-    stays blocked.
+    Until migration 0042 both sat on a blocked-sender list and the lodging
+    import ran ahead of that skip. The list is gone: a structural reader finds
+    a typed LodgingReservation or returns nothing, and the LLM fallback (the
+    one reader the list still shielded) is gated on the email's own content.
     """
 
-    def test_a_blocked_sender_still_has_its_markup_read(self, conn):
-        from backend.sync.pipeline import _process_emails, is_non_flight_domain
+    def test_the_markup_becomes_a_stay(self, conn):
+        from backend.sync.pipeline import _process_emails
 
         user_id = _make_user(conn)
         email = _lodging_email(sender="Airbnb <automated@airbnb.com>")
-        assert is_non_flight_domain(email.sender), "precondition: sender is blocked"
 
         result = _process_emails([email], user_id)
 
         assert result["stays_created"] == 1
         assert len(_stays(conn, user_id)) == 1
 
-    def test_a_blocked_sender_with_no_markup_still_yields_nothing(self, conn):
+    def test_no_markup_yields_nothing(self, conn):
         from backend.sync.pipeline import _process_emails
 
         user_id = _make_user(conn)
@@ -396,7 +394,7 @@ class TestBookingComConfirmation:
         from conftest import load_anonymized_fixture
 
         from backend.sync.grouping import auto_group_flights
-        from backend.sync.pipeline import _process_emails, is_non_flight_domain
+        from backend.sync.pipeline import _process_emails
 
         user_id = _make_user(conn)
         _add_airport(conn, "ARN", "SE", "Stockholm")
@@ -407,7 +405,6 @@ class TestBookingComConfirmation:
         trips_before = conn.execute("SELECT COUNT(*) c FROM trips").fetchone()["c"]
 
         email = load_anonymized_fixture("booking_com_confirmation_anonymized.json")
-        assert is_non_flight_domain(email.sender), "precondition: sender is blocked"
         result = _process_emails([email], user_id)
 
         assert result["stays_created"] == 1

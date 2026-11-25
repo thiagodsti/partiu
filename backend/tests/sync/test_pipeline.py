@@ -42,37 +42,6 @@ class TestDtToIso:
         assert "2025-06-01" in result
 
 
-class TestIsNonFlightDomain:
-    def test_empty_sender_returns_false(self, test_db):
-        from backend.sync.pipeline import is_non_flight_domain
-
-        assert is_non_flight_domain("") is False
-
-    def test_matches_hardcoded_domain(self, test_db):
-        from backend.sync.pipeline import is_non_flight_domain
-
-        assert is_non_flight_domain("reservations@booking.com") is True
-
-    def test_matches_hardcoded_subdomain(self, test_db):
-        from backend.sync.pipeline import is_non_flight_domain
-
-        assert is_non_flight_domain("noreply@property.booking.com") is True
-
-    def test_unknown_domain_returns_false(self, test_db):
-        from backend.sync.pipeline import is_non_flight_domain
-
-        assert is_non_flight_domain("noreply@latam.com") is False
-
-    def test_matches_admin_added_domain(self, test_db):
-        from backend.settings.repository import SettingsRepository
-        from backend.sync.pipeline import is_non_flight_domain
-
-        SettingsRepository().add_non_flight_domain("example.com")
-
-        assert is_non_flight_domain("noreply@example.com") is True
-        assert is_non_flight_domain("noreply@mail.example.com") is True
-
-
 class TestSyncState:
     """_get_sync_state/_upsert_sync_state now live as SyncRepository methods
     (see test_sync_repository.py) — these tests cover the thin pipeline
@@ -631,3 +600,60 @@ class TestSchemaOrgFlightTier:
         ):
             _process_emails([email_msg], user_id)
         schema_tier.assert_not_called()
+
+
+class TestLlmGate:
+    """The LLM fallback only sees mailbox mail that may describe a flight.
+
+    This gate replaced the blocked-sender list (migration 0042). Mail a person
+    sends in on purpose — an uploaded .eml, an SMTP forward — skips it.
+    """
+
+    def _user(self, name):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            return conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, 'h', 0)",
+                (name,),
+            ).lastrowid
+
+    def _run(self, user_id, email_msg, **kwargs):
+        from backend.sync.pipeline import _process_emails
+
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+            patch("backend.integrations.llm.parser.llm_available", return_value=True),
+            patch("backend.integrations.llm.parser.llm_extract_flights", return_value=[]) as llm,
+        ):
+            _process_emails([email_msg], user_id, use_llm=True, **kwargs)
+        return llm
+
+    def test_lodging_mail_never_reaches_the_llm(self, test_db):
+        email_msg = _make_email_msg(
+            message_id="<airbnb@test>",
+            subject="Reservation confirmed - Lisbon",
+            body="Your stay is confirmed. Confirmation code HMABC12345.",
+        )
+        llm = self._run(self._user("gate1"), email_msg)
+        llm.assert_not_called()
+
+    def test_a_booking_from_an_airline_with_no_rule_does(self, test_db):
+        email_msg = _make_email_msg(
+            message_id="<gol@test>",
+            subject="Sua passagem foi emitida",
+            body="Código da reserva: PVNQDY\nVoo G3 1234 GRU 07:10 FLN 08:25",
+        )
+        llm = self._run(self._user("gate2"), email_msg)
+        llm.assert_called_once()
+
+    def test_mail_sent_in_on_purpose_skips_the_gate(self, test_db):
+        email_msg = _make_email_msg(
+            message_id="<upload@test>",
+            subject="Fwd: my trip",
+            body="see below",
+        )
+        llm = self._run(self._user("gate3"), email_msg, llm_needs_flight_signal=False)
+        llm.assert_called_once()

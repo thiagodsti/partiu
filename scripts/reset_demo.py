@@ -42,7 +42,6 @@ KEEP = frozenset(
         "airport_aliases",
         "aircraft_types",
         "global_settings",  # VAPID keys, backfill flags, admin settings
-        "non_flight_domains",  # blocked sender list
     }
 )
 

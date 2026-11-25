@@ -182,22 +182,6 @@ class TestTestImap:
             service.test_imap(user, "localhost", 993, "me@gmail.com", "secret")
 
 
-class TestNonFlightDomains:
-    def test_add_list_remove_round_trip(self, test_db):
-        from backend.settings.service import SettingsService
-
-        service = SettingsService()
-        normalized = service.add_non_flight_domain("  Example.com  ", "test note")
-        assert normalized == "example.com"
-
-        domains = service.list_non_flight_domains()
-        assert any(d.domain == "example.com" for d in domains)
-
-        service.remove_non_flight_domain("example.com")
-        domains_after = service.list_non_flight_domains()
-        assert not any(d.domain == "example.com" for d in domains_after)
-
-
 class TestAirports:
     def test_get_airport_count(self, test_db):
         from backend.settings.service import SettingsService

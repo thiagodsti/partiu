@@ -3,9 +3,9 @@
  *
  * Runs the whole path against a live server: .eml upload → the markup reader →
  * trip matching → a stay on a trip. Two things here are worth having end-to-end
- * rather than only in the backend suite. The sender is **Airbnb, which is on the
- * blocked-domain list** — the lodging reader is deliberately ahead of that skip,
- * and nothing but a live run proves the ordering survived. And a booking with no
+ * rather than only in the backend suite. The sender is **Airbnb**, which sat on a
+ * blocked-sender list until migration 0042 retired it — a live run proves its
+ * mail still becomes a stay through the real pipeline. And a booking with no
  * flights anywhere near it has to **open a trip of its own**, which is the case
  * the feature exists for (the drive-to-the-coast trip that has no tickets).
  *
@@ -183,8 +183,7 @@ test('an email with no reservation markup imports no stay', async () => {
 });
 
 // Booking.com ships no schema.org markup, so its confirmations are read by a
-// template reader (`parsers/booking_com.py`) instead. Also a blocked sender, and
-// also synthetic — the structure mirrors the real confirmation's HTML, where
+// template reader (`parsers/booking_com.py`) instead. Also synthetic — the structure mirrors the real confirmation's HTML, where
 // each label and its value sit in separate elements.
 const BOOKING_REF = '9900112233';
 const BOOKING_PROPERTY = 'E2E Harbour Hotel';

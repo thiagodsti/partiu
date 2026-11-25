@@ -1,8 +1,8 @@
 """Conversions between domain objects and DTOs (settings has no SQL rows of its own
 worth wrapping — see repository.py for why)."""
 
-from .domain import NonFlightDomain, UserSettings
-from .dto import NonFlightDomainDTO, SettingsDTO
+from .domain import UserSettings
+from .dto import SettingsDTO
 
 
 def settings_to_dto(settings: UserSettings) -> SettingsDTO:
@@ -22,7 +22,3 @@ def settings_to_dto(settings: UserSettings) -> SettingsDTO:
         default_currency=settings.default_currency,
         smtp_server_port=settings.smtp_server_port,
     )
-
-
-def non_flight_domain_to_dto(domain: NonFlightDomain) -> NonFlightDomainDTO:
-    return NonFlightDomainDTO(domain=domain.domain, note=domain.note, created_at=domain.created_at)
