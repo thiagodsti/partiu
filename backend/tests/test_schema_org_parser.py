@@ -2,7 +2,7 @@
 
 The markup here is **synthetic**, deliberately. Real confirmation mail carries a
 property's street address, the host's phone number and a booking reference, and
-the fixture-scrubbing rules in CLAUDE.md exist because that kind of data has
+the fixture-scrubbing rules in AGENTS.md exist because that kind of data has
 repeatedly survived into committed fixtures. Every shape below was copied from
 a real email's *structure* and then filled with invented values, which gives the
 same coverage with nothing to redact.
