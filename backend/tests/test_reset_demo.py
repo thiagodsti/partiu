@@ -159,3 +159,37 @@ class TestMain:
         assert reset_demo.demo_mode_on()
         monkeypatch.setenv("DEMO_MODE", "1")
         assert not reset_demo.demo_mode_on()
+
+
+class TestAgainstTheRealSchema:
+    """The miniature schema above proves the KEEP-list logic; this proves it on
+    every table the migrations actually create, and that the app can be set up
+    again afterwards, which is what seed_demo.py does next."""
+
+    def test_wipe_leaves_a_server_ready_for_first_run_setup(self, test_db, auth_client):
+        created = auth_client.post("/api/trips", json={"name": "To be wiped"})
+        assert created.status_code in (200, 201)
+
+        cleared, kept = reset_demo.wipe_database(test_db)
+
+        conn = sqlite3.connect(test_db)
+        try:
+            tables = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            ]
+            assert cleared + kept == len(tables)
+            for table in tables:
+                if table not in reset_demo.KEEP:
+                    count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                    assert count == 0, f"{table} still has {count} rows"
+            assert conn.execute("SELECT COUNT(*) FROM alembic_version").fetchone()[0] == 1
+        finally:
+            conn.close()
+
+        setup = auth_client.post(
+            "/api/auth/setup", json={"username": "demo", "password": "demo1234"}
+        )
+        assert setup.status_code in (200, 201), setup.text
