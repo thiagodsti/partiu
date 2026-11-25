@@ -8,7 +8,8 @@ at dates relative to today, so the demo always looks current:
   - "Rio Weekend"        — 3 weeks in the past   (Brazilian-centric, LATAM + Azul)
   - "European Tour"      — 8 weeks in the past    (International, LATAM / BA / SAS / Finnair)
   - "Rio de Janeiro"     — departing in ~10 days  (Brazilian-centric, Azul + LATAM)
-  - "Lisbon & Oslo"      — departing in ~5 weeks  (International, TAP / Norwegian / LATAM)
+  - "Lisbon & Oslo"      — departing in ~5 weeks  (International, TAP / Norwegian / LATAM),
+                            with two stays and a filled-in trip planner
 
 Usage:
     python scripts/seed_demo.py                        # defaults to http://localhost:8000
@@ -60,7 +61,8 @@ def _req(method: str, path: str, body: dict | None = None) -> dict:
                         if part.startswith("session="):
                             _session_cookie = part[len("session=") :]
                             break
-            return json.loads(resp.read())
+            raw = resp.read()
+            return json.loads(raw) if raw else {}  # 204 No Content
     except urllib.error.HTTPError as e:
         text = e.read().decode()
         # 409 on setup/duplicate is expected — not an error
@@ -351,6 +353,160 @@ def build_trips(now: datetime) -> list[dict]:
                     "arrival_terminal": "3",
                 },
             ],
+            # The trip planner's rows, so the demo's planner is not an empty
+            # board. Days are offsets from the trip's first day.
+            "stays": [
+                {
+                    "kind": "hotel",
+                    "place": {
+                        "name": "Memmo Alfama",
+                        "address": "Travessa das Merceeiras 27, Lisboa",
+                        "lat": 38.7105,
+                        "lon": -9.1318,
+                        "country_code": "PT",
+                    },
+                    "check_in": (1, "14:00"),
+                    "check_out": (4, "07:00"),
+                },
+                {
+                    "kind": "airbnb",
+                    "place": {
+                        "name": "Grünerløkka loft",
+                        "address": "Thorvald Meyers gate 40, Oslo",
+                        "lat": 59.9226,
+                        "lon": 10.7590,
+                        "country_code": "NO",
+                    },
+                    "check_in": (4, "15:00"),
+                    "check_out": (9, "05:00"),
+                },
+            ],
+            "plan": {
+                "stops": [
+                    {
+                        "name": "Lisbon",
+                        "lat": 38.7223,
+                        "lon": -9.1393,
+                        "country_code": "PT",
+                        "start": 1,
+                        "end": 4,
+                    },
+                    {
+                        "name": "Oslo",
+                        "lat": 59.9139,
+                        "lon": 10.7522,
+                        "country_code": "NO",
+                        "start": 4,
+                        "end": 9,
+                    },
+                    {
+                        "name": "London",
+                        "lat": 51.5072,
+                        "lon": -0.1276,
+                        "country_code": "GB",
+                        "start": 9,
+                        "end": 10,
+                    },
+                ],
+                "items": [
+                    {
+                        "title": "Tram 28 through Alfama",
+                        "day": 1,
+                        "time": "16:30",
+                        "status": "todo",
+                        "place_name": "Largo das Portas do Sol",
+                        "lat": 38.7123,
+                        "lon": -9.1306,
+                    },
+                    {
+                        "title": "Pastéis de Belém",
+                        "day": 2,
+                        "time": "10:00",
+                        "status": "todo",
+                        "place_name": "Pastéis de Belém",
+                        "lat": 38.6975,
+                        "lon": -9.2032,
+                    },
+                    {
+                        "title": "Jerónimos Monastery",
+                        "day": 2,
+                        "time": "11:30",
+                        "status": "booked",
+                        "place_name": "Mosteiro dos Jerónimos",
+                        "lat": 38.6979,
+                        "lon": -9.2068,
+                    },
+                    {
+                        "title": "Sintra day trip",
+                        "day": 3,
+                        "time": "09:00",
+                        "status": "booked",
+                        "place_name": "Palácio da Pena",
+                        "lat": 38.7876,
+                        "lon": -9.3906,
+                    },
+                    {"title": "Fado dinner", "day": 3, "time": "20:30", "status": "idea"},
+                    {
+                        "title": "Opera House roof walk",
+                        "day": 5,
+                        "time": "10:00",
+                        "status": "todo",
+                        "place_name": "Oslo Opera House",
+                        "lat": 59.9075,
+                        "lon": 10.7531,
+                    },
+                    {
+                        "title": "Munch Museum",
+                        "day": 5,
+                        "time": "13:00",
+                        "status": "booked",
+                        "place_name": "MUNCH",
+                        "lat": 59.9059,
+                        "lon": 10.7550,
+                    },
+                    {
+                        "title": "Fjord cruise",
+                        "day": 6,
+                        "time": "11:00",
+                        "status": "booked",
+                        "place_name": "Aker Brygge",
+                        "lat": 59.9105,
+                        "lon": 10.7270,
+                    },
+                    {
+                        "title": "Vigeland Park",
+                        "day": 7,
+                        "time": "10:00",
+                        "status": "todo",
+                        "place_name": "Vigelandsparken",
+                        "lat": 59.9270,
+                        "lon": 10.7006,
+                    },
+                    {
+                        "title": "Sauna by the fjord",
+                        "day": 8,
+                        "status": "idea",
+                        "place_name": "SALT",
+                        "lat": 59.9071,
+                        "lon": 10.7472,
+                    },
+                    # Unscheduled: a place to visit, and a bare idea.
+                    {
+                        "title": "LX Factory",
+                        "status": "idea",
+                        "place_name": "LX Factory",
+                        "lat": 38.7033,
+                        "lon": -9.1786,
+                    },
+                    {"title": "Try brunost and waffles", "status": "idea"},
+                ],
+                "tasks": [
+                    {"text": "Buy Sintra palace tickets", "done": True},
+                    {"text": "Book the fjord cruise", "done": True},
+                    {"text": "Get an Oslo Pass", "done": False},
+                    {"text": "Pack rain jackets", "done": False},
+                ],
+            },
         },
     ]
 
@@ -415,6 +571,55 @@ def main() -> None:
             post(f"/api/trips/{trip_id}/expenses", expense)
             print(
                 f"    💰 {expense['description']}  {expense['amount']:,.2f} {expense['currency']}"
+            )
+
+        start = trip_def["flights"][0]["departure_datetime"][:10]
+        day0 = datetime.fromisoformat(start)
+
+        def on_day(offset: int, base: datetime = day0) -> str:
+            return (base + timedelta(days=offset)).date().isoformat()
+
+        for stay in trip_def.get("stays", []):
+            (in_day, in_time), (out_day, out_time) = stay["check_in"], stay["check_out"]
+            post(
+                f"/api/trips/{trip_id}/stays",
+                {
+                    "kind": stay["kind"],
+                    "place": stay["place"],
+                    "check_in_datetime": f"{on_day(in_day)}T{in_time}",
+                    "check_out_datetime": f"{on_day(out_day)}T{out_time}",
+                },
+            )
+            print(f"    🛏  {stay['place']['name']}")
+
+        plan = trip_def.get("plan") or {}
+        for stop in plan.get("stops", []):
+            post(
+                f"/api/trips/{trip_id}/plan/stops",
+                {
+                    "name": stop["name"],
+                    "lat": stop["lat"],
+                    "lon": stop["lon"],
+                    "country_code": stop["country_code"],
+                    "start_date": on_day(stop["start"]),
+                    "end_date": on_day(stop["end"]),
+                },
+            )
+        for item in plan.get("items", []):
+            body = {k: v for k, v in item.items() if k != "day"}
+            if "day" in item:
+                body["date"] = on_day(item["day"])
+            post(f"/api/trips/{trip_id}/plan/items", body)
+        for task in plan.get("tasks", []):
+            created_task = post(f"/api/trips/{trip_id}/plan/tasks", {"text": task["text"]})
+            if task.get("done") and created_task.get("id"):
+                _req(
+                    "PATCH", f"/api/trips/{trip_id}/plan/tasks/{created_task['id']}", {"done": True}
+                )
+        if plan:
+            print(
+                f"    🗺  plan: {len(plan.get('stops', []))} stops, "
+                f"{len(plan.get('items', []))} items, {len(plan.get('tasks', []))} to-dos"
             )
 
         created += 1

@@ -35,7 +35,10 @@
   import { onDestroy, onMount } from 'svelte';
   import 'leaflet/dist/leaflet.css';
   import type { LayerGroup, Map as LeafletMap } from 'leaflet';
+  import type { Map as MaplibreMap, StyleSpecification } from 'maplibre-gl';
   import { escapeHtml } from '../lib/utils';
+  import { locale } from '../lib/i18n';
+  import { OPENFREEMAP_STYLE_URL, localizeStyle, mapLanguage, supportsWebGL } from '../lib/mapStyle';
 
   interface Props {
     cities: MapCity[];
@@ -53,14 +56,23 @@
   let layer: LayerGroup | null = null;
   let L: typeof import('leaflet') | null = null;
 
+  /* The basemap is drawn from vector tiles so that its labels can follow the
+   * profile's language (see lib/mapStyle.ts). If WebGL is missing, or the style
+   * cannot be fetched within STYLE_TIMEOUT_MS, the OSM raster tiles are used,
+   * with labels in each place's local language as before. The map and its
+   * overlays are built first and the basemap slides in under them, so a slow
+   * tile host never holds back the route and pins. */
+  const STYLE_TIMEOUT_MS = 5000;
+  let baseStyle: StyleSpecification | null = null;
+  let glMap: MaplibreMap | null = $state(null);
+  let resizeObserver: ResizeObserver | null = null;
+  let disposed = false;
+  const styleAbort = new AbortController();
+
   onMount(async () => {
     L = await import('leaflet');
-    if (!mapEl) return;
+    if (!mapEl || disposed) return;
     const m = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(m);
     m.setView([30, 110], 3);
     layer = L.layerGroup().addTo(m);
     map = m;
@@ -68,12 +80,57 @@
     // (the organizer hiding its side lists), it has to be told to re-measure.
     resizeObserver = new ResizeObserver(() => m.invalidateSize());
     resizeObserver.observe(mapEl);
+
+    const vector = await addVectorBasemap(m);
+    if (disposed) return;
+    if (!vector) {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(m);
+    }
   });
 
-  let resizeObserver: ResizeObserver | null = null;
+  async function addVectorBasemap(m: LeafletMap): Promise<boolean> {
+    if (!supportsWebGL()) return false;
+    const timer = setTimeout(() => styleAbort.abort(), STYLE_TIMEOUT_MS);
+    try {
+      const res = await fetch(OPENFREEMAP_STYLE_URL, { signal: styleAbort.signal });
+      if (!res.ok) return false;
+      const style = (await res.json()) as StyleSpecification;
+      await import('maplibre-gl/dist/maplibre-gl.css');
+      const { maplibreGL } = await import('@maplibre/maplibre-gl-leaflet');
+      // The component may have gone while the style or the library loaded.
+      if (disposed) return false;
+      baseStyle = style;
+      const gl = maplibreGL({ style: localizeStyle(style, mapLanguage($locale)) });
+      // The style carries its own OpenFreeMap / OpenStreetMap attribution.
+      gl.addTo(m);
+      glMap = gl.getMaplibreMap();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Changing the language in Settings relabels the map in place.
+  let appliedLang = '';
+  $effect(() => {
+    const lang = mapLanguage($locale);
+    if (!glMap || !baseStyle) return;
+    if (appliedLang === '') { appliedLang = lang; return; }
+    if (lang === appliedLang) return;
+    appliedLang = lang;
+    glMap.setStyle(localizeStyle(baseStyle, lang));
+  });
 
   onDestroy(() => {
+    disposed = true;
+    styleAbort.abort();
     resizeObserver?.disconnect();
+    glMap = null;
     map?.remove();
     map = null;
   });

@@ -8,7 +8,7 @@
 
 ---
 
-![demo](docs/demo.gif)
+![Partiu walkthrough: trips list, a trip page, the trip planner board and plan map, and stats](docs/demo.gif)
 
 ## Live demo
 
@@ -21,7 +21,7 @@ Want to try it before self-hosting? A public demo is available at:
 | Username | `demo` |
 | Password | `demo1234` |
 
-> **Note:** The demo is reset every 6 hours with fresh sample data. Any changes you make will be wiped on the next reset.
+> **Note:** The demo is reset every 6 hours with fresh sample data. Any changes you make will be wiped on the next reset. The upcoming "Lisbon & Oslo" trip comes with stays and a filled-in trip planner to explore.
 
 ---
 
@@ -78,7 +78,7 @@ Want to try it before self-hosting? A public demo is available at:
 - **Things to do** are items with a status (idea → to book → booked → done, the dot beside each), an optional time ("07:20 Great Wall" sets it), notes and a place; drag them between days
 - **Places to visit**: a search for sights and restaurants ranked near the trip's route; a pick goes straight onto the map, ready to drag onto a day. **Unscheduled ideas** stay free text
 - **Before the trip**: a to-do list with an assignee from the trip's people, or a new companion added on the spot (a trip guest, who can then share expenses too)
-- **A map of the whole plan** under the board — route cities in order, stays, ground legs and every item with a place; click a day's header to focus on that day
+- **A map of the whole plan** under the board — route cities in order, stays, ground legs and every item with a place; click a day's header to focus on that day. Its place names follow the language in your profile (English or Portuguese), drawn from [OpenFreeMap](https://openfreemap.org) vector tiles; a browser without WebGL gets the OpenStreetMap tiles, labelled in each place's local language
 - Stays and ground legs are edited in place with the trip page's own forms; flights open their edit page and come back to the planner
 - Everything saves as it changes. On a phone the board becomes stacked day cards
 - **One list per day**: the trip page's day cards show and edit the planner's items for that day (same status dot, time and place), so planning on either page shows on the other

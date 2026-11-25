@@ -23,12 +23,17 @@ _SECURITY_HEADERS = {
     # CSP: same-origin scripts/styles; inline styles allowed (Svelte); data: for QR SVGs
     # frame-src allows the OpenStreetMap embed; img-src allows Wikipedia thumbnails served locally
     # CartoDB tile servers and unpkg needed for the trip route map (Leaflet)
+    # OpenFreeMap serves the planner map's vector tiles, style, glyphs and sprites;
+    # MapLibre decodes them in a worker it starts from a blob: URL
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; "
-        "connect-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; "
+        "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org "
+        "https://tiles.openfreemap.org; "
+        "connect-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org "
+        "https://tiles.openfreemap.org; "
+        "worker-src 'self' blob:; "
         "frame-src https://www.openstreetmap.org; "
         "frame-ancestors 'none';"
     ),

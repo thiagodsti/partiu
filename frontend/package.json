@@ -15,9 +15,11 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@maplibre/maplibre-gl-leaflet": "0.1.4",
     "@svg-maps/world": "^2.0.0",
     "@types/leaflet": "^1.9.21",
     "leaflet": "^1.9.4",
+    "maplibre-gl": "5.24.0",
     "qrcode": "^1.5.4",
     "svelte-i18n": "^4.0.1",
     "svelte-spa-router": "^4.0.1"
