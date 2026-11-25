@@ -27,206 +27,54 @@ Want to try it before self-hosting? A public demo is available at:
 
 ## Features
 
-### Email sync & flight parsing
-- Connects to Gmail (or any IMAP mailbox) and scans for flight confirmation emails
-- Parses booking details: flight number, airports, times, seat, cabin class, passenger name, booking reference
-- Built-in parser rules for 19 airlines (see [Supported airlines](#supported-airlines))
-- **Structural parsing only** — every leg comes from a parser that knows the layout it is reading: the airline's own rule, the shared GDS receipt parser, or the schema.org flight markup an airline embeds for Gmail's flight cards. There is deliberately no generic "find a flight number and guess the rest from nearby lines" tier: measured against a real mailbox, every leg such a scanner was the sole source of turned out wrong or incomplete — a round trip with both legs pointing the same way, an e-ticket's "not valid after" label read as an airport, receipts dated a year off — and all of it looked ordinary enough to pass the plausibility gate
-- **Boarding-pass mails enrich the leg you already have**: Lufthansa and LATAM passes fill seat, gate, terminal, cabin, booking reference and passenger on the stored flight — only fields that are still empty, and never a new flight, since a pass carries no arrival time
-- **Airline-independent GDS e-ticket parser**: passenger receipts issued through Amadeus, Sabre and Travelport (ITR / ITR-EMD) share a small set of layouts, so a single parser reads them for any issuing airline — the HTML table form, the compact one-line-per-leg form found in PDF attachments, and the fixed-column plain-text form some airlines send in a monospace body, including per-leg terminals and connections. Its results are merged with the airline's own parser, which recovers legs an airline-specific rule can miss on multi-carrier itineraries
-- **Turkish Airlines ticket mails**: TK sends its own branded "Ticket Details" document rather than a GDS receipt, so it gets a dedicated parser that reads both of its renderings — the HTML itinerary and, if that is missing, the attached `TicketDetails.pdf` — including connections, overnight arrivals and the Turkish-language version
-- **Pegasus Airlines confirmations**: PC's Turkish-language booking mail carries no attachment at all, so its dedicated parser reads the HTML leg blocks directly, taking each leg's date from the header above it (never from the "check-in opens" date at the top of the mail) and picking up per-leg terminals along the way
-- **A trip says who is on it.** Its People section lists the owner, collaborators, outstanding invitations and guests — companions with no Partiu account — and the guests you add there are exactly who that trip's expenses can be paid by and split between. Guests are per trip, so your travel companions on one trip are not suggested on an unrelated one. The add box is a type-ahead over the people you have travelled with, so a companion is picked rather than retyped; a name already on the trip says so instead of adding them twice. Taking someone off a trip asks first and leaves them in your address book, and deleting a guest outright names the trips they are on before it removes them from those too
-- **Nothing is lost on delete.** Deleting a trip or a flight moves it to a trash in Settings with everything that was on it — notes, ratings, expenses, stays, documents — from where it can be restored or deleted for good, and an activity log records deletions, restores, merges and syncs. Deleting still frees the booking to be imported again, which is what you do when a parser read it wrongly
-- **A parser update re-reads your mail.** The first sync after an upgrade that changes the parsers looks back over the whole lookback window, and Full sync now re-reads everything it fetches rather than skipping mail it has seen before
-- **Schedule changes reach flights you already have.** A change mail that reprints the itinerary updates the stored leg and keeps the times it moved from, so the flight shows "Rescheduled" with the previous departure and arrival and you get a notification; a leg moved to another day is recognised as the same leg rather than added beside it; and an airline's notice that a booking has changed without listing the new times (SAS) flags every leg of that booking and points you at the airline
-- **Cancellations reach flights you already have.** Every parser refuses to *create* a cancelled leg, which was only half the job: the flight is normally already stored from its booking confirmation weeks earlier, and nothing ever went back to it. A cancellation mail from SAS, Lufthansa, Finnair or Austrian now marks the legs it names as cancelled — by booking reference where the airline cancels the whole booking, or by flight number and date where it cancels one leg, which must not take the return with it
-- A cancelled flight is **marked, never deleted**: the row stays on the trip so the history is honest and you can undo it by hand, but it stops counting toward your travel statistics — it did not happen
-- A **schedule change is not a cancellation**, and is deliberately not read as one: those mails carry the same booking reference and offer cancelling as one of three options, while reprinting no new itinerary — so treating one as a cancellation would strike off a trip that is still going ahead, with nothing left to restore it
-- A cancellation **older** than the flight it names is ignored, because an airline that cancels and rebooks often reissues under the same reference
-- **Car rental confirmations import themselves** for Hertz, Sixt and Europcar (see [Car rental](#car-rental))
-- **Plausibility gate**: every extracted itinerary is checked before import — legs that would need a supersonic aircraft, arrive before they depart, or start and end at the same airport are dropped rather than stored, and year-less return dates that cross New Year are rolled to the correct year
-- **Ranked airport-name resolution**: city and airport names resolve using airport size and scheduled-service data, accent-insensitively, so "Stockholm" means Arlanda (not Nyköping/Skavsta) and generic words like "Airport" or "Terminal" resolve to nothing at all instead of an arbitrary match
-- **schema.org flight markup** for airlines with no rule: many airlines embed a typed `FlightReservation` block (Ryanair, Lufthansa, TAP and Austrian do), and when the rules and the GDS parser find nothing it is read directly — flight number, airports by IATA code, times with their offsets. A leg whose markup lacks an airport code or a clock time is left out rather than guessed
-- **Optional Ollama LLM fallback**: when `OLLAMA_URL` is set, unknown-airline emails are sent to a local LLM as a last resort — on incremental syncs, uploaded `.eml` files and forwarded mail, not on a first sync, a full sync or a parser-version rescan, which read the whole lookback window (at about a minute per unknown mail on a CPU, hours of work); output is validated (IATA codes, flight number format, required fields) against the airports DB before import — invalid data is rejected silently. A leg whose route is the exact reverse of the known route for its flight number is turned around, from a weekly local copy of [Virtual Radar Server's standing data](https://github.com/vradarserver/standing-data) (CC0); nothing is looked up online during a sync
-- LLM fallback is used only for incremental sync, not full rescans
-- Accepts forwarded emails via a built-in inbound SMTP server — no Gmail required
-- Blocked sender domains: admin-configurable list of domains (e.g. Airbnb, Booking.com) that are silently skipped during sync
-- Manual "sync now" trigger and configurable sync interval (admin)
-- **Upload .eml files directly** from the trips list — import flights from saved email files without needing IMAP
+### Email import
+- Reads your Gmail (or any IMAP mailbox) and turns airline confirmation emails into flights: flight number, airports, times, seat, cabin, passenger and booking reference
+- Built-in support for [19 airlines](#supported-airlines), plus a shared parser for the standard e-ticket receipts (Amadeus, Sabre, Travelport) that any airline can issue, and the flight markup many airlines embed for Gmail
+- Schedule changes update the flights you already have and show the previous times; cancellation emails mark flights as cancelled (never deleted)
+- Boarding-pass emails (Lufthansa, LATAM) fill in seat, gate and terminal on the flight you already have
+- Hotel bookings from Airbnb, Booking.com and Trip.com, and car rentals from Hertz, Sixt and Europcar, import themselves; a stated price becomes a trip expense
+- Implausible results (arrival before departure, impossible speeds) are dropped rather than stored
+- Optional local LLM fallback (Ollama) for emails no parser recognises — [how well it does](AGENTS.md#llm-fallback--findings--limitations)
+- Also accepts forwarded emails through a built-in SMTP server, or `.eml` files uploaded from the trips list
 
-### Trip & flight management
-- Auto-groups flights into trips by booking reference, then 48h time proximity
-- Trip cards name what a trip is made of — "2 trains", "2 flights · 1 stay · 1 car rental" — rather than always counting flights
-- Create and edit trips and flights manually — every field of a flight (route, times, terminals, gates, seat, cabin, booking reference, passenger, notes) is editable from **Edit Flight** on the flight's page, with times entered as local time at each airport
-- One **Transport** list per trip holding flights and ground legs together, grouped into Outbound / Getting around / Return — the middle group is where trains, buses and ferries live on a longer trip
-- Connection badges and layover times span both, so the wait between landing and boarding a train is visible
-- Trip map drawing each flight as a great-circle arc, with a **Move map / Lock map** toggle: panning starts off on phones so the map doesn't swallow the page's scroll, and one tap turns it on (zoom buttons and pinch work either way)
-- Tracks flight status: upcoming, in-progress, completed
-- Export any trip as an iCalendar (.ics) file — flights **and** ground legs as timed events with a 1h reminder, plus one all-day event per day-planner day (its note and checklist), since planner entries carry no time of their own
-- Exported times are **local to where they happen**, not converted: a flight boarding at 14:00 in Lisbon reads 14:00 in your calendar even while you are still at home, and the flight back reads the local time printed on that ticket. Events whose timezone the app never resolved stay in UTC rather than show a guess
-- Add notes per flight (up to 10,000 chars)
-- Calendar-style day notes per trip
-- Trip expenses: itemised spend tracking per trip (description, amount, currency); totals grouped by currency shown on trip cards and detail page; 41 supported currencies; per-user default currency
-- Expense splitting: each expense records who paid (a collaborator or a guest) and who it's split between (equal shares); shows who added each expense; per-trip balances (net owed/owing) per currency. You appear in the payer list under your own name, marked "(you)" — you are on the trip like everyone else, so there is no separate "Me" entry offering the same person twice
-- Guests: a reusable per-user address book of non-account trip companions (e.g. family/friends) for splitting expenses with people who don't have a Partiu account; manage (add, rename, delete) your guests from Settings. **A name is a person, not a row**: typing one you have used before reuses that guest instead of creating a second one, ignoring case and accents (`jimmy` and `JIMMY` are Jimmy; `joao` is `João`), and renaming a guest onto another's name is refused rather than silently merging two people's expense histories
+### Trips
+- Flights are grouped into trips automatically, by booking reference and time proximity; trips and flights can also be created and edited by hand
+- One itinerary per trip with flights, trains, buses, ferries and drives together, grouped into outbound / getting around / return, with layover times
+- Stays (hotels, Airbnbs, hostels) and car rentals, each in its own section, with uncovered nights flagged
+- A map of every trip: flights as great-circle arcs, ground legs as dashed lines
+- A day-by-day planner on the trip page, notes per flight and per day, a packing list, documents (PDFs and images) and boarding passes
+- Export any trip to your calendar (.ics), in the local time of each place
+- Deleted trips and flights go to a trash in Settings and can be restored
 
 ### Trip planner
-- **A planner page per trip** (`#/trips/:id/plan`, "Planner" / "Planejador" button on any trip not yet over), desktop-first, for organising a trip before and while booking it
-- **Route of cities on top**: add each city with its arrival and departure dates; each city gets a colour, and a city added here also joins the trip's destinations
-- **A board with one column per day**, laid out like a planning spreadsheet: city, transport (flights and ground legs), the night's stay — or a "no stay" warning that opens a new booking for that night — things to do, and notes. Each city's run of days is framed in its colour
-- **Things to do** are items with a status (idea → to book → booked → done, the dot beside each), an optional time ("07:20 Great Wall" sets it), notes and a place; drag them between days
-- **Places to visit**: a search for sights and restaurants ranked near the trip's route; a pick goes straight onto the map, ready to drag onto a day. **Unscheduled ideas** stay free text
-- **Before the trip**: a to-do list with an assignee from the trip's people, or a new companion added on the spot (a trip guest, who can then share expenses too)
-- **A map of the whole plan** under the board — route cities in order, stays, ground legs and every item with a place; click a day's header to focus on that day. Its place names follow the language in your profile (English or Portuguese), drawn from [OpenFreeMap](https://openfreemap.org) vector tiles; a browser without WebGL gets the OpenStreetMap tiles, labelled in each place's local language
-- Stays and ground legs are edited in place with the trip page's own forms; flights open their edit page and come back to the planner
-- Everything saves as it changes. On a phone the board becomes stacked day cards
-- **One list per day**: the trip page's day cards show and edit the planner's items for that day (same status dot, time and place), so planning on either page shows on the other
+- A planner page per trip: a route of cities with dates, and a board with one column per day showing the city, transport, the night's stay (or a "no stay" warning), things to do and notes
+- Things to do have a status (idea → to book → booked → done), an optional time and a place, and can be dragged between days
+- Search for places to visit near the route, keep unscheduled ideas, and track before-the-trip to-dos with an assignee
+- A map of the whole plan; click a day to focus on it. Place names follow your profile language (English or Portuguese)
+- Everything saves as you go; on a phone the board becomes stacked day cards
 
-### Trip budget
-- Set a spending limit per trip. The bar reads as a traffic light that deepens as it fills: pale green at the start, strong green as it runs on, then pale amber at 80% deepening to strong, then red the moment you reach the limit
-- It counts **your share**, not what you paid: a €100 dinner split four ways counts €25 towards your budget whoever picked up the bill, and paying for a friend's taxi you were not on counts nothing at all
-- On the trips list a trip only mentions its budget when it is **running out or spent** — an overview is for spotting what needs attention, not for repeating numbers. Trips still weeks away count too: the flights and hotels you have already paid for are already spent
-- The trip's summary line carries it too — `🎯 EUR 255 / EUR 800`, in the same colour as the bar — so you can see where you stand without scrolling
-- The people picker (shared with expense splitting) is a type-ahead: chosen companions show as removable tags, and typing a name offers the rest — so a trip with twenty companions takes up no more of the form than a trip with two. Focusing the box lists everyone, and accents are optional (`joao` finds `João`). It only ever offers people actually on *that* trip: its collaborators and the guests already tagged on it
-- **Share it with whoever you're travelling with.** Two people on one purse want one bar, not two half-budgets filling in lockstep — so a budget can name several people and then counts their **combined** share. Every bill split between the two of you comes off it in full, whoever paid; a dinner split three ways with a friend still only costs the pair their two thirds
-- A companion with no Partiu account can share a budget too — add them as a guest, the same way you split a bill with them
-- Someone you share a budget with opens the trip and sees the same bar and the same numbers, without setting anything up. They can adjust it, and the panel says whose budget it is. A budget you set yourself always wins over one shared with you
-- Not shared by default: a budget you set alone is yours alone, and two people sharing a trip who want separate limits each keep their own
-- Spend in other currencies is listed beside the bar and never converted, because the app has no exchange rates and a converted figure would be a guess dressed as a fact
+### Money and people
+- Itemised expenses per trip in 41 currencies, split between the people on the trip, with per-person balances
+- Guests: companions without a Partiu account can pay for and share expenses
+- A budget per trip that counts your share, can be shared with a partner, and turns amber and then red as it runs out
+- Share a trip with other Partiu users as collaborators; invitations from trusted users are accepted automatically
 
-### Ground transport (train, bus, ferry, car)
-- Add non-flight legs to a trip by hand — a train between two cities, an airport bus, a ferry — so a trip is not limited to the flights that bracket it
-- Station type-ahead backed by [Photon](https://photon.komoot.io) (OpenStreetMap): search "Xi'an North" and get the real station with coordinates
-- A **drive** looks up cities instead — Florianópolis → São Paulo — since a car journey has no station, and falls back to street addresses for a drive that starts at a door
-- Times are entered as local time at each station and stored as UTC, using the timezone derived from the station's coordinates — so durations across timezones are real elapsed time
-- Ground legs draw on the trip map as dashed straight lines, colour-coded per transport type (train, bus, ferry, car) and visually distinct from the great-circle flight arcs
-- They also show up in the day planner, interleaved with that day's flights in departure order, and extend the trip's date range so a day holding only a train still gets its own day card
-- Records operator, service number, seat and booking reference
-- No email parsing — these are entered manually, and the station lookup is optional: a hand-typed place still saves, it just doesn't appear on the map
-- **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
+### Statistics and extras
+- Distance, flights, hours in the air, airports and countries visited (trains, stays and car rentals count toward countries), top routes and airlines, by year
+- Aircraft type and live flight status (AviationStack, with OpenSky as a fallback)
+- A destination photo for each trip from Wikipedia
+- Optional Immich integration: create a photo album for a trip from the photos taken during it
+- Web push and in-app notifications: reminders, delays, check-in, new flights
 
-### Stays (hotels, Airbnbs, hostels)
-- Add accommodation to a trip by hand, in its own section between Transport and the day planner: property name, address, check-in/check-out, room, guests, booking reference, confirmation and host contact
-- Check-in and check-out are entered as local time at the property; the trip's **local calendar dates** are what everything else reads, so a 15:00 check-in in Honolulu files on the day you actually arrive rather than the next day in UTC
-- The day planner bands a stay across the nights it covers — each day card shows "night 2 of 4" without being expanded — and lists check-in and check-out as entries on the boundary days, in time order with that day's flights and ground legs
-- Stays **extend** the trip's date range rather than being validated against it, so the airport hotel booked for the night before an early departure is a normal thing to record, and accommodation can be booked before any transport is
-- Nights with nothing booked are listed under the Stays section; a stay that does not overlap the trip's transport at all is flagged as a warning, never rejected
-- Exported to iCalendar as one all-day block covering the nights (ending after check-out, not before it) plus a timed check-out reminder with a 1h alarm; the address rides along in `LOCATION` so the calendar entry opens in a maps app
-- **Booking emails import themselves** when the platform ships schema.org markup: the property, its address, country, check-in/check-out, booking reference and host phone are read straight out of the typed block rather than guessed from the layout. Airbnb is the platform this was measured against; Booking.com, Hotels.com and Trip.com are covered by the same reader the moment they emit the markup, since nothing here is keyed to a sender
-- **Booking.com confirmations import too**, though Booking.com ships no markup: a template reader gated on the sender takes the property, address, check-in/check-out times, room type, guest count, confirmation number and phone from the English confirmation's "Reservation details" block. Property "Special Request" messages and cancellations are not read as bookings
-- **Trip.com hotel confirmations import too**, also without markup: a template reader gated on the sender takes the property, address, check-in/check-out times, room type, Trip.com booking number and hotel phone from the English confirmation's "Booking details" block. Cancellations are not read as bookings
-- **A booking's price becomes a trip expense**: the total a Trip.com or Booking.com confirmation states (what was actually charged, after discounts, with VAT and city tax) — or a schema.org `totalPrice` when a platform ships one — is added to the trip's expenses under the property's name, paid by and split to the importing traveller alone, who can share it out afterwards. Stays imported before prices were read get theirs on the next rescan; a deleted expense is not recreated. Only unambiguous currencies are read (`SEK`, `€`, `£`, `R$`…, never a bare `$`, `¥` or `kr`)
-- An imported booking **joins the trip its flights belong to**, and opens a trip of its own when there are none — a drive to the coast gets a trip built from the hotel alone, and flights booked months later join *that* trip rather than starting a second one
-- Imports only ever **add** a stay. No platform in the measured mail sends a parseable cancellation, so a booking you cancelled and rebooked shows up as two stays on one trip for you to delete — a visible row rather than a silent wrong one
-- Accommodation and address autocomplete via Photon/OpenStreetMap; a hand-typed place saves fine, it just gets no map pin
-- **Countries count toward travel statistics** — a Stockholm-Oslo train makes Norway a visited country. Distance, hours and the flight tally stay flight-only, so a train never inflates "hours in air"
-
-### Car rental
-- Record a hired car on a trip, in its own section: company, vehicle, the two counters, when you collect it and when it goes back, booking reference and driver
-- **Not a ground-transport leg, and deliberately so.** A "drive" is a journey between two places; a rental is a *contract over days*, with several drives inside it or none. Recording it as a leg would report four days of travelling and draw a line between two points you never travelled between at those times — so it gets its own section, and a trip can hold both
-- One-way hires are ordinary here — collect in Munich, hand it back in Vienna — and each end keeps its own timezone, so the two times read as the counters print them
-- The day planner bands the car across every day you have it, including the day it goes back, and lists both counter appointments as entries in that day's time order
-- Times are entered as local time at each counter and stored as UTC, from the timezone derived from the counter's coordinates; a counter typed by hand saves fine, it just gets no map pin and no conversion
-- Rentals **extend** the trip's date range rather than being validated against it, exactly as stays do
-- Exported to iCalendar with **both** counter appointments carrying a 1h alarm — unlike a stay, where only check-out does, because collection times are binding at most vendors and a late return is charged. A multi-day hire also gets an all-day band; a same-day hire doesn't, since the two events already say everything
-- **Confirmation emails import themselves** for Hertz, Sixt and Europcar: company, booking reference, both counters, both times and the vehicle, read from each vendor's own layout. The booking joins the trip its flights *or stays* fall inside, and opens a trip of its own when there are none — a driving holiday is often built out of accommodation, not flights
-- Like stays, imports only ever **add**: no vendor in the measured mail sends a parseable cancellation
-- **Countries count toward travel statistics**, from both ends — a one-way hire across a border is exactly the case that matters
-
-### Boarding passes & documents
-- Extracts boarding passes from confirmation emails (BCBP barcode format)
-- Mobile boarding passes (currently Lufthansa) fill in the seat, gate, terminal and cabin on a flight you already have — they never create one, since a boarding pass carries no arrival time
-- Manual upload of boarding pass images (PNG, JPEG, WebP)
-- Upload trip documents: PDFs and images, up to 20 MB each, with multi-page PDF viewer that fits the whole page (click to zoom to full width) and a download button for the original file; thumbnails show the top of the page
-- Passenger name and seat parsed from BCBP data
-
-### Trip sharing & collaboration
-- Invite other Partiu users to a trip by username
-- Pending / accepted / rejected invitation states with an in-app Invitations page
-- Trusted users list: invitations from trusted users are auto-accepted
-- Shared collaborators get full read/write access on trip content
-- Owner can revoke access; collaborators can leave a trip
-- Both owner and collaborators can rate trips (0.5–5 stars) and edit shared notes
-
-### Travel statistics
-- Total km travelled, total flights, total hours in the air
-- Unique airports and countries visited
-- Earth circumference laps
-- Longest flight, top routes, top airports, top airlines
-- Year filter with available-years selector
-- **Cancelled flights count for nothing** — not their distance, not their CO2, not their countries, and a year whose only flights were cancelled is not offered in the filter. The rows stay on their trips; they just stop being statistics
-
-### Aircraft & flight enrichment
-- Looks up aircraft type (Boeing 737-800, Airbus A320, …) while a flight is airborne
-- Falls back to OpenSky Network if AviationStack is not configured
-- Timezone-aware departure/arrival times (airport coordinates → TimezoneFinder)
-- Live flight status tracking (delays, cancellations, estimated times)
-
-### Destination images
-- Auto-fetches a destination photo from Wikipedia for each trip
-- Ask for a different image from the button in the top-right corner of the photo **inside a trip**; the trip cards stay clean, since a thumbnail is too small to judge an image by — and on a phone the control covered the part of it you were looking at
-
-### Immich integration (optional)
-- Create a photo album in your Immich instance for any completed trip
-- Album is populated with photos taken during the trip's date range
-- "Open Immich Album" button on trip cards once an album exists
-
-### Notifications
-- Web push notifications (VAPID) for flight reminders, check-in reminders, delays, new flights detected, and more
-- In-app notification inbox with unread count badge
-- Per-user notification preferences
-
-### Optional integration status
-- **Settings → Optional integrations** (admin only) shows which of CARTO, AviationStack, Photon, Ollama and web push are configured, and spells out exactly what each one adds
-- The same summary is logged once at startup at INFO level. Nothing nags you: every integration is optional, and running without one is a legitimate choice rather than an error
-- Photon is reported as *public instance* / *self-hosted* / *disabled* rather than just on-or-off, since it defaults to komoot's shared service
-
-### Authentication & security
-- Username / password login with session cookies (30-day expiration, server-side revocable). **Usernames are case-insensitive** — `Thiago` and `thiago` are the same account, wherever the name is typed (signing in, inviting someone to a trip, trusting a user); the password, being a secret rather than an identifier, is not
-- TOTP-based 2FA — enable/disable from Settings; QR code for any authenticator app
-- Login rate-limiting and TOTP lockout after repeated failures
-- **Personal API keys** (Settings → API keys) for scripts and other services: nothing is generated until you press *Create key*; the value is shown once and only a hash is stored. Send it as `Authorization: Bearer partiu_…`. Each key is *read only* (GET) or *read and write*, can expire after 30/90/365 days or never, shows when it was last used, and can be revoked at any time. **No key can reach the account itself** whatever its scope: it cannot create or revoke keys, change the password, 2FA or sessions, manage users, or change Settings (which hold the IMAP and Immich credentials). Refused on a demo instance
-- Audit logging of auth events
-- Demo mode (`DEMO_MODE`), off by default, for a public demo instance where everyone signs in to one shared account:
-  - the login page prints the credentials and offers a one-click sign-in; a permanent, undismissable banner says the account is shared
-  - the per-IP sign-in throttles are relaxed (5/min → 120/min, and the failed-attempt lockout is off) — a crowd arriving behind one proxy address is not an attacker
-  - **the doors that would lock everyone out are refused in the backend**, not just hidden in the UI: enabling 2FA, changing the password, and creating, editing or deleting accounts all return 403. Disabling 2FA stays allowed, as the escape hatch
-  - run the demo account as a **non-admin** if you can — admin pages expose sync, SMTP and VAPID settings a visitor can still misconfigure
-
-- Signing in or out clears the app's cached API responses, so two people sharing a phone never see each other's trips or statistics
-### Multi-user & admin
-- Multi-user support with per-user Gmail/IMAP credentials
-- Admin: create, list, update, reset passwords, delete users
-- Admin: configure sync interval, max emails per sync, SMTP server, VAPID keys, airport data reload
-- Settings warns when the airport reference data is missing its size ranking — without it a flight from "London" can be filed under London, Ontario, and your visited-countries count quietly grows a country you have never been to
-- Per-user locale (English / Portuguese Brazil)
+### Accounts and security
+- Multi-user, each with their own mailbox, settings and language (English / Portuguese)
+- TOTP two-factor authentication, sign-in rate limiting and an audit log
+- Personal API keys (read-only or read/write) for scripts and other services
+- A demo mode for public instances
 
 ### Interface
-- **Five accent colours, picked in Settings → Appearance**: Sky (the default), Ocean, Dusk, Orchid, and Graphite for anyone who wants no hue at all. Each has its own light and dark cut
-- The accent is **saved to your account**, so it follows you to every browser and phone you sign in from, and two people sharing a computer keep their own. The light/dark theme stays per-device on purpose — wanting dark on a phone at night and light at a desk is about the device, not the person
-- **One accent, four places.** The accent is worn by a filled button, the active navigation item, the trip countdown, and a trip that is happening right now — nothing else is tinted with it
-- **Every other colour is a status**: green means done, red means trouble, amber means running late. That is the whole list. Nothing is tinted just to look less bare, which leaves the destination photographs and the airport codes as the most colourful things on screen
-- Trips read as luggage tags: a horizontal band with the destination photo printed down one edge, the name set large, and a status panel on the stub
-- Flights and ground legs render as lines on one departures board — departure time leading each row, the connecting leg drawn rather than typed
-- Inside a trip, a small line under the dates says what it holds — "2 voos · 1 balsa · 2 carros · 2 hospedagens · BRL 1.240" — so you can see the shape of it, and what it cost, without scrolling. The total updates as you add expenses rather than waiting for a reload
-- Shortening a trip past one of its own legs tells you which dates the legs are holding, rather than saving and appearing to do nothing
-- Adding a leg only offers dates inside the trip. The trip remembers the span you gave it when you created it, so the first leg you add does not shrink the trip down to its own day — and if you need a date outside, the form says so and points you at the trip's dates
-- A trip imported from email arrives with its cities already filled in on the edit form, worked out from the airports its flights use — you just save to keep them
-- A trip's origin and **destinations** are cities, picked with autocomplete — add as many as the trip visits. Each one counts toward the countries you have visited, and the cover photo picks one of them at random, so asking for a different image moves between the trip's cities
-- Creating a trip does not ask for booking references. A booking reference belongs to the flight or leg it was issued for, which is where you type it; search still finds a trip by any reference on any of its legs. Where a trip starts and ends comes from the legs you put in it, so there is nothing to fill in and nothing that is wrong for a rail trip
-- **On a wide screen the trip page reads as a spine and a margin**: the itinerary — transport, stays, car rental, the day planner, then documents — runs down the wide column, while the packing list, expenses, notes and rating sit in a narrower one beside it. The two columns flow independently, so a short card never leaves a blank hole under itself
-- A section with nothing in it explains what it is for on one line under its title, rather than drawing a card of empty space
-- **One button adds any leg.** Pick flight, train, bus, ferry or car and the form shows what that mode actually needs — an airport lookup for a flight, a station search for a train — instead of making you choose between "add flight" and "add ground transport" before you have described the trip. Times you have already typed survive changing your mind about the mode. Every field is on the page — nothing hidden behind a "more details" toggle — with the handful that are actually required marked in red
-- Expense descriptions wrap onto a second line instead of being cut off — in a narrow column the price still fits, and "Airport c…" tells you nothing about where the money went
-- **Navigation adapts to the screen**: a fixed icon rail on desktop, a floating dock on phones — one shared list of destinations behind both
-- Barlow, a grotesk drawn from public-transport signage, self-hosted so the app keeps its type offline
-- Full light and dark themes, following the system or forced from Settings; print styles force light
-- Installed-app polish: iOS launch screens in light and dark, press feedback on buttons, rows and trip cards instead of the tap flash, no page rubber-banding
-
-### PWA
-- Installable on iOS and Android as a home screen app
-- Works as a PWA — offline-capable shell, responsive from phone to desktop
+- Installable PWA for iOS and Android, responsive from phone to desktop
+- Light and dark themes and five accent colours
 
 ## Supported airlines
 
@@ -457,134 +305,17 @@ scripts/run_e2e.sh                       # or: scripts/run_e2e.sh tests/foo.spec
 
 ## CLI tools
 
-Several developer tools live in `backend/tools/` for working with the parser pipeline and the LLM fallback.
+Developer tools for the parser pipeline and the LLM fallback live in `backend/tools/`; see [AGENTS.md](AGENTS.md#cli-tools) for full usage.
 
-### corpus_report — measure parser coverage
+| Tool | What it does |
+|---|---|
+| `corpus_report` | Parser coverage over your cached email corpus; run before and after a parser change |
+| `inspect_eml` | Run one `.eml` through the full production pipeline and see what each step extracted |
+| `inspect_eml_llm` | Send one `.eml` straight to the LLM and show the raw answer and validation |
+| `eval_llm_corpus` | Score the LLM fallback against what the airline rules extract |
+| `eval_eml_files` / `compare_eval` | Compare one or two Ollama models over a set of `.eml` files |
 
-Runs every extraction tier over a cached email corpus (`data/email_cache.json`, as written by the sync) and prints, per airline rule, how many mails matched, how many produced flights, how many legs, and — the useful part — which matched mails produced nothing, by subject. Run it before and after a parser change and diff the two.
-
-```bash
-uv run python -m backend.tools.corpus_report
-uv run python -m backend.tools.corpus_report --quiet --json data/corpus_rows.json
-```
-
-Name resolution needs a populated `airports` table, so point `--db` at a real database (default `data/partiu.db`).
-
-### eval_llm_corpus — score the LLM fallback with an answer key
-
-Samples the cached corpus (two mails per airline rule plus fifteen with nothing travel-shaped), runs the production prompt over each, and scores every leg against what the airline rules extract: right only when flight number, both airports and departure date all match. Wrong legs and legs reported in the negatives are counted apart, since a wrong leg lands in a trip looking ordinary. The sample is seeded, so two runs see the same mails and a prompt change can be measured before it ships.
-
-```bash
-uv run python -m backend.tools.eval_llm_corpus --model qwen3:4b-instruct
-uv run python -m backend.tools.eval_llm_corpus --model qwen3:4b-instruct \
-    --ollama-url http://server:11434 --json data/eval_llm.json
-```
-
-### eval_eml_files — test models against .eml files
-
-Runs one or two Ollama models against a list of `.eml` files and prints a side-by-side comparison. Useful for evaluating LLM prompt changes against known flight emails.
-
-```bash
-# Single file
-uv run python -m backend.tools.eval_eml_files ~/Downloads/flight.eml
-
-# Glob of files
-uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml
-
-# Compare two models
-uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml \
-    --models qwen2.5:0.5b,qwen2.5:1.5b
-
-# Save full JSON report
-uv run python -m backend.tools.eval_eml_files ~/Downloads/*.eml --output data/eml_compare.json
-```
-
-### compare_eval — compare two eval runs side by side
-
-Compares two JSON result files produced by `eval_eml_files` and reports which emails one model extracted but the other didn't.
-
-```bash
-uv run python -m backend.tools.compare_eval \
-    --a data/eval_1.5b.json \
-    --b data/eval_0.5b.json \
-    --output data/eval_diff.json
-```
-
-### inspect_eml — run one .eml through the full pipeline
-
-Runs a single `.eml` file through the exact same pipeline used in production (built-in rules → GDS e-ticket parser → schema.org markup → LLM) and shows which step extracted data and what would be stored.
-
-```bash
-uv run python -m backend.tools.inspect_eml ~/Downloads/flight.eml
-uv run python -m backend.tools.inspect_eml ~/Downloads/*.eml
-```
-
-### inspect_eml_llm — debug the LLM parser in isolation
-
-Sends a `.eml` directly to Ollama (skipping built-in rules), prints the raw model response, per-field validation failures, and the final normalised output. Useful for iterating on prompt changes.
-
-```bash
-uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml
-
-# Also print the body text sent to the model
-uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-body
-
-# Also print all HTML tags with class/id (helps identify noise sections)
-uv run python -m backend.tools.inspect_eml_llm ~/Downloads/flight.eml --dump-html
-```
-
----
-
-## LLM fallback — findings & limitations
-
-Measured in November 2026 with `eval_llm_corpus`: 40 mails from the corpus, 25 with 53 legs the airline rules read (14 airlines) and 15 with none. The tool scores **exactly what a sync would store** — every check in `llm._rejection`, the route fix, airport timezones and the plausibility gate run on a mail's legs together. Earlier figures in this section's history (45/53) were taken without the plausibility gate, which drops any leg with no arrival time; the old prompt scores 38/53 (server) and 42/53 (laptop) when measured the same way.
-
-Runs used the same model file on a CPU-only server (i7-7820HQ, where this runs) and, for speed, on an M2 laptop; a control run of `qwen3:4b-instruct` on both agreed within one leg. Treat one or two legs either way as noise.
-
-| `qwen3:4b-instruct`, full sync path | Legs right | Wrong legs | Mails fully right | Negatives with a leg |
-|---|---|---|---|---|
-| **current** (neutral prompt example, arrival required, airport check) | **40/53** | 2 | 16/25 | 0/15 |
-| airports limited to a list of the mail's airports (tried, dropped) | 40–41/53 | 2 | 16/25 | 0/15 |
-| two questions: places first, then flights (tried, dropped) | 41/53 | 3 | 16/25 | 0/15 |
-| before any of the fixes below | 0/53 | 0 | 0/25 | 0/15 |
-
-The two wrong legs left are Azul's AD4849 answered as AZ4849 (ITA's code); Azul has its own rule, so in production its mails never reach the fallback. Two of the misses are a Qatar itinerary whose legs the model lists out of date order, so `validate_flights`' year roll moves the December legs into the next year. About 68 s per mail on the server (11 s on the laptop).
-
-Two ideas were measured and not kept. **Limiting the answer's airports to the ones the mail names** (an `enum` in the schema) gained nothing over the check below, and the fuller the list the more wrong choices it offers: a passenger named Barbara is Santa Barbara (SBA), "Brasil" is part of an airport name in Boa Vista, `BRL` (the currency) is Burlington. **Asking in two steps** — the places first, copied as written and resolved by Partiu, then the flights in the same conversation (Ollama reuses the cached email, so the second question costs about 30% more time, not double) — lists places cleanly but did not move the score.
-
-Other models, scored before the airport check and the full-path change, so compare them with each other rather than with the table above:
-
-| Model | Legs right | Wrong legs | Seconds per mail (server) |
-|---|---|---|---|
-| `qwen3:4b-instruct` | 42/53 | 6 | ~68 |
-| `granite4:tiny-h` (7B MoE, ~1B active) | 38/53 | 13 | ~25 |
-| `NuExtract-2.0-4B` (verbatim airport names + `resolve_iata`) | 33/53 | 4 | ~35 |
-| `gemma3:4b` | 26/53 | 11 | ~63 |
-| `qwen3:4b-instruct` at Q8_0 (laptop) | 40/53 | 9 | — |
-| `qwen3.5:4b`, `phi4-mini`, `LFM2.5-1.2B` | stopped early, behind `qwen3:4b-instruct` on the same mails | | |
-
-The fixes. Requiring the leg fields is what took it off zero; the others together added the rest:
-
-- **Required leg fields.** The JSON schema listed the leg fields without requiring them, and small models stop after the flight number (`{"flight_number": "AD4849"}`), so every leg failed validation.
-- **`num_ctx`.** Ollama's default window is 4096 tokens, the system prompt alone is about 1000, and Ollama answers 400 to a request that does not fit. The longest itineraries (a four-leg BA/Iberia e-ticket) never reached the model.
-- **The email's own date** in the prompt instead of the sync date, which is what the year of a `02/03`-style date is derived from.
-- **Prefixing digits-only flight numbers** with the airline code the model returned (`"783"` + `"TP"`).
-- **"Manage your booking" no longer ends the body.** It sits above the itinerary in some mails (Vueling), which left the model 379 characters of greeting.
-- **Reversed routes are turned around** from known routes (see below): +3 legs right, wrong legs 6 → 2.
-- **Arrival time required, never null.** The plausibility gate drops every leg without one, and given the choice the model left it out of legs whose mail prints it (Ryanair, LATAM, Finnair).
-- **Both airports must be named in the mail.** `_airport_in_text` keeps an airport only when it is one of the mail's `airport_candidates`: a code printed as a word of its own, or a locating word of the airport's name, city or aliases (a word shared by more than five airports, like "santa", counts for nothing). That drops LATAM's Florianópolis answered as FLY (Finley, Australia) and invented city codes (STO, CAT, MIL); on the corpus's 192 legs it rejected none of the 384 real airports.
-- **Answers are capped at 2,048 tokens.** The longest real answer was 1,451; a looping model once wrote 20,000 tokens of the same list.
-- **A neutral example in the prompt.** The flight-number rule used to illustrate itself with Azul's `"4849"` → `"AD4849"`, a flight in the eval sample; it now uses `XY1234`, so the score measures an airline the prompt has not seen.
-- **The flight number must appear in the mail.** This drops invented numbers (`VP1234` for a Vueling round trip, `NK117` in a Norwegian reminder) and, on this sample, nothing that was right. Airports are not checked that way: many mails print only city names and the model maps those correctly.
-
-What is still wrong, and why the fallback stays a last resort:
-
-- **Inverted routes** were the main error: Azul (`Seu voo para Florianópolis` above `VCP … FLN`) and ITA (`FCO LIN`) come back as FLN→VCP and LIN→FCO every time, with every model tried. A prompt rule about direction did not change that, nor did renaming the fields to `from_`/`to_`. They are now turned around from known routes: `integrations/routes/` keeps a local copy of Virtual Radar Server's standing data (about 630,000 callsign routes, refreshed weekly while `OLLAMA_URL` is set, a failed download keeping the previous copy) and swaps a leg only when its route is the **exact reverse** of a known one. It never rejects or changes anything else: airlines reuse flight numbers, and 8 of the corpus's 81 distinct legs differ from the data while being right; 12 are not in it at all (mostly LATAM). On the sample, all five inverted legs were fixed and no right leg was touched. The two wrong legs left are LATAM's FLN read as FLY, a real airport in Australia.
-- **Long multi-leg itineraries** lose legs (Qatar, Kiwi.com).
-- **Mails with city names only and no codes** (an SAS receipt PDF) come back as no flight.
-- **At about a minute per mail on a CPU**, it is fine for the incremental sync's handful of unknown mails, not for a backfill.
-
-Validation (IATA format, flight number shape, plausibility, the grounding check) is still the safety net. Models that fit a 16 GB CPU-only server were compared on the same sample and none beat `qwen3:4b-instruct`: `granite4:tiny-h` is three times faster but its errors are wrong airports rather than inversions, so the route check cannot fix them; `NuExtract-2.0-4B`, `gemma3:4b`, `qwen3.5:4b` (which must run with `think: false`), `phi4-mini`, `qwen3:4b-instruct` at Q8_0 and `LFM2.5-1.2B` all scored lower.
+Run any of them with `uv run python -m backend.tools.<name> --help`.
 
 ---
 
@@ -601,6 +332,7 @@ Validation (IATA format, flight number shape, plausibility, the grounding check)
 | Aircraft data | AviationStack (primary) + OpenSky Network (fallback) |
 | Photo albums | Immich (optional, self-hosted) |
 | Station lookup | Photon / OpenStreetMap (optional, self-hostable) |
+| Maps | Leaflet with CARTO / OpenStreetMap tiles; the planner map uses MapLibre with OpenFreeMap vector tiles |
 
 ---
 

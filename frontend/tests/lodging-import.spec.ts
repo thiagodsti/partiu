@@ -9,7 +9,7 @@
  * flights anywhere near it has to **open a trip of its own**, which is the case
  * the feature exists for (the drive-to-the-coast trip that has no tickets).
  *
- * The markup is synthetic, for the reason CLAUDE.md gives about fixtures: real
+ * The markup is synthetic, for the reason AGENTS.md gives about fixtures: real
  * confirmations carry a property's street address, a host's phone number and a
  * booking reference.
  */
