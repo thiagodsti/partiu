@@ -35,7 +35,10 @@
   import { onDestroy, onMount } from 'svelte';
   import 'leaflet/dist/leaflet.css';
   import type { LayerGroup, Map as LeafletMap } from 'leaflet';
+  import type { Map as MaplibreMap, StyleSpecification } from 'maplibre-gl';
   import { escapeHtml } from '../lib/utils';
+  import { locale } from '../lib/i18n';
+  import { OPENFREEMAP_STYLE_URL, localizeStyle, mapLanguage, supportsWebGL } from '../lib/mapStyle';
 
   interface Props {
     cities: MapCity[];
@@ -57,11 +60,13 @@
     L = await import('leaflet');
     if (!mapEl) return;
     const m = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(m);
     m.setView([30, 110], 3);
+    if (!(await addVectorBasemap(m))) {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(m);
+    }
     layer = L.layerGroup().addTo(m);
     map = m;
     // Leaflet measures its box once; when the page around it changes width
@@ -72,8 +77,45 @@
 
   let resizeObserver: ResizeObserver | null = null;
 
+  /* The basemap is drawn from vector tiles so that its labels can follow the
+   * profile's language (see lib/mapStyle.ts). If WebGL is missing or the style
+   * cannot be fetched, the OSM raster tiles are used, with labels in each
+   * place's local language as before. */
+  let baseStyle: StyleSpecification | null = null;
+  let glMap: MaplibreMap | null = $state(null);
+
+  async function addVectorBasemap(m: LeafletMap): Promise<boolean> {
+    if (!supportsWebGL()) return false;
+    try {
+      const res = await fetch(OPENFREEMAP_STYLE_URL);
+      if (!res.ok) return false;
+      baseStyle = (await res.json()) as StyleSpecification;
+      await import('maplibre-gl/dist/maplibre-gl.css');
+      const { maplibreGL } = await import('@maplibre/maplibre-gl-leaflet');
+      const gl = maplibreGL({ style: localizeStyle(baseStyle, mapLanguage($locale)) });
+      // The style carries its own OpenFreeMap / OpenStreetMap attribution.
+      gl.addTo(m);
+      glMap = gl.getMaplibreMap();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Changing the language in Settings relabels the map in place.
+  let appliedLang = '';
+  $effect(() => {
+    const lang = mapLanguage($locale);
+    if (!glMap || !baseStyle) return;
+    if (appliedLang === '') { appliedLang = lang; return; }
+    if (lang === appliedLang) return;
+    appliedLang = lang;
+    glMap.setStyle(localizeStyle(baseStyle, lang));
+  });
+
   onDestroy(() => {
     resizeObserver?.disconnect();
+    glMap = null;
     map?.remove();
     map = null;
   });

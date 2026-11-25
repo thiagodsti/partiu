@@ -109,6 +109,18 @@ class TestSecurityHeaders:
         assert "default-src 'self'" in csp
         assert "frame-ancestors 'none'" in csp
 
+    def test_csp_allows_the_planner_vector_basemap(self, test_db):
+        """The planner map fetches OpenFreeMap tiles and decodes them in a blob: worker."""
+        app = _make_app(test_db)
+        with TestClient(app, base_url="https://testserver") as c:
+            c.post("/api/auth/setup", json={"username": "admin", "password": "password123"})
+            r = c.get("/api/auth/me")
+
+        csp = r.headers.get("Content-Security-Policy", "")
+        connect = next(d for d in csp.split(";") if d.strip().startswith("connect-src"))
+        assert "https://tiles.openfreemap.org" in connect
+        assert "worker-src 'self' blob:" in csp
+
     def test_security_headers_on_404_response(self, test_db):
         """Security headers are added to non-blocked responses (404 from a missing route)."""
         app = _make_app(test_db)
