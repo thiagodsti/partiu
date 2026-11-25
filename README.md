@@ -30,7 +30,10 @@ Want to try it before self-hosting? A public demo is available at:
 ### Email import
 - Reads your Gmail (or any IMAP mailbox) and turns airline confirmation emails into flights: flight number, airports, times, seat, cabin, passenger and booking reference
 - Built-in support for [19 airlines](#supported-airlines), plus a shared parser for the standard e-ticket receipts (Amadeus, Sabre, Travelport) that any airline can issue, and the flight markup many airlines embed for Gmail
-- Flights from many more airlines and booking sites out of the box, through [KDE Itinerary](https://apps.kde.org/itinerary/)'s extractor bundled in the Docker image
+- Many more airlines and booking sites out of the box, through [KDE Itinerary](https://apps.kde.org/itinerary/)'s extractor bundled in the Docker image:
+  - **train, bus and ferry tickets** become transport legs — on the trip they belong to, or a new trip of their own
+  - **event, restaurant and attraction tickets** become "booked" items in the planner of the trip covering that day (they never create a trip)
+  - hotel and car-rental bookings from senders Partiu has no reader for become stays and rentals
 - Schedule changes update the flights you already have and show the previous times; cancellation emails mark flights as cancelled (never deleted)
 - Boarding-pass emails (Lufthansa, LATAM) fill in seat, gate and terminal on the flight you already have
 - Hotel bookings from Airbnb, Booking.com and Trip.com, and car rentals from Hertz, Sixt and Europcar, import themselves; a stated price becomes a trip expense

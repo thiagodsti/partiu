@@ -63,6 +63,7 @@ from datetime import date, timedelta
 
 from ..database import db_conn, db_write
 from ..parsers.booking_com import extract_booking_com_stays
+from ..parsers.kitinerary import extract_kitinerary_stays
 from ..parsers.schema_org import extract_lodging_reservations
 from ..parsers.trip_com import extract_trip_com_stays
 from ..utils import now_iso
@@ -289,6 +290,10 @@ def _geocode(stay: dict) -> tuple[float | None, float | None, str | None]:
     geocoder the stay still saves; it simply has no pin and its times are stored
     as typed, which is the documented behaviour for a hand-entered place.
     """
+    # KDE Itinerary's stays can arrive with the property's coordinates.
+    if stay.get("lat") is not None and stay.get("lon") is not None:
+        return stay["lat"], stay["lon"], None
+
     from ..integrations.photon import client as photon
 
     query = stay.get("address") or (
@@ -315,11 +320,13 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
 
     # Markup first: a typed reservation is the stronger evidence. Booking.com
     # and Trip.com ship none, so their template readers are the fallback, each
-    # gated on its own sender.
+    # gated on its own sender. KDE Itinerary's extractors come last: they cover
+    # hotel chains and platforms we have no reader for.
     reservations = (
         extract_lodging_reservations(email_msg)
         or extract_booking_com_stays(email_msg)
         or extract_trip_com_stays(email_msg)
+        or extract_kitinerary_stays(email_msg)
     )
     if not reservations:
         return []
