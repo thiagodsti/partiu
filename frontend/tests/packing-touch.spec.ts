@@ -53,22 +53,35 @@ test('the row has no hover-gated controls where hover does not exist', async ({ 
 
 test('the checkbox hit area covers the full height of the row', async ({ page }) => {
   const rows = await packingRows(page);
+  const checkbox = rows.first().locator('.checkbox');
 
-  const reach = await rows.first().locator('.checkbox').evaluate((el) => {
-    const box = el.getBoundingClientRect();
-    const cx = box.left + box.width / 2;
-    const cy = box.top + box.height / 2;
-    // How far above and below the drawn box a tap still lands on the button.
-    // A probe outside the viewport finds no element at all, which is a miss —
-    // `?.` alone would turn it into `undefined !== null`, a hit.
-    const hits = (dy: number) =>
-      (document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') ?? null) !== null;
-    return { drawn: Math.round(box.height), up: hits(-14), down: hits(14) };
-  });
+  const measure = () =>
+    checkbox.evaluate(async (el) => {
+      // Centre the box, then wait two frames so the probe sees that layout.
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const box = el.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      // How far above and below the drawn box a tap still lands on the button.
+      // A probe outside the viewport finds no element at all, which is a miss —
+      // `?.` alone would turn it into `undefined !== null`, a hit.
+      const hits = (dy: number) =>
+        (document.elementFromPoint(cx, cy + dy)?.closest('.checkbox') ?? null) !== null;
+      return { drawn: Math.round(box.height), up: hits(-14), down: hits(14) };
+    });
 
-  expect(reach.drawn).toBeLessThanOrEqual(24); // still drawn small, on purpose
-  expect(reach.up).toBe(true);
-  expect(reach.down).toBe(true);
+  // Measured until it holds, not once: content above the list (the map, the
+  // cover photo) can finish loading after the scroll and push the row
+  // off-screen, where both probes find nothing — a diagnostic caught the box
+  // at y=1630 on one run in twenty. A hit area that really shrank never
+  // passes, so retrying loses no coverage.
+  await expect.poll(async () => {
+    const r = await measure();
+    return r.up && r.down;
+  }).toBe(true);
+
+  expect((await measure()).drawn).toBeLessThanOrEqual(24); // still drawn small, on purpose
 });
 
 test('one tap toggles an item', async ({ page }) => {

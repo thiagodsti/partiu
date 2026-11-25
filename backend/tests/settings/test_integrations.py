@@ -22,6 +22,7 @@ class TestStatuses:
             "carto",
             "aviationstack",
             "photon",
+            "kitinerary",
             "ollama",
             "push",
         }
@@ -154,7 +155,7 @@ class TestEndpoint:
         r = auth_client.get("/api/settings/admin/integrations")
         assert r.status_code == 200
         keys = {row["key"] for row in r.json()}
-        assert {"carto", "aviationstack", "photon", "ollama", "push"} == keys
+        assert {"carto", "aviationstack", "photon", "kitinerary", "ollama", "push"} == keys
 
     def test_the_response_carries_no_key_material(self, auth_client):
         from backend.settings import integrations
@@ -188,3 +189,33 @@ class TestEndpoint:
         )
 
         assert c.get("/api/settings/admin/integrations").status_code == 403
+
+
+class TestKitineraryStatus:
+    def _status(self):
+        return _by_key(integration_statuses())["kitinerary"]
+
+    def test_installed_binary_is_configured(self, tmp_path):
+        from backend.settings import integrations
+
+        binary = tmp_path / "kitinerary-extractor"
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+        with patch.object(integrations.settings, "KITINERARY_EXTRACTOR", str(binary)):
+            status = self._status()
+        assert (status.configured, status.state) == (True, "set")
+        assert status.env_var == "KITINERARY_EXTRACTOR"
+
+    def test_a_missing_binary_is_not_configured(self, tmp_path):
+        from backend.settings import integrations
+
+        with patch.object(integrations.settings, "KITINERARY_EXTRACTOR", str(tmp_path / "nope")):
+            status = self._status()
+        assert (status.configured, status.state) == (False, "unset")
+
+    def test_emptied_variable_is_disabled(self):
+        from backend.settings import integrations
+
+        with patch.object(integrations.settings, "KITINERARY_EXTRACTOR", ""):
+            status = self._status()
+        assert (status.configured, status.state) == (False, "disabled")

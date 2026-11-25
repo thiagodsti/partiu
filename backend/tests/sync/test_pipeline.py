@@ -657,3 +657,72 @@ class TestLlmGate:
         )
         llm = self._run(self._user("gate3"), email_msg, llm_needs_flight_signal=False)
         llm.assert_called_once()
+
+
+class TestKitineraryTier:
+    """KDE Itinerary runs after the structural tiers and before the LLM, and
+    only when everything above it found nothing (it is a subprocess per mail)."""
+
+    def _user(self, name):
+        from backend.database import db_write
+
+        with db_write() as conn:
+            return conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, 'h', 0)",
+                (name,),
+            ).lastrowid
+
+    def _leg(self):
+        return {
+            "flight_number": "U28205",
+            "departure_airport": "LGW",
+            "arrival_airport": "LIS",
+            "departure_datetime": datetime(2026, 3, 10, 7, 5, tzinfo=UTC),
+            "arrival_datetime": datetime(2026, 3, 10, 9, 50, tzinfo=UTC),
+            "airline_code": "U2",
+            "airline_name": "easyJet",
+            "booking_reference": "TEST42",
+            "_times_already_utc": True,
+        }
+
+    def _run(self, user_id, *, schema_flights, kit_flights):
+        from backend.sync.pipeline import _process_emails
+
+        email_msg = _make_email_msg(
+            message_id=f"<kit-{user_id}@test>",
+            subject="Your booking EZY123",
+            body="Booking reference TEST42 U2 8205 LGW LIS",
+        )
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.extract_gds_eticket", return_value=[]),
+            patch("backend.sync.pipeline.extract_flight_reservations", return_value=schema_flights),
+            patch(
+                "backend.sync.pipeline.extract_kitinerary_flights", return_value=kit_flights
+            ) as kit,
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+            patch("backend.integrations.llm.parser.llm_available", return_value=True),
+            patch("backend.integrations.llm.parser.llm_extract_flights", return_value=[]) as llm,
+        ):
+            result = _process_emails([email_msg], user_id, use_llm=True)
+        return result, kit, llm
+
+    def test_runs_when_nothing_above_found_a_flight_and_stops_the_llm(
+        self, test_db, seeded_airports_db
+    ):
+        result, kit, llm = self._run(
+            self._user("kit1"), schema_flights=[], kit_flights=[self._leg()]
+        )
+        kit.assert_called_once()
+        llm.assert_not_called()
+        assert result["flights_created"] == 1
+
+    def test_does_not_run_when_an_earlier_tier_found_flights(self, test_db, seeded_airports_db):
+        _, kit, _ = self._run(self._user("kit2"), schema_flights=[self._leg()], kit_flights=[])
+        kit.assert_not_called()
+
+    def test_finding_nothing_leaves_the_llm_its_turn(self, test_db, seeded_airports_db):
+        _, kit, llm = self._run(self._user("kit3"), schema_flights=[], kit_flights=[])
+        kit.assert_called_once()
+        llm.assert_called_once()

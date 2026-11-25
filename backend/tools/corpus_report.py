@@ -48,6 +48,7 @@ ROW_FIELDS = (
     "rule_legs",
     "gds_legs",
     "schema_legs",
+    "kit_legs",
     "valid_legs",
     "stays",
     "rentals",
@@ -90,6 +91,7 @@ def measure(email_msg, rules) -> dict:
         merge_flights,
     )
     from backend.parsers.gds_eticket import extract_gds_eticket
+    from backend.parsers.kitinerary import extract_kitinerary_flights
     from backend.parsers.schema_org import (
         extract_flight_reservations,
         extract_lodging_reservations,
@@ -107,6 +109,7 @@ def measure(email_msg, rules) -> dict:
         "rule_legs": 0,
         "gds_legs": 0,
         "schema_legs": 0,
+        "kit_legs": 0,
         "valid_legs": 0,
         "stays": 0,
         "rentals": 0,
@@ -140,6 +143,9 @@ def measure(email_msg, rules) -> dict:
         if not flights:
             flights = extract_flight_reservations(email_msg)
             row["schema_legs"] = len(flights)
+        if not flights:
+            flights = extract_kitinerary_flights(email_msg)
+            row["kit_legs"] = len(flights)
         flights = [apply_airport_timezones(f) for f in flights]
         valid = validate_flights(flights, source=row["subject"][:60])
         row["valid_legs"] = len(valid)
@@ -170,7 +176,7 @@ def _produced_anything(row: dict) -> bool:
 def _extracted_flights(row: dict) -> bool:
     """Whether any reader handed the pipeline a flight, before validation —
     the condition that decides whether the LLM fallback runs."""
-    return bool(row["rule_legs"] or row["gds_legs"] or row["schema_legs"])
+    return bool(row["rule_legs"] or row["gds_legs"] or row["schema_legs"] or row["kit_legs"])
 
 
 def summarise(rows: list[dict]) -> dict:
@@ -210,6 +216,8 @@ def summarise(rows: list[dict]) -> dict:
         "total": len(rows),
         "rule_matched": sum(1 for r in rows if r["rule"]),
         "emails_with_flights": sum(1 for r in rows if r["valid_legs"]),
+        # Mails whose flights came from KDE Itinerary alone: what that tier adds.
+        "kitinerary_emails": [r for r in rows if r["kit_legs"] and r["valid_legs"]],
         "legs": sum(r["valid_legs"] for r in rows),
         "stays": sum(r["stays"] for r in rows),
         "rentals": sum(r["rentals"] for r in rows),
@@ -232,7 +240,9 @@ def render(summary: dict, *, quiet: bool = False) -> str:
     out = [
         f"emails {summary['total']}  rule matched {summary['rule_matched']}  "
         f"silent but offered to the LLM {len(summary['llm_candidates'])}",
-        f"emails with flights {summary['emails_with_flights']}  legs {summary['legs']}",
+        f"emails with flights {summary['emails_with_flights']}  legs {summary['legs']}  "
+        f"(from KDE Itinerary alone: {len(summary['kitinerary_emails'])} emails, "
+        f"{sum(r['valid_legs'] for r in summary['kitinerary_emails'])} legs)",
         f"stays {summary['stays']}  rentals {summary['rentals']}  "
         f"boarding passes {summary['boarding_passes']}  cancellations {summary['cancellations']}",
     ]
