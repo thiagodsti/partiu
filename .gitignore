@@ -41,8 +41,6 @@ Thumbs.db
 node_modules
 .history/
 
-# Demo deployment (server-local scripts, not for the repo)
-scripts/reset_demo.sh
 
 # Test / coverage
 .coverage
