@@ -333,3 +333,42 @@ class TestReviewFollowUps:
         assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
         svc.import_legs(user_id, cid, [leg])
         assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_an_interruption_between_recording_and_writing_is_recovered(self, svc, test_db):
+        """The id is recorded before the flight is written; a crash in between
+        leaves a recorded id with no flight, which recovery shrugs off."""
+        from backend.email_review.repository import EmailReviewRepository
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        repo = EmailReviewRepository()
+        assert repo.claim_for_import(user_id, cid)
+        repo.record_imported_flight(user_id, cid, "never-written")
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            "UPDATE email_candidates SET updated_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (cid,),
+        )
+        conn.commit()
+        conn.close()
+
+        assert svc.count_pending(user_id) == 1
+        svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_each_flight_id_is_recorded_before_the_flight_is_written(self, svc, test_db):
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        recorded_first = []
+        real = flight_service.create_flight
+
+        def check(user, fields, flight_id=None):
+            (row,) = _rows(test_db, "SELECT hints FROM email_candidates WHERE id = ?", cid)
+            recorded_first.append(flight_id in row["hints"])
+            return real(user, fields, flight_id=flight_id)
+
+        with patch.object(flight_service, "create_flight", side_effect=check):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert recorded_first == [True]

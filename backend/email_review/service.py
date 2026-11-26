@@ -21,6 +21,7 @@ there is a decision to make.
 
 import logging
 import re
+import uuid
 from datetime import datetime
 
 from ..parsers.booking_signal import looks_like_flight_booking
@@ -226,7 +227,13 @@ class EmailReviewService:
         try:
             for leg in legs:
                 number = leg["flight_number"].replace(" ", "").upper()
-                flight_id = flight_service.create_flight(
+                # The id is chosen and recorded on the candidate *before* the
+                # flight is written: whenever the process stops, recovery knows
+                # every flight this import may have created (deleting one that
+                # never got written is a no-op).
+                flight_id = str(uuid.uuid4())
+                self._repository.record_imported_flight(user_id, candidate_id, flight_id)
+                flight_service.create_flight(
                     user_id,
                     {
                         "flight_number": number,
@@ -247,9 +254,9 @@ class EmailReviewService:
                         "notes": "",
                         "trip_id": None,
                     },
+                    flight_id=flight_id,
                 )
                 flight_ids.append(flight_id)
-                self._repository.record_imported_flight(user_id, candidate_id, flight_id)
             auto_group_flights(user_id=user_id)
         except Exception:
             if len(flight_ids) == len(legs):

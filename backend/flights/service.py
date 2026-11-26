@@ -59,7 +59,7 @@ class FlightService:
 
     # -- Create / update / delete --------------------------------------------
 
-    def create_flight(self, user_id: int, body_fields: dict) -> str:
+    def create_flight(self, user_id: int, body_fields: dict, flight_id: str | None = None) -> str:
         """``body_fields`` mirrors FlightCreateDTO's fields. Returns the new flight id."""
         from ..airports.timezone import apply_airport_timezones
         from ..trips.repository import TripRepository
@@ -69,7 +69,9 @@ class FlightService:
             raise FlightError("Invalid flight number format", 422)
 
         now = now_iso()
-        flight_id = str(uuid.uuid4())
+        # A caller may choose the id up front (email_review records it before
+        # the flight exists, so an interrupted import can always be undone).
+        flight_id = flight_id or str(uuid.uuid4())
 
         departure_datetime = body_fields["departure_datetime"]
         arrival_datetime = body_fields["arrival_datetime"]
