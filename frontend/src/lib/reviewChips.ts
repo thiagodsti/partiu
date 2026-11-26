@@ -53,17 +53,20 @@ export function parseDateChip(text: string, fallbackYear = new Date().getFullYea
  *  merge into a datetime field: the half that is not clicked is kept.
  *
  *  A date chip without a year ("16 NOV") takes the year the field already
- *  holds, else `emailYear` — the year the email was sent, which is the year
- *  the backend resolves such dates against too. A chip that states its year
- *  keeps it. */
+ *  holds, else the year of `emailDate` ("YYYY-MM-DD", the day the email was
+ *  sent) — the year the backend resolves such dates against too. A chip that
+ *  states its year keeps it. A time chip into an empty field fills in the
+ *  email's date as a stand-in, so the order the chips are tapped in does not
+ *  change the year. */
 export function applyChip(
   field: LegField,
   current: string,
   kind: ChipKind,
   value: string,
-  emailYear: number = new Date().getFullYear(),
+  emailDate: string = new Date().toISOString().slice(0, 10),
 ): string | null {
   const isDateTime = field === 'departure_datetime' || field === 'arrival_datetime';
+  const emailYear = Number(emailDate.slice(0, 4));
   if (isDateTime) {
     const [d, t] = (current || '').split('T');
     if (kind === 'date') {
@@ -72,7 +75,9 @@ export function applyChip(
       return day ? `${day}T${t || '00:00'}` : null;
     }
     if (kind === 'time') {
-      const day = d || new Date().toISOString().slice(0, 10);
+      // An empty field gets the email's own date as a stand-in, never today's:
+      // a year-less date chip clicked next then keeps the email's year.
+      const day = d || emailDate;
       return `${day}T${value}`;
     }
     return null;

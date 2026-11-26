@@ -118,8 +118,8 @@
     if (!target) return;
     const leg = legs[target.leg];
     if (!leg) return;
-    const emailYear = c.email_date ? new Date(c.email_date).getFullYear() : undefined;
-    const next = applyChip(target.field, leg[target.field], kind, value, emailYear);
+    const emailDate = c.email_date ? c.email_date.slice(0, 10) : undefined;
+    const next = applyChip(target.field, leg[target.field], kind, value, emailDate);
     if (next !== null) leg[target.field] = next;
   }
 

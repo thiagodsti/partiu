@@ -220,13 +220,30 @@ class TestReviewFollowUps:
             svc.import_legs(user_id, cid, [self._leg()])
         assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
 
-    def test_a_failed_import_hands_the_email_back(self, svc, test_db):
+    def test_a_failure_before_any_flight_hands_the_email_back(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with patch(
+            "backend.flights.service.flight_service.create_flight", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg()])
+        assert svc.count_pending(user_id) == 1
+
+    def test_a_failure_after_flights_were_saved_cannot_be_retried_into_duplicates(
+        self, svc, test_db
+    ):
+        from backend.email_review.service import CandidateClosedError
+
         user_id = make_user(test_db)
         cid = self._offer(svc, user_id)
         with patch("backend.sync.grouping.auto_group_flights", side_effect=RuntimeError("boom")):
             with pytest.raises(RuntimeError):
                 svc.import_legs(user_id, cid, [self._leg()])
-        assert svc.count_pending(user_id) == 1
+        assert svc.count_pending(user_id) == 0
+        with pytest.raises(CandidateClosedError):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
 
     def test_an_impossible_date_saves_nothing(self, svc, test_db):
         user_id = make_user(test_db)

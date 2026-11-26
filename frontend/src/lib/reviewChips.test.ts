@@ -75,13 +75,23 @@ describe('review follow-ups', () => {
   });
 
   it('a year-less chip takes the field year, else the email year', () => {
-    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV', 2026)).toBe(
+    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV', '2026-01-05')).toBe(
       '2018-11-16T15:40',
     );
-    expect(applyChip('departure_datetime', '', 'date', '16 NOV', 2018)).toBe('2018-11-16T00:00');
+    expect(applyChip('departure_datetime', '', 'date', '16 NOV', '2018-11-07')).toBe('2018-11-16T00:00');
     // A chip that states its year keeps it.
-    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV 2019', 2018)).toBe(
+    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV 2019', '2018-11-07')).toBe(
       '2019-11-16T15:40',
+    );
+  });
+});
+
+describe('chip order', () => {
+  it('a time chip first, then a year-less date, keeps the email year', () => {
+    const afterTime = applyChip('departure_datetime', '', 'time', '15:40', '2018-11-07');
+    expect(afterTime).toBe('2018-11-07T15:40');
+    expect(applyChip('departure_datetime', afterTime!, 'date', '16 NOV', '2018-11-07')).toBe(
+      '2018-11-16T15:40',
     );
   });
 });

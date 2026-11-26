@@ -73,6 +73,7 @@
           if (status.status === "idle") {
             const data = await tripsApi.list();
             tripsList = data?.trips ?? [];
+            reviewRefresh += 1;
           }
         }
       } catch {
@@ -141,6 +142,9 @@
     } catch (err) {
       toasts.show($t("trips.eml_error", { values: { error: (err as Error).message } }), "error");
     } finally {
+      // Re-read the review count whether or not flights came out: an upload
+      // that imported nothing may be exactly what landed on the review list.
+      reviewRefresh += 1;
       emlUploading = false;
     }
   }

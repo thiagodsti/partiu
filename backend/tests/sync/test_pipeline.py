@@ -782,3 +782,35 @@ class TestReviewCandidates:
         ):
             result = _process_emails([email()], user_id)
         assert result["review_candidates"] == 1
+
+    def test_a_save_that_fails_leaves_the_email_on_the_review_list(self, test_db):
+        from backend.email_review.service import email_review_service
+        from backend.sync.pipeline import _process_emails
+        from backend.tests.email_review.helpers import email, make_user, seed_airports
+
+        seed_airports(test_db)
+        user_id = make_user(test_db)
+        msg = email()
+        assert email_review_service.consider(msg, user_id)
+        leg = {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": datetime(2018, 11, 16, 17, 40, tzinfo=UTC),
+            "arrival_datetime": datetime(2018, 11, 16, 19, 0, tzinfo=UTC),
+            "airline_code": "O6",
+            "airline_name": "Avianca Brasil",
+            "_times_already_utc": True,
+        }
+        with (
+            patch("backend.sync.pipeline.match_rule_to_email", return_value=None),
+            patch("backend.sync.pipeline.extract_gds_eticket", return_value=[]),
+            patch("backend.sync.pipeline.extract_flight_reservations", return_value=[dict(leg)]),
+            patch("backend.sync.pipeline.extract_kitinerary_flights", return_value=[]),
+            patch("backend.sync.pipeline.auto_group_flights", return_value={}),
+            patch("backend.sync.pipeline._process_bcbp_email", return_value=(0, 0)),
+            patch("backend.sync.pipeline._insert_synced_flight", side_effect=RuntimeError("disk")),
+        ):
+            result = _process_emails([msg], user_id)
+        assert result["flights_created"] == 0 and result["errors"]
+        assert email_review_service.count_pending(user_id) == 1

@@ -835,7 +835,6 @@ def _process_emails(
             flights_data = validate_flights(flights_data, source=email_msg.subject[:60])
             if not flights_data:
                 continue
-            produced.add(id(email_msg))
             if not bcbp_legs:
                 emails_processed += 1
 
@@ -898,6 +897,11 @@ def _process_emails(
                     logger.debug(
                         "User %d: Duplicate skipped: %s:%s", user_id, email_msg.message_id, fn
                     )
+
+            # Only now: the legs were saved or matched a stored flight. A save
+            # that raised went to the except below, and the email stays on (or
+            # can still reach) the review list.
+            produced.add(id(email_msg))
 
             # --- Boarding pass extraction (check-in emails) ---
             try:

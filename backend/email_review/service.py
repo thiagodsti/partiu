@@ -206,8 +206,8 @@ class EmailReviewService:
         # response, a second tab or a double click cannot import it twice.
         if not self._repository.claim_for_import(user_id, candidate_id):
             raise CandidateClosedError(candidate_id)
+        flight_ids: list[str] = []
         try:
-            flight_ids = []
             for leg in legs:
                 number = leg["flight_number"].replace(" ", "").upper()
                 flight_ids.append(
@@ -236,9 +236,14 @@ class EmailReviewService:
                 )
             auto_group_flights(user_id=user_id)
         except Exception:
-            # Hand it back; flights created before the failure stay, visible
-            # and deletable, rather than being rolled back behind the user's back.
-            self._repository.release(user_id, candidate_id)
+            if flight_ids:
+                # Flights were saved: close it, or a retry would create them a
+                # second time. They stay visible and deletable, and grouping
+                # (if that is what failed) runs again on the next sync.
+                self._repository.close(user_id, candidate_id, "imported")
+            else:
+                # Nothing was saved: hand it back so the import can be retried.
+                self._repository.release(user_id, candidate_id)
             raise
         self._repository.close(user_id, candidate_id, "imported")
         with db_conn() as conn:
