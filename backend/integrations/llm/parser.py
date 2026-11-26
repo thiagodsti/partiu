@@ -258,7 +258,9 @@ def _flight_number_in_text(flight: dict[str, Any], text: str) -> bool:
     # An airline code ending in a digit — GOL's G3, Avianca Brasil's O6 — puts a
     # digit right before the number ("G31234", "O66175"), which the search
     # above refuses; the whole number, code included, is what to look for then.
-    return re.search(rf"(?<![A-Z0-9]){re.escape(code)}\s?0*{digits}(?!\d)", text) is not None
+    return (
+        re.search(rf"(?<![A-Z0-9]){re.escape(code)}\s?0*{digits}(?![A-Za-z0-9])", text) is not None
+    )
 
 
 def _rejection(flight: dict[str, Any], mail_text: str) -> str:
@@ -586,13 +588,22 @@ def _date_in_text(value: str, text: str) -> bool:
     if f"{y}-{mo:02d}-{d:02d}" in text:
         return True
     day = rf"0?{d}"
-    if re.search(rf"(?<!\d){day}[/.\-]0?{mo}(?![\d])", text):
-        return True
+    # A year printed beside the day and month must be this year ("16/11/2017"
+    # does not confirm 2018-11-16); with no year printed, the day and month do.
+    # Not followed by ":" — in "16 NOV 15:40" the 15 is an hour, not a year.
+    year = r"(?:\s*[/.\-,]?\s*(?:de\s+)?(?P<y>\d{4}|\d{2})(?![\d:]))?"
+
+    def year_ok(m: re.Match) -> bool:
+        printed = m.group("y")
+        return not printed or printed == y or (len(printed) == 2 and printed == y[2:])
+
     months = "|".join(_MONTH_NAMES[mo])
-    return bool(
-        re.search(rf"(?<!\d){day}(?:\s*(?:de|of)?\s*)(?:{months})", text, re.IGNORECASE)
-        or re.search(rf"\b(?:{months})[a-zçé]*\.?\s+{day}(?!\d)", text, re.IGNORECASE)
+    patterns = (
+        rf"(?<!\d){day}[/.\-]0?{mo}(?![\d]){year}",
+        rf"(?<!\d){day}(?:\s*(?:de|of)?\s*)(?:{months})[a-zçé]*\.?{year}",
+        rf"\b(?:{months})[a-zçé]*\.?\s+{day}(?!\d){year}",
     )
+    return any(year_ok(m) for p in patterns for m in re.finditer(p, text, re.IGNORECASE))
 
 
 def llm_draft_flights(email_msg, extra_context: str = "") -> list[dict]:

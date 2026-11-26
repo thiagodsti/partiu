@@ -397,3 +397,17 @@ class TestDraftForTheReviewPage:
         # arrival, is not — so the arrival is the field cleared.
         assert leg["departure_airport"] == "GRU"
         assert (leg["arrival_airport"], leg["doubts"].get("arrival_airport")) == ("", "FLN")
+
+    def test_a_conflicting_printed_year_does_not_confirm_the_date(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert not _date_in_text("2018-11-16T15:40", "16/11/2017")
+        assert not _date_in_text("2018-11-16T15:40", "16 Nov 2017")
+        assert _date_in_text("2018-11-16T15:40", "16/11/18")
+        assert _date_in_text("2018-11-16T15:40", "16 de novembro de 2018")
+
+    def test_a_trailing_letter_is_not_the_same_flight(self):
+        from backend.integrations.llm.parser import _flight_number_in_text
+
+        assert not _flight_number_in_text({"flight_number": "G3123"}, "Pedido G3123A")
+        assert _flight_number_in_text({"flight_number": "G3123"}, "Voo G3 123")

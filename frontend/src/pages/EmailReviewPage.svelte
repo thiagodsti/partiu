@@ -67,6 +67,8 @@
   let generation = $state<Record<string, number>>({});
 
   function cancelForm(id: string) {
+    // An import cannot be called back once sent; Cancel only stops an AI draft.
+    if (busy[id] === 'import') return;
     generation[id] = (generation[id] ?? 0) + 1;
     delete forms[id];
     if (focused?.id === id) focused = null;
@@ -156,7 +158,12 @@
     const domain = domainOf(c.sender);
     if (!confirm($t('review.ignore_confirm', { values: { domain } }))) return;
     await emailReviewApi.ignoreSender(c.id);
-    items = items.filter((i) => domainOf(i.sender).toLowerCase() !== domain.toLowerCase());
+    // Same rule as the server: the domain itself or any subdomain of it.
+    const d = domain.toLowerCase();
+    items = items.filter((i) => {
+      const own = domainOf(i.sender).toLowerCase();
+      return own !== d && !own.endsWith('.' + d);
+    });
   }
 
   function formatDate(iso: string | null): string {
@@ -303,7 +310,7 @@
             <div class="review-form-actions">
               <button type="button" class="btn btn-secondary btn-sm" onclick={() => forms[c.id].push(emptyLeg(forms[c.id][0]?.booking_reference ?? null))}>{$t('review.add_flight')}</button>
               <span class="spacer"></span>
-              <button type="button" class="btn btn-secondary" onclick={() => cancelForm(c.id)}>{$t('review.cancel')}</button>
+              <button type="button" class="btn btn-secondary" disabled={busy[c.id] === 'import'} onclick={() => cancelForm(c.id)}>{$t('review.cancel')}</button>
               <button type="button" class="btn btn-primary" disabled={!!busy[c.id]} onclick={() => doImport(c)}>
                 {busy[c.id] === 'import' ? $t('review.importing') : $t('review.import')}
               </button>
