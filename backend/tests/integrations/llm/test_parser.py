@@ -326,7 +326,9 @@ class TestDraftForTheReviewPage:
             return parser.llm_draft_flights(email)
 
     def test_an_unsupported_airport_and_time_are_cleared_not_the_leg(self, seeded_airports_db):
-        email = _email(body="Voo 4849 de Florianópolis FLN às 13:20, destino Milão")
+        email = _email(
+            body="Voo 4849 em 02/03/2026, de Florianópolis FLN às 13:20, destino Milão. Reserva TESTR5"
+        )
         answer = _answer(
             flight_number="AD4849",
             dep_airport="FLN",
@@ -352,3 +354,46 @@ class TestDraftForTheReviewPage:
             self._draft(None, email)
         flights, _ = _run(None, email)
         assert flights == []
+
+    def test_a_printed_time_does_not_vouch_for_the_model_s_date(self, seeded_airports_db):
+        email = _email(body="Voo 4849 de VCP às 13:20 para FLN. Reserva TESTR5")
+        (leg,) = self._draft(_answer(dep_datetime="2026-03-02T13:20:00"), email)
+        assert leg["departure_datetime"] == ""
+        assert leg["doubts"]["departure_datetime"] == "2026-03-02T13:20"
+
+    def test_a_date_with_a_month_name_counts(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert _date_in_text("2018-11-16T15:40", "FLN 16 NOV 15:40")
+        assert _date_in_text("2018-11-16T15:40", "Sexta, 16 de novembro")
+        assert _date_in_text("2018-11-16T15:40", "Nov 16, 2018")
+        assert _date_in_text("2018-11-16T15:40", "16/11/2018")
+        assert not _date_in_text("2018-11-16T15:40", "16 OCT, 11 NOV")
+
+    def test_a_booking_code_not_in_the_email_is_a_doubt(self, seeded_airports_db):
+        email = _email(body="Voo 4849 em 02/03/2026 VCP 13:20 FLN. Código PVNQDY")
+        answer = _answer(dep_datetime="2026-03-02T13:20:00", booking_reference="ZZZ999")
+        (leg,) = self._draft(answer, email)
+        # The model's code is in neither the subject nor the body.
+        assert leg["booking_reference"] == ""
+        assert leg["doubts"]["booking_reference"] == "ZZZ999"
+
+    def test_airport_doubts_follow_a_route_correction(self, seeded_airports_db):
+        from backend.integrations.llm import parser
+
+        email = _email(body="Voo 4849 em 02/03/2026 às 13:20, chegada GRU. Reserva TESTR5")
+        answer = _answer(dep_airport="FLN", arr_airport="GRU", dep_datetime="2026-03-02T13:20:00")
+
+        def swap(flight):
+            flight["departure_airport"], flight["arrival_airport"] = (
+                flight["arrival_airport"],
+                flight["departure_airport"],
+            )
+            return flight
+
+        with patch("backend.integrations.routes.check.fix_reversed_route", side_effect=swap):
+            (leg,) = self._draft(answer, email)
+        # After the swap GRU is the departure and is in the email; FLN, now the
+        # arrival, is not — so the arrival is the field cleared.
+        assert leg["departure_airport"] == "GRU"
+        assert (leg["arrival_airport"], leg["doubts"].get("arrival_airport")) == ("", "FLN")

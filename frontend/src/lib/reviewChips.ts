@@ -18,7 +18,11 @@ const MONTHS: Record<string, number> = {
 const pad = (n: number) => String(n).padStart(2, '0');
 
 function iso(y: number, m: number, d: number): string | null {
-  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  if (m < 1 || m > 12 || d < 1) return null;
+  // The day must exist in that month and year: no 31 February, 29 February
+  // only in leap years.
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  if (d > last) return null;
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
@@ -46,18 +50,25 @@ export function parseDateChip(text: string, fallbackYear = new Date().getFullYea
 
 /** The field's new value after clicking a chip into it, or null when the chip
  *  does not fit that field (a time into an airport, say). Dates and times
- *  merge into a datetime field: the half that is not clicked is kept. */
+ *  merge into a datetime field: the half that is not clicked is kept.
+ *
+ *  A date chip without a year ("16 NOV") takes the year the field already
+ *  holds, else `emailYear` — the year the email was sent, which is the year
+ *  the backend resolves such dates against too. A chip that states its year
+ *  keeps it. */
 export function applyChip(
   field: LegField,
   current: string,
   kind: ChipKind,
   value: string,
+  emailYear: number = new Date().getFullYear(),
 ): string | null {
   const isDateTime = field === 'departure_datetime' || field === 'arrival_datetime';
   if (isDateTime) {
     const [d, t] = (current || '').split('T');
     if (kind === 'date') {
-      const day = parseDateChip(value);
+      const fieldYear = /^\d{4}/.test(d || '') ? Number(d.slice(0, 4)) : null;
+      const day = parseDateChip(value, fieldYear ?? emailYear);
       return day ? `${day}T${t || '00:00'}` : null;
     }
     if (kind === 'time') {

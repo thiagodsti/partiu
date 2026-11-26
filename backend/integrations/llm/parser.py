@@ -566,14 +566,43 @@ def _time_in_text(value: str, text: str) -> bool:
     return any(re.search(rf"(?<!\d){hh}[:hH.]?{mi}(?!\d)", text) for hh in hours)
 
 
+# Month name prefixes per month number, in the languages of the mail Partiu reads.
+_MONTH_NAMES = {
+    1: ("jan",), 2: ("feb", "fev"), 3: ("mar",), 4: ("apr", "abr", "avr"),
+    5: ("may", "mai", "maj", "mag"), 6: ("jun", "jui"), 7: ("jul", "jui", "lug"),
+    8: ("aug", "ago", "aoû", "aou"), 9: ("sep", "set"), 10: ("oct", "out", "okt", "ott"),
+    11: ("nov",), 12: ("dec", "dez", "dic", "déc"),
+}  # fmt: skip
+
+
+def _date_in_text(value: str, text: str) -> bool:
+    """The calendar date of an ISO stamp is printed in the mail: as an ISO date,
+    day-first digits ("16/11", "16.11.18") or a day beside a month name in
+    either order ("16 NOV", "Nov 16", "16 de novembro")."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", value or "")
+    if not m:
+        return False
+    y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+    if f"{y}-{mo:02d}-{d:02d}" in text:
+        return True
+    day = rf"0?{d}"
+    if re.search(rf"(?<!\d){day}[/.\-]0?{mo}(?![\d])", text):
+        return True
+    months = "|".join(_MONTH_NAMES[mo])
+    return bool(
+        re.search(rf"(?<!\d){day}(?:\s*(?:de|of)?\s*)(?:{months})", text, re.IGNORECASE)
+        or re.search(rf"\b(?:{months})[a-zçé]*\.?\s+{day}(?!\d)", text, re.IGNORECASE)
+    )
+
+
 def llm_draft_flights(email_msg, extra_context: str = "") -> list[dict]:
     """The model's legs for a person to confirm, not for the sync to store.
 
     ``llm_extract_flights`` drops a leg when any field fails a check, which is
     right when nobody looks at the result. On the review page someone does, so
     a leg is kept and only the fields the email does not support are cleared:
-    a flight number not printed in it, an airport it does not name, a time it
-    does not print. Each cleared field's guess is returned under ``doubts``
+    a flight number not printed in it, an airport it does not name, a date or
+    a time it does not print, a booking code it does not contain. Each cleared field's guess is returned under ``doubts``
     ({field: guessed value}) so the page can show what the model thought
     without filling it in. Times are local wall clock ("2025-04-01T13:10").
     """
@@ -586,28 +615,32 @@ def llm_draft_flights(email_msg, extra_context: str = "") -> list[dict]:
         doubts: dict[str, str] = {}
         if not _flight_number_in_text(f, mail_text):
             doubts["flight_number"] = _clean_flight_number(f.get("flight_number"))
-        for raw_key, field in (
-            ("dep_airport", "departure_airport"),
-            ("arr_airport", "arrival_airport"),
-        ):
-            code = (f.get(raw_key) or "").upper()
+        leg = fix_reversed_route(_normalise_flight(f, "", ""))
+        # Grounded after the route fix: it may have swapped the airports, and
+        # the doubt must sit on the field that ends up holding the guess.
+        for field in ("departure_airport", "arrival_airport"):
+            code = (leg.get(field) or "").upper()
             if not code or not _airport_in_text(code, mail_text):
                 doubts[field] = code
-        leg = fix_reversed_route(_normalise_flight(f, "", ""))
         times = {}
         for field in ("departure_datetime", "arrival_datetime"):
             stamp = leg.get(field)
             value = stamp.strftime("%Y-%m-%dT%H:%M") if stamp else ""
-            if value and not _time_in_text(value, mail_text):
+            # Both halves must be in the mail: a printed 13:20 does not make
+            # the model's date a fact.
+            if value and not (_time_in_text(value, mail_text) and _date_in_text(value, mail_text)):
                 doubts[field] = value
                 value = ""
             times[field] = value
+        reference = leg.get("booking_reference") or ""
+        if reference and reference.upper() not in mail_text.upper():
+            doubts["booking_reference"] = reference
         draft = {
             "flight_number": leg["flight_number"],
             "departure_airport": leg["departure_airport"],
             "arrival_airport": leg["arrival_airport"],
             **times,
-            "booking_reference": leg.get("booking_reference") or "",
+            "booking_reference": reference,
         }
         for field in doubts:
             draft[field] = ""

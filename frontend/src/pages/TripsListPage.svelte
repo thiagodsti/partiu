@@ -16,6 +16,8 @@
 
   // ---- State ----
   let loading = $state(true);
+  // Re-reads the review count whenever the trips are reloaded (after a sync).
+  let reviewRefresh = $state(0);
   let error = $state<string | null>(null);
   let tripsList = $state<Trip[]>([]);
   let syncStatus = $state<SyncStatus | null>(null);
@@ -34,6 +36,7 @@
       ]);
       tripsList = data?.trips ?? [];
       syncStatus = status;
+      reviewRefresh += 1;
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -202,7 +205,7 @@
       </button>
     </SyncStatusBar>
 
-    <ReviewEmailsNotice />
+    <ReviewEmailsNotice refresh={reviewRefresh} />
 
     <!-- Trips List -->
     {#if !loading && activeTrips.length === 0}

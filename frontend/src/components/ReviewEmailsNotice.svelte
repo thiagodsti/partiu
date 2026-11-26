@@ -5,11 +5,20 @@
   import { emailReviewApi } from '../api/client';
   import { t } from '../lib/i18n';
 
+  interface Props {
+    /** Bumped by the page after it reloads (a sync may have added emails). */
+    refresh?: number;
+  }
+  const { refresh = 0 }: Props = $props();
+
   let count = $state(0);
-  emailReviewApi
-    .count()
-    .then((r) => (count = r.count))
-    .catch(() => {});
+  $effect(() => {
+    void refresh;
+    emailReviewApi
+      .count()
+      .then((r) => (count = r.count))
+      .catch(() => {});
+  });
 </script>
 
 {#if count > 0}

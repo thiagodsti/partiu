@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from ..airports.timezone import apply_airport_timezones
 from ..database import get_global_setting
-from ..email_review.service import consider_for_review
+from ..email_review.service import close_review_if_imported, consider_for_review
 from ..flights.repository import FlightRepository
 from ..parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from ..parsers.boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
@@ -956,6 +956,11 @@ def _process_emails(
     review_candidates = 0
     for email_msg in emails:
         if id(email_msg) in produced:
+            # Read after all (a later sync, the LLM): off the list if it was on.
+            try:
+                close_review_if_imported(email_msg, user_id)
+            except Exception as e:  # noqa: BLE001 - never let the review list stop the sync
+                logger.error("User %d: email review error: %s", user_id, e, exc_info=True)
             continue
         try:
             review_candidates += int(consider_for_review(email_msg, user_id))

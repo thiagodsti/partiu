@@ -55,11 +55,33 @@
     notes[c.id] = { text: '', tone: 'info' };
   }
 
+  function removeLeg(id: string, index: number) {
+    forms[id].splice(index, 1);
+    doubts[id]?.splice(index, 1);
+    // The focused field may have pointed at the removed row or past the end.
+    if (focused?.id === id) focused = null;
+  }
+
+  // Bumped by Cancel, so an AI answer that arrives afterwards is dropped
+  // instead of reopening the form the user just closed.
+  let generation = $state<Record<string, number>>({});
+
+  function cancelForm(id: string) {
+    generation[id] = (generation[id] ?? 0) + 1;
+    delete forms[id];
+    if (focused?.id === id) focused = null;
+    notes[id] = { text: '', tone: 'info' };
+    busy[id] = '';
+  }
+
   async function fillWithAi(c: ReviewCandidate) {
+    if (busy[c.id]) return;
+    const mine = (generation[c.id] = (generation[c.id] ?? 0) + 1);
     busy[c.id] = 'ai';
     notes[c.id] = { text: $t('review.ai_running'), tone: 'info' };
     try {
       const { legs } = await emailReviewApi.draft(c.id);
+      if (generation[c.id] !== mine) return;
       if (legs.length) {
         doubts[c.id] = legs.map((l) => l.doubts ?? {});
         forms[c.id] = legs.map(({ doubts: _d, ...l }) => ({ ...l, booking_reference: l.booking_reference || c.hints.booking_reference || '' }));
@@ -69,6 +91,7 @@
         notes[c.id] = { text: $t('review.ai_nothing'), tone: 'info' };
       }
     } catch (e) {
+      if (generation[c.id] !== mine) return;
       forms[c.id] = forms[c.id] ?? [emptyLeg(c.hints.booking_reference)];
       const text =
         e instanceof ApiError && e.code === 'ai_unreachable'
@@ -78,7 +101,7 @@
             : String(e);
       notes[c.id] = { text, tone: 'error' };
     } finally {
-      busy[c.id] = '';
+      if (generation[c.id] === mine) busy[c.id] = '';
     }
   }
 
@@ -92,11 +115,14 @@
     }
     if (!target) return;
     const leg = legs[target.leg];
-    const next = applyChip(target.field, leg[target.field], kind, value);
+    if (!leg) return;
+    const emailYear = c.email_date ? new Date(c.email_date).getFullYear() : undefined;
+    const next = applyChip(target.field, leg[target.field], kind, value, emailYear);
     if (next !== null) leg[target.field] = next;
   }
 
   async function doImport(c: ReviewCandidate) {
+    if (busy[c.id]) return;
     busy[c.id] = 'import';
     try {
       const legs = forms[c.id].map((l) => ({
@@ -130,7 +156,7 @@
     const domain = domainOf(c.sender);
     if (!confirm($t('review.ignore_confirm', { values: { domain } }))) return;
     await emailReviewApi.ignoreSender(c.id);
-    items = items.filter((i) => domainOf(i.sender) !== domain);
+    items = items.filter((i) => domainOf(i.sender).toLowerCase() !== domain.toLowerCase());
   }
 
   function formatDate(iso: string | null): string {
@@ -264,7 +290,7 @@
                   </div>
                 </div>
                 {#if forms[c.id].length > 1}
-                  <button type="button" class="btn btn-secondary btn-sm" onclick={() => forms[c.id].splice(li, 1)}>{$t('review.remove_flight')}</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={() => removeLeg(c.id, li)}>{$t('review.remove_flight')}</button>
                 {/if}
               </fieldset>
             {/each}
@@ -277,8 +303,8 @@
             <div class="review-form-actions">
               <button type="button" class="btn btn-secondary btn-sm" onclick={() => forms[c.id].push(emptyLeg(forms[c.id][0]?.booking_reference ?? null))}>{$t('review.add_flight')}</button>
               <span class="spacer"></span>
-              <button type="button" class="btn btn-secondary" onclick={() => { delete forms[c.id]; notes[c.id] = { text: '', tone: 'info' }; }}>{$t('review.cancel')}</button>
-              <button type="button" class="btn btn-primary" disabled={busy[c.id] === 'import'} onclick={() => doImport(c)}>
+              <button type="button" class="btn btn-secondary" onclick={() => cancelForm(c.id)}>{$t('review.cancel')}</button>
+              <button type="button" class="btn btn-primary" disabled={!!busy[c.id]} onclick={() => doImport(c)}>
                 {busy[c.id] === 'import' ? $t('review.importing') : $t('review.import')}
               </button>
             </div>
@@ -295,7 +321,7 @@
           <button
             type="button"
             class="btn btn-secondary btn-sm"
-            disabled={!aiAvailable || busy[c.id] === 'ai'}
+            disabled={!aiAvailable || !!busy[c.id]}
             title={aiAvailable ? undefined : $t('review.ai_unavailable')}
             onclick={() => fillWithAi(c)}>✨ {$t('review.ai')}</button
           >

@@ -74,3 +74,21 @@ class TestEmailReviewApi:
             r = auth_client.post(f"/api/email-review/{cid}/draft")
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "ai_unreachable"
+
+    def test_importing_twice_is_409(self, test_db, auth_client):
+        cid = _offer(test_db, auth_client)
+        leg = {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": "2018-11-16T15:40",
+            "arrival_datetime": "2018-11-16T17:00",
+        }
+        assert (
+            auth_client.post(f"/api/email-review/{cid}/import", json={"legs": [leg]}).status_code
+            == 200
+        )
+        assert (
+            auth_client.post(f"/api/email-review/{cid}/import", json={"legs": [leg]}).status_code
+            == 409
+        )

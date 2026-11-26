@@ -65,3 +65,23 @@ describe('highlight', () => {
     expect(highlight('nothing here', [])).toEqual([{ text: 'nothing here', hit: false }]);
   });
 });
+
+describe('review follow-ups', () => {
+  it('refuses days that do not exist in the month, keeps leap days', () => {
+    expect(parseDateChip('31/02/2026')).toBeNull();
+    expect(parseDateChip('29/02/2026')).toBeNull();
+    expect(parseDateChip('29/02/2028')).toBe('2028-02-29');
+    expect(parseDateChip('31 apr 2026')).toBeNull();
+  });
+
+  it('a year-less chip takes the field year, else the email year', () => {
+    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV', 2026)).toBe(
+      '2018-11-16T15:40',
+    );
+    expect(applyChip('departure_datetime', '', 'date', '16 NOV', 2018)).toBe('2018-11-16T00:00');
+    // A chip that states its year keeps it.
+    expect(applyChip('departure_datetime', '2018-11-15T15:40', 'date', '16 NOV 2019', 2018)).toBe(
+      '2019-11-16T15:40',
+    );
+  });
+});

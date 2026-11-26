@@ -159,3 +159,85 @@ class TestActions:
             assert svc.draft(user_id, cid) == drafted
         (msg,) = llm.call_args.args
         assert msg.date is not None and msg.date.year == 2018
+
+
+class TestReviewFollowUps:
+    def _offer(self, svc, user_id, **kw):
+        svc.consider(email(**kw), user_id)
+        return svc.list_pending(user_id)[0]["id"]
+
+    def _leg(self, **kw):
+        return {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": "2018-11-16T15:40",
+            "arrival_datetime": "2018-11-16T17:00",
+            **kw,
+        }
+
+    def test_the_same_daily_flight_on_two_bookings_is_offered_twice(self, svc, test_db):
+        user_id = make_user(test_db)
+        assert svc.consider(email(), user_id)
+        other = BODY.replace("PVNQDY", "QQQ111").replace("16 NOV", "23 NOV")
+        assert svc.consider(
+            email(subject="Sua passagem foi emitida - e-ticket QQQ111", body=other), user_id
+        )
+        assert svc.count_pending(user_id) == 2
+
+    def test_closing_drops_the_quoted_lines_too(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        svc.dismiss(user_id, cid)
+        (row,) = _rows(test_db, "SELECT hints FROM email_candidates WHERE id = ?", cid)
+        assert "excerpt" not in row["hints"]
+
+    def test_ignoring_a_domain_respects_domain_boundaries(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id, sender="Agency <a@example.com>")
+        sub = BODY.replace("PVNQDY", "SUB111").replace("O66175", "O61111")
+        svc.consider(
+            email(body=sub, subject="Sua passagem - e-ticket SUB111", sender="b@mail.example.com"),
+            user_id,
+        )
+        lookalike = BODY.replace("PVNQDY", "AUS111").replace("O66175", "O62222")
+        svc.consider(
+            email(
+                body=lookalike, subject="Sua passagem - e-ticket AUS111", sender="c@example.com.au"
+            ),
+            user_id,
+        )
+        assert svc.ignore_sender(user_id, cid) == 2  # example.com and mail.example.com
+        assert [i["sender"] for i in svc.list_pending(user_id)] == ["c@example.com.au"]
+
+    def test_an_email_is_imported_at_most_once(self, svc, test_db):
+        from backend.email_review.service import CandidateClosedError
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        svc.import_legs(user_id, cid, [self._leg()])
+        with pytest.raises(CandidateClosedError):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_a_failed_import_hands_the_email_back(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with patch("backend.sync.grouping.auto_group_flights", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg()])
+        assert svc.count_pending(user_id) == 1
+
+    def test_an_impossible_date_saves_nothing(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with pytest.raises(ValueError):
+            svc.import_legs(user_id, cid, [self._leg(departure_datetime="2018-13-10T07:05")])
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+
+    def test_an_email_the_sync_reads_later_leaves_the_list(self, svc, test_db):
+        user_id = make_user(test_db)
+        msg = email()
+        svc.consider(msg, user_id)
+        svc.close_if_imported(msg, user_id)
+        assert svc.count_pending(user_id) == 0

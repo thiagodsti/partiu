@@ -21,6 +21,7 @@ there is a decision to make.
 
 import logging
 import re
+from datetime import datetime
 
 from ..parsers.booking_signal import looks_like_flight_booking
 from . import detect
@@ -34,6 +35,11 @@ _MAX_BODY = 20_000
 
 class CandidateNotFoundError(Exception):
     pass
+
+
+class CandidateClosedError(Exception):
+    """The email was already imported or dismissed, or another import of it is
+    running."""
 
 
 def _domain(sender: str | None) -> str:
@@ -78,7 +84,9 @@ class EmailReviewService:
         reference = found.get("booking_reference")
         if reference and self._repository.pending_with_reference(user_id, reference):
             return False
-        if self._repository.pending_with_flights(user_id, found["flight_numbers"]):
+        if self._repository.pending_restatement(
+            user_id, found["flight_numbers"], reference, found["dates"]
+        ):
             # The same booking restated (a confirmation and its receipt).
             return False
         date = getattr(email_msg, "date", None)
@@ -185,36 +193,53 @@ class EmailReviewService:
                 if not re.fullmatch(r"[A-Za-z]{3}", leg.get(field) or ""):
                     raise ValueError(f"Flight {i}: an airport needs its three-letter code")
             for field in ("departure_datetime", "arrival_datetime"):
-                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", (leg.get(field) or "")[:16]):
+                value = leg.get(field) or ""
+                # A real date and time, not just the shape: "2026-13-10T07:05"
+                # would otherwise be stored as text with no zone or duration.
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?", value):
                     raise ValueError(f"Flight {i}: both times are needed")
-        flight_ids = []
-        for leg in legs:
-            number = leg["flight_number"].replace(" ", "").upper()
-            flight_ids.append(
-                flight_service.create_flight(
-                    user_id,
-                    {
-                        "flight_number": number,
-                        "airline_name": leg.get("airline_name") or number[:2],
-                        "airline_code": number[:2],
-                        "departure_airport": leg["departure_airport"].upper(),
-                        "departure_datetime": leg["departure_datetime"],
-                        "arrival_airport": leg["arrival_airport"].upper(),
-                        "arrival_datetime": leg["arrival_datetime"],
-                        "booking_reference": leg.get("booking_reference") or "",
-                        "passenger_name": "",
-                        "seat": "",
-                        "cabin_class": "",
-                        "departure_terminal": "",
-                        "departure_gate": "",
-                        "arrival_terminal": "",
-                        "arrival_gate": "",
-                        "notes": "",
-                        "trip_id": None,
-                    },
+                try:
+                    datetime.fromisoformat(value)
+                except ValueError:
+                    raise ValueError(f"Flight {i}: both times are needed") from None
+        # Claimed before any flight is created, so a retry after a lost
+        # response, a second tab or a double click cannot import it twice.
+        if not self._repository.claim_for_import(user_id, candidate_id):
+            raise CandidateClosedError(candidate_id)
+        try:
+            flight_ids = []
+            for leg in legs:
+                number = leg["flight_number"].replace(" ", "").upper()
+                flight_ids.append(
+                    flight_service.create_flight(
+                        user_id,
+                        {
+                            "flight_number": number,
+                            "airline_name": leg.get("airline_name") or number[:2],
+                            "airline_code": number[:2],
+                            "departure_airport": leg["departure_airport"].upper(),
+                            "departure_datetime": leg["departure_datetime"],
+                            "arrival_airport": leg["arrival_airport"].upper(),
+                            "arrival_datetime": leg["arrival_datetime"],
+                            "booking_reference": leg.get("booking_reference") or "",
+                            "passenger_name": "",
+                            "seat": "",
+                            "cabin_class": "",
+                            "departure_terminal": "",
+                            "departure_gate": "",
+                            "arrival_terminal": "",
+                            "arrival_gate": "",
+                            "notes": "",
+                            "trip_id": None,
+                        },
+                    )
                 )
-            )
-        auto_group_flights(user_id=user_id)
+            auto_group_flights(user_id=user_id)
+        except Exception:
+            # Hand it back; flights created before the failure stay, visible
+            # and deletable, rather than being rolled back behind the user's back.
+            self._repository.release(user_id, candidate_id)
+            raise
         self._repository.close(user_id, candidate_id, "imported")
         with db_conn() as conn:
             placeholders = ",".join("?" * len(flight_ids))
@@ -227,6 +252,13 @@ class EmailReviewService:
             "trip_ids": [r["trip_id"] for r in rows if r["trip_id"]],
         }
 
+    def close_if_imported(self, email_msg, user_id: int) -> None:
+        """The sync read this email after all (a later sync, the LLM): if it was
+        on the review list, take it off."""
+        message_id = getattr(email_msg, "message_id", None)
+        if message_id:
+            self._repository.close_pending_message(user_id, message_id)
+
 
 email_review_service = EmailReviewService()
 
@@ -234,3 +266,8 @@ email_review_service = EmailReviewService()
 def consider_for_review(email_msg, user_id: int) -> bool:
     """The pipeline's entry point (see ``sync/pipeline._process_emails``)."""
     return email_review_service.consider(email_msg, user_id)
+
+
+def close_review_if_imported(email_msg, user_id: int) -> None:
+    """The pipeline's call for an email that produced something."""
+    email_review_service.close_if_imported(email_msg, user_id)

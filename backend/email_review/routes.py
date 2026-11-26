@@ -23,7 +23,7 @@ from .dto import (
     ImportRequestDTO,
     ImportResultDTO,
 )
-from .service import CandidateNotFoundError, email_review_service
+from .service import CandidateClosedError, CandidateNotFoundError, email_review_service
 
 router = APIRouter(prefix="/api/email-review", tags=["email-review"])
 
@@ -84,6 +84,8 @@ def import_legs(candidate_id: str, body: ImportRequestDTO, user: dict = Depends(
         )
     except CandidateNotFoundError:
         raise _not_found()
+    except CandidateClosedError:
+        raise HTTPException(status_code=409, detail="This email was already handled")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
