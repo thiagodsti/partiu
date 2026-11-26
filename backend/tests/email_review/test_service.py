@@ -288,3 +288,48 @@ class TestReviewFollowUps:
         svc.consider(msg, user_id)
         svc.close_if_imported(msg, user_id)
         assert svc.count_pending(user_id) == 0
+
+    def test_an_import_cut_off_part_way_is_recovered(self, svc, test_db):
+        """The process died after the first flight was saved: the claim and the
+        recorded flight are in the database, nothing ran to clean up."""
+        from backend.email_review.repository import EmailReviewRepository
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        repo = EmailReviewRepository()
+        assert repo.claim_for_import(user_id, cid)
+        leg = self._leg()
+        fid = flight_service.create_flight(
+            user_id,
+            {
+                **leg,
+                "airline_name": "O6",
+                "airline_code": "O6",
+                "booking_reference": "",
+                "passenger_name": "",
+                "seat": "",
+                "cabin_class": "",
+                "departure_terminal": "",
+                "departure_gate": "",
+                "arrival_terminal": "",
+                "arrival_gate": "",
+                "notes": "",
+                "trip_id": None,
+            },
+        )
+        repo.record_imported_flight(user_id, cid, fid)
+        # Not yet stale: still off the list.
+        assert svc.count_pending(user_id) == 0
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            "UPDATE email_candidates SET updated_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (cid,),
+        )
+        conn.commit()
+        conn.close()
+
+        assert svc.count_pending(user_id) == 1
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+        svc.import_legs(user_id, cid, [leg])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1

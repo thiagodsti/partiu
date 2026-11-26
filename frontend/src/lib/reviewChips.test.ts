@@ -95,3 +95,12 @@ describe('chip order', () => {
     );
   });
 });
+
+describe('no email date', () => {
+  it('a time chip does not invent a date', () => {
+    expect(applyChip('departure_datetime', '', 'time', '15:40')).toBeNull();
+    expect(applyChip('departure_datetime', '2018-11-16T00:00', 'time', '15:40')).toBe(
+      '2018-11-16T15:40',
+    );
+  });
+});

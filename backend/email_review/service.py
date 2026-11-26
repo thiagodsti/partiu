@@ -29,6 +29,10 @@ from .repository import EmailReviewRepository
 
 logger = logging.getLogger(__name__)
 
+# An import left 'importing' this long was cut off (a crash, a restart): no
+# import of a handful of legs takes minutes.
+STALE_IMPORT_MINUTES = 15
+
 # Enough for the excerpt and the LLM (which reads at most ~8k tokens anyway).
 _MAX_BODY = 20_000
 
@@ -107,10 +111,22 @@ class EmailReviewService:
 
     # --- The review page -----------------------------------------------------
 
+    def _recover(self, user_id: int) -> None:
+        """Undo imports cut off part-way (a crash, a restart): left 'importing'
+        for longer than any import takes, their recorded flights are deleted
+        and the emails are offered again."""
+        from datetime import UTC, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(minutes=STALE_IMPORT_MINUTES)).isoformat()
+        if n := self._repository.recover_stale_imports(user_id, cutoff):
+            logger.warning("User %d: recovered %d interrupted email import(s)", user_id, n)
+
     def list_pending(self, user_id: int) -> list[dict]:
+        self._recover(user_id)
         return self._repository.list_pending(user_id)
 
     def count_pending(self, user_id: int) -> int:
+        self._recover(user_id)
         return self._repository.count_pending(user_id)
 
     def _get(self, user_id: int, candidate_id: str) -> dict:
@@ -210,30 +226,30 @@ class EmailReviewService:
         try:
             for leg in legs:
                 number = leg["flight_number"].replace(" ", "").upper()
-                flight_ids.append(
-                    flight_service.create_flight(
-                        user_id,
-                        {
-                            "flight_number": number,
-                            "airline_name": leg.get("airline_name") or number[:2],
-                            "airline_code": number[:2],
-                            "departure_airport": leg["departure_airport"].upper(),
-                            "departure_datetime": leg["departure_datetime"],
-                            "arrival_airport": leg["arrival_airport"].upper(),
-                            "arrival_datetime": leg["arrival_datetime"],
-                            "booking_reference": leg.get("booking_reference") or "",
-                            "passenger_name": "",
-                            "seat": "",
-                            "cabin_class": "",
-                            "departure_terminal": "",
-                            "departure_gate": "",
-                            "arrival_terminal": "",
-                            "arrival_gate": "",
-                            "notes": "",
-                            "trip_id": None,
-                        },
-                    )
+                flight_id = flight_service.create_flight(
+                    user_id,
+                    {
+                        "flight_number": number,
+                        "airline_name": leg.get("airline_name") or number[:2],
+                        "airline_code": number[:2],
+                        "departure_airport": leg["departure_airport"].upper(),
+                        "departure_datetime": leg["departure_datetime"],
+                        "arrival_airport": leg["arrival_airport"].upper(),
+                        "arrival_datetime": leg["arrival_datetime"],
+                        "booking_reference": leg.get("booking_reference") or "",
+                        "passenger_name": "",
+                        "seat": "",
+                        "cabin_class": "",
+                        "departure_terminal": "",
+                        "departure_gate": "",
+                        "arrival_terminal": "",
+                        "arrival_gate": "",
+                        "notes": "",
+                        "trip_id": None,
+                    },
                 )
+                flight_ids.append(flight_id)
+                self._repository.record_imported_flight(user_id, candidate_id, flight_id)
             auto_group_flights(user_id=user_id)
         except Exception:
             if len(flight_ids) == len(legs):

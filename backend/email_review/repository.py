@@ -132,6 +132,45 @@ class EmailReviewRepository:
                 (status, now_iso(), candidate_id, user_id),
             )
 
+    def record_imported_flight(self, user_id: int, candidate_id: str, flight_id: str) -> None:
+        """Note on the claimed candidate a flight its import created, as soon as
+        it exists, so an import cut off part-way (a crash, a restart) can be
+        undone later — see ``recover_stale_imports``."""
+        with db_write() as conn:
+            conn.execute(
+                """UPDATE email_candidates
+                      SET hints = json_set(hints, '$.import_flight_ids',
+                              json_insert(COALESCE(json_extract(hints, '$.import_flight_ids'), json('[]')),
+                                          '$[#]', ?)),
+                          updated_at = ?
+                    WHERE id = ? AND user_id = ? AND status = 'importing'""",
+                (flight_id, now_iso(), candidate_id, user_id),
+            )
+
+    def recover_stale_imports(self, user_id: int, older_than_iso: str) -> int:
+        """Undo imports left 'importing' since before ``older_than_iso``: delete
+        the flights they recorded and hand the emails back. Returns how many."""
+        with db_write() as conn:
+            rows = conn.execute(
+                """SELECT id, hints FROM email_candidates
+                    WHERE user_id = ? AND status = 'importing' AND updated_at < ?""",
+                (user_id, older_than_iso),
+            ).fetchall()
+            for row in rows:
+                ids = json.loads(row["hints"] or "{}").get("import_flight_ids") or []
+                conn.executemany(
+                    "DELETE FROM flights WHERE id = ? AND user_id = ?",
+                    [(fid, user_id) for fid in ids],
+                )
+                conn.execute(
+                    """UPDATE email_candidates
+                          SET status = 'pending', hints = json_remove(hints, '$.import_flight_ids'),
+                              updated_at = ?
+                        WHERE id = ?""",
+                    (now_iso(), row["id"]),
+                )
+            return len(rows)
+
     def claim_for_import(self, user_id: int, candidate_id: str) -> bool:
         """Move a pending candidate to 'importing', atomically. False when it is
         not pending — already imported, dismissed, or claimed by a concurrent
@@ -148,7 +187,9 @@ class EmailReviewRepository:
         """Give a claimed candidate back (the import failed)."""
         with db_write() as conn:
             conn.execute(
-                """UPDATE email_candidates SET status = 'pending', updated_at = ?
+                """UPDATE email_candidates
+                      SET status = 'pending', hints = json_remove(hints, '$.import_flight_ids'),
+                          updated_at = ?
                     WHERE id = ? AND user_id = ? AND status = 'importing'""",
                 (now_iso(), candidate_id, user_id),
             )

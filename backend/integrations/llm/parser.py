@@ -590,8 +590,9 @@ def _date_in_text(value: str, text: str) -> bool:
     day = rf"0?{d}"
     # A year printed beside the day and month must be this year ("16/11/2017"
     # does not confirm 2018-11-16); with no year printed, the day and month do.
-    # Not followed by ":" — in "16 NOV 15:40" the 15 is an hour, not a year.
-    year = r"(?:\s*[/.\-,]?\s*(?:de\s+)?(?P<y>\d{4}|\d{2})(?![\d:]))?"
+    # Not followed by ":" or "h" — in "16 NOV 15:40" or "15h40" the 15 is an
+    # hour, not a year.
+    year = r"(?:\s*[/.\-,]?\s*(?:de\s+)?(?P<y>\d{4}|\d{2})(?![\d:hH]))?"
 
     def year_ok(m: re.Match) -> bool:
         printed = m.group("y")

@@ -63,10 +63,11 @@ export function applyChip(
   current: string,
   kind: ChipKind,
   value: string,
-  emailDate: string = new Date().toISOString().slice(0, 10),
+  emailDate?: string,
 ): string | null {
   const isDateTime = field === 'departure_datetime' || field === 'arrival_datetime';
-  const emailYear = Number(emailDate.slice(0, 4));
+  // Without the email's date, a year-less date chip falls back to this year.
+  const emailYear = emailDate ? Number(emailDate.slice(0, 4)) : new Date().getFullYear();
   if (isDateTime) {
     const [d, t] = (current || '').split('T');
     if (kind === 'date') {
@@ -77,8 +78,9 @@ export function applyChip(
     if (kind === 'time') {
       // An empty field gets the email's own date as a stand-in, never today's:
       // a year-less date chip clicked next then keeps the email's year.
+      // With neither, there is no date to put the time on: enter a date first.
       const day = d || emailDate;
-      return `${day}T${value}`;
+      return day ? `${day}T${value}` : null;
     }
     return null;
   }

@@ -411,3 +411,10 @@ class TestDraftForTheReviewPage:
 
         assert not _flight_number_in_text({"flight_number": "G3123"}, "Pedido G3123A")
         assert _flight_number_in_text({"flight_number": "G3123"}, "Voo G3 123")
+
+    def test_an_hour_written_15h40_is_not_a_year(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert _date_in_text("2018-11-16T15:40", "16 NOV 15h40")
+        assert _date_in_text("2018-11-16T15:40", "16 NOV 15H40")
+        assert not _date_in_text("2018-11-16T15:40", "16 NOV 2017")
