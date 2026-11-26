@@ -230,6 +230,36 @@ class TestReviewFollowUps:
                 svc.import_legs(user_id, cid, [self._leg()])
         assert svc.count_pending(user_id) == 1
 
+    def test_a_second_leg_that_fails_undoes_the_first_and_can_be_retried(self, svc, test_db):
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        second = self._leg(
+            flight_number="O66176",
+            departure_airport="GRU",
+            arrival_airport="FLN",
+            departure_datetime="2018-11-20T10:00",
+            arrival_datetime="2018-11-20T11:20",
+        )
+        real = flight_service.create_flight
+        calls = {"n": 0}
+
+        def flaky(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("disk")
+            return real(*args, **kwargs)
+
+        with patch.object(flight_service, "create_flight", side_effect=flaky):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg(), second])
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+        assert svc.count_pending(user_id) == 1
+
+        svc.import_legs(user_id, cid, [self._leg(), second])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 2
+
     def test_a_failure_after_flights_were_saved_cannot_be_retried_into_duplicates(
         self, svc, test_db
     ):

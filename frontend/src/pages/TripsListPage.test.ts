@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import TripsListPage from './TripsListPage.svelte';
 
-const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow } = vi.hoisted(
+const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow, mockReviewCount, mockUploadEml } = vi.hoisted(
   () => ({
+    mockReviewCount: vi.fn(() => Promise.resolve({ count: 0 })),
+    mockUploadEml: vi.fn(),
     mockList: vi.fn(),
     mockSyncStatus: vi.fn(),
     mockSyncNow: vi.fn(),
@@ -14,8 +16,8 @@ const { mockList, mockSyncStatus, mockSyncNow, mockRefreshImage, mockToastsShow 
 
 vi.mock('../api/client', () => ({
   tripsApi: { list: mockList, refreshImage: mockRefreshImage },
-  syncApi: { status: mockSyncStatus, now: mockSyncNow },
-  emailReviewApi: { count: () => Promise.resolve({ count: 0 }) },
+  syncApi: { status: mockSyncStatus, now: mockSyncNow, uploadEml: mockUploadEml },
+  emailReviewApi: { count: mockReviewCount },
 }));
 
 vi.mock('../lib/toastStore', () => ({
@@ -176,5 +178,46 @@ describe('TripsListPage', () => {
     await waitFor(() =>
       expect(container.querySelector('.empty-state')).toBeInTheDocument(),
     );
+  });
+
+  describe('the review count', () => {
+    it('is read again after an .eml upload, even one that imported nothing', async () => {
+      mockUploadEml.mockResolvedValue({ flights_created: 0, flights_updated: 0 });
+      const { container } = render(TripsListPage);
+      await waitFor(() => expect(mockReviewCount).toHaveBeenCalled());
+      const before = mockReviewCount.mock.calls.length;
+
+      const input = container.querySelector('input[type=file]') as HTMLInputElement;
+      const file = new File(['From: x'], 'booking.eml', { type: 'message/rfc822' });
+      Object.defineProperty(input, 'files', { value: [file] });
+      await fireEvent.change(input);
+
+      await waitFor(() => expect(mockUploadEml).toHaveBeenCalledOnce());
+      await waitFor(() => expect(mockReviewCount.mock.calls.length).toBeGreaterThan(before));
+    });
+
+    it('is read again when a sync it started finishes', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        mockSyncNow.mockResolvedValue({});
+        const { container } = render(TripsListPage);
+        await waitFor(() =>
+          expect(container.querySelector('#sync-status-bar')).toBeInTheDocument(),
+        );
+        await waitFor(() => expect(mockReviewCount).toHaveBeenCalled());
+        const before = mockReviewCount.mock.calls.length;
+
+        const syncBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+          b.textContent?.includes('trips.btn_sync'),
+        );
+        await fireEvent.click(syncBtn!);
+        await waitFor(() => expect(mockSyncNow).toHaveBeenCalled());
+        // The poll runs every 2s and re-reads the trips once the sync is idle.
+        await vi.advanceTimersByTimeAsync(2100);
+        await waitFor(() => expect(mockReviewCount.mock.calls.length).toBeGreaterThan(before));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

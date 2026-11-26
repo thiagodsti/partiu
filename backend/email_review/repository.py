@@ -153,6 +153,16 @@ class EmailReviewRepository:
                 (now_iso(), candidate_id, user_id),
             )
 
+    def delete_flights(self, user_id: int, flight_ids: list[str]) -> None:
+        """Undo the flights a failed import attempt created."""
+        if not flight_ids:
+            return
+        with db_write() as conn:
+            conn.executemany(
+                "DELETE FROM flights WHERE id = ? AND user_id = ?",
+                [(fid, user_id) for fid in flight_ids],
+            )
+
     def close_pending_message(self, user_id: int, message_id: str) -> None:
         """A sync imported this email after all: take it off the list."""
         with db_write() as conn:
