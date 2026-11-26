@@ -9,12 +9,15 @@
   import TopNav from "../components/TopNav.svelte";
   import TripCard from "../components/TripCard.svelte";
   import SyncStatusBar from "../components/SyncStatusBar.svelte";
+  import ReviewEmailsNotice from "../components/ReviewEmailsNotice.svelte";
   import { toasts } from "../lib/toastStore";
   import { t } from "../lib/i18n";
   import { ImageRefreshManager } from "../lib/imageRefresh.svelte";
 
   // ---- State ----
   let loading = $state(true);
+  // Re-reads the review count whenever the trips are reloaded (after a sync).
+  let reviewRefresh = $state(0);
   let error = $state<string | null>(null);
   let tripsList = $state<Trip[]>([]);
   let syncStatus = $state<SyncStatus | null>(null);
@@ -33,6 +36,7 @@
       ]);
       tripsList = data?.trips ?? [];
       syncStatus = status;
+      reviewRefresh += 1;
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -69,6 +73,7 @@
           if (status.status === "idle") {
             const data = await tripsApi.list();
             tripsList = data?.trips ?? [];
+            reviewRefresh += 1;
           }
         }
       } catch {
@@ -137,6 +142,9 @@
     } catch (err) {
       toasts.show($t("trips.eml_error", { values: { error: (err as Error).message } }), "error");
     } finally {
+      // Re-read the review count whether or not flights came out: an upload
+      // that imported nothing may be exactly what landed on the review list.
+      reviewRefresh += 1;
       emlUploading = false;
     }
   }
@@ -200,6 +208,8 @@
         {/if}
       </button>
     </SyncStatusBar>
+
+    <ReviewEmailsNotice refresh={reviewRefresh} />
 
     <!-- Trips List -->
     {#if !loading && activeTrips.length === 0}

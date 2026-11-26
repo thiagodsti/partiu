@@ -39,6 +39,7 @@ Want to try it before self-hosting? A public demo is available at:
 - Hotel bookings from Airbnb, Booking.com and Trip.com, and car rentals from Hertz, Sixt and Europcar, import themselves; a stated price becomes a trip expense
 - Implausible results (arrival before departure, impossible speeds) are dropped rather than stored
 - Optional local LLM fallback (Ollama) for emails no parser recognises — [how well it does](AGENTS.md#llm-fallback--findings--limitations)
+- **Emails to review**: booking emails Partiu couldn't read show up in a list (a quiet line on the trips page links to it), with the flight numbers, airports, dates and times found in each. Tap them into a form to import the trip, or let the AI fill it in (it only keeps what the email backs up, and shows its other guesses as notes). Dismiss what isn't a booking, or ignore a sender — undo that in Settings
 - Also accepts forwarded emails through a built-in SMTP server, or `.eml` files uploaded from the trips list
 
 ### Trips

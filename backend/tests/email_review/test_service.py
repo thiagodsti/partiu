@@ -1,0 +1,374 @@
+"""EmailReviewService: what qualifies for review, and what each action does."""
+
+import sqlite3
+from unittest.mock import patch
+
+import pytest
+
+from backend.email_review.service import CandidateNotFoundError, EmailReviewService
+
+from .helpers import BODY, email, make_user, seed_airports
+
+
+@pytest.fixture
+def svc(test_db):
+    seed_airports(test_db)
+    return EmailReviewService()
+
+
+def _rows(db, sql, *args):
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(sql, args).fetchall()
+    finally:
+        conn.close()
+
+
+def _flight(db, user_id, number):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """INSERT INTO flights (id, user_id, flight_number, departure_airport, departure_datetime,
+               arrival_airport, arrival_datetime, created_at, updated_at)
+           VALUES (?, ?, ?, 'FLN', '2018-11-16T17:40:00+00:00', 'GRU', '2018-11-16T19:00:00+00:00', 'x', 'x')""",
+        (f"f-{number}", user_id, number),
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestConsider:
+    def test_a_missed_booking_is_offered_once(self, svc, test_db):
+        user_id = make_user(test_db)
+        msg = email()
+        assert svc.consider(msg, user_id) is True
+        assert svc.consider(msg, user_id) is False
+        (item,) = svc.list_pending(user_id)
+        assert item["hints"]["flight_numbers"] == ["O66175"]
+        assert item["booking_reference"] == "PVNQDY"
+
+    def test_marketing_is_not_offered(self, svc, test_db):
+        user_id = make_user(test_db)
+        assert svc.consider(email(subject="Ganhe milhas na sua próxima viagem"), user_id) is False
+
+    def test_an_email_about_a_flight_already_stored_is_not_offered(self, svc, test_db):
+        user_id = make_user(test_db)
+        _flight(test_db, user_id, "O66175")
+        assert svc.consider(email(), user_id) is False
+
+    def test_no_airport_means_nothing_to_import(self, svc, test_db):
+        user_id = make_user(test_db)
+        body = "Código da reserva: X1Y2Z3\nVoo BG389 às 10:00 na agência"
+        assert svc.consider(email(subject="Booking confirmation", body=body), user_id) is False
+
+    def test_the_same_booking_restated_is_offered_once(self, svc, test_db):
+        user_id = make_user(test_db)
+        assert svc.consider(email(), user_id)
+        assert svc.consider(email(subject="Recibo da sua passagem e-ticket"), user_id) is False
+
+    def test_an_ignored_sender_is_not_offered(self, svc, test_db):
+        user_id = make_user(test_db)
+        svc.consider(email(), user_id)
+        (item,) = svc.list_pending(user_id)
+        svc.ignore_sender(user_id, item["id"])
+        other = email(body=BODY.replace("O66175", "O61234").replace("PVNQDY", "ABC123"))
+        assert svc.consider(other, user_id) is False
+
+
+class TestActions:
+    def _offer(self, svc, user_id):
+        svc.consider(email(), user_id)
+        return svc.list_pending(user_id)[0]["id"]
+
+    def test_dismiss_closes_it_and_drops_the_text(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        svc.dismiss(user_id, cid)
+        assert svc.count_pending(user_id) == 0
+        (row,) = _rows(test_db, "SELECT status, body_text FROM email_candidates WHERE id = ?", cid)
+        assert (row["status"], row["body_text"]) == ("dismissed", None)
+
+    def test_another_user_s_email_is_not_found(self, svc, test_db):
+        cid = self._offer(svc, make_user(test_db))
+        with pytest.raises(CandidateNotFoundError):
+            svc.dismiss(make_user(test_db), cid)
+
+    def test_stop_ignoring_lets_the_sender_s_mail_be_offered_again(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        assert svc.ignore_sender(user_id, cid) == 1
+        assert [s["domain"] for s in svc.list_ignored_senders(user_id)] == ["maxmilhas.example"]
+
+        svc.stop_ignoring(user_id, "maxmilhas.example")
+        assert svc.list_ignored_senders(user_id) == []
+        # The dismissed copy is forgotten, so a full sync can offer it again.
+        assert svc.consider(email(), user_id) is True
+
+    def test_stop_ignoring_an_unknown_sender(self, svc, test_db):
+        with pytest.raises(CandidateNotFoundError):
+            svc.stop_ignoring(make_user(test_db), "nobody.example")
+
+    def test_import_creates_the_flights_in_a_trip_and_closes_it(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        leg = {
+            "flight_number": "O6 6175",
+            "departure_airport": "fln",
+            "arrival_airport": "GRU",
+            "departure_datetime": "2018-11-16T15:40",
+            "arrival_datetime": "2018-11-16T17:00",
+            "booking_reference": "PVNQDY",
+        }
+        result = svc.import_legs(user_id, cid, [leg])
+        (flight,) = _rows(test_db, "SELECT * FROM flights WHERE user_id = ?", user_id)
+        assert (flight["flight_number"], flight["departure_airport"]) == ("O66175", "FLN")
+        assert result["trip_ids"] == [flight["trip_id"]] and flight["trip_id"]
+        assert svc.count_pending(user_id) == 0
+
+    def test_a_bad_leg_saves_nothing(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        good = {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": "2018-11-16T15:40",
+            "arrival_datetime": "2018-11-16T17:00",
+        }
+        bad = {**good, "arrival_airport": ""}
+        with pytest.raises(ValueError, match="Flight 2"):
+            svc.import_legs(user_id, cid, [good, bad])
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+        assert svc.count_pending(user_id) == 1
+
+    def test_draft_needs_an_llm(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with patch("backend.integrations.llm.parser.llm_available", return_value=False):
+            with pytest.raises(LookupError):
+                svc.draft(user_id, cid)
+
+    def test_draft_hands_back_the_model_s_legs_with_the_email_s_date(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        drafted = [{"flight_number": "O66175", "doubts": {}}]
+        with (
+            patch("backend.integrations.llm.parser.llm_available", return_value=True),
+            patch("backend.integrations.llm.parser.llm_draft_flights", return_value=drafted) as llm,
+        ):
+            assert svc.draft(user_id, cid) == drafted
+        (msg,) = llm.call_args.args
+        assert msg.date is not None and msg.date.year == 2018
+
+
+class TestReviewFollowUps:
+    def _offer(self, svc, user_id, **kw):
+        svc.consider(email(**kw), user_id)
+        return svc.list_pending(user_id)[0]["id"]
+
+    def _leg(self, **kw):
+        return {
+            "flight_number": "O66175",
+            "departure_airport": "FLN",
+            "arrival_airport": "GRU",
+            "departure_datetime": "2018-11-16T15:40",
+            "arrival_datetime": "2018-11-16T17:00",
+            **kw,
+        }
+
+    def test_the_same_daily_flight_on_two_bookings_is_offered_twice(self, svc, test_db):
+        user_id = make_user(test_db)
+        assert svc.consider(email(), user_id)
+        other = BODY.replace("PVNQDY", "QQQ111").replace("16 NOV", "23 NOV")
+        assert svc.consider(
+            email(subject="Sua passagem foi emitida - e-ticket QQQ111", body=other), user_id
+        )
+        assert svc.count_pending(user_id) == 2
+
+    def test_closing_drops_the_quoted_lines_too(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        svc.dismiss(user_id, cid)
+        (row,) = _rows(test_db, "SELECT hints FROM email_candidates WHERE id = ?", cid)
+        assert "excerpt" not in row["hints"]
+
+    def test_ignoring_a_domain_respects_domain_boundaries(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id, sender="Agency <a@example.com>")
+        sub = BODY.replace("PVNQDY", "SUB111").replace("O66175", "O61111")
+        svc.consider(
+            email(body=sub, subject="Sua passagem - e-ticket SUB111", sender="b@mail.example.com"),
+            user_id,
+        )
+        lookalike = BODY.replace("PVNQDY", "AUS111").replace("O66175", "O62222")
+        svc.consider(
+            email(
+                body=lookalike, subject="Sua passagem - e-ticket AUS111", sender="c@example.com.au"
+            ),
+            user_id,
+        )
+        assert svc.ignore_sender(user_id, cid) == 2  # example.com and mail.example.com
+        assert [i["sender"] for i in svc.list_pending(user_id)] == ["c@example.com.au"]
+
+    def test_an_email_is_imported_at_most_once(self, svc, test_db):
+        from backend.email_review.service import CandidateClosedError
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        svc.import_legs(user_id, cid, [self._leg()])
+        with pytest.raises(CandidateClosedError):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_a_failure_before_any_flight_hands_the_email_back(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with patch(
+            "backend.flights.service.flight_service.create_flight", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg()])
+        assert svc.count_pending(user_id) == 1
+
+    def test_a_second_leg_that_fails_undoes_the_first_and_can_be_retried(self, svc, test_db):
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        second = self._leg(
+            flight_number="O66176",
+            departure_airport="GRU",
+            arrival_airport="FLN",
+            departure_datetime="2018-11-20T10:00",
+            arrival_datetime="2018-11-20T11:20",
+        )
+        real = flight_service.create_flight
+        calls = {"n": 0}
+
+        def flaky(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("disk")
+            return real(*args, **kwargs)
+
+        with patch.object(flight_service, "create_flight", side_effect=flaky):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg(), second])
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+        assert svc.count_pending(user_id) == 1
+
+        svc.import_legs(user_id, cid, [self._leg(), second])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 2
+
+    def test_a_failure_after_flights_were_saved_cannot_be_retried_into_duplicates(
+        self, svc, test_db
+    ):
+        from backend.email_review.service import CandidateClosedError
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with patch("backend.sync.grouping.auto_group_flights", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                svc.import_legs(user_id, cid, [self._leg()])
+        assert svc.count_pending(user_id) == 0
+        with pytest.raises(CandidateClosedError):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_an_impossible_date_saves_nothing(self, svc, test_db):
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        with pytest.raises(ValueError):
+            svc.import_legs(user_id, cid, [self._leg(departure_datetime="2018-13-10T07:05")])
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+
+    def test_an_email_the_sync_reads_later_leaves_the_list(self, svc, test_db):
+        user_id = make_user(test_db)
+        msg = email()
+        svc.consider(msg, user_id)
+        svc.close_if_imported(msg, user_id)
+        assert svc.count_pending(user_id) == 0
+
+    def test_an_import_cut_off_part_way_is_recovered(self, svc, test_db):
+        """The process died after the first flight was saved: the claim and the
+        recorded flight are in the database, nothing ran to clean up."""
+        from backend.email_review.repository import EmailReviewRepository
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        repo = EmailReviewRepository()
+        assert repo.claim_for_import(user_id, cid)
+        leg = self._leg()
+        fid = flight_service.create_flight(
+            user_id,
+            {
+                **leg,
+                "airline_name": "O6",
+                "airline_code": "O6",
+                "booking_reference": "",
+                "passenger_name": "",
+                "seat": "",
+                "cabin_class": "",
+                "departure_terminal": "",
+                "departure_gate": "",
+                "arrival_terminal": "",
+                "arrival_gate": "",
+                "notes": "",
+                "trip_id": None,
+            },
+        )
+        repo.record_imported_flight(user_id, cid, fid)
+        # Not yet stale: still off the list.
+        assert svc.count_pending(user_id) == 0
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            "UPDATE email_candidates SET updated_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (cid,),
+        )
+        conn.commit()
+        conn.close()
+
+        assert svc.count_pending(user_id) == 1
+        assert _rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id) == []
+        svc.import_legs(user_id, cid, [leg])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_an_interruption_between_recording_and_writing_is_recovered(self, svc, test_db):
+        """The id is recorded before the flight is written; a crash in between
+        leaves a recorded id with no flight, which recovery shrugs off."""
+        from backend.email_review.repository import EmailReviewRepository
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        repo = EmailReviewRepository()
+        assert repo.claim_for_import(user_id, cid)
+        repo.record_imported_flight(user_id, cid, "never-written")
+        conn = sqlite3.connect(test_db)
+        conn.execute(
+            "UPDATE email_candidates SET updated_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (cid,),
+        )
+        conn.commit()
+        conn.close()
+
+        assert svc.count_pending(user_id) == 1
+        svc.import_legs(user_id, cid, [self._leg()])
+        assert len(_rows(test_db, "SELECT id FROM flights WHERE user_id = ?", user_id)) == 1
+
+    def test_each_flight_id_is_recorded_before_the_flight_is_written(self, svc, test_db):
+        from backend.flights.service import flight_service
+
+        user_id = make_user(test_db)
+        cid = self._offer(svc, user_id)
+        recorded_first = []
+        real = flight_service.create_flight
+
+        def check(user, fields, flight_id=None):
+            (row,) = _rows(test_db, "SELECT hints FROM email_candidates WHERE id = ?", cid)
+            recorded_first.append(flight_id in row["hints"])
+            return real(user, fields, flight_id=flight_id)
+
+        with patch.object(flight_service, "create_flight", side_effect=check):
+            svc.import_legs(user_id, cid, [self._leg()])
+        assert recorded_first == [True]

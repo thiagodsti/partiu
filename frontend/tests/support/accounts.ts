@@ -36,6 +36,7 @@ export const ACCOUNTS = {
   lodgingUser: { username: 'e2e_lodging_user', password: 'E2eLodgingUser1!' },
   planOwner: { username: 'e2e_plan_owner', password: 'E2ePlanOwner1!' },
   rentalOther: { username: 'e2e_rental_other', password: 'E2eRentalOther1!' },
+  reviewUser: { username: 'e2e_review_user', password: 'E2eReviewUser1!' },
   rentalOwner: { username: 'e2e_rental_owner', password: 'E2eRentalOwner1!' },
   reschedUser: { username: 'e2e_resched_user', password: 'E2eReschedUser1!' },
   segOther: { username: 'e2e_seg_other', password: 'E2eSegOther1!' },

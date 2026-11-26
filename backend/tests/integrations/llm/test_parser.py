@@ -128,6 +128,18 @@ class TestGrounding:
         assert _flight_number_in_text({"flight_number": "AY0806"}, "Flight AY 806 to Helsinki")
         assert _flight_number_in_text({"flight_number": "AY806"}, "AY0806 Helsinki")
 
+    def test_an_airline_code_ending_in_a_digit_is_still_found(self):
+        """GOL is G3 and Avianca Brasil O6: the mail prints "G31234", "O66175",
+        so a digit sits right before the number. These were refused until
+        2026-11-25, dropping every such leg the model had read correctly."""
+        from backend.integrations.llm.parser import _flight_number_in_text
+
+        assert _flight_number_in_text({"flight_number": "O66175"}, "Número do voo: O66175")
+        assert _flight_number_in_text({"flight_number": "G31234"}, "Voo G3 1234 GRU-FLN")
+        assert _flight_number_in_text({"flight_number": "G31234"}, "Voo G31234")
+        # Still not part of a longer number or another code.
+        assert not _flight_number_in_text({"flight_number": "G31234"}, "Pedido XG312345")
+
     def test_digits_inside_a_longer_number_do_not_count(self):
         from backend.integrations.llm.parser import _flight_number_in_text
 
@@ -298,3 +310,111 @@ class TestAnswerLength:
     def test_answer_is_capped(self):
         payload = TestRequest()._payload()
         assert payload["options"]["num_predict"] == 2048
+
+
+class TestDraftForTheReviewPage:
+    """llm_draft_flights keeps a leg and clears only the fields the email does
+    not support, recording the model's guess; the sync path still drops it."""
+
+    def _draft(self, answer, email):
+        from backend.integrations.llm import parser
+
+        with (
+            patch("backend.config.settings.OLLAMA_URL", "http://ollama:11434"),
+            patch.object(parser, "_call_ollama", return_value=answer),
+        ):
+            return parser.llm_draft_flights(email)
+
+    def test_an_unsupported_airport_and_time_are_cleared_not_the_leg(self, seeded_airports_db):
+        email = _email(
+            body="Voo 4849 em 02/03/2026, de Florianópolis FLN às 13:20, destino Milão. Reserva TESTR5"
+        )
+        answer = _answer(
+            flight_number="AD4849",
+            dep_airport="FLN",
+            arr_airport="MXP",
+            dep_datetime="2026-03-02T13:20:00",
+            arr_datetime="2026-03-02T18:10:00",
+        )
+        (leg,) = self._draft(answer, email)
+        assert (leg["flight_number"], leg["departure_airport"]) == ("AD4849", "FLN")
+        assert leg["departure_datetime"] == "2026-03-02T13:20"
+        assert (leg["arrival_airport"], leg["arrival_datetime"]) == ("", "")
+        assert leg["doubts"] == {"arrival_airport": "MXP", "arrival_datetime": "2026-03-02T18:10"}
+
+        # The sync path, which nobody reviews, still refuses the whole leg.
+        flights, _ = _run(answer, email)
+        assert flights == []
+
+    def test_an_unreachable_model_is_an_error_for_the_draft_only(self):
+        from backend.integrations.llm import parser
+
+        email = _email(body="Voo 4849 VCP FLN")
+        with pytest.raises(parser.LlmUnreachableError):
+            self._draft(None, email)
+        flights, _ = _run(None, email)
+        assert flights == []
+
+    def test_a_printed_time_does_not_vouch_for_the_model_s_date(self, seeded_airports_db):
+        email = _email(body="Voo 4849 de VCP às 13:20 para FLN. Reserva TESTR5")
+        (leg,) = self._draft(_answer(dep_datetime="2026-03-02T13:20:00"), email)
+        assert leg["departure_datetime"] == ""
+        assert leg["doubts"]["departure_datetime"] == "2026-03-02T13:20"
+
+    def test_a_date_with_a_month_name_counts(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert _date_in_text("2018-11-16T15:40", "FLN 16 NOV 15:40")
+        assert _date_in_text("2018-11-16T15:40", "Sexta, 16 de novembro")
+        assert _date_in_text("2018-11-16T15:40", "Nov 16, 2018")
+        assert _date_in_text("2018-11-16T15:40", "16/11/2018")
+        assert not _date_in_text("2018-11-16T15:40", "16 OCT, 11 NOV")
+
+    def test_a_booking_code_not_in_the_email_is_a_doubt(self, seeded_airports_db):
+        email = _email(body="Voo 4849 em 02/03/2026 VCP 13:20 FLN. Código PVNQDY")
+        answer = _answer(dep_datetime="2026-03-02T13:20:00", booking_reference="ZZZ999")
+        (leg,) = self._draft(answer, email)
+        # The model's code is in neither the subject nor the body.
+        assert leg["booking_reference"] == ""
+        assert leg["doubts"]["booking_reference"] == "ZZZ999"
+
+    def test_airport_doubts_follow_a_route_correction(self, seeded_airports_db):
+        from backend.integrations.llm import parser
+
+        email = _email(body="Voo 4849 em 02/03/2026 às 13:20, chegada GRU. Reserva TESTR5")
+        answer = _answer(dep_airport="FLN", arr_airport="GRU", dep_datetime="2026-03-02T13:20:00")
+
+        def swap(flight):
+            flight["departure_airport"], flight["arrival_airport"] = (
+                flight["arrival_airport"],
+                flight["departure_airport"],
+            )
+            return flight
+
+        with patch("backend.integrations.routes.check.fix_reversed_route", side_effect=swap):
+            (leg,) = self._draft(answer, email)
+        # After the swap GRU is the departure and is in the email; FLN, now the
+        # arrival, is not — so the arrival is the field cleared.
+        assert leg["departure_airport"] == "GRU"
+        assert (leg["arrival_airport"], leg["doubts"].get("arrival_airport")) == ("", "FLN")
+
+    def test_a_conflicting_printed_year_does_not_confirm_the_date(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert not _date_in_text("2018-11-16T15:40", "16/11/2017")
+        assert not _date_in_text("2018-11-16T15:40", "16 Nov 2017")
+        assert _date_in_text("2018-11-16T15:40", "16/11/18")
+        assert _date_in_text("2018-11-16T15:40", "16 de novembro de 2018")
+
+    def test_a_trailing_letter_is_not_the_same_flight(self):
+        from backend.integrations.llm.parser import _flight_number_in_text
+
+        assert not _flight_number_in_text({"flight_number": "G3123"}, "Pedido G3123A")
+        assert _flight_number_in_text({"flight_number": "G3123"}, "Voo G3 123")
+
+    def test_an_hour_written_15h40_is_not_a_year(self):
+        from backend.integrations.llm.parser import _date_in_text
+
+        assert _date_in_text("2018-11-16T15:40", "16 NOV 15h40")
+        assert _date_in_text("2018-11-16T15:40", "16 NOV 15H40")
+        assert not _date_in_text("2018-11-16T15:40", "16 NOV 2017")
