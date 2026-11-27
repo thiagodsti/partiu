@@ -405,6 +405,12 @@
       let active = false;
       let x = 0;
       let y = 0;
+      let x0 = 0;
+      let y0 = 0;
+      const cancelPress = () => {
+        clearTimeout(timer);
+        timer = undefined;
+      };
 
       // Near the top or bottom edge the page scrolls, so a day far from the
       // ideas list can still be reached in one gesture.
@@ -422,11 +428,11 @@
         if ((e.target as HTMLElement).closest('.status-dot')) return;
         x = e.touches[0].clientX;
         y = e.touches[0].clientY;
-        const x0 = x;
-        const y0 = y;
-        clearTimeout(timer);
+        x0 = x;
+        y0 = y;
+        cancelPress();
         timer = setTimeout(() => {
-          if (Math.hypot(x - x0, y - y0) > PRESS_SLOP_PX) return;
+          timer = undefined;
           active = true;
           dragId = item.id;
           touchGhost = { title: item.title, x, y };
@@ -437,12 +443,16 @@
       const move = (e: TouchEvent) => {
         x = e.touches[0].clientX;
         y = e.touches[0].clientY;
-        if (!active) return;
+        if (!active) {
+          // Once past the slop it is a scroll, even if the finger comes back.
+          if (timer && Math.hypot(x - x0, y - y0) > PRESS_SLOP_PX) cancelPress();
+          return;
+        }
         e.preventDefault(); // carrying the item, not scrolling the page
         touchGhost = { title: item.title, x, y };
       };
       const end = (e: TouchEvent) => {
-        clearTimeout(timer);
+        cancelPress();
         if (!active) return;
         active = false;
         cancelAnimationFrame(raf);
@@ -450,7 +460,8 @@
         if (e.cancelable) e.preventDefault(); // no tap — the editor stays shut
         swallowClickUntil = Date.now() + 400;
         const at = e.type === 'touchend' ? dropAt(x, y) : null;
-        if (at) dropOn(at.date, at.beforeId === item.id ? null : at.beforeId);
+        // Lifted over itself: put back where it was, not appended to the end.
+        if (at && at.beforeId !== item.id) dropOn(at.date, at.beforeId);
         else {
           dragId = null;
           dropTarget = null;
@@ -466,8 +477,17 @@
       node.addEventListener('touchcancel', end);
       node.addEventListener('contextmenu', menu);
       return () => {
-        clearTimeout(timer);
+        cancelPress();
         cancelAnimationFrame(raf);
+        // Removed mid-drag (a reload after a failed drop): leave no ghost.
+        if (active) {
+          active = false;
+          touchGhost = null;
+          if (dragId === item.id) {
+            dragId = null;
+            dropTarget = null;
+          }
+        }
         node.removeEventListener('touchstart', start);
         node.removeEventListener('touchmove', move);
         node.removeEventListener('touchend', end);

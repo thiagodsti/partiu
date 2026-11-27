@@ -138,22 +138,32 @@ async function cacheFirst(request, cacheName) {
 }
 
 async function networkFirst(request, cacheName) {
+  let response;
   try {
-    const response = await fetch(request);
+    response = await fetch(request);
+  } catch {
+    response = null;
+  }
+  if (response) {
+    // A cache that cannot be written (quota) must not turn a fresh answer
+    // into the stale fallback below.
     if (response.ok) {
-      const cache = await caches.open(cacheName);
-      await cache.put(request, response.clone());
-      try { await trimCache(cache, API_CACHE_MAX); } catch (e) { console.warn('[SW] trimCache error', e); }
+      try {
+        const cache = await caches.open(cacheName);
+        await cache.put(request, response.clone());
+        await trimCache(cache, API_CACHE_MAX);
+      } catch (e) {
+        console.warn('[SW] cache write failed', e);
+      }
     }
     return response;
-  } catch {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    return new Response(JSON.stringify({ error: 'Offline' }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 503,
-    });
   }
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    headers: { 'Content-Type': 'application/json' },
+    status: 503,
+  });
 }
 
 async function staleWhileRevalidate(request, cacheName) {

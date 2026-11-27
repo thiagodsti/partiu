@@ -166,6 +166,20 @@ describe('service worker API routing', () => {
     expect(await res.text()).toBe('"cached"');
   });
 
+  it('returns the fresh plan even when the cache cannot be written', async () => {
+    const { cache } = loadServiceWorker();
+    cache.put = async () => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('"fresh"', { status: 200 })));
+    cacheEntries.set('https://partiu.test/api/trips/t1/plan', new Response('"stale"'));
+
+    const res = await dispatch(new Request('https://partiu.test/api/trips/t1/plan'));
+
+    expect(await res.text()).toBe('"fresh"');
+  });
+
   it('still serves other reads stale-while-revalidate', async () => {
     loadServiceWorker();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('"fresh"', { status: 200 })));
