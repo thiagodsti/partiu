@@ -711,14 +711,25 @@
     if (text === task.text) return;
     const prev = task.text;
     task.text = text;
+    // One task's renames go out one after another: sent side by side, two
+    // PATCHes can land in reverse order and store the older text.
+    const queued = (taskSaves.get(task.id) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => api.updateTask(params.id, task.id, { text }));
+    taskSaves.set(task.id, queued);
     try {
-      await api.updateTask(params.id, task.id, { text });
+      await queued;
     } catch (err) {
-      task.text = prev;
-      el.value = prev;
+      // Roll back only what this rename wrote: a newer rename, or text typed
+      // since, is not this failure's to undo.
+      if (task.text === text) task.text = prev;
+      if (el.value.trim() === text) el.value = task.text;
       toasts.show((err as Error).message, 'error');
+    } finally {
+      if (taskSaves.get(task.id) === queued) taskSaves.delete(task.id);
     }
   }
+  const taskSaves = new Map<string, Promise<unknown>>();
 
   async function assign(task: PlanTask, key: string) {
     const [type, id] = key ? key.split(':') : [null, null];
