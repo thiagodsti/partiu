@@ -370,3 +370,25 @@ Mon, Apr 01, 2026 at 11:00 PM
         assert row["pickup_date"] == "2026-03-29"
         assert row["dropoff_date"] == "2026-04-01"
         assert result["flights_created"] == 0
+
+    def test_a_booking_com_confirmation_becomes_a_rental(self, test_db):
+        """The broker's HTML has to reach the importer too: its plain-text part
+        is only a link, so a reader that looked only at `body` would see nothing."""
+        from conftest import load_eml_as_email_message
+
+        from backend.sync import car_rentals_import
+        from backend.sync.pipeline import _process_emails
+
+        user_id = _user(test_db)
+        email = load_eml_as_email_message("booking_car_budget_anonymized.eml")
+        with patch.object(car_rentals_import, "_geocode", return_value=(36.72, -4.42, "ES")):
+            result = _process_emails([email], user_id=user_id)
+
+        assert result["car_rentals_created"] == 1
+        row = _rentals(test_db, user_id)[0]
+        assert row["vendor"] == "Budget"
+        assert row["booking_reference"] == "BOOKINGREF123"
+        assert row["pickup_place"] == "Malaga Airport"
+        assert row["pickup_date"] == "2026-12-19"
+        assert row["dropoff_date"] == "2026-12-26"
+        assert result["flights_created"] == 0

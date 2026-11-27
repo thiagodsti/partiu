@@ -221,7 +221,8 @@ def _matches_flight_filter(
     Return True if the email should be fetched for flight parsing.
 
     Accepts if:
-      - sender matches any known airline sender_pattern, OR
+      - sender matches any known sender_pattern (an airline rule or a
+        structural reader such as a car-rental vendor), OR
       - subject is a forward, OR
       - subject contains a flight-like keyword (catches unknown airlines)
     """
@@ -270,9 +271,10 @@ def fetch_emails_imap(
 
     Args:
         sender_patterns: List of regex patterns to match against From header.
-            Emails matching these are always fetched (known airlines).
-            Emails NOT matching are also fetched if their subject contains
-            flight-like keywords (catches unknown/new airlines).
+            Emails matching these are always fetched (known airlines and other
+            structural readers, such as car-rental vendors). Emails NOT matching
+            are also fetched if their subject contains flight-like keywords
+            (catches unknown/new airlines).
         since_date: Only fetch emails after this date.
     """
     # Reconnect every BATCH_SIZE fetches to avoid SSL session timeouts on large mailboxes

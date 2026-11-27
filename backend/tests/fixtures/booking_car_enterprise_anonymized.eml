@@ -1,0 +1,53 @@
+From: Booking.com <no-reply@cars.booking.com>
+To: tester@example.com
+Subject: Thanks! Your car rental with Enterprise at Gdansk Lech Walesa Airport
+ is confirmed
+Date: Thu, 01 Oct 2026 08:38:06 +0000
+Message-ID: <booking_car_enterprise_anonymized@example.invalid>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============2833676829771351751=="
+
+--===============2833676829771351751==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Anonymized test fixture.
+
+--===============2833676829771351751==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body>
+<div>Confirmation:</div>
+<div>BOOKINGREF456</div>
+<div>Test Driver, your car hire for Gdansk Lech Walesa Airport is confirmed!<=
+/div>
+<div>Your checklist</div>
+<div>Peugeot 208 or similar</div>
+<div>Manual gearbox</div>
+<div>Air Conditioning</div>
+<div>Pick-up</div>
+<div>Friday, 16 October 2026 11:00</div>
+<div>Gdansk Lech Walesa Airport</div>
+<div>Gdansk Lech Walesa Airport, Gdansk, Poland, 80-298</div>
+<div>Serviced by Enterprise. The desk is located in the rent-a-car area in th=
+e Arrivals terminal.</div>
+<div>Drop-off</div>
+<div>Monday, 19 October 2026 16:00</div>
+<div>Gdansk Lech Walesa Airport, Gdansk, Poland, 80-298</div>
+<div>The procedure for returning the vehicle will be explained to you at the =
+rental counter.</div>
+<div>Driver details</div>
+<div>Test Driver</div>
+<div>tester@example.com</div>
+<div>+00 000 000 000</div>
+<div>Flight details</div>
+<div>XX0000</div>
+<div>Rental company</div>
+<div>Enterprise</div>
+<div>+00 000 000 000</div>
+</body></html>
+
+--===============2833676829771351751==--

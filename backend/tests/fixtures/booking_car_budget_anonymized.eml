@@ -1,0 +1,48 @@
+From: Booking.com <no-reply@cars.booking.com>
+To: tester@example.com
+Subject: Thanks! Your car rental with Budget at Malaga Airport is confirmed
+Date: Fri, 13 Nov 2026 14:36:29 +0000
+Message-ID: <booking_car_budget_anonymized@example.invalid>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============5394094591312960601=="
+
+--===============5394094591312960601==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Anonymized test fixture.
+
+--===============5394094591312960601==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+<html><body>
+<div>Confirmation:</div>
+<div>BOOKINGREF123</div>
+<div>Test Driver, your car hire for Malaga Airport is confirmed!</div>
+<div>Your checklist</div>
+<div>Volkswagen Taigo or similar</div>
+<div>Automatic gearbox</div>
+<div>Air Conditioning</div>
+<div>5 seats</div>
+<div>Pick-up</div>
+<div>Saturday, 19 December 2026 11:30</div>
+<div>Malaga Airport</div>
+<div>Malaga, Spain, 29004</div>
+<div>Drop-off</div>
+<div>Saturday, 26 December 2026 19:30</div>
+<div>Malaga Airport, Malaga, Spain, 29004</div>
+<div>Driver details</div>
+<div>Test Driver</div>
+<div>tester@example.com</div>
+<div>+00 000 000 000</div>
+<div>Flight details</div>
+<div>XX0000</div>
+<div>Rental company</div>
+<div>Budget</div>
+<div>+00 000 000 000</div>
+</body></html>
+
+--===============5394094591312960601==--

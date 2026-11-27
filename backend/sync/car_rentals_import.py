@@ -1,6 +1,6 @@
 """Import car rentals confirmed by email into trips.
 
-The parser (`parsers/car_rental.py`) turns a Hertz / Sixt / Europcar
+The parser (`parsers/car_rental.py`) turns a Hertz / Sixt / Europcar / Booking.com
 confirmation into typed fields; this module decides which trip those fields
 belong to, opening one when nothing fits. It is the third sibling of
 `grouping.py` (flights) and `stays_import.py` (accommodation), and sits beside

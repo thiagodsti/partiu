@@ -98,6 +98,25 @@ def test_forwarded_mail_is_downloaded_even_without_a_flight_word(monkeypatch, pr
     assert [msg_id for msg_id, parts in fake.fetches if parts == "(RFC822)"] == [b"1"]
 
 
+def test_booking_com_car_confirmation_is_downloaded(monkeypatch):
+    """A rental confirmation is neither from an airline nor phrased with a
+    flight word. The reader is sender-gated, so its own sender patterns belong
+    in the fetch filter; otherwise only a manual .eml upload ever reaches it."""
+    from backend.parsers.car_rental import CAR_RENTAL_SENDER_PATTERNS
+
+    subject = "Thanks! Your car rental with Budget at Lisbon Airport is confirmed"
+    fake = FakeImap(
+        {b"1": _raw(1, "Booking.com <no-reply@cars.booking.com>", subject)}
+    )
+    monkeypatch.setattr(email_connector, "connect_imap", lambda *a, **k: fake)
+
+    result = _fetch(sender_patterns=CAR_RENTAL_SENDER_PATTERNS)
+
+    assert result.success
+    assert [m.message_id for m in result.emails] == ["<m1@example.com>"]
+    assert [msg_id for msg_id, parts in fake.fetches if parts == "(RFC822)"] == [b"1"]
+
+
 def test_progress_is_reported_in_steps_and_at_the_end(server):
     for n in range(4, 61):
         server.messages[str(n).encode()] = _raw(n, "news@shop.example", "Weekly news")
