@@ -82,6 +82,22 @@ def test_sender_pattern_match_is_downloaded(server):
     assert sorted(m.message_id for m in result.emails) == ["<m1@example.com>", "<m2@example.com>"]
 
 
+@pytest.mark.parametrize("prefix", ["Fwd:", "FW:", "fwd :"])
+def test_forwarded_mail_is_downloaded_even_without_a_flight_word(monkeypatch, prefix):
+    """Autoforward replaces the sender with the forwarder and may leave a
+    subject with no flight keyword. The parsers read the original headers from
+    the body, so the fetch stage must let the message through."""
+    subject = f"{prefix} Your booking at Test Hotel is confirmed"
+    fake = FakeImap({b"1": _raw(1, "traveller@example.com", subject)})
+    monkeypatch.setattr(email_connector, "connect_imap", lambda *a, **k: fake)
+
+    result = _fetch(sender_patterns=[r"@airline\.example"])
+
+    assert result.success
+    assert [m.message_id for m in result.emails] == ["<m1@example.com>"]
+    assert [msg_id for msg_id, parts in fake.fetches if parts == "(RFC822)"] == [b"1"]
+
+
 def test_progress_is_reported_in_steps_and_at_the_end(server):
     for n in range(4, 61):
         server.messages[str(n).encode()] = _raw(n, "news@shop.example", "Weekly news")

@@ -205,6 +205,11 @@ _FLIGHT_SUBJECT_KEYWORDS = re.compile(
     r"|\b[A-Z]{2}\d{3,4}\b",
     re.IGNORECASE,
 )
+# Forwarded mail carries the forwarder in the From header, so it matches none of
+# the airline sender patterns and its original subject may have no flight word
+# either. Download it on the strength of the Fwd: prefix and let the parsers —
+# which read the original From:/Subject: out of the body — decide what it is.
+_FORWARDED_SUBJECT_RE = re.compile(r"^\s*(?:fw|fwd)\s*:", re.IGNORECASE)
 
 
 def _matches_flight_filter(
@@ -217,8 +222,11 @@ def _matches_flight_filter(
 
     Accepts if:
       - sender matches any known airline sender_pattern, OR
+      - subject is a forward, OR
       - subject contains a flight-like keyword (catches unknown airlines)
     """
+    if _FORWARDED_SUBJECT_RE.search(subject or ""):
+        return True
     if sender_patterns:
         for pattern in sender_patterns:
             if re.search(pattern, sender, re.IGNORECASE):

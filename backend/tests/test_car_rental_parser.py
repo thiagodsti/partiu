@@ -166,6 +166,32 @@ class TestSenderGate:
         assert extract_car_rentals(email) == []
 
 
+class TestForwardedConfirmation:
+    def test_the_original_vendor_header_is_used(self):
+        body = (
+            "---------- Forwarded message ---------\n"
+            "From: reservations@emails.hertz.com\n"
+            "Subject: My Hertz Reservation\n\n"
+            f"{HERTZ_BODY}"
+        )
+        email = _Email("traveller@example.com", body=body, subject="Fwd")
+        assert extract_car_rentals(email) == [
+            {
+                "vendor": "Hertz",
+                "booking_reference": "X11223344Y",
+                "pickup_place": "Vienna Airport",
+                "pickup_datetime": "2024-03-29T09:30",
+                "dropoff_place": "Vienna Airport",
+                "dropoff_datetime": "2024-04-01T23:00",
+                "vehicle": "Fiat 500 or similar",
+            }
+        ]
+
+    def test_no_vendor_header_means_no_rental(self):
+        email = _Email("traveller@example.com", body=HERTZ_BODY, subject="Fwd: My Hertz Reservation")
+        assert extract_car_rentals(email) == []
+
+
 class TestHertz:
     def test_reads_the_whole_booking(self):
         email = _Email("reservations@emails.hertz.com", body=HERTZ_BODY)

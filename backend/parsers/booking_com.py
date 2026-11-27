@@ -6,7 +6,9 @@ corpus and the 2026 confirmation this was written against carry none), so
 ``car_rental.py`` does for the rental vendors: gated on the sender, keyed on
 Booking.com's own labels, and returning nothing for anything it does not
 recognise. There is no proximity guessing — a missing label is a missing
-booking, not an invitation to look nearby.
+booking, not an invitation to look nearby. Forwarded mail is matched against
+the original From:/Subject: in its body as well as the envelope, so forwarding
+through another mailbox does not hide the confirmation.
 
 The confirmation lays every fact out as a label followed by its value, and the
 two renderings put them in different places, so the extractor tolerates both:
@@ -37,7 +39,7 @@ import logging
 import re
 from datetime import date as date_type
 
-from .engine import parse_flight_date
+from .engine import candidate_senders, candidate_subjects, parse_flight_date
 from .schema_org import DEFAULT_CHECK_IN_TIME, DEFAULT_CHECK_OUT_TIME
 from .shared import html_to_text, parse_money
 
@@ -139,6 +141,20 @@ def _property_name(subject: str, lines: list[str]) -> str:
     return ""
 
 
+def _property_name_from(subjects: list[str], lines: list[str]) -> str:
+    """Use whichever candidate subject actually names the property.
+
+    A forward often keeps the original subject, but the outer one may be just
+    "Fwd:" or a note from the forwarder. The mail's own "is expecting you" line
+    stays the fallback for a confirmation with no useful subject.
+    """
+    for subject in subjects:
+        name = _property_name(subject, lines)
+        if name:
+            return name
+    return ""
+
+
 def _guest_count(value: str) -> int | None:
     """Total the party: "2 adults, 1 child" is 3."""
     counts = [int(n) for n in re.findall(r"\d+", value)]
@@ -156,17 +172,17 @@ def extract_booking_com_stays(email_msg) -> list[dict]:
     The returned dict has the shape ``schema_org.extract_lodging_reservations``
     gives, plus ``room_type`` and ``guests``, so the importer treats both alike.
     """
-    if not is_booking_com_sender(getattr(email_msg, "sender", "") or ""):
+    if not any(is_booking_com_sender(s) for s in candidate_senders(email_msg)):
         return []
-    subject = getattr(email_msg, "subject", "") or ""
-    if _CANCELLED_RE.search(subject):
+    subjects = candidate_subjects(email_msg)
+    if any(_CANCELLED_RE.search(s) for s in subjects):
         # A cancellation restates the booking; importing it would create the
         # very row it announces the end of.
         return []
 
     html_body = getattr(email_msg, "html_body", None)
     text = html_to_text(html_body) if html_body else (getattr(email_msg, "body", "") or "")
-    if not (_CONFIRMED_RE.search(subject) or _CONFIRMED_RE.search(text)):
+    if not (any(_CONFIRMED_RE.search(s) for s in subjects) or _CONFIRMED_RE.search(text)):
         return []
     lines = _lines(text)
     # Every field is read from the block under "Reservation details". Above it
@@ -180,7 +196,7 @@ def extract_booking_com_stays(email_msg) -> list[dict]:
 
     check_in = _when(_field(fields, "Check-in"), DEFAULT_CHECK_IN_TIME)
     check_out = _when(_field(fields, "Check-out"), DEFAULT_CHECK_OUT_TIME)
-    name = _property_name(subject, lines)
+    name = _property_name_from(subjects, lines)
     if not (check_in and check_out and name):
         logger.info("Booking.com: confirmation without dates or property name, skipped")
         return []

@@ -32,6 +32,7 @@ export const ACCOUNTS = {
   emlUser: { username: 'e2e_eml_user', password: 'E2eEmlUser1!' },
   feditOther: { username: 'e2e_fedit_other', password: 'E2eFeditOther1!' },
   feditOwner: { username: 'e2e_fedit_owner', password: 'E2eFeditOwner1!' },
+  forwardUser: { username: 'e2e_forward_user', password: 'E2eForwardUser1!' },
   kitUser: { username: 'e2e_kit_user', password: 'E2eKitUser1!' },
   lodgingUser: { username: 'e2e_lodging_user', password: 'E2eLodgingUser1!' },
   planOwner: { username: 'e2e_plan_owner', password: 'E2ePlanOwner1!' },

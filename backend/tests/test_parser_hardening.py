@@ -81,6 +81,29 @@ class TestLocalisedForwardedHeaders:
         assert rule.airline_code == "FR"
 
 
+class TestForwardedCandidates:
+    """The rendered body can drop a forward's quoted headers when the mail has
+    an HTML part. The raw MIME copy still has them, and the template readers
+    share these helpers with the airline rules.
+    """
+
+    def test_headers_are_also_read_from_the_raw_message(self):
+        from backend.parsers.engine import candidate_senders, candidate_subjects
+
+        msg = _email(sender="traveller@example.com", subject="Fwd")
+        msg.raw_eml = (
+            b"From: traveller@example.com\r\n"
+            b"To: travel@samsel.org\r\n"
+            b"Subject: Fwd\r\n\r\n"
+            b"---------- Forwarded message ---------\r\n"
+            b"From: noreply@booking.com\r\n"
+            b"Subject: Thanks! Your booking is confirmed\r\n\r\n"
+        )
+
+        assert candidate_senders(msg) == ["traveller@example.com", "noreply@booking.com"]
+        assert candidate_subjects(msg) == ["Fwd", "Thanks! Your booking is confirmed"]
+
+
 # ---------------------------------------------------------------------------
 # Subject-keyword coverage
 # ---------------------------------------------------------------------------

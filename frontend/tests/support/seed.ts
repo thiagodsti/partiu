@@ -101,13 +101,15 @@ export function seedReceipt(now = new Date()): Buffer {
 }
 
 /**
- * ARN→CPH, then CPH→LIS the next day 25h later: a stopover long enough that
- * the leg divider must stop quoting a "total" for the journey. Four months
- * out, so its 48h proximity window never touches the round trip above.
+ * ARN→CPH, then CPH→LIS two days later: a stopover long enough that the leg
+ * divider must stop quoting a "total" for the journey. Two days rather than
+ * the original 25h, because a 25h local wait across Europe's DST change is
+ * exactly 24h UTC and keeps its total for half the year. Four months out, so
+ * its 48h proximity window never touches the round trip above.
  */
 export function stopoverReceipt(now = new Date()): Buffer {
   const first = new Date(now.getTime() + 120 * 86400000);
-  const second = new Date(first.getTime() + 86400000);
+  const second = new Date(first.getTime() + 2 * 86400000);
   return receipt(now, STOPOVER_BOOKING_REF, [
     `SK 1417 / ${ddmon(first)} ARN - CPH 08:00 09:10`,
     `TP 753 / ${ddmon(second)} CPH - LIS 10:10 13:00`,

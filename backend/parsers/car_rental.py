@@ -32,7 +32,7 @@ import re
 from datetime import date as date_type
 from datetime import datetime
 
-from .engine import parse_flight_date
+from .engine import candidate_senders, parse_flight_date
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +332,11 @@ def extract_car_rentals(email_msg) -> list[dict]:
     confirmation, and a list is returned only so the caller has the same shape
     `extract_lodging_reservations` gives it.
     """
-    vendor = is_car_rental_sender(getattr(email_msg, "sender", "") or "")
+    vendor = ""
+    for sender in candidate_senders(email_msg):
+        vendor = is_car_rental_sender(sender)
+        if vendor:
+            break
     if not vendor:
         return []
 
