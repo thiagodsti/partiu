@@ -1,8 +1,9 @@
-"""Tests for `parsers/car_rental.py` — Hertz, Sixt and Europcar confirmations.
+"""Tests for `parsers/car_rental.py` — Hertz, Sixt, Europcar and Booking.com.
 
-Structures are copied from the three real corpus mails; every reference, name,
-place and vehicle is invented. Each vendor lays its fields out one per line in
-the plain-text part, which is what the extractors walk.
+Structures are copied from the real mails; every reference, name, place and
+vehicle is invented. The three vendors lay their fields out one per line in
+the plain-text part; Booking.com's broker mail is HTML, read through
+`html_to_text`, with the supplier named in a labelled field.
 
 The case worth knowing about is `TestEuropcarDateOrder`: Europcar prints
 "8/24/19" with no month name to settle the order, and guessing wrong moves a
@@ -12,15 +13,21 @@ booking by months rather than failing visibly.
 import uuid
 from datetime import UTC, datetime
 
-from backend.parsers.car_rental import extract_car_rentals, is_car_rental_sender
+from conftest import load_eml_as_email_message
+
+from backend.parsers.car_rental import (
+    extract_car_rentals,
+    is_booking_com_car_sender,
+    is_car_rental_sender,
+)
 
 
 class _Email:
-    def __init__(self, sender, body="", subject=""):
+    def __init__(self, sender, body="", subject="", html_body=""):
         self.sender = sender
         self.body = body
         self.subject = subject
-        self.html_body = ""
+        self.html_body = html_body
         self.message_id = f"<{uuid.uuid4()}@example.com>"
         self.date = datetime(2024, 3, 5, tzinfo=UTC)
         self.pdf_attachments = []
@@ -166,6 +173,32 @@ class TestSenderGate:
         assert extract_car_rentals(email) == []
 
 
+class TestForwardedConfirmation:
+    def test_the_original_vendor_header_is_used(self):
+        body = (
+            "---------- Forwarded message ---------\n"
+            "From: reservations@emails.hertz.com\n"
+            "Subject: My Hertz Reservation\n\n"
+            f"{HERTZ_BODY}"
+        )
+        email = _Email("traveller@example.com", body=body, subject="Fwd")
+        assert extract_car_rentals(email) == [
+            {
+                "vendor": "Hertz",
+                "booking_reference": "X11223344Y",
+                "pickup_place": "Vienna Airport",
+                "pickup_datetime": "2024-03-29T09:30",
+                "dropoff_place": "Vienna Airport",
+                "dropoff_datetime": "2024-04-01T23:00",
+                "vehicle": "Fiat 500 or similar",
+            }
+        ]
+
+    def test_no_vendor_header_means_no_rental(self):
+        email = _Email("traveller@example.com", body=HERTZ_BODY, subject="Fwd: My Hertz Reservation")
+        assert extract_car_rentals(email) == []
+
+
 class TestHertz:
     def test_reads_the_whole_booking(self):
         email = _Email("reservations@emails.hertz.com", body=HERTZ_BODY)
@@ -245,6 +278,113 @@ class TestEuropcar:
                 "driver_name": "SAMPLE TRAVELLER",
             }
         ]
+
+
+class TestBookingCom:
+    """The broker mail from ``cars.booking.com`` — HTML, and the supplier is a
+    field rather than the sender."""
+
+    BUDGET = load_eml_as_email_message("booking_car_budget_anonymized.eml")
+    ENTERPRISE = load_eml_as_email_message("booking_car_enterprise_anonymized.eml")
+
+    def test_the_broker_sender_is_recognised(self):
+        assert is_booking_com_car_sender("no-reply@cars.booking.com")
+        assert not is_booking_com_car_sender("no-reply@booking.com")
+        assert is_car_rental_sender("no-reply@cars.booking.com") == ""
+
+    def test_reads_a_same_location_booking_from_the_html_part(self):
+        assert extract_car_rentals(self.BUDGET) == [
+            {
+                "vendor": "Budget",
+                "booking_reference": "BOOKINGREF123",
+                "pickup_place": "Malaga Airport",
+                "pickup_datetime": "2026-12-19T11:30",
+                "dropoff_place": "Malaga Airport, Malaga, Spain, 29004",
+                "dropoff_datetime": "2026-12-26T19:30",
+                "vehicle": "Volkswagen Taigo or similar",
+                "driver_name": "Test Driver",
+            }
+        ]
+
+    def test_reads_a_one_way_booking_and_a_folded_subject(self):
+        """The Enterprise subject folds between "Airport" and "is confirmed"."""
+        assert extract_car_rentals(self.ENTERPRISE) == [
+            {
+                "vendor": "Enterprise",
+                "booking_reference": "BOOKINGREF456",
+                "pickup_place": "Gdansk Lech Walesa Airport",
+                "pickup_datetime": "2026-10-16T11:00",
+                "dropoff_place": "Gdansk Lech Walesa Airport, Gdansk, Poland, 80-298",
+                "dropoff_datetime": "2026-10-19T16:00",
+                "vehicle": "Peugeot 208 or similar",
+                "driver_name": "Test Driver",
+            }
+        ]
+
+    def test_a_forward_uses_the_original_sender_and_subject(self):
+        email = _Email(
+            "traveller@example.com",
+            body=(
+                "---------- Forwarded message ---------\n"
+                "From: Booking.com <no-reply@cars.booking.com>\n"
+                "Subject: Thanks! Your car rental with Budget at Malaga Airport is confirmed\n\n"
+            ),
+            subject="Fwd",
+            html_body=self.BUDGET.html_body,
+        )
+        rentals = extract_car_rentals(email)
+        assert [r["vendor"] for r in rentals] == ["Budget"]
+
+    def test_a_forward_with_a_wrapped_from_header_is_read(self):
+        """A real Gmail forward printed "From:", then "Booking.com", then the
+        address on its own line. Reading only the label's line found no domain,
+        so the broker gate refused the mail and no rental was ever imported.
+        """
+        email = _Email(
+            "traveller@example.com",
+            body=(
+                "---------- Forwarded message ---------\n"
+                "From:\n"
+                "Booking.com\n"
+                "<no-reply@cars.booking.com>\n"
+                "Date: Fri, 13 Nov 2026 14:36:29 +0000\n"
+                "Subject:\n"
+                "Thanks! Your car rental with Budget at Malaga Airport is confirmed\n"
+                "To: <traveller@example.com>\n"
+            ),
+            subject="Fwd",
+            html_body=self.BUDGET.html_body,
+        )
+        assert [r["vendor"] for r in extract_car_rentals(email)] == ["Budget"]
+
+    def test_a_cancellation_is_not_a_booking(self):
+        email = _Email(
+            "no-reply@cars.booking.com",
+            subject="Your car rental with Budget at Malaga Airport is cancelled",
+            html_body=self.BUDGET.html_body,
+        )
+        assert extract_car_rentals(email) == []
+
+    def test_an_empty_confirmation_does_not_swallow_the_next_label(self):
+        """The line under `Confirmation:` can be another label in a variant of
+        the template; a phone number is not a booking reference."""
+        html = self.BUDGET.html_body.replace("<div>BOOKINGREF123</div>", "")
+        email = _Email(
+            "no-reply@cars.booking.com",
+            subject=self.BUDGET.subject,
+            html_body=html,
+        )
+        assert "booking_reference" not in extract_car_rentals(email)[0]
+
+    def test_an_unknown_broker_layout_yields_nothing(self):
+        """No proximity tier: the labels have to be the ones this reader knows."""
+        html = self.BUDGET.html_body.replace("Rental company", "Supplier")
+        email = _Email(
+            "no-reply@cars.booking.com",
+            subject=self.BUDGET.subject,
+            html_body=html,
+        )
+        assert extract_car_rentals(email) == []
 
 
 class TestEuropcarDateOrder:

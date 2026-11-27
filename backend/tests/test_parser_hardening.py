@@ -81,6 +81,72 @@ class TestLocalisedForwardedHeaders:
         assert rule.airline_code == "FR"
 
 
+class TestForwardedCandidates:
+    """The rendered body can drop a forward's quoted headers when the mail has
+    an HTML part. The raw MIME copy still has them, and the template readers
+    share these helpers with the airline rules.
+    """
+
+    def test_headers_are_also_read_from_the_raw_message(self):
+        from backend.parsers.engine import candidate_senders, candidate_subjects
+
+        msg = _email(sender="traveller@example.com", subject="Fwd")
+        msg.raw_eml = (
+            b"From: traveller@example.com\r\n"
+            b"To: travel@samsel.org\r\n"
+            b"Subject: Fwd\r\n\r\n"
+            b"---------- Forwarded message ---------\r\n"
+            b"From: noreply@booking.com\r\n"
+            b"Subject: Thanks! Your booking is confirmed\r\n\r\n"
+        )
+
+        assert candidate_senders(msg) == ["traveller@example.com", "noreply@booking.com"]
+        assert candidate_subjects(msg) == ["Fwd", "Thanks! Your booking is confirmed"]
+
+    def test_a_wrapped_header_block_is_read(self):
+        """Gmail's HTML forward can put the value below the label, with the
+        display name and address on separate lines. A same-line-only reader
+        captures just "Booking.com" — no domain — and the sender-gated rental
+        parser then skips a confirmation it was written for.
+        """
+        from backend.parsers.engine import candidate_senders, candidate_subjects
+
+        msg = _email(
+            sender="traveller@example.com",
+            subject="Fwd",
+            body=(
+                "---------- Forwarded message ---------\n"
+                "From:\n"
+                "Booking.com\n"
+                "<no-reply@cars.booking.com>\n"
+                "Date: Fri, 13 Nov 2026 14:36:29 +0000\n"
+                "Subject:\n"
+                "Thanks! Your car rental with Budget at Malaga Airport is confirmed\n"
+                "To: <mic@example.com>\n"
+            ),
+        )
+        assert candidate_senders(msg) == ["traveller@example.com", "no-reply@cars.booking.com"]
+        assert "Thanks! Your car rental with Budget at Malaga Airport is confirmed" in (
+            candidate_subjects(msg)
+        )
+
+    def test_a_complete_one_line_value_does_not_swallow_body_text(self):
+        """Wrapped values are gathered only when the label's line is empty."""
+        from backend.parsers.engine import candidate_subjects
+
+        msg = _email(
+            sender="traveller@example.com",
+            subject="Fwd",
+            body=(
+                "---------- Forwarded message ---------\n"
+                "From: no-reply@booking.com\n"
+                "Subject: Your booking is confirmed\n"
+                "Thanks for booking with us.\n"
+            ),
+        )
+        assert candidate_subjects(msg) == ["Fwd", "Your booking is confirmed"]
+
+
 # ---------------------------------------------------------------------------
 # Subject-keyword coverage
 # ---------------------------------------------------------------------------

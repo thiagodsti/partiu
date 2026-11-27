@@ -177,3 +177,44 @@ class TestGates:
     def test_check_out_before_check_in_is_refused(self):
         text = PLAIN.replace("Monday, 7 June 2027", "Monday, 1 June 2027")
         assert extract_booking_com_stays(_Email(text)) == []
+
+
+class TestForwardedConfirmation:
+    """An autoforward arrives From: the traveller, with the real booking headers
+    quoted in the body. The airline rules have always coped with that; the
+    template readers used to stop at the envelope sender.
+    """
+
+    @staticmethod
+    def _forwarded(original_subject: str) -> str:
+        return (
+            "---------- Forwarded message ---------\n"
+            f"From: {SENDER}\n"
+            f"Subject: {original_subject}\n"
+            "Date: Fri, 1 Jan 2027 10:00:00 +0000\n"
+            "To: traveller@example.com\n\n"
+            f"{PLAIN}"
+        )
+
+    def test_the_original_sender_and_subject_are_used(self):
+        email = _Email(
+            self._forwarded(SUBJECT),
+            sender="traveller@example.com",
+            subject="Fwd: Booking",
+        )
+        (stay,) = extract_booking_com_stays(email)
+        assert stay["name"] == "Test Harbour Hotel"
+        assert stay["booking_reference"] == "9876543210"
+        assert stay["check_in_datetime"] == "2027-06-04T15:00"
+
+    def test_a_forwarded_cancellation_is_still_not_imported(self):
+        email = _Email(
+            self._forwarded("Your booking at Test Harbour Hotel is cancelled"),
+            sender="traveller@example.com",
+            subject="Fwd",
+        )
+        assert extract_booking_com_stays(email) == []
+
+    def test_a_forwarder_with_no_booking_com_header_is_ignored(self):
+        email = _Email(PLAIN, sender="traveller@example.com", subject="Fwd: Booking")
+        assert extract_booking_com_stays(email) == []

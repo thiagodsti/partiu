@@ -213,3 +213,38 @@ class TestLlmOnIncrementalSyncsOnly:
         run_email_sync_for_user(_creds())
         assert llm_flags == [False, False]
         conn.close()
+
+
+@pytest.mark.usefixtures("test_db")
+class TestStructuralReadersAreFetched:
+    def test_a_booking_com_car_mail_reaches_the_importer_on_sync(self, test_db, monkeypatch):
+        """Uploading the .eml bypasses the IMAP fetch filter, so it worked while
+        a full sync never downloaded the mail: its subject says "car rental ...
+        is confirmed", which matches no flight keyword and no airline sender.
+        The sync must hand the structural reader's senders to the filter and
+        import the confirmation once the mail is fetched.
+        """
+        from unittest.mock import patch
+
+        from conftest import load_eml_as_email_message
+
+        from backend.parsers.email_connector import _matches_flight_filter
+        from backend.sync import car_rentals_import
+        from backend.sync.pipeline import run_email_sync_for_user
+
+        conn = _user(test_db)
+        email = load_eml_as_email_message("booking_car_budget_anonymized.eml")
+        calls = []
+
+        def fetch(**kwargs):
+            calls.append(kwargs)
+            return ImapFetchResult(success=True, emails=[email], error=None)
+
+        monkeypatch.setattr("backend.sync.pipeline.fetch_emails_imap", fetch)
+        with patch.object(car_rentals_import, "_geocode", return_value=(36.72, -4.42, "ES")):
+            run_email_sync_for_user(_creds())
+
+        assert calls
+        assert _matches_flight_filter(email.sender, email.subject, calls[0]["sender_patterns"])
+        assert conn.execute("SELECT COUNT(*) FROM trip_car_rentals").fetchone()[0] == 1
+        conn.close()

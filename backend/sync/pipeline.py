@@ -17,6 +17,7 @@ from ..parsers.bcbp import find_bcbp_in_text, parse_bcbp
 from ..parsers.boarding_pass_extractor import extract_boarding_pass_images, is_checkin_email
 from ..parsers.booking_signal import may_describe_a_flight
 from ..parsers.builtin_rules import get_builtin_rules
+from ..parsers.car_rental import CAR_RENTAL_SENDER_PATTERNS
 from ..parsers.email_connector import ImapFetchResult, fetch_emails_imap
 from ..parsers.engine import (
     extract_flights_from_email,
@@ -700,7 +701,7 @@ def _process_emails(
         except Exception as e:  # noqa: BLE001 - never let accommodation stop the sync
             logger.error("User %d: Lodging import error: %s", user_id, e, exc_info=True)
 
-        # --- Car rentals, from the three vendors we can read -----------------
+        # --- Car rentals, from the vendors and broker we can read -----------
         # Same footing as the lodging import: `extract_car_rentals` is gated on
         # the sender and on the vendor's own labels rather than guessing, so it
         # finds the booking it knows how to read or returns nothing.
@@ -1089,6 +1090,13 @@ def run_email_sync_for_user(user: dict) -> dict:
 
         rules = get_builtin_rules()
         sender_patterns = [r.sender_pattern for r in rules if r.sender_pattern]
+        # The fetch filter otherwise sees airline senders and flight keywords
+        # only. A Booking.com car mail says "car rental ... is confirmed", which
+        # matches neither, so the importer never got the chance to read it on a
+        # sync (an uploaded .eml bypassed the filter and worked). The rental
+        # reader is sender-gated, so downloading these is safe: it still returns
+        # nothing for anything that is not a rental template it knows.
+        sender_patterns.extend(CAR_RENTAL_SENDER_PATTERNS)
 
         logger.info(
             "User %d: Fetching emails since %s from %s", user_id, since_date, imap["gmail_address"]

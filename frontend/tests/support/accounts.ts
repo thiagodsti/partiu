@@ -22,6 +22,7 @@ export const E2E_BROWSER: E2EAccount = { username: 'e2e_browser', password: 'E2e
 
 export const ACCOUNTS = {
   apiKeysUser: { username: 'e2e_api_keys_user', password: 'E2eApiKeysUser1!' },
+  bookingCarUser: { username: 'e2e_booking_car_user', password: 'E2eBookingCarUser1!' },
   integrationsAdmin: { username: 'e2e_integrations_admin', password: 'E2eIntegrations1!', admin: true },
   blockedRegular: { username: 'e2e_blocked_regular', password: 'E2eBlockedRegular1!' },
   budgetOwner: { username: 'e2e_budget_owner', password: 'E2eBudgetOwner1!' },
@@ -32,6 +33,7 @@ export const ACCOUNTS = {
   emlUser: { username: 'e2e_eml_user', password: 'E2eEmlUser1!' },
   feditOther: { username: 'e2e_fedit_other', password: 'E2eFeditOther1!' },
   feditOwner: { username: 'e2e_fedit_owner', password: 'E2eFeditOwner1!' },
+  forwardUser: { username: 'e2e_forward_user', password: 'E2eForwardUser1!' },
   kitUser: { username: 'e2e_kit_user', password: 'E2eKitUser1!' },
   lodgingUser: { username: 'e2e_lodging_user', password: 'E2eLodgingUser1!' },
   planOwner: { username: 'e2e_plan_owner', password: 'E2ePlanOwner1!' },

@@ -172,8 +172,8 @@ def match_rule_to_email(email_msg: EmailMessage, rules):
     emails forwarded via Gmail ("---------- Forwarded message ---------") still
     match the original sender's rule.
     """
-    senders = [email_msg.sender] + _extract_forwarded_senders(email_msg.body)
-    subjects = [email_msg.subject] + _extract_forwarded_subjects(email_msg.body)
+    senders = candidate_senders(email_msg)
+    subjects = candidate_subjects(email_msg)
 
     from .builtin_rules import SUBJECT_PATTERN
 
@@ -197,21 +197,113 @@ _FORWARDED_FROM_LABELS = r"From|De|Von|Fr[aå]n|Fra|Da|Van|Exp[eé]diteur|Remite
 _FORWARDED_SUBJECT_LABELS = r"Subject|Assunto|Asunto|Betreff|[ÄA]mne|Emne|Oggetto|Objet|Aihe"
 
 _forwarded_from_re = re.compile(
-    rf"^(?:{_FORWARDED_FROM_LABELS}):\s*(.+)$", re.MULTILINE | re.IGNORECASE
+    rf"^[ \t>]*(?:{_FORWARDED_FROM_LABELS}):[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE
 )
 _forwarded_subject_re = re.compile(
-    rf"^(?:{_FORWARDED_SUBJECT_LABELS}):\s*(.+)$", re.MULTILINE | re.IGNORECASE
+    rf"^[ \t>]*(?:{_FORWARDED_SUBJECT_LABELS}):[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE
 )
+# Gmail's HTML forward can wrap a header's value onto the lines below its label:
+#
+#   From:
+#   Booking.com
+#   <no-reply@cars.booking.com>
+#
+# A regex that requires the value on the label's line reads only "Booking.com"
+# there — no domain — so the sender-gated rental reader skips the mail. Gather a
+# few following lines, stopping at the next header or the forward separator.
+_FORWARDED_OTHER_HEADER_RE = re.compile(
+    rf"^[ \t>]*(?:{_FORWARDED_FROM_LABELS}|{_FORWARDED_SUBJECT_LABELS}|"
+    r"Date|Datum|Data|To|Para|An|Cc|Cco|Bcc|Sent|Enviado):",
+    re.IGNORECASE,
+)
+_FORWARDED_ADDRESS_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_FORWARDED_VALUE_LINES = 3
+
+
+def _forwarded_header_values(body: str, pattern: re.Pattern[str]) -> list[str]:
+    """Forwarded header values, whether they share the label's line or follow it."""
+    lines = body[:5000].splitlines()
+    values: list[str] = []
+    for index, line in enumerate(lines):
+        match = pattern.match(line)
+        if match is None:
+            continue
+        inline = match.group(1).strip()
+        if inline:
+            values.append(inline)
+            continue
+        # Only a header whose value starts on the next line needs gathering.
+        # Appending to a complete one-line value would pull the first lines of
+        # the message body into a subject whenever the next header is absent.
+        parts: list[str] = []
+        for follow in lines[index + 1 : index + 1 + _FORWARDED_VALUE_LINES]:
+            stripped = follow.strip().lstrip(">").strip()
+            if not stripped or stripped.startswith("---"):
+                break
+            if _FORWARDED_OTHER_HEADER_RE.match(follow):
+                break
+            parts.append(stripped)
+        if parts:
+            values.append(" ".join(parts).strip())
+    return values
 
 
 def _extract_forwarded_senders(body: str) -> list[str]:
     """Extract From: addresses from forwarded-message headers in the email body."""
-    return _forwarded_from_re.findall(body[:5000])
+    values = []
+    for value in _forwarded_header_values(body, _forwarded_from_re):
+        addresses = _FORWARDED_ADDRESS_RE.findall(value)
+        values.extend(addresses or [value])
+    return values
 
 
 def _extract_forwarded_subjects(body: str) -> list[str]:
     """Extract Subject: lines from forwarded-message headers in the email body."""
-    return _forwarded_subject_re.findall(body[:5000])
+    return _forwarded_header_values(body, _forwarded_subject_re)
+
+
+def _forwarded_sources(email_msg) -> list[str]:
+    """Texts that may carry an original header block.
+
+    The rendered body is first. The raw MIME copy is read too: some forwarders
+    put the quoted headers only in the text/plain part, which
+    ``get_email_body_and_html`` drops when an HTML part is present.
+    """
+    sources = [getattr(email_msg, "body", "") or ""]
+    raw = getattr(email_msg, "raw_eml", None)
+    if isinstance(raw, bytes):
+        sources.append(raw.decode("utf-8", errors="replace"))
+    elif raw:
+        sources.append(str(raw))
+    return sources
+
+
+def _unique(values) -> list[str]:
+    """Drop empty and duplicate candidates without disturbing their order."""
+    return list(dict.fromkeys(v.strip() for v in values if v and v.strip()))
+
+
+def candidate_senders(email_msg) -> list[str]:
+    """Every sender an email could honestly be from: the envelope From plus the
+    original From lines preserved in a forwarded body.
+
+    Forwarding replaces the envelope sender with the forwarder, so a
+    sender-gated reader that only looks at ``email_msg.sender`` silently skips
+    the booking it was written for. Airline rules have always used this list;
+    the lodging and rental readers use it too.
+    """
+    candidates = [getattr(email_msg, "sender", "") or ""]
+    for source in _forwarded_sources(email_msg):
+        candidates.extend(_extract_forwarded_senders(source))
+    return _unique(candidates)
+
+
+def candidate_subjects(email_msg) -> list[str]:
+    """The same idea for subjects: the outer Fwd: line and the original one."""
+    candidates = [getattr(email_msg, "subject", "") or ""]
+    for source in _forwarded_sources(email_msg):
+        candidates.extend(_extract_forwarded_subjects(source))
+    return _unique(candidates)
 
 
 def extract_flights_from_email(email_msg: EmailMessage, rule) -> list[dict]:
