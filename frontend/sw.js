@@ -3,6 +3,8 @@
  *
  * Strategies:
  *   - GET /api/auth/*      → network-first (session state must always be fresh)
+ *   - GET /api/trips/:id/plan, /day-notes → network-first (edited from several devices;
+ *                            see the fetch listener)
  *   - GET /api/*           → stale-while-revalidate (serve cache instantly, update in background)
  *   - non-GET /api/*       → pass-through, wiping the API cache *before* answering, so the
  *                            re-read that follows a mutation cannot be served a stale copy
@@ -12,9 +14,12 @@
  * Cross-origin requests are not handled at all — see the fetch listener.
  */
 
-const CACHE_VERSION = 'v21';
+const CACHE_VERSION = 'v22';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
+
+/** Read with network-first: see the fetch listener. */
+const PLANNER_PATH = /^\/api\/trips\/[^/]+\/(plan|day-notes)(\/|$)/;
 
 const API_CACHE_MAX = 150;   // max cached GET /api/* responses
 const STATIC_CACHE_MAX = 80; // max cached static assets
@@ -80,6 +85,18 @@ self.addEventListener('fetch', (event) => {
 
     // Auth endpoints are always network-first so session state is never stale
     if (url.pathname.startsWith('/api/auth/')) {
+      event.respondWith(networkFirst(event.request, API_CACHE));
+      return;
+    }
+
+    // The planner and the day notes are edited from more than one device — an
+    // idea typed on the phone, dragged onto a day on the laptop. The purge
+    // above only clears the cache of the device that wrote, so the *other*
+    // one was handed its own stale copy on the next visit: the phone's item
+    // was missing on the laptop, which reads exactly like "it did not save".
+    // Worse, a note blurred on top of that stale copy overwrites what the
+    // other device wrote. The cache is still the answer when offline.
+    if (PLANNER_PATH.test(url.pathname)) {
       event.respondWith(networkFirst(event.request, API_CACHE));
       return;
     }

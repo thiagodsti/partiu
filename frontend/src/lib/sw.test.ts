@@ -56,7 +56,7 @@ function loadServiceWorker() {
 
   const caches = {
     open: async () => cache,
-    keys: async () => ['partiu-api-v21'],
+    keys: async () => ['partiu-api-v22'],
     delete: async () => true,
     match: async (req: Request) => cacheEntries.get(req.url),
   };
@@ -140,5 +140,39 @@ describe('service worker API routing', () => {
     /* A dropped map tile must reach the page as a network error, not as this
      * worker's JSON 503 — that is what the basemap reads as "blocked". */
     expect(responded).toBe(false);
+  });
+  /* An idea added on the phone was missing on the laptop: the write purged only
+   * the phone's cache, and the laptop was served its own copy from before. */
+  it.each(['/api/trips/t1/plan', '/api/trips/t1/day-notes'])(
+    'reads %s from the network even when a copy is cached',
+    async (path) => {
+      loadServiceWorker();
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('"fresh"', { status: 200 })));
+      cacheEntries.set(`https://partiu.test${path}`, new Response('"stale"'));
+
+      const res = await dispatch(new Request(`https://partiu.test${path}`));
+
+      expect(await res.text()).toBe('"fresh"');
+    },
+  );
+
+  it('falls back to the cached plan when offline', async () => {
+    loadServiceWorker();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    cacheEntries.set('https://partiu.test/api/trips/t1/plan', new Response('"cached"'));
+
+    const res = await dispatch(new Request('https://partiu.test/api/trips/t1/plan'));
+
+    expect(await res.text()).toBe('"cached"');
+  });
+
+  it('still serves other reads stale-while-revalidate', async () => {
+    loadServiceWorker();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('"fresh"', { status: 200 })));
+    cacheEntries.set('https://partiu.test/api/trips/t1', new Response('"stale"'));
+
+    const res = await dispatch(new Request('https://partiu.test/api/trips/t1'));
+
+    expect(await res.text()).toBe('"stale"');
   });
 });

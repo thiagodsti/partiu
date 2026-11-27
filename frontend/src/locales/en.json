@@ -831,6 +831,7 @@
   "organizer.ideas": "Unscheduled ideas",
   "organizer.ideas_hint": "Free text, no place. Drag onto a day once you decide.",
   "organizer.add_idea": "+ new idea",
+  "organizer.pick_idea": "Bring in an idea…",
   "organizer.before_trip": "Before the trip",
   "organizer.add_task": "+ new task",
   "organizer.item_title": "Title",

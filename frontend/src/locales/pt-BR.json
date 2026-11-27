@@ -831,6 +831,7 @@
   "organizer.ideas": "Ideias sem dia",
   "organizer.ideas_hint": "Texto livre, sem lugar. Arraste para um dia quando decidir.",
   "organizer.add_idea": "+ nova ideia",
+  "organizer.pick_idea": "Trazer uma ideia…",
   "organizer.before_trip": "A fazer antes",
   "organizer.add_task": "+ nova tarefa",
   "organizer.item_title": "Título",

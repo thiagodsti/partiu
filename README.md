@@ -53,7 +53,8 @@ Want to try it before self-hosting? A public demo is available at:
 
 ### Trip planner
 - A planner page per trip: a route of cities with dates, and a board with one column per day showing the city, transport, the night's stay (or a "no stay" warning), things to do and notes
-- Things to do have a status (idea → to book → booked → done), an optional time and a place, and can be dragged between days
+- Things to do have a status (idea → to book → booked → done), an optional time and a place, and can be dragged between days — on a phone too, by pressing and holding an item
+- Each day can bring in one of your unscheduled ideas from a list, so you don't have to scroll down to the ideas to plan a day
 - Search for places to visit near the route, keep unscheduled ideas, and track before-the-trip to-dos with an assignee
 - A map of the whole plan; click a day to focus on it. Place names follow your profile language (English or Portuguese)
 - Everything saves as you go; on a phone the board becomes stacked day cards

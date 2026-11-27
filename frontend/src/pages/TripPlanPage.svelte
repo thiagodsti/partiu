@@ -361,6 +361,131 @@
   let dragId = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
 
+  // HTML drag and drop is a mouse feature: a phone never fires `dragstart` on
+  // a touch, so on a touch screen an item is picked up by pressing and holding
+  // it, then carried under the finger. Where it lands is read off the element
+  // under the finger (`data-drop-date` / `data-item-id`), the same targets the
+  // mouse handlers use. The native path is switched off there (`draggable`),
+  // so the two cannot both fire on one gesture.
+  const LONG_PRESS_MS = 350;
+  /** A finger travelling this far before the press completes is a scroll. */
+  const PRESS_SLOP_PX = 10;
+  const touchOnly = typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches;
+  let touchGhost = $state<{ title: string; x: number; y: number } | null>(null);
+
+  function dropAt(x: number, y: number): { key: string; date: string | null; beforeId: string | null } | null {
+    const el = document.elementFromPoint(x, y);
+    const zone = el?.closest<HTMLElement>('[data-drop-date]');
+    if (!el || !zone) return null;
+    const date = zone.dataset.dropDate || null;
+    const before = el.closest<HTMLElement>('[data-item-id]');
+    return { key: zone.dataset.dropKey ?? date ?? IDEAS, date, beforeId: before?.dataset.itemId ?? null };
+  }
+
+  /** The tap a lifted finger produces after a drop must not open the editor.
+   * Caught on the window, not on the item: the drop re-renders the item in
+   * its new list, often right under the finger, so the click lands on a node
+   * the dragged one never knew about. */
+  let swallowClickUntil = 0;
+  $effect(() => {
+    const swallow = (e: MouseEvent) => {
+      if (Date.now() > swallowClickUntil) return;
+      swallowClickUntil = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener('click', swallow, true);
+    return () => window.removeEventListener('click', swallow, true);
+  });
+
+  function touchDraggable(item: PlanItem) {
+    return (node: HTMLElement) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let raf = 0;
+      let active = false;
+      let x = 0;
+      let y = 0;
+
+      // Near the top or bottom edge the page scrolls, so a day far from the
+      // ideas list can still be reached in one gesture.
+      const edgeScroll = () => {
+        if (!active) return;
+        const edge = 72;
+        if (y < edge) window.scrollBy(0, -14);
+        else if (y > window.innerHeight - edge) window.scrollBy(0, 14);
+        dropTarget = dropAt(x, y)?.key ?? null;
+        raf = requestAnimationFrame(edgeScroll);
+      };
+      const start = (e: TouchEvent) => {
+        if (e.touches.length !== 1) return;
+        // The status dot is its own control.
+        if ((e.target as HTMLElement).closest('.status-dot')) return;
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+        const x0 = x;
+        const y0 = y;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (Math.hypot(x - x0, y - y0) > PRESS_SLOP_PX) return;
+          active = true;
+          dragId = item.id;
+          touchGhost = { title: item.title, x, y };
+          navigator.vibrate?.(15);
+          raf = requestAnimationFrame(edgeScroll);
+        }, LONG_PRESS_MS);
+      };
+      const move = (e: TouchEvent) => {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+        if (!active) return;
+        e.preventDefault(); // carrying the item, not scrolling the page
+        touchGhost = { title: item.title, x, y };
+      };
+      const end = (e: TouchEvent) => {
+        clearTimeout(timer);
+        if (!active) return;
+        active = false;
+        cancelAnimationFrame(raf);
+        touchGhost = null;
+        if (e.cancelable) e.preventDefault(); // no tap — the editor stays shut
+        swallowClickUntil = Date.now() + 400;
+        const at = e.type === 'touchend' ? dropAt(x, y) : null;
+        if (at) dropOn(at.date, at.beforeId === item.id ? null : at.beforeId);
+        else {
+          dragId = null;
+          dropTarget = null;
+        }
+      };
+      // Holding a finger on text opens the selection / context menu otherwise.
+      const menu = (e: Event) => {
+        if (active || timer) e.preventDefault();
+      };
+      node.addEventListener('touchstart', start, { passive: true });
+      node.addEventListener('touchmove', move, { passive: false });
+      node.addEventListener('touchend', end);
+      node.addEventListener('touchcancel', end);
+      node.addEventListener('contextmenu', menu);
+      return () => {
+        clearTimeout(timer);
+        cancelAnimationFrame(raf);
+        node.removeEventListener('touchstart', start);
+        node.removeEventListener('touchmove', move);
+        node.removeEventListener('touchend', end);
+        node.removeEventListener('touchcancel', end);
+        node.removeEventListener('contextmenu', menu);
+      };
+    };
+  }
+
+  /** Pulls an unscheduled idea or place onto a day, without a drag — and
+   * without scrolling down to the ideas list, which on a phone sits below
+   * every day. */
+  function scheduleIdea(id: string, date: string) {
+    if (!id) return;
+    dragId = id;
+    dropOn(date, null);
+  }
+
   async function dropOn(date: string | null, beforeId: string | null) {
     const id = dragId;
     dragId = null;
@@ -928,17 +1053,28 @@
                   </div>
                 {/if}
 
-                <div class="dm-section dm-items" role="list">
+                <div
+                  class="dm-section dm-items"
+                  class:drop={dropTarget === date}
+                  role="list"
+                  data-drop-date={date}
+                  ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
+                  ondragleave={() => { if (dropTarget === date) dropTarget = null; }}
+                  ondrop={(e) => { e.preventDefault(); dropOn(date, null); }}
+                >
                   {#each itemsOn(date) as item (item.id)}
                     {@render planItem(item, date)}
                   {/each}
-                  <input
-                    class="item-draft"
-                    placeholder={$t('organizer.add_item')}
-                    bind:value={drafts[date]}
-                    enterkeyhint="done"
-                    onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
-                  />
+                  <form class="draft-form" onsubmit={(e) => { e.preventDefault(); addItem(date); }}>
+                    <input
+                      class="item-draft"
+                      placeholder={$t('organizer.add_item')}
+                      bind:value={drafts[date]}
+                      enterkeyhint="done"
+                      onblur={() => addItem(date)}
+                    />
+                  </form>
+                  {@render ideaPicker(date)}
                 </div>
 
                 <textarea
@@ -1021,6 +1157,7 @@
                 style={frame(date, 'mid')}
                 class:drop={dropTarget === date}
                 role="list"
+                data-drop-date={date}
                 ondragover={(e) => { e.preventDefault(); dropTarget = date; }}
                 ondragleave={() => { if (dropTarget === date) dropTarget = null; }}
                 ondrop={(e) => { e.preventDefault(); dropOn(date, null); }}
@@ -1028,12 +1165,16 @@
                 {#each itemsOn(date) as item (item.id)}
                   {@render planItem(item, date)}
                 {/each}
-                <input
-                  class="item-draft"
-                  placeholder={$t('organizer.add_item')}
-                  bind:value={drafts[date]}
-                  onkeydown={(e) => { if (e.key === 'Enter') addItem(date); }}
-                />
+                <form class="draft-form" onsubmit={(e) => { e.preventDefault(); addItem(date); }}>
+                  <input
+                    class="item-draft"
+                    placeholder={$t('organizer.add_item')}
+                    bind:value={drafts[date]}
+                    enterkeyhint="done"
+                    onblur={() => addItem(date)}
+                  />
+                </form>
+                {@render ideaPicker(date)}
               </div>
             {/each}
 
@@ -1077,6 +1218,8 @@
           class="panel"
           class:drop={dropTarget === PLACES}
           role="list"
+          data-drop-date=""
+          data-drop-key={PLACES}
           ondragover={(e) => { e.preventDefault(); dropTarget = PLACES; }}
           ondragleave={() => { if (dropTarget === PLACES) dropTarget = null; }}
           ondrop={(e) => { e.preventDefault(); dropOn(null, null); }}
@@ -1105,6 +1248,8 @@
           class="panel"
           class:drop={dropTarget === IDEAS}
           role="list"
+          data-drop-date=""
+          data-drop-key={IDEAS}
           ondragover={(e) => { e.preventDefault(); dropTarget = IDEAS; }}
           ondragleave={() => { if (dropTarget === IDEAS) dropTarget = null; }}
           ondrop={(e) => { e.preventDefault(); dropOn(null, null); }}
@@ -1114,12 +1259,15 @@
           {#each ideas as item (item.id)}
             {@render planItem(item, null)}
           {/each}
-          <input
-            class="item-draft"
-            placeholder={$t('organizer.add_idea')}
-            bind:value={drafts[IDEAS]}
-            onkeydown={(e) => { if (e.key === 'Enter') addItem(null); }}
-          />
+          <form class="draft-form" onsubmit={(e) => { e.preventDefault(); addItem(null); }}>
+            <input
+              class="item-draft"
+              placeholder={$t('organizer.add_idea')}
+              bind:value={drafts[IDEAS]}
+              enterkeyhint="done"
+              onblur={() => addItem(null)}
+            />
+          </form>
         </section>
 
 
@@ -1165,12 +1313,15 @@
               />
             {/if}
           {/each}
-          <input
-            class="item-draft"
-            placeholder={$t('organizer.add_task')}
-            bind:value={taskDraft}
-            onkeydown={(e) => { if (e.key === 'Enter') addTask(); }}
-          />
+          <form class="draft-form" onsubmit={(e) => { e.preventDefault(); addTask(); }}>
+            <input
+              class="item-draft"
+              placeholder={$t('organizer.add_task')}
+              bind:value={taskDraft}
+              enterkeyhint="done"
+              onblur={() => addTask()}
+            />
+          </form>
         </section>
       </aside>
     </div>
@@ -1278,12 +1429,36 @@
   {/if}
 </div>
 
+{#if touchGhost}
+  <div class="touch-ghost" style="left:{touchGhost.x}px; top:{touchGhost.y}px">{touchGhost.title}</div>
+{/if}
+
+{#snippet ideaPicker(date: string)}
+  {#if itemsOn(null).length}
+    <select
+      class="idea-pick"
+      aria-label={$t('organizer.pick_idea')}
+      value=""
+      onchange={(e) => { const el = e.currentTarget; scheduleIdea(el.value, date); el.value = ''; }}
+    >
+      <option value="">💡 {$t('organizer.pick_idea')}</option>
+      {#each itemsOn(null) as idea (idea.id)}
+        <option value={idea.id}>{idea.lat != null ? '📍' : '💡'} {idea.title}</option>
+      {/each}
+    </select>
+  {/if}
+{/snippet}
+
 {#snippet planItem(item: PlanItem, date: string | null)}
   <div
     class="item status-{item.status}"
     class:dragging={dragId === item.id}
-    draggable="true"
+    draggable={touchOnly ? 'false' : 'true'}
     role="listitem"
+    data-item-id={item.id}
+    data-drop-date={date ?? ''}
+    data-drop-key={date ?? IDEAS}
+    {@attach touchDraggable(item)}
     ondragstart={(e) => { dragId = item.id; e.dataTransfer?.setData('text/plain', item.id); }}
     ondragend={() => { dragId = null; dropTarget = null; }}
     ondragover={(e) => { e.preventDefault(); dropTarget = date ?? IDEAS; }}
@@ -1613,6 +1788,47 @@
     margin-left: 4px;
     font-size: 0.7rem;
   }
+  /* A form, not a keydown on Enter: some phone keyboards (Samsung's,
+     Gboard mid-word) report the key as "Unidentified", and the keyboard's
+     own Done/Go button submits a form whatever it reports. */
+  .draft-form {
+    display: contents;
+  }
+  .touch-ghost {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    transform: translate(-50%, -120%);
+    max-width: 70vw;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @media (hover: none) {
+    .item {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+  }
+  .idea-pick {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 6px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
   .item-draft {
     width: 100%;
     box-sizing: border-box;
@@ -1849,6 +2065,7 @@
     }
     .item-body,
     .item-draft,
+    .idea-pick,
     .note {
       font-size: 16px; /* below 16px iOS zooms in on focus */
     }
