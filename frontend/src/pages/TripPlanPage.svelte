@@ -701,6 +701,36 @@
     await api.updateTask(params.id, task.id, { done: task.done });
   }
 
+  async function renameTask(task: PlanTask, el: HTMLInputElement) {
+    const text = el.value.trim();
+    // Clearing the text is not a delete — that is the × — so put it back.
+    if (!text) {
+      el.value = task.text;
+      return;
+    }
+    if (text === task.text) return;
+    const prev = task.text;
+    task.text = text;
+    // One task's renames go out one after another: sent side by side, two
+    // PATCHes can land in reverse order and store the older text.
+    const queued = (taskSaves.get(task.id) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => api.updateTask(params.id, task.id, { text }));
+    taskSaves.set(task.id, queued);
+    try {
+      await queued;
+    } catch (err) {
+      // Roll back only what this rename wrote: a newer rename, or text typed
+      // since, is not this failure's to undo.
+      if (task.text === text) task.text = prev;
+      if (el.value.trim() === text) el.value = task.text;
+      toasts.show((err as Error).message, 'error');
+    } finally {
+      if (taskSaves.get(task.id) === queued) taskSaves.delete(task.id);
+    }
+  }
+  const taskSaves = new Map<string, Promise<unknown>>();
+
   async function assign(task: PlanTask, key: string) {
     const [type, id] = key ? key.split(':') : [null, null];
     task.assignee_type = (type as 'user' | 'guest' | null) ?? null;
@@ -1296,7 +1326,15 @@
           {#each tasks as task (task.id)}
             <div class="task" class:done={task.done}>
               <input type="checkbox" checked={task.done} onchange={() => toggleTask(task)} />
-              <span class="task-text">{task.text}</span>
+              <input
+                class="task-text"
+                value={task.text}
+                maxlength="500"
+                enterkeyhint="done"
+                aria-label={$t('organizer.task_text')}
+                onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+                onblur={(e) => renameTask(task, e.currentTarget as HTMLInputElement)}
+              />
               <select
                 class="assignee"
                 value={personKey(task.assignee_type, task.assignee_id)}
@@ -1905,9 +1943,23 @@
     gap: 6px;
     font-size: 0.82rem;
   }
+  /* An input that reads as text until you tap it, like the day card's titles. */
   .task-text {
     flex: 1;
     min-width: 0;
+    font: inherit;
+    color: inherit;
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+  }
+  .task-text:hover {
+    border-color: var(--border-light, var(--border));
+  }
+  .task-text:focus {
+    outline: none;
+    border-color: var(--accent);
   }
   .task.done .task-text {
     text-decoration: line-through;
@@ -2084,6 +2136,7 @@
       gap: var(--space-xs);
     }
     .item-body,
+    .task-text,
     .item-draft,
     .idea-pick,
     .note {
