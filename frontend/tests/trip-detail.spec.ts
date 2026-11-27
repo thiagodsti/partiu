@@ -71,7 +71,7 @@ test('no total shown for long stopover', async ({ page }) => {
   const tripId = requireStopoverTrip();
   await page.goto(`/#/trips/${tripId}`);
 
-  // The seeded stopover waits 25h in Copenhagen. A wait that long always
+  // The seeded stopover waits 27h in Copenhagen. A wait that long always
   // crosses a day, so the legs are separated by a date divider rather than a
   // connection badge — which is why this test used to look for a 24h+ badge
   // and skip on every trip: no such badge can be drawn.

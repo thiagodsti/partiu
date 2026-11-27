@@ -29,7 +29,7 @@ export interface SeedInfo {
    * else's server, outside CI. Every other failure throws in setup instead. */
   available: boolean;
   tripId: string | null;
-  /** A one-way trip that waits 25h in Copenhagen between its two legs. */
+  /** A one-way trip that waits 27h in Copenhagen between its two legs. */
   stopoverTripId?: string | null;
 }
 
@@ -74,7 +74,7 @@ export function requireSeededTrip(): string {
   return requireTrip(readSeedInfo().tripId, 'seeded trip');
 }
 
-/** The seeded 25h-stopover trip's id, on the same terms as requireSeededTrip. */
+/** The seeded 27h-stopover trip's id, on the same terms as requireSeededTrip. */
 export function requireStopoverTrip(): string {
   return requireTrip(readSeedInfo().stopoverTripId, 'stopover trip');
 }
@@ -101,16 +101,21 @@ export function seedReceipt(now = new Date()): Buffer {
 }
 
 /**
- * ARN→CPH, then CPH→LIS the next day 25h later: a stopover long enough that
+ * ARN→CPH, then CPH→LIS the next day 27h later: a stopover long enough that
  * the leg divider must stop quoting a "total" for the journey. Four months
  * out, so its 48h proximity window never touches the round trip above.
+ *
+ * 27h, not 25h: "four months out" moves with the calendar, and a wait that
+ * spans a daylight-saving change loses an hour of real time. 25h local across
+ * the spring change is exactly 24h, which is no longer *past* 24h — the test
+ * started failing on 2026-11-27, whose seed lands on 27/28 March 2027.
  */
 export function stopoverReceipt(now = new Date()): Buffer {
   const first = new Date(now.getTime() + 120 * 86400000);
   const second = new Date(first.getTime() + 86400000);
   return receipt(now, STOPOVER_BOOKING_REF, [
     `SK 1417 / ${ddmon(first)} ARN - CPH 08:00 09:10`,
-    `TP 753 / ${ddmon(second)} CPH - LIS 10:10 13:00`,
+    `TP 753 / ${ddmon(second)} CPH - LIS 12:10 15:00`,
   ]);
 }
 

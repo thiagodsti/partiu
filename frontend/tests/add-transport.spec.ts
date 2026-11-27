@@ -29,6 +29,9 @@ async function openAddTransport(page: Page): Promise<void> {
 
 test('the trip page offers one transport button, not two', async ({ page }) => {
   await openSeededTrip(page);
+  // Counted only once the page has painted: on a cold server this ran first
+  // and counted an empty shell.
+  await expect(page.locator('a[href*="/add-transport"]').first()).toBeVisible();
 
   expect(await page.locator('a[href*="/add-flight"]').count()).toBe(0);
   expect(await page.locator('a[href*="/add-transport"]').count()).toBeGreaterThan(0);

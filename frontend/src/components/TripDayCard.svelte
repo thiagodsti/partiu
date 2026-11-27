@@ -424,14 +424,17 @@
         <button class="dc-delete" onclick={() => deleteItem(item)} aria-label={$t('planner.delete_item')}>✕</button>
       </div>
     {/each}
-    <input
-      class="dc-add"
-      placeholder={$t('organizer.add_item')}
-      bind:value={draft}
-      enterkeyhint="done"
-      onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
-      onblur={addItem}
-    />
+    <!-- A form rather than a keydown on Enter: some phone keyboards report
+         the key as "Unidentified", while their Done/Go button always submits. -->
+    <form class="dc-add-form" onsubmit={(e) => { e.preventDefault(); addItem(); }}>
+      <input
+        class="dc-add"
+        placeholder={$t('organizer.add_item')}
+        bind:value={draft}
+        enterkeyhint="done"
+        onblur={addItem}
+      />
+    </form>
   </div>
   {/if}
 
@@ -631,5 +634,8 @@
     .dc-delete { display: none !important; }
     .dc-note:placeholder-shown { display: none; }
     .day-card { break-inside: avoid; border: 1px solid #ccc; border-left: 5px solid var(--frame, #ccc); }
+  }
+  .dc-add-form {
+    display: contents;
   }
 </style>

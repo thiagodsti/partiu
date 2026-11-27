@@ -3,6 +3,8 @@
  *
  * Strategies:
  *   - GET /api/auth/*      → network-first (session state must always be fresh)
+ *   - GET /api/trips/:id/plan, /day-notes → network-first (edited from several devices;
+ *                            see the fetch listener)
  *   - GET /api/*           → stale-while-revalidate (serve cache instantly, update in background)
  *   - non-GET /api/*       → pass-through, wiping the API cache *before* answering, so the
  *                            re-read that follows a mutation cannot be served a stale copy
@@ -12,9 +14,12 @@
  * Cross-origin requests are not handled at all — see the fetch listener.
  */
 
-const CACHE_VERSION = 'v21';
+const CACHE_VERSION = 'v22';
 const STATIC_CACHE = `partiu-static-${CACHE_VERSION}`;
 const API_CACHE = `partiu-api-${CACHE_VERSION}`;
+
+/** Read with network-first: see the fetch listener. */
+const PLANNER_PATH = /^\/api\/trips\/[^/]+\/(plan|day-notes)(\/|$)/;
 
 const API_CACHE_MAX = 150;   // max cached GET /api/* responses
 const STATIC_CACHE_MAX = 80; // max cached static assets
@@ -84,6 +89,18 @@ self.addEventListener('fetch', (event) => {
       return;
     }
 
+    // The planner and the day notes are edited from more than one device — an
+    // idea typed on the phone, dragged onto a day on the laptop. The purge
+    // above only clears the cache of the device that wrote, so the *other*
+    // one was handed its own stale copy on the next visit: the phone's item
+    // was missing on the laptop, which reads exactly like "it did not save".
+    // Worse, a note blurred on top of that stale copy overwrites what the
+    // other device wrote. The cache is still the answer when offline.
+    if (PLANNER_PATH.test(url.pathname)) {
+      event.respondWith(networkFirst(event.request, API_CACHE));
+      return;
+    }
+
     // All other GET API calls: serve stale immediately, revalidate in background
     event.respondWith(staleWhileRevalidate(event.request, API_CACHE));
     return;
@@ -121,22 +138,32 @@ async function cacheFirst(request, cacheName) {
 }
 
 async function networkFirst(request, cacheName) {
+  let response;
   try {
-    const response = await fetch(request);
+    response = await fetch(request);
+  } catch {
+    response = null;
+  }
+  if (response) {
+    // A cache that cannot be written (quota) must not turn a fresh answer
+    // into the stale fallback below.
     if (response.ok) {
-      const cache = await caches.open(cacheName);
-      await cache.put(request, response.clone());
-      try { await trimCache(cache, API_CACHE_MAX); } catch (e) { console.warn('[SW] trimCache error', e); }
+      try {
+        const cache = await caches.open(cacheName);
+        await cache.put(request, response.clone());
+        await trimCache(cache, API_CACHE_MAX);
+      } catch (e) {
+        console.warn('[SW] cache write failed', e);
+      }
     }
     return response;
-  } catch {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    return new Response(JSON.stringify({ error: 'Offline' }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 503,
-    });
   }
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  return new Response(JSON.stringify({ error: 'Offline' }), {
+    headers: { 'Content-Type': 'application/json' },
+    status: 503,
+  });
 }
 
 async function staleWhileRevalidate(request, cacheName) {
