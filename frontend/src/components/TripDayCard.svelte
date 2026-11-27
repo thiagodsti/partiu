@@ -4,6 +4,7 @@
   import { serializeDayNote } from '../lib/dayNotes';
   import { staysForDay, rentalsForDay, legRoleFor, localDateKey, type LegRole } from '../lib/utils';
   import { untrack } from 'svelte';
+  import { splitLinks } from '../lib/linkify';
   import { t, locale } from '../lib/i18n';
 
   interface ChecklistItem {
@@ -83,6 +84,14 @@
   let note = $state(untrack(() => initialContent.note));
   let items = $state<PlanItem[]>(untrack(() => planItems.map((i) => ({ ...i }))));
   let draft = $state('');
+  /** Items whose notes are open. Closed by default: a note can be a long link. */
+  let openNotes = $state<Set<string>>(new Set());
+  function toggleNotes(id: string) {
+    const next = new Set(openNotes);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    openNotes = next;
+  }
   const isDone = (i: PlanItem) => i.status === 'done';
   const STATUSES: PlanItem['status'][] = ['idea', 'todo', 'booked', 'done'];
   let saving = $state(false);
@@ -418,7 +427,24 @@
               aria-label={$t('organizer.item_title')}
               onblur={(e) => renameItem(item, e.currentTarget as HTMLTextAreaElement)}
             ></textarea>
+            {#if item.notes}
+              <button
+                class="dc-notes-toggle"
+                class:on={openNotes.has(item.id)}
+                aria-expanded={openNotes.has(item.id)}
+                aria-label={$t('planner.show_item_notes')}
+                title={$t('planner.show_item_notes')}
+                onclick={() => toggleNotes(item.id)}
+              >📝</button>
+            {/if}
           </div>
+          {#if item.notes && openNotes.has(item.id)}
+            <p class="dc-notes">
+              {#each splitLinks(item.notes) as part, i (i)}
+                {#if 'url' in part}<a href={part.url} target="_blank" rel="noopener noreferrer">{part.label} ↗</a>{:else}{part.text}{/if}
+              {/each}
+            </p>
+          {/if}
           {#if item.place_name}<span class="dc-place">📍 {item.place_name}</span>{/if}
         </div>
         <button class="dc-delete" onclick={() => deleteItem(item)} aria-label={$t('planner.delete_item')}>✕</button>
@@ -637,5 +663,30 @@
   }
   .dc-add-form {
     display: contents;
+  }
+  /* An item's notes, written in the planner's editor: closed behind 📝,
+     because a note is often a booking link far longer than the card. Links
+     show as their site. Read-only here; the planner's editor edits them. */
+  .dc-notes-toggle {
+    flex: none;
+    border: none;
+    background: none;
+    padding: 0 2px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .dc-notes-toggle.on {
+    opacity: 1;
+  }
+  .dc-notes a {
+    color: var(--accent-text);
+  }
+  .dc-notes {
+    margin: 2px 0 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 </style>

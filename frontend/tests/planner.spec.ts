@@ -67,3 +67,62 @@ test('plan a day and see it mirrored on the trip page', async ({ page }) => {
 
   await page.request.delete(`/api/trips/${tripId}`);
 });
+
+test("an item's notes open from the day card, with links shortened", async ({ page }) => {
+  await signInPage(page, USER, PASS);
+  const created = await page.request.post('/api/trips', {
+    data: { name: 'E2E planner notes', start_date: '2027-05-20', end_date: '2027-05-21' },
+  });
+  const tripId = (await created.json()).id as string;
+  try {
+    await page.request.post(`/api/trips/${tripId}/plan/items`, {
+      data: {
+        title: 'Fado night',
+        date: '2027-05-20',
+        status: 'todo',
+        notes: 'Reservar aqui https://www.example.com/restaurants/tasca-do-chico?ref=a1b2c3d4e5',
+      },
+    });
+    await page.goto(`/#/trips/${tripId}`);
+    const card = page.locator('.day-card').first();
+    await expect(card.locator('.dc-title')).toHaveValue('Fado night', { timeout: 15000 });
+
+    // Closed by default: a note is often a link far longer than the card.
+    await expect(card.locator('.dc-notes')).toHaveCount(0);
+    await card.locator('.dc-notes-toggle').click();
+    const link = card.locator('.dc-notes a');
+    await expect(link).toHaveText('example.com ↗');
+    await expect(link).toHaveAttribute('href', 'https://www.example.com/restaurants/tasca-do-chico?ref=a1b2c3d4e5');
+    await card.locator('.dc-notes-toggle').click();
+    await expect(card.locator('.dc-notes')).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/trips/${tripId}`);
+  }
+});
+
+test('a before-the-trip to-do can be renamed in place', async ({ page }) => {
+  await signInPage(page, USER, PASS);
+  const created = await page.request.post('/api/trips', {
+    data: { name: 'E2E planner tasks', start_date: '2027-05-20', end_date: '2027-05-21' },
+  });
+  const tripId = (await created.json()).id as string;
+  try {
+    await page.request.post(`/api/trips/${tripId}/plan/tasks`, { data: { text: 'Buy adaptor' } });
+    await page.goto(`/#/trips/${tripId}/plan`);
+    const box = page.locator('.task .task-text').first();
+    await expect(box).toHaveValue('Buy adaptor', { timeout: 15000 });
+
+    await box.fill('Buy travel adaptor');
+    await box.press('Enter');
+    await expect
+      .poll(async () => (await (await page.request.get(`/api/trips/${tripId}/plan`)).json()).tasks[0].text)
+      .toBe('Buy travel adaptor');
+
+    // Emptied, it is put back rather than deleted.
+    await box.fill('');
+    await box.blur();
+    await expect(box).toHaveValue('Buy travel adaptor');
+  } finally {
+    await page.request.delete(`/api/trips/${tripId}`);
+  }
+});
