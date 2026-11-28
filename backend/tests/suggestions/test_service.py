@@ -16,6 +16,17 @@ def _locate(name, hits, where=LISBOA):
 
 
 class TestCityOfStay:
+    def test_two_parts_without_a_country_is_the_city_not_the_street(self):
+        stay = {"name": "Calle Fernando poo 16", "address": "Calle Fernando Poo 16, Madrid"}
+        assert _city_of_stay(stay) == "Madrid"
+
+    def test_the_country_is_dropped(self):
+        stay = {"name": "H", "address": "No. 7 Qianjing Hutong, Xicheng District, Beijing, China"}
+        assert _city_of_stay(stay) == "Beijing"
+
+    def test_only_a_street_falls_back_to_the_name(self):
+        assert _city_of_stay({"name": "Casa Azul", "address": "Rua das Flores 10"}) == "Casa Azul"
+
     def test_the_city_behind_a_postcode(self):
         stay = {"name": "Casa", "address": "Rua das Flores 10, 1200-195 Lisboa, Portugal"}
         assert _city_of_stay(stay) == "Lisboa"
@@ -51,6 +62,9 @@ class TestNames:
 
     def test_the_district_a_place_is_named_after_is_not_its_article(self):
         assert not article_is_about("Café Chiado", "Chiado")
+
+    def test_a_name_inside_another_word_is_not_contained(self):
+        assert not article_is_about("Bar", "Barcelona")
 
 
 class TestLocateOne:

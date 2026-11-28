@@ -251,4 +251,36 @@ describe('SuggestPanel', () => {
     expect((await screen.findByText(/suggest\.stay_without_pin/)).textContent).toContain('IntercityHotel');
     expect(container.querySelector('.sg-far')).toBeNull();
   });
+
+  it('stops offering "more" once the list is as long as the server can leave out', async () => {
+    mockSuggest.mockResolvedValue({
+      city: 'Lisbon',
+      day: null,
+      suggestions: Array.from({ length: 61 }, (_, i) => card(`P${i}`)),
+      unverified: 0,
+    });
+    setup();
+    await fireEvent.click(screen.getByText('suggest.ask'));
+    await screen.findByText('P60');
+    expect(screen.queryByText('suggest.more')).toBeNull();
+  });
+
+  it('an add that finishes after the panel closed is still remembered', async () => {
+    mockSuggest.mockResolvedValue({ city: 'Lisbon', day: null, suggestions: [card('Time Out')], unverified: 0 });
+    let finish: (v: { lat: number; lon: number }) => void = () => {};
+    const onAdd = vi.fn(() => new Promise<{ lat: number; lon: number }>((r) => (finish = r)));
+    const first = render(SuggestPanel, {
+      props: { tripId: 't1', target: { stopId: 's1', label: 'Lisbon' }, onAdd, onclose: vi.fn() },
+    });
+    await fireEvent.click(screen.getByText('suggest.ask'));
+    await fireEvent.click(await screen.findByLabelText(/^suggest\.add/));
+    first.unmount();
+    finish({ lat: 38.7, lon: -9.1 });
+    await new Promise((r) => setTimeout(r, 0));
+
+    render(SuggestPanel, {
+      props: { tripId: 't1', target: { stopId: 's1', label: 'Lisbon' }, onAdd: vi.fn(), onclose: vi.fn() },
+    });
+    expect(screen.getByLabelText(/^suggest\.add/).textContent).toBe('✓');
+  });
 });

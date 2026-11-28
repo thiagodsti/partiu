@@ -41,6 +41,7 @@ from ..integrations.ai.client import (
     config_from_env,
 )
 from ..integrations.photon import client as photon
+from ..utils.text import fold_text
 from .names import km, latin, same_name
 from .photos import add_articles
 from .repository import SuggestionsRepository
@@ -395,10 +396,12 @@ class SuggestionsService:
         except (AiNotConfiguredError, AiUnreachableError, AiBadAnswerError) as e:
             logger.warning("AI day arrangement failed for trip %s: %s", trip_id, e)
             raise
+        tip = answer.get("tip")
         return {
             "day": day,
             "items": _arranged(refs, answer),
-            "tip": _clip(answer.get("tip"), 300) or None,
+            # A non-string tip is a malformed answer; the plan itself still holds.
+            "tip": (_clip(tip, 300) or None) if isinstance(tip, str) else None,
         }
 
     # --- where the traveller is ----------------------------------------------
@@ -480,7 +483,9 @@ class SuggestionsService:
             "staying_at": where.stay["name"] if where.stay else None,
             "interests": [i for i in interests if i in INTERESTS],
             "wish": _clip(wish, _WISH_CHARS) or None,
-            "already_planned": [_clip(t, 120) for t in [*already, *exclude][:120]],
+            # What the panel already shows first: losing those to the cap
+            # would bring the same cards back under "More".
+            "already_planned": [_clip(t, 120) for t in [*exclude, *already][:120]],
         }
         if self._repository.use_history(user_id):
             past = self._repository.rated_trips(user_id, trip["id"], _today(), _HISTORY_TRIPS)
@@ -596,6 +601,12 @@ def _locate_all(cards: list[dict], where: Where) -> None:
             card["local_name"] = hit["local_name"]
 
 
+_STREET_WORDS = frozenset(
+    "rua calle avenida av avenue ave street st road rd lane via viale strada strasse "
+    "rue boulevard blvd hutong alley travessa largo praca plaza no unit building".split()
+)
+
+
 def _city_of_stay(stay: dict) -> str:
     """A stay's address ends in its city more often than not; a guess good
     enough to search for, and only used when the route names no city."""
@@ -605,10 +616,14 @@ def _city_of_stay(stay: dict) -> str:
         words = [w for w in part.split() if not any(c.isdigit() for c in w)]
         if words:
             parts.append(" ".join(words))
-    # The last part is usually the country.
-    if len(parts) >= 2:
-        return parts[-2]
-    return parts[0] if parts else stay["name"]
+    # From the end: the country goes when there are enough parts to have one
+    # ("…, Lisboa, Portugal"), and a part that reads as a street never stands
+    # in for the city ("Calle Fernando Poo 16, Madrid" is Madrid).
+    candidates = parts[:-1] if len(parts) >= 3 else parts
+    for part in reversed(candidates):
+        if not _STREET_WORDS & set(fold_text(part).split()):
+            return part
+    return stay["name"]
 
 
 suggestions_service = SuggestionsService()

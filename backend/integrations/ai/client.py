@@ -191,6 +191,9 @@ def _openai_compatible(
         text = choice["message"]["content"] or ""
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise AiBadAnswerError("The AI provider's answer had an unexpected shape") from e
+    if not isinstance(text, str):
+        # Some compatible servers answer content as a list of parts.
+        raise AiBadAnswerError("The AI provider's answer was not text")
     if choice.get("finish_reason") == "length":
         raise AiBadAnswerError("The answer was cut off")
     return _parse_object(text)

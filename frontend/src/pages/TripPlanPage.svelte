@@ -206,6 +206,7 @@
   async function arrangeDay(date: string) {
     if (arranging) return;
     arranging = date;
+    arrangeOpener = date;
     arrangeError = null;
     try {
       arranged = await suggestionsApi.arrange(params.id, { date, busy: busyOn(date) });
@@ -221,23 +222,50 @@
     if (!arranged || applyingArrange) return;
     applyingArrange = true;
     const proposal = arranged;
-    const before = items;
-    const order = new Map(proposal.items.map((a) => [a.id, a]));
+    const order = new Map(proposal.items.map((a, i) => [a.id, i]));
     items = items.map((it) => {
-      const a = order.get(it.id);
-      return a ? { ...it, time: a.time, sort_order: proposal.items.indexOf(a) } : it;
+      const i = order.get(it.id);
+      return i === undefined ? it : { ...it, time: proposal.items[i].time, sort_order: i };
     });
-    try {
-      await Promise.all(
-        proposal.items.map((a, i) => api.updateItem(params.id, a.id, { time: a.time, sort_order: i })),
-      );
-      arranged = null;
-    } catch {
-      items = before;
+    // Every write settles before deciding: if some failed, the board shows
+    // what the server actually holds, not a snapshot from before Apply that
+    // would hide the writes that did land (and items added meanwhile).
+    const results = await Promise.allSettled(
+      proposal.items.map((a, i) => api.updateItem(params.id, a.id, { time: a.time, sort_order: i })),
+    );
+    arranged = null;
+    if (results.some((r) => r.status === 'rejected')) {
       arrangeError = $t('arrange.error_apply');
-    } finally {
-      applyingArrange = false;
+      try {
+        items = (await plannerApi.get(params.id)).items;
+      } catch {
+        // Offline: keep what is on screen; the next load corrects it.
+      }
     }
+    applyingArrange = false;
+  }
+
+  /** Where focus goes back to when the arrange preview closes. The button that
+   * asked disables itself while waiting, so it is remembered by date. */
+  let arrangeOpener: string | null = null;
+
+  /** The preview takes the focus when it opens and gives it back to the
+   * day's "Arrange" button when it closes. */
+  function arrangeFocus(node: HTMLElement) {
+    queueMicrotask(() => node.querySelector<HTMLElement>('.btn-primary')?.focus());
+    return {
+      destroy() {
+        const date = arrangeOpener;
+        arrangeOpener = null;
+        if (date) {
+          queueMicrotask(() =>
+            document
+              .querySelector<HTMLElement>(`[data-testid="arrange-day"][data-date="${date}"]`)
+              ?.focus(),
+          );
+        }
+      },
+    };
   }
 
   // ---- Days ---------------------------------------------------------------
@@ -1095,6 +1123,7 @@
 
   function cityClicked(name: string) {
     const s = stops.find((x) => x.name === name);
+    focusItem = null;
     if (s) focusDay = s.start_date;
   }
 
@@ -1671,7 +1700,8 @@
       aria-labelledby="arrange-title"
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => { if (e.key === 'Escape') arranged = null; }}
+      onkeydown={(e) => { if (e.key === 'Escape') arranged = null; else trapTab(e); }}
+      use:arrangeFocus
     >
       <h2 id="arrange-title">🪄 {$t('arrange.title', { values: { day: `${weekday(arranged.day)} ${dayMonth(arranged.day)}` } })}</h2>
       <ol class="arrange-list">
@@ -1729,6 +1759,7 @@
         <button
           class="suggest-day"
           data-testid="arrange-day"
+          data-date={date}
           disabled={!!arranging}
           onclick={() => arrangeDay(date)}
         >🪄 {arranging === date ? $t('arrange.thinking') : $t('arrange.button')}</button>

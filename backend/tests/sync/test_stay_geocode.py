@@ -92,6 +92,20 @@ class TestChengdu:
         assert lat == 34.2572
 
 
+class TestStreetNames:
+    def test_rue_is_not_what_names_a_street(self):
+        stay = {
+            "name": "Flat",
+            "address": "10 Rue de Rivoli, Paris",
+            "city": None,
+            "country_code": "FR",
+        }
+        wrong = _hit("Rue de la Paix", "Paris", "FR", 48.869, 2.331)
+        right = _hit("Rue de Rivoli", "Paris", "FR", 48.856, 2.355)
+        (lat, _, _), _ = _geocode(stay, {stay["address"]: [wrong, right]})
+        assert lat == 48.856
+
+
 class TestWhereChecks:
     def test_a_hit_in_a_city_the_booking_never_names_is_refused(self):
         stay = {

@@ -318,3 +318,45 @@ test("an item's 🔎 zooms the plan map to it", async ({ page }) => {
     await page.request.delete(`/api/trips/${tripId}`);
   }
 });
+
+test('an Apply that fails half-way shows what the server holds, and says so', async ({ page }) => {
+  await signInPage(page, USER, PASS);
+  await offerSuggestions(page, true);
+  const tripId = await tripWithLisbon(page);
+  const ids: string[] = [];
+  for (const title of ['Dinner at Tasca', 'Belém Tower']) {
+    const r = await page.request.post(`/api/trips/${tripId}/plan/items`, { data: { title, date: '2027-05-11' } });
+    ids.push((await r.json()).id);
+  }
+  const [dinner, tower] = ids;
+  await page.route('**/api/trips/*/plan/arrange', (route) =>
+    route.fulfill({
+      json: {
+        day: '2027-05-11',
+        tip: null,
+        items: [
+          { id: tower, title: 'Belém Tower', time: '09:30', current_time: null, fixed: false },
+          { id: dinner, title: 'Dinner at Tasca', time: '20:00', current_time: null, fixed: false },
+        ],
+      },
+    }),
+  );
+  // The dinner's write fails; the tower's lands.
+  await page.route(`**/api/trips/*/plan/items/${dinner}`, (route) =>
+    route.request().method() === 'PATCH' ? route.fulfill({ status: 500, json: { detail: 'boom' } }) : route.continue(),
+  );
+  try {
+    await page.goto(`/#/trips/${tripId}/plan`);
+    const secondDay = page.locator('.items-cell').nth(1);
+    await secondDay.getByTestId('arrange-day').click();
+    await page.getByRole('dialog').getByRole('button', { name: /Apply|Aplicar/ }).click();
+    await expect(page.locator('.arrange-error')).toBeVisible();
+    // The board matches the server: the tower has its time, the dinner none.
+    await expect(secondDay.locator('.item', { hasText: 'Belém Tower' }).locator('.item-time')).toHaveText('09:30');
+    await expect(secondDay.locator('.item', { hasText: 'Dinner at Tasca' }).locator('.item-time')).toHaveCount(0);
+    // Focus is back on the day's Arrange button.
+    await expect(secondDay.getByTestId('arrange-day')).toBeFocused();
+  } finally {
+    await page.request.delete(`/api/trips/${tripId}`);
+  }
+});

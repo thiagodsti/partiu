@@ -89,7 +89,10 @@
   let selected = $state<string | null>(null);
   let selectCount = $state(0);
 
-  $effect(() => {
+  /** Saved into the shared memory from the panel's own changes and, directly,
+   * when a request or an add finishes — which can be after the panel closed,
+   * when this component's effects no longer run. */
+  function remember() {
     if (!asked) return;
     memory.set(key, {
       picked: [...picked],
@@ -101,7 +104,11 @@
       added: [...added],
       unpinned: [...unpinned],
     });
-  });
+  }
+  $effect(remember);
+
+  /** The server takes at most this many titles to leave out ("More"). */
+  const MAX_EXCLUDE = 60;
 
   /** Cards with a position, numbered as the map numbers them. */
   const placed = $derived(results.filter((s) => s.lat != null && s.lon != null));
@@ -201,6 +208,7 @@
       stay = r.stay ?? null;
       stayWithoutPin = r.stay_without_pin ?? null;
       asked = true;
+      remember();
     } catch (err) {
       const code = (err as Error).message;
       error = ERRORS[code] ? $t(ERRORS[code]) : $t('suggest.error_generic');
@@ -226,6 +234,7 @@
       const next = new Set(adding);
       next.delete(s.title);
       adding = next;
+      remember();
     }
   }
 
@@ -240,9 +249,35 @@
     if (e.key === 'Escape') onclose();
   }
 
-  /** Focus moves into the dialog so Escape and the keyboard reach it. */
+  /** Focus moves into the dialog so Escape and the keyboard reach it, and
+   * goes back to whatever opened it when it closes. */
   function focusOnOpen(node: HTMLElement) {
+    const opener = document.activeElement as HTMLElement | null;
     node.focus();
+    return {
+      destroy() {
+        queueMicrotask(() => opener?.isConnected && opener.focus());
+      },
+    };
+  }
+
+  /** Tab and Shift+Tab stay inside the dialog, as in the planner's own. */
+  function trapTab(e: KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    const box = e.currentTarget as HTMLElement;
+    const focusable = [...box.querySelectorAll<HTMLElement>('input, select, textarea, button, a[href]')].filter(
+      (el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === box)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
 </script>
 
@@ -262,7 +297,7 @@
       if (e.key === 'Escape') {
         e.stopPropagation(); // the window's handler would close it a second time
         onclose();
-      }
+      } else trapTab(e);
     }}
     use:focusOnOpen
   >
@@ -369,9 +404,11 @@
           </li>
         {/each}
       </ul>
-      <button class="btn btn-secondary btn-sm sg-more" type="button" disabled={loading} onclick={() => ask(true)}>
-        {loading ? $t('suggest.thinking') : $t('suggest.more')}
-      </button>
+      {#if results.length <= MAX_EXCLUDE}
+        <button class="btn btn-secondary btn-sm sg-more" type="button" disabled={loading} onclick={() => ask(true)}>
+          {loading ? $t('suggest.thinking') : $t('suggest.more')}
+        </button>
+      {/if}
     {:else if asked && !loading && !error}
       <p class="sg-hint">{$t('suggest.none')}</p>
     {/if}

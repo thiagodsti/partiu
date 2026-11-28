@@ -30,6 +30,7 @@ timezone conversion, not the ability to record the journey.
 import logging
 import threading
 import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -161,15 +162,19 @@ def is_configured() -> bool:
     return bool(settings.PHOTON_URL)
 
 
-PUBLIC_URL = "https://photon.komoot.io"
+PUBLIC_HOST = "photon.komoot.io"
 
 
 def is_self_hosted() -> bool:
     """A Photon the operator runs: no shared rate limit, so a feature may ask
     it several things at once. komoot's public instance refuses an address
-    that does that."""
-    url = (settings.PHOTON_URL or "").rstrip("/")
-    return bool(url) and url != PUBLIC_URL
+    that does that — compared on the host, so "HTTPS://Photon.Komoot.io/"
+    or a path after it is still the public one."""
+    url = (settings.PHOTON_URL or "").strip()
+    if not url:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    return bool(host) and host != PUBLIC_HOST
 
 
 def _label(props: dict) -> str:

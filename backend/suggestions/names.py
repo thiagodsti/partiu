@@ -2,6 +2,7 @@
 Wikipedia lookup, which answer the same question about different sources."""
 
 import math
+import re
 import unicodedata
 
 from ..utils.text import fold_text
@@ -57,7 +58,9 @@ def article_is_about(name: str, title: str) -> bool:
     a, b = fold_text(name).strip(), fold_text(title).strip()
     if not a or not b:
         return False
-    if a == b or a in b:
+    # The whole name as whole words of the title: "Time Out Market" in
+    # "Time Out Market Lisboa", never "Bar" inside "Barcelona".
+    if a == b or re.search(rf"(?<![a-z0-9]){re.escape(a)}(?![a-z0-9])", b):
         return True
     name_words, title_words = words(name), words(title)
     return bool(name_words & title_words) and not title_words <= name_words

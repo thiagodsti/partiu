@@ -443,6 +443,25 @@ class TestArrange:
         }
         assert body["tip"] is None
 
+    def test_a_tip_that_is_not_text_is_dropped(self, auth_client, ai_on):
+        trip_id, _ = self._day(auth_client)
+        ai_on.return_value = {"plan": [], "tip": {"oops": 1}}
+        body = auth_client.post(
+            f"/api/trips/{trip_id}/plan/arrange", json={"date": "2027-05-12"}
+        ).json()
+        assert body["tip"] is None and len(body["items"]) == 3
+
+    def test_shown_cards_survive_the_cap_on_what_is_sent(self, auth_client, ai_on):
+        trip_id, stop_id = _trip_with_stop(auth_client)
+        for n in range(80):
+            auth_client.post(f"/api/trips/{trip_id}/plan/items", json={"title": f"Item {n}"})
+        exclude = [f"Shown {n}" for n in range(50)]
+        auth_client.post(
+            f"/api/trips/{trip_id}/plan/suggestions",
+            json={"stop_id": stop_id, "exclude": exclude},
+        )
+        assert set(exclude) <= set(_sent(ai_on)["already_planned"])
+
     def test_one_item_is_nothing_to_arrange(self, auth_client, ai_on):
         trip_id, _ = _trip_with_stop(auth_client)
         auth_client.post(

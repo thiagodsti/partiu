@@ -482,7 +482,7 @@
   "integrations.kitinerary_unset": "O executável do extrator não foi encontrado, então só as regras internas leem os e-mails de reserva. A imagem Docker o inclui em x86_64.",
   "integrations.kitinerary_disabled": "Desligado. Só as regras internas leem os e-mails de reserva.",
   "integrations.ai_suggestions": "Sugestões de lugares com IA",
-  "integrations.ai_suggestions_set": "O planejador oferece \"Sugerir ideias\" para uma cidade ou um dia. Cada lugar é conferido no mapa antes de aparecer.",
+  "integrations.ai_suggestions_set": "O planejador oferece \"Sugerir ideias\" para uma cidade ou um dia. Um lugar ganha pin pelo artigo da Wikipedia ou pelo mapa — todos de uma vez com um Photon próprio, senão quando você o adiciona; um lugar sem pin continua na lista, para conferir antes de ir.",
   "integrations.ai_suggestions_unset": "Sem o botão \"Sugerir ideias\" no planejador. Defina AI_SUGGESTIONS_PROVIDER (anthropic, openai, ollama ou openai-compatible) para ativar.",
   "integrations.ollama": "Fallback de LLM (Ollama)",
   "integrations.ollama_set": "E-mails de companhias não reconhecidas são enviados ao LLM como último recurso.",

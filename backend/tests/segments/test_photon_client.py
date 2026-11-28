@@ -766,3 +766,23 @@ class TestRepeatedPoints:
             results = client.search_places("Xi'an North", "city")
 
         assert len(results) == 1
+
+
+class TestSelfHosted:
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("", False),
+            ("https://photon.komoot.io", False),
+            ("HTTPS://Photon.Komoot.io/", False),
+            ("https://photon.komoot.io/api", False),
+            ("http://192.0.2.10:2322", True),
+            ("http://host.docker.internal:2322/", True),
+        ],
+    )
+    def test_the_public_instance_is_recognised_by_its_host(self, monkeypatch, url, expected):
+        from backend.config import settings
+        from backend.integrations.photon import client as photon
+
+        monkeypatch.setattr(settings, "PHOTON_URL", url)
+        assert photon.is_self_hosted() is expected

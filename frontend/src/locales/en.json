@@ -482,7 +482,7 @@
   "integrations.kitinerary_unset": "The extractor binary was not found, so only the built-in airline rules read booking emails. The Docker image ships it on x86_64.",
   "integrations.kitinerary_disabled": "Switched off. Only the built-in airline rules read booking emails.",
   "integrations.ai_suggestions": "AI place suggestions",
-  "integrations.ai_suggestions_set": "The planner offers \"Suggest ideas\" for a city or a day. Every place is checked on the map before it is shown.",
+  "integrations.ai_suggestions_set": "The planner offers \"Suggest ideas\" for a city or a day. A place gets a pin from its Wikipedia article or the map — every card up front with a self-hosted Photon, otherwise when you add it; a place without one is still listed, to check before you go.",
   "integrations.ai_suggestions_unset": "No \"Suggest ideas\" button in the planner. Set AI_SUGGESTIONS_PROVIDER (anthropic, openai, ollama or openai-compatible) to turn it on.",
   "integrations.ollama": "Ollama LLM fallback",
   "integrations.ollama_set": "Emails from unrecognised airlines are passed to the LLM as a last resort.",

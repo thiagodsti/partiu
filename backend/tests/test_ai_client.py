@@ -162,6 +162,13 @@ class TestOpenAiCompatible:
             with pytest.raises(AiBadAnswerError):
                 complete_json(config, system="s", user="u", schema=SCHEMA)
 
+    def test_content_that_is_not_text_is_a_bad_answer(self):
+        config = _config("openai", base_url="https://api.openai.com/v1")
+        parts = [{"type": "text", "text": '{"a": 1}'}]
+        with patch.object(ai.httpx, "post", return_value=self._response(content=parts)):
+            with pytest.raises(AiBadAnswerError):
+                complete_json(config, system="s", user="u", schema=SCHEMA)
+
     def test_unreachable_server(self):
         config = _config("ollama", api_key="", base_url="http://box:11434")
         with patch.object(ai.httpx, "post", side_effect=httpx.ConnectError("no route")):
