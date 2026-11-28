@@ -55,6 +55,7 @@ Want to try it before self-hosting? A public demo is available at:
 - A planner page per trip: a route of cities with dates, and a board with one column per day showing the city, transport, the night's stay (or a "no stay" warning), things to do and notes
 - Things to do have a status (idea → to book → booked → done), an optional time and a place, and can be dragged between days — on a phone too, by pressing and holding an item
 - Each day can bring in one of your unscheduled ideas from a list, so you don't have to scroll down to the ideas to plan a day
+- **Optional AI suggestions**: "✨ Suggest ideas" on a city or a day returns places with photos, their distance from your hotel and a map, to add with one tap (the photo comes along); "🪄 Arrange my day" proposes an order and times for a day's plans around your flights and trains, applied only if you accept. Works with Claude, OpenAI, Ollama or any OpenAI-compatible service (`AI_SUGGESTIONS_*` in `.env`); can use your rated past trips if you allow it in Settings
 - Search for places to visit near the route, keep unscheduled ideas, and track before-the-trip to-dos with an assignee
 - A map of the whole plan; click a day to focus on it. Place names follow your profile language (English or Portuguese)
 - Everything saves as you go; on a phone the board becomes stacked day cards
@@ -144,6 +145,7 @@ Open `https://your-domain` and complete the first-run setup to create your admin
 | `CARTO_API_KEY` | | Key for the trip map's CARTO Voyager basemap tiles (see below). Unset, the map uses plain OpenStreetMap tiles |
 | `PHOTON_URL` | | Geocoder for the station, hotel and address pickers (default: `https://photon.komoot.io`). Point at a self-hosted [Photon](https://github.com/komoot/photon) instance, or set it empty to disable the lookup and type places as plain text — note that a place with no coordinates gets no map pin, no timezone conversion, and does not count toward visited countries |
 | `KITINERARY_EXTRACTOR` | | Path to KDE Itinerary's `kitinerary-extractor`, which reads booking emails from airlines Partiu has no rule for. The Docker image ships it (x86_64) and this points at it by default; set it empty only to switch it off |
+| `AI_SUGGESTIONS_PROVIDER` | | AI place suggestions in the planner: `anthropic`, `openai`, `ollama` or `openai-compatible`, with `AI_SUGGESTIONS_API_KEY`, `AI_SUGGESTIONS_MODEL` and `AI_SUGGESTIONS_BASE_URL` as the provider needs (see `.env.example`). Unset, the "Suggest ideas" buttons do not appear |
 | `OLLAMA_URL` | | Ollama endpoint for the LLM parsing fallback (e.g. `http://ollama:11434`). Unset, the fallback is disabled and only the built-in airline rules run |
 | `OLLAMA_MODEL` | | Model for the fallback (default: `qwen3:4b-instruct`) |
 | `OLLAMA_NUM_CTX` | | Context window sent with every request, in tokens (default: `8192`). Ollama's own default of 4096 is too small for long itineraries, and Ollama refuses rather than truncates |

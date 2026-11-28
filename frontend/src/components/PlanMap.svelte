@@ -18,6 +18,8 @@
     active: boolean;
     color?: string;
     label?: string;
+    /** The one point being looked at: drawn larger, ringed, on top. */
+    highlight?: boolean;
   }
   export interface MapLine {
     id: string;
@@ -48,8 +50,26 @@
     focus: [number, number][];
     onCityClick?: (name: string) => void;
     onPointClick?: (point: MapPoint) => void;
+    /** A smaller map, for a dialog. */
+    compact?: boolean;
+    /** Zoom used when the focus is a single point (a city by default; a
+     * street when one place is being looked at). */
+    pointZoom?: number;
+    /** Changes to re-fit to the same focus again (the same place asked for
+     * twice, after the map was panned away). */
+    focusKey?: string | number;
   }
-  const { cities, points, lines, focus, onCityClick, onPointClick }: Props = $props();
+  const {
+    cities,
+    points,
+    lines,
+    focus,
+    onCityClick,
+    onPointClick,
+    compact = false,
+    pointZoom = 12,
+    focusKey = '',
+  }: Props = $props();
 
   let mapEl: HTMLDivElement | undefined = $state();
   let map: LeafletMap | null = $state(null);
@@ -168,14 +188,15 @@
       const html =
         p.kind === 'stay'
           ? `<div class="plan-pin stay${p.active ? ' active' : ''}">🏨</div>`
-          : `<div class="plan-pin item${p.active ? ' active' : ''}" style="--c:${p.color ?? '#3b82f6'}">${escapeHtml(p.label ?? '')}</div>`;
+          : `<div class="plan-pin item${p.active ? ' active' : ''}${p.highlight ? ' highlight' : ''}" style="--c:${p.color ?? '#3b82f6'}">${escapeHtml(p.label ?? '')}</div>`;
+      const size = p.highlight ? 34 : p.active ? 26 : 18;
       const icon = Lf.divIcon({
         className: 'plan-pin-icon',
         html,
-        iconSize: p.active ? [26, 26] : [18, 18],
-        iconAnchor: p.active ? [13, 13] : [9, 9],
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       });
-      Lf.marker([p.lat, p.lon], { icon, zIndexOffset: p.active ? 1000 : 0 })
+      Lf.marker([p.lat, p.lon], { icon, zIndexOffset: p.highlight ? 2000 : p.active ? 1000 : 0 })
         .bindTooltip(escapeHtml(p.title), { direction: 'top', offset: [0, -10] })
         .on('click', () => onPointClick?.(p))
         .addTo(layer);
@@ -190,15 +211,15 @@
     const cs = cities;
     if (!map || !L) return;
     const pts = f.length > 0 ? f : cs.map((c) => [c.lat, c.lon] as [number, number]);
-    const key = JSON.stringify(pts);
+    const key = `${JSON.stringify(pts)}|${focusKey}`;
     if (key === lastFocus || pts.length === 0) return;
     lastFocus = key;
-    if (pts.length === 1) map.flyTo(pts[0], 12, { duration: 0.6 });
+    if (pts.length === 1) map.flyTo(pts[0], pointZoom, { duration: 0.6 });
     else map.flyToBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 13, duration: 0.6 });
   });
 </script>
 
-<div class="plan-map" bind:this={mapEl}></div>
+<div class="plan-map" class:compact bind:this={mapEl}></div>
 
 <style>
   .plan-map {
@@ -208,6 +229,10 @@
     border-radius: var(--radius-lg);
     overflow: hidden;
     z-index: 0;
+  }
+  .plan-map.compact {
+    min-height: 220px;
+    height: 220px;
   }
   :global(.plan-city-icon),
   :global(.plan-pin-icon) {
@@ -267,6 +292,13 @@
     color: #fff;
     border-color: #fff;
     font-size: 12px;
+  }
+  :global(.plan-pin.item.highlight) {
+    background: var(--c);
+    color: #fff;
+    border: 3px solid #fff;
+    outline: 3px solid var(--c);
+    font-size: 14px;
   }
   :global(.plan-pin.stay.active) {
     font-size: 15px;

@@ -50,6 +50,21 @@ def _check_date(value: str | None) -> None:
         raise ValueError("Invalid date") from exc
 
 
+# A planner item's photo is a suggested place's Wikipedia thumbnail. Only those
+# hosts are accepted: the CSP lets the page load images from nowhere else, and
+# a URL that points anywhere else would be a tracker on every plan view.
+_IMAGE_PREFIXES = ("https://upload.wikimedia.org/", "https://thumb.wikimedia.org/")
+_PAGE_PREFIX = "https://en.wikipedia.org/wiki/"
+
+
+def _check_image(values: dict) -> None:
+    url, page = values.get("image_url"), values.get("image_page")
+    if url is not None and not url.startswith(_IMAGE_PREFIXES):
+        raise ValueError("A photo must be a Wikimedia image")
+    if page is not None and not page.startswith(_PAGE_PREFIX):
+        raise ValueError("A photo's source must be a Wikipedia article")
+
+
 class PlannerService:
     def __init__(self, repository: PlannerRepository | None = None):
         self._repository = repository or PlannerRepository()
@@ -123,6 +138,7 @@ class PlannerService:
         if status not in ITEM_STATUSES:
             raise ValueError(f"Unsupported status: {status!r}")
         _check_date(data.get("date"))
+        _check_image(data)
         item_id = str(uuid.uuid4())
         self._repository.create_item(
             item_id,
@@ -148,6 +164,7 @@ class PlannerService:
         if "notes" in values:
             values["notes"] = _clean(values["notes"])
         _check_date(values.get("date"))
+        _check_image(values)
         self._repository.update_item(item_id, trip_id, values)
 
     def delete_item(self, trip_id: str, item_id: str, user_id: int) -> None:

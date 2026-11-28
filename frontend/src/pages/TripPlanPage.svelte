@@ -16,6 +16,7 @@
     expensesApi,
     guestsApi,
     plannerApi,
+    suggestionsApi,
   } from '../api/client';
   import type {
     Trip,
@@ -28,9 +29,14 @@
     PlanItemStatus,
     PlanTask,
     PickedPlace,
+    Suggestion,
+    SuggestionsStatus,
+    ArrangeResponse,
+    DayBusy,
   } from '../api/types';
   import { tick } from 'svelte';
   import PlaceInput from '../components/PlaceInput.svelte';
+  import SuggestPanel from '../components/SuggestPanel.svelte';
   import TripStays from '../components/TripStays.svelte';
   import TripTransport from '../components/TripTransport.svelte';
   import PlanMap, { type MapCity, type MapLine, type MapPoint } from '../components/PlanMap.svelte';
@@ -111,6 +117,128 @@
     }
   }
   load();
+
+  // ---- AI suggestions ------------------------------------------------------
+  //
+  // Offered only when the server has a provider set up; a failed status check
+  // is the same as "off" — the planner works the same without it.
+  let suggestStatus = $state<SuggestionsStatus | null>(null);
+  suggestionsApi
+    .status()
+    .then((s) => (suggestStatus = s))
+    .catch(() => (suggestStatus = null));
+  const canSuggest = $derived(!!suggestStatus?.available);
+  let suggestFor = $state<{ stopId?: string | null; date?: string | null; label: string } | null>(null);
+
+  /** A picked suggestion lands as an idea: on that day when asked from a day,
+   * otherwise among the places to visit, with the reason as its note. Never
+   * "booked": nobody has booked anything yet. Its pin comes from its Wikipedia
+   * article when it has one; otherwise it is looked up on the map now — one
+   * lookup per place added, not one per place shown — and a place the map does
+   * not know is still added, without a pin. Resolves to whether it got one. */
+  async function addSuggestion(s: Suggestion): Promise<{ lat: number; lon: number } | null> {
+    const date = suggestFor?.date ?? null;
+    let place: { name: string; lat: number; lon: number } | null =
+      s.lat != null && s.lon != null
+        ? { name: s.local_name ? `${s.title} (${s.local_name})` : s.title, lat: s.lat, lon: s.lon }
+        : null;
+    if (!place) {
+      const found = await suggestionsApi
+        .locate(params.id, { stop_id: suggestFor?.stopId ?? null, date, name: s.title })
+        .catch(() => null);
+      if (found) {
+        // Both names when the map's is in another script: the local one is
+        // what to show a taxi driver in Chengdu.
+        const name = found.local_name ? `${s.title} (${found.local_name})` : found.place_name;
+        place = { name, lat: found.lat, lon: found.lon };
+      }
+    }
+    const data = {
+      title: s.title,
+      date,
+      status: 'idea' as const,
+      notes: s.why || null,
+      place_name: place?.name ?? null,
+      lat: place?.lat ?? null,
+      lon: place?.lon ?? null,
+      // The card's Wikipedia photo travels with the item, so the plan shows
+      // what the place looks like after the panel is closed.
+      image_url: s.image_url ?? null,
+      image_page: s.image_page ?? null,
+    };
+    const { id } = await api.createItem(params.id, data);
+    items = [...items, { id, ...data, time: null, sort_order: itemsOn(date).length }];
+    return place ? { lat: place.lat, lon: place.lon } : null;
+  }
+
+  // ---- Arranging a day with AI ------------------------------------------------
+  //
+  // A proposal, shown before anything changes: the order and start times the
+  // model suggests for the day's items, around the day's flights and legs.
+  // "Apply" writes each item's time and position through the ordinary item
+  // update; closing the preview writes nothing.
+  let arranging = $state<string | null>(null);
+  let arrangeError = $state<string | null>(null);
+  let arranged = $state<ArrangeResponse | null>(null);
+  let applyingArrange = $state(false);
+
+  const ARRANGE_ERRORS: Record<string, string> = {
+    daily_limit: 'suggest.error_daily_limit',
+    ai_unreachable: 'suggest.error_unreachable',
+    ai_misconfigured: 'suggest.error_misconfigured',
+    ai_bad_answer: 'suggest.error_bad_answer',
+    nothing_to_arrange: 'arrange.error_nothing',
+  };
+
+  /** The day's fixed parts, as the board shows them (local times). */
+  function busyOn(date: string): DayBusy[] {
+    const out: DayBusy[] = [];
+    for (const m of movesOn(date)) {
+      if (!/^\d{2}:\d{2}$/.test(m.time)) continue;
+      let end: string | null = null;
+      if (m.flight) end = localDateKey(m.flight.arrival_datetime, m.flight.arrival_timezone) === date ? formatTime(m.flight.arrival_datetime, m.flight.arrival_timezone) : '23:59';
+      else if (m.segment) end = localDateKey(m.segment.arrival_datetime, m.segment.arrival.timezone) === date ? formatTime(m.segment.arrival_datetime, m.segment.arrival.timezone) : '23:59';
+      out.push({ start: m.time, end: end && /^\d{2}:\d{2}$/.test(end) ? end : null, label: `${m.icon} ${m.label}`.slice(0, 120) });
+    }
+    return out.slice(0, 12);
+  }
+
+  async function arrangeDay(date: string) {
+    if (arranging) return;
+    arranging = date;
+    arrangeError = null;
+    try {
+      arranged = await suggestionsApi.arrange(params.id, { date, busy: busyOn(date) });
+    } catch (err) {
+      const code = (err as Error).message;
+      arrangeError = ARRANGE_ERRORS[code] ? $t(ARRANGE_ERRORS[code]) : $t('suggest.error_generic');
+    } finally {
+      arranging = null;
+    }
+  }
+
+  async function applyArrange() {
+    if (!arranged || applyingArrange) return;
+    applyingArrange = true;
+    const proposal = arranged;
+    const before = items;
+    const order = new Map(proposal.items.map((a) => [a.id, a]));
+    items = items.map((it) => {
+      const a = order.get(it.id);
+      return a ? { ...it, time: a.time, sort_order: proposal.items.indexOf(a) } : it;
+    });
+    try {
+      await Promise.all(
+        proposal.items.map((a, i) => api.updateItem(params.id, a.id, { time: a.time, sort_order: i })),
+      );
+      arranged = null;
+    } catch {
+      items = before;
+      arrangeError = $t('arrange.error_apply');
+    } finally {
+      applyingArrange = false;
+    }
+  }
 
   // ---- Days ---------------------------------------------------------------
 
@@ -341,6 +469,8 @@
         place_name: e.place_name,
         lat: e.place_name ? e.lat : null,
         lon: e.place_name ? e.lon : null,
+        image_url: e.image_url ?? null,
+        image_page: e.image_page ?? null,
       });
       // Only now: a rejected save keeps the dialog and the draft open.
       const idx = items.findIndex((i) => i.id === e.id);
@@ -841,8 +971,20 @@
   // highlights that day here and flies to it; clicking it again shows it all.
 
   let focusDay = $state<string | null>(null);
+  /** One item being looked at on the map (its 📍 button): zoomed to street
+   * level and ringed. The count re-flies to it when asked twice. */
+  let focusItem = $state<string | null>(null);
+  let focusItemCount = $state(0);
+
+  function showItemOnMap(item: PlanItem) {
+    if (item.lat == null || item.lon == null) return;
+    focusItem = item.id;
+    focusItemCount += 1;
+    document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   function toggleFocus(date: string) {
+    focusItem = null;
     focusDay = focusDay === date ? null : date;
     // On a phone the map is far below the day; bring it into view.
     if (narrow && focusDay) {
@@ -915,6 +1057,7 @@
           lat: it.lat,
           lon: it.lon,
           active: date === sel,
+          highlight: it.id === focusItem,
           color: city ? stopColor(city) : '#64748b',
           label: date === sel ? String(i + 1) : '',
         });
@@ -934,7 +1077,10 @@
       })),
   );
 
+  const focusedItem = $derived(focusItem ? items.find((i) => i.id === focusItem && i.lat != null) : undefined);
+
   const mapFocus = $derived.by<[number, number][]>(() => {
+    if (focusedItem) return [[focusedItem.lat as number, focusedItem.lon as number]];
     if (!focusDay) return [];
     const active = mapPoints.filter((p) => p.active).map((p) => [p.lat, p.lon] as [number, number]);
     if (active.length) return active;
@@ -1017,6 +1163,15 @@
             <span class="stop-name">{stop.name}</span>
             <span class="stop-dates">{dayMonth(stop.start_date)} – {dayMonth(stop.end_date)} · {$t('organizer.nights', { values: { n: nightsOf(stop) } })}</span>
           </button>
+          {#if canSuggest}
+            <button
+              class="suggest-stop"
+              data-testid="suggest-stop"
+              title={$t('suggest.button')}
+              aria-label={`${$t('suggest.button')} · ${stop.name}`}
+              onclick={() => (suggestFor = { stopId: stop.id, label: stop.name })}
+            >✨</button>
+          {/if}
         {/each}
         <button class="btn btn-secondary btn-sm" data-testid="add-stop" onclick={openNewStop}>+ {$t('organizer.add_city')}</button>
       </div>
@@ -1125,6 +1280,7 @@
                     />
                   </form>
                   {@render ideaPicker(date)}
+                {@render suggestDay(date)}
                 </div>
 
                 <textarea
@@ -1225,6 +1381,7 @@
                   />
                 </form>
                 {@render ideaPicker(date)}
+                {@render suggestDay(date)}
               </div>
             {/each}
 
@@ -1250,14 +1407,23 @@
         <div class="map-head">
           <h2>🗺 {$t('organizer.map')}</h2>
           <span class="hint">
-            {#if focusDay}{weekday(focusDay)} {dayMonth(focusDay)}{#if cityOf(focusDay)} · {cityOf(focusDay)?.name}{/if}{:else}{$t('organizer.map_hint')}{/if}
+            {#if focusedItem}📍 {focusedItem.title}{:else if focusDay}{weekday(focusDay)} {dayMonth(focusDay)}{#if cityOf(focusDay)} · {cityOf(focusDay)?.name}{/if}{:else}{$t('organizer.map_hint')}{/if}
           </span>
-          {#if focusDay}
-            <button class="btn btn-secondary btn-sm" onclick={() => (focusDay = null)}>{$t('organizer.whole_route')}</button>
+          {#if focusDay || focusedItem}
+            <button class="btn btn-secondary btn-sm" onclick={() => { focusDay = null; focusItem = null; }}>{$t('organizer.whole_route')}</button>
           {/if}
         </div>
         <div class="map-box">
-          <PlanMap cities={mapCities} points={mapPoints} lines={mapLines} focus={mapFocus} onCityClick={cityClicked} onPointClick={pointClicked} />
+          <PlanMap
+            cities={mapCities}
+            points={mapPoints}
+            lines={mapLines}
+            focus={mapFocus}
+            pointZoom={focusedItem ? 16 : 12}
+            focusKey={focusItemCount}
+            onCityClick={cityClicked}
+            onPointClick={pointClicked}
+          />
         </div>
       </section>
       </div>
@@ -1432,6 +1598,15 @@
         >
         <button class="modal-close" type="button" aria-label={$t('organizer.close')} onclick={() => (editing = null)}>✕</button>
         <form class="modal-form" onsubmit={(e) => { e.preventDefault(); saveEditing(); }}>
+          {#if editing.image_url}
+            <figure class="edit-photo">
+              <img src={editing.image_url} alt={editing.title} referrerpolicy="no-referrer" />
+              <figcaption>
+                {#if editing.image_page}<a href={editing.image_page} target="_blank" rel="noopener noreferrer">{$t('suggest.photo_source')}</a> · {/if}
+                <button type="button" class="link-btn" onclick={() => { if (editing) { editing.image_url = null; editing.image_page = null; } }}>{$t('organizer.remove_photo')}</button>
+              </figcaption>
+            </figure>
+          {/if}
           <label class="field">
             <span class="form-label">{$t('organizer.item_title')}</span>
             <input class="form-input" bind:value={editing.title} required />
@@ -1487,9 +1662,80 @@
   {/if}
 </div>
 
+{#if arranged}
+  <div class="modal-backdrop arrange-backdrop" role="presentation" onclick={() => (arranged = null)}>
+    <div
+      class="modal arrange-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="arrange-title"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') arranged = null; }}
+    >
+      <h2 id="arrange-title">🪄 {$t('arrange.title', { values: { day: `${weekday(arranged.day)} ${dayMonth(arranged.day)}` } })}</h2>
+      <ol class="arrange-list">
+        {#each arranged.items as a (a.id)}
+          <li>
+            <span class="arrange-time">{a.time ?? '—'}</span>
+            <span class="arrange-title">{a.title}</span>
+            {#if a.fixed}<span class="arrange-note">🔒 {$t('arrange.fixed')}</span>
+            {:else if a.current_time && a.current_time !== a.time}<span class="arrange-note">{$t('arrange.was', { values: { time: a.current_time } })}</span>{/if}
+          </li>
+        {/each}
+      </ol>
+      {#if arranged.tip}<p class="arrange-tip">💡 {arranged.tip}</p>{/if}
+      <p class="arrange-foot">{$t('arrange.disclaimer')}</p>
+      <div class="form-actions">
+        <button class="btn btn-primary btn-sm" type="button" disabled={applyingArrange} onclick={applyArrange}>{$t('arrange.apply')}</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick={() => (arranged = null)}>{$t('organizer.cancel')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if arrangeError}
+  <div class="arrange-error" role="alert">
+    {arrangeError}
+    <button type="button" aria-label={$t('organizer.close')} onclick={() => (arrangeError = null)}>✕</button>
+  </div>
+{/if}
+
+{#if suggestFor}
+  <SuggestPanel
+    tripId={params.id}
+    target={suggestFor}
+    onAdd={addSuggestion}
+    onclose={() => (suggestFor = null)}
+    existing={items
+      .filter((i) => i.lat != null && i.lon != null)
+      .map((i) => ({ id: i.id, title: i.title, lat: i.lat as number, lon: i.lon as number }))}
+  />
+{/if}
+
 {#if touchGhost}
   <div class="touch-ghost" style="left:{touchGhost.x}px; top:{touchGhost.y}px">{touchGhost.title}</div>
 {/if}
+
+{#snippet suggestDay(date: string)}
+  {#if canSuggest}
+    <div class="ai-day">
+      <button
+        class="suggest-day"
+        data-testid="suggest-day"
+        onclick={() => (suggestFor = { date, label: `${cityOf(date)?.name ?? ''} · ${weekday(date)} ${dayMonth(date)}`.replace(/^ · /, '') })}
+      >✨ {$t('suggest.button')}</button>
+      {#if itemsOn(date).length >= 2}
+        <button
+          class="suggest-day"
+          data-testid="arrange-day"
+          disabled={!!arranging}
+          onclick={() => arrangeDay(date)}
+        >🪄 {arranging === date ? $t('arrange.thinking') : $t('arrange.button')}</button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
 
 {#snippet ideaPicker(date: string)}
   {#if itemsOn(null).length}
@@ -1529,6 +1775,7 @@
       onclick={() => cycleStatus(item)}
     ></button>
     <button class="item-body" onclick={() => (editing = { ...item })}>
+      {#if item.image_url}<img class="item-photo" src={item.image_url} alt="" loading="lazy" referrerpolicy="no-referrer" />{/if}
       {#if item.time}<span class="item-time">{item.time}</span>{/if}
       <span class="item-title">{item.title}</span>
       {#if item.notes}<span class="item-has-notes" title={item.notes}>📝</span>{/if}
@@ -1537,6 +1784,16 @@
         <span class="item-place">📍 {#if n}<b>{n}</b> · {/if}{item.place_name}</span>
       {/if}
     </button>
+    {#if item.lat != null && item.lon != null}
+      <button
+        class="item-locate"
+        class:on={focusItem === item.id}
+        data-testid="item-locate"
+        title={$t('organizer.locate_item')}
+        aria-label={$t('organizer.locate_item')}
+        onclick={() => showItemOnMap(item)}
+      >🔎</button>
+    {/if}
   </div>
 {/snippet}
 
@@ -1837,6 +2094,16 @@
     cursor: pointer;
     overflow-wrap: anywhere;
   }
+  /* A suggested place's Wikipedia photo: small enough that a column of items
+     still reads as a list. */
+  .item-photo {
+    float: right;
+    width: 36px;
+    height: 36px;
+    margin: 0 0 2px 6px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
   .item-time {
     font-family: var(--font-mono);
     color: var(--text-secondary);
@@ -1874,6 +2141,96 @@
       -webkit-user-select: none;
       user-select: none;
     }
+  }
+  .suggest-day {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 6px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+  }
+  .ai-day {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .suggest-day:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+  .arrange-list {
+    margin: 0;
+    padding-left: 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+  }
+  .arrange-time {
+    font-family: var(--font-mono);
+    margin-right: 8px;
+  }
+  .arrange-title {
+    font-weight: 600;
+  }
+  .arrange-note {
+    margin-left: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .arrange-tip {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .arrange-foot {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .arrange-error {
+    position: fixed;
+    left: 50%;
+    bottom: 96px;
+    transform: translateX(-50%);
+    z-index: 600;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-elevated);
+    color: var(--danger-text);
+    font-size: 0.85rem;
+  }
+  .arrange-error button {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .suggest-day:hover,
+  .suggest-stop:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+  }
+  .suggest-stop {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    border: 1px dashed var(--border);
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+    margin-left: -4px;
   }
   .idea-pick {
     width: 100%;
@@ -2004,6 +2361,30 @@
     flex-direction: column;
     gap: var(--space-sm);
     box-shadow: var(--shadow-elevated);
+  }
+  .edit-photo {
+    margin: 0;
+  }
+  .edit-photo img {
+    display: block;
+    width: 100%;
+    max-height: 180px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+  }
+  .edit-photo figcaption {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .link-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent-text);
+    cursor: pointer;
+    text-decoration: underline;
   }
   .modal-form {
     display: flex;
@@ -2139,6 +2520,7 @@
     .task-text,
     .item-draft,
     .idea-pick,
+    .suggest-day,
     .note {
       font-size: 16px; /* below 16px iOS zooms in on focus */
     }
@@ -2155,6 +2537,21 @@
     .row .field {
       flex: 1 1 120px;
     }
+  }
+  .item-locate {
+    flex: none;
+    align-self: flex-start;
+    border: none;
+    background: none;
+    padding: 0 2px;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  .item-locate:hover,
+  .item-locate.on {
+    opacity: 1;
   }
   .item-place {
     display: block;

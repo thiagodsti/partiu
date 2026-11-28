@@ -36,6 +36,8 @@ class PlanItem:
     lon: float | None
     status: str
     sort_order: int
+    image_url: str | None = None
+    image_page: str | None = None
 
 
 @dataclass

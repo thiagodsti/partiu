@@ -73,6 +73,21 @@ def _kitinerary_status() -> IntegrationStatus:
     return IntegrationStatus("kitinerary", False, "unset", "KITINERARY_EXTRACTOR")
 
 
+def _ai_suggestions_status() -> IntegrationStatus:
+    """``AI_SUGGESTIONS_PROVIDER`` and friends. "set" only when the whole block
+    is usable — a provider with its model or key missing is logged at startup
+    and reported here as not configured, because the button will not appear."""
+    from ..integrations.ai.client import config_from_env
+
+    configured = config_from_env("AI_SUGGESTIONS") is not None
+    return IntegrationStatus(
+        "ai_suggestions",
+        configured,
+        "set" if configured else "unset",
+        "AI_SUGGESTIONS_PROVIDER",
+    )
+
+
 def integration_statuses() -> list[IntegrationStatus]:
     """Every optional integration, in the order the Settings panel shows them."""
     return [
@@ -90,6 +105,7 @@ def integration_statuses() -> list[IntegrationStatus]:
         ),
         _photon_status(),
         _kitinerary_status(),
+        _ai_suggestions_status(),
         IntegrationStatus(
             "ollama",
             bool(settings.OLLAMA_URL),

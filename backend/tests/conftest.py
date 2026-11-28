@@ -14,6 +14,22 @@ import pytest
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-minimum-32chars!")
 os.environ.setdefault("BCRYPT_ROUNDS", "4")
 
+# No test may reach a real geocoder or AI provider: komoot's public Photon
+# blocks an address that hammers it, and an AI provider bills per request. A
+# developer's .env often configures both, and load_dotenv never overrides a
+# variable that is already set — even to empty — so these win. Tests that
+# exercise those clients patch them.
+for _var in (
+    "PHOTON_URL",
+    "AI_SUGGESTIONS_PROVIDER",
+    "AI_SUGGESTIONS_API_KEY",
+    "AI_SUGGESTIONS_BASE_URL",
+    "AI_SUGGESTIONS_MODEL",
+    "OLLAMA_URL",
+    "OLLAMA_MODEL",
+):
+    os.environ[_var] = ""
+
 # Add the project root so that `backend` is importable as a package.
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -88,6 +104,7 @@ def api_app(test_db):
     from backend.settings import routes as settings_routes
     from backend.stats import routes as stats_routes
     from backend.stays import routes as stays_routes
+    from backend.suggestions import routes as suggestions_routes
     from backend.sync import routes as sync_routes
     from backend.trash import routes as trash_routes
     from backend.trip_documents import routes as trip_documents_routes
@@ -114,6 +131,7 @@ def api_app(test_db):
     app.include_router(guests_routes.router)
     app.include_router(packing_routes.router)
     app.include_router(planner_routes.router)
+    app.include_router(suggestions_routes.router)
     app.include_router(segments_routes.router)
     app.include_router(stays_routes.router)
     app.include_router(car_rentals_routes.router)

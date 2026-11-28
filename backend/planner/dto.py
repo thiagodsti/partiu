@@ -30,6 +30,8 @@ class PlanItemDTO(BaseModel):
     lon: float | None
     status: str
     sort_order: int
+    image_url: str | None = None
+    image_page: str | None = None
 
 
 class PlanTaskDTO(BaseModel):
@@ -76,6 +78,8 @@ class CreateItemDTO(BaseModel):
     lat: float | None = None
     lon: float | None = None
     status: str = "idea"
+    image_url: str | None = Field(default=None, max_length=1000)
+    image_page: str | None = Field(default=None, max_length=1000)
 
 
 class UpdateItemDTO(BaseModel):
@@ -91,6 +95,8 @@ class UpdateItemDTO(BaseModel):
     lon: float | None = None
     status: str | None = None
     sort_order: int | None = None
+    image_url: str | None = Field(default=None, max_length=1000)
+    image_page: str | None = Field(default=None, max_length=1000)
 
 
 class CreateTaskDTO(BaseModel):

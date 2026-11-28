@@ -326,22 +326,9 @@ test('a hand-typed stay gets no country rather than a guessed one', async () => 
   await ownerCtx.delete(`/api/trips/${tripId}`);
 });
 
-test('the place search returns accommodation and addresses', async () => {
-  const users = await ensureUsers();
-  test.skip(!users, 'Could not set up users — skipping stays tests');
-  const { ownerCtx } = users!;
-
-  const res = await ownerCtx.get('/api/places/search?q=Hotel%20Avenida%20Palace%20Lisboa');
-  expect(res.ok()).toBe(true);
-  const results = await res.json();
-  // Photon is optional, so an empty result set is a legitimate outcome here;
-  // what must hold is the shape when it does answer.
-  test.skip(results.length === 0, 'Geocoder unavailable — skipping place-search assertions');
-
-  expect(results[0]).toHaveProperty('category');
-  expect(results[0]).toHaveProperty('address');
-  expect(results[0].countrycode).toBe('PT');
-});
+// The place search itself needs a geocoder, which the E2E server never has
+// (scripts/run_e2e.sh): it is covered by the backend tests with Photon mocked,
+// and by hand against a local Photon (AGENTS.md, "Manual tests").
 
 test("another user cannot read or write a trip's stays", async () => {
   const users = await ensureUsers();

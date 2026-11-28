@@ -42,6 +42,11 @@ class Settings:
         "KITINERARY_EXTRACTOR", "/opt/kitinerary/bin/kitinerary-extractor"
     )
 
+    # AI place suggestions in the planner (AI_SUGGESTIONS_PROVIDER and friends
+    # are read by integrations/ai/client.config_from_env). Requests per user per
+    # UTC day, so one account cannot run up the provider bill.
+    AI_SUGGESTIONS_DAILY_LIMIT: int = int(os.getenv("AI_SUGGESTIONS_DAILY_LIMIT", "40"))
+
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))

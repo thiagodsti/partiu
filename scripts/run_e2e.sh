@@ -42,6 +42,14 @@ export SECRET_KEY="${SECRET_KEY:-e2e-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \
 # DEMO_MODE=false: a demo refuses the account creation global setup does, and a
 # root .env written for a demo instance would otherwise switch it on here.
 export DB_PATH="${SCRATCH}/partiu.db" DISABLE_SCHEDULER=true DISABLE_RATE_LIMITS=true SECURE_COOKIES=false DEMO_MODE=false
+# No geocoder and no AI, whatever the root .env says: komoot's public Photon
+# blocks an address that hammers it and an AI provider bills per request. Set
+# to empty rather than unset, because load_dotenv never overrides a variable
+# that exists. Specs that show those features answer the endpoints in the
+# browser (page.route); checking them against a real Photon or model is a
+# manual test, against a local one only (AGENTS.md, "Manual tests").
+export PHOTON_URL="" OLLAMA_URL="" OLLAMA_MODEL=""
+export AI_SUGGESTIONS_PROVIDER="" AI_SUGGESTIONS_API_KEY="" AI_SUGGESTIONS_BASE_URL="" AI_SUGGESTIONS_MODEL=""
 # KDE Itinerary's extractor is x86_64-only and ships in the Docker image, so the
 # suite runs against a stand-in that answers for one marked email only (see the
 # script, and tests/kitinerary-import.spec.ts).
