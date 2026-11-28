@@ -42,6 +42,7 @@ from .settings import routes as settings_routes
 from .smtp_server import start_smtp_server, stop_smtp_server
 from .stats import routes as stats_routes
 from .stays import routes as stays_routes
+from .suggestions import routes as suggestions_routes
 from .sync import routes as sync_routes
 from .trash import routes as trash_routes
 from .trip_documents import routes as trip_documents_routes
@@ -181,6 +182,7 @@ app.include_router(expenses_routes.router)
 app.include_router(guests_routes.router)
 app.include_router(packing_routes.router)
 app.include_router(planner_routes.router)
+app.include_router(suggestions_routes.router)
 app.include_router(segments_routes.router)
 app.include_router(stays_routes.router)
 app.include_router(car_rentals_routes.router)

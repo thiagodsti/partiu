@@ -11,6 +11,7 @@
   import TrashPanel from "../components/TrashPanel.svelte";
   import ActivityPanel from "../components/ActivityPanel.svelte";
   import ApiKeysPanel from "../components/ApiKeysPanel.svelte";
+  import AiSuggestionsSettings from "../components/AiSuggestionsSettings.svelte";
   import { currentUser } from "../lib/authStore";
   import { theme } from "../lib/themeStore";
   import { accent, setAccent, ACCENTS, DEFAULT_ACCENT } from "../lib/accentStore";
@@ -1208,6 +1209,8 @@
         {/if}
       {/if}
     </div>
+
+    <AiSuggestionsSettings />
 
     <!-- Immich Integration Section -->
     <div class="settings-section">

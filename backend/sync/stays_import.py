@@ -62,11 +62,13 @@ import uuid
 from datetime import date, timedelta
 
 from ..database import db_conn, db_write
+from ..integrations.photon import client as photon
 from ..parsers.booking_com import extract_booking_com_stays
 from ..parsers.kitinerary import extract_kitinerary_stays
 from ..parsers.schema_org import extract_lodging_reservations
 from ..parsers.trip_com import extract_trip_com_stays
 from ..utils import now_iso
+from .stay_geocode import geocode_stay
 
 logger = logging.getLogger(__name__)
 
@@ -284,30 +286,58 @@ def _create_trip_for_stay(user_id: int, stay: dict) -> str:
 def _geocode(stay: dict) -> tuple[float | None, float | None, str | None]:
     """Resolve the property's coordinates so the stay gets a map pin and a zone.
 
-    The markup carries no coordinates — none of the six measured bookings had
-    any, nor a static map URL to scrape one from — but it does carry a street
-    address, which is exactly what the stay picker already geocodes. Without a
-    geocoder the stay still saves; it simply has no pin and its times are stored
-    as typed, which is the documented behaviour for a hand-entered place.
+    KDE Itinerary's stays can arrive with coordinates; everything else is looked
+    up from the address, and kept only when the booking backs the answer up
+    (``stay_geocode``). Without a geocoder, or with no answer that fits, the
+    stay still saves: no pin, times stored as typed — the documented behaviour
+    for a hand-entered place.
     """
-    # KDE Itinerary's stays can arrive with the property's coordinates.
     if stay.get("lat") is not None and stay.get("lon") is not None:
         return stay["lat"], stay["lon"], None
+    if not photon.is_configured():
+        return None, None, None
+    return geocode_stay(stay)
 
-    from ..integrations.photon import client as photon
 
-    query = stay.get("address") or (
-        f"{stay['name']}, {stay['city']}" if stay.get("city") else stay["name"]
+def _place_existing(user_id: int, existing, stay: dict) -> None:
+    """Give an already-imported stay the pin it never got.
+
+    Stays imported while the geocoder was down — or before the checks above
+    could find a Chinese street — have no position; reading the mail again
+    (every rescan does) is the chance to place them. Only a stay still without
+    one, so a place the traveller picked by hand is never overwritten. The
+    stored times go back through the service with the new position, which
+    re-localises them in the property's timezone.
+    """
+    from ..stays.repository import StayRepository
+    from ..stays.service import stay_service
+
+    stored = StayRepository().get(existing["id"], existing["trip_id"])
+    if stored is None or stored.place.lat is not None:
+        return
+    lat, lon, geo_country = _geocode(stay)
+    if lat is None or lon is None:
+        return
+    stay_service.update_stay(
+        existing["trip_id"],
+        existing["id"],
+        user_id,
+        {
+            "place": {
+                "name": stored.place.name,
+                "address": stored.place.address,
+                "lat": lat,
+                "lon": lon,
+                "country_code": stored.place.country_code
+                or stay.get("country_code")
+                or geo_country,
+            },
+            # Stored without a zone, so the wall clock as typed (or as mailed).
+            "check_in_datetime": stored.check_in_datetime[:16],
+            "check_out_datetime": stored.check_out_datetime[:16],
+        },
     )
-    try:
-        results = photon.search_places(query, kind="stay", limit=1)
-    except Exception as exc:  # noqa: BLE001 - a geocoder outage must not lose the booking
-        logger.warning("Lodging import: geocoding failed for %r: %s", query[:60], exc)
-        return None, None, None
-    if not results:
-        return None, None, None
-    top = results[0]
-    return top.get("lat"), top.get("lon"), (top.get("countrycode") or "").upper() or None
+    logger.info("User %d: placed stay '%s' on the map", user_id, stored.place.name[:40])
 
 
 def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
@@ -341,6 +371,7 @@ def import_lodging_from_email(email_msg, user_id: int) -> list[str]:
                 logger.debug("Lodging import: '%s' already imported", stay["name"][:40])
                 if existing["price_amount"] is None:
                     _record_price(user_id, existing["id"], existing["trip_id"], stay)
+                _place_existing(user_id, existing, stay)
                 continue
 
             lat, lon, geo_country = _geocode(stay)

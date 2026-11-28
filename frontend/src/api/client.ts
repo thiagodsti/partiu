@@ -53,6 +53,12 @@ import type {
   StationResult,
   IntegrationStatus,
   PlaceResult,
+  SuggestionsStatus,
+  SuggestRequest,
+  LocatedPlace,
+  DayBusy,
+  ArrangeResponse,
+  SuggestResponse,
 } from './types';
 
 const BASE = ''; // Same origin; Vite proxy handles /api in dev
@@ -402,6 +408,20 @@ export const plannerApi = {
   updateTask: (tripId: string, id: string, data: Partial<Omit<PlanTask, 'id' | 'sort_order'>>) =>
     patch<null>(`/api/trips/${tripId}/plan/tasks/${id}`, data),
   deleteTask: (tripId: string, id: string) => del<null>(`/api/trips/${tripId}/plan/tasks/${id}`),
+};
+
+export const suggestionsApi = {
+  status: () => get<SuggestionsStatus>('/api/suggestions/status'),
+  setUseHistory: (use_history: boolean) => put<{ use_history: boolean }>('/api/suggestions/prefs', { use_history }),
+  /** Places for a route stop (`stop_id`) or a day (`date`). Writes nothing to the plan. */
+  suggest: (tripId: string, data: SuggestRequest) =>
+    post<SuggestResponse>(`/api/trips/${tripId}/plan/suggestions`, data),
+  /** One picked suggestion on the map; null when the map does not know it. */
+  locate: (tripId: string, data: { stop_id?: string | null; date?: string | null; name: string }) =>
+    post<LocatedPlace | null>(`/api/trips/${tripId}/plan/suggestions/locate`, data),
+  /** A proposed order and start times for a day's items. Writes nothing. */
+  arrange: (tripId: string, data: { date: string; busy: DayBusy[] }) =>
+    post<ArrangeResponse>(`/api/trips/${tripId}/plan/arrange`, data),
 };
 
 export const dayNotesApi = {

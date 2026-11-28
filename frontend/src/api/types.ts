@@ -629,6 +629,9 @@ export interface PlanItem {
   lon: number | null;
   status: PlanItemStatus;
   sort_order: number;
+  /** A suggested place's Wikipedia thumbnail, and the article it came from. */
+  image_url?: string | null;
+  image_page?: string | null;
 }
 
 /** A to-do before the trip, optionally assigned to someone on it. */
@@ -645,4 +648,81 @@ export interface TripPlan {
   stops: PlanStop[];
   items: PlanItem[];
   tasks: PlanTask[];
+}
+
+// ---- AI place suggestions ----
+
+export type SuggestInterest = 'sights' | 'food' | 'museums' | 'nature' | 'nightlife' | 'kids' | 'budget';
+
+export interface SuggestionsStatus {
+  available: boolean;
+  use_history: boolean;
+  daily_limit: number;
+  used_today: number;
+}
+
+export interface SuggestRequest {
+  stop_id?: string | null;
+  date?: string | null;
+  interests: SuggestInterest[];
+  wish?: string | null;
+  exclude: string[];
+}
+
+export interface Suggestion {
+  title: string;
+  why: string;
+  category: string;
+  best_time: 'morning' | 'afternoon' | 'evening' | 'any';
+  /** Placed by its Wikipedia article (photo and position) when it has one. */
+  on_wikipedia: boolean;
+  image_url: string | null;
+  image_page: string | null;
+  /** Null when no article and no map lookup placed it (yet). */
+  lat: number | null;
+  lon: number | null;
+  /** The map's name in another script (四川博物院), when it was looked up. */
+  local_name?: string | null;
+}
+
+export interface LocatedPlace {
+  place_name: string;
+  /** The map's name when it is in another script (四川博物院). */
+  local_name: string | null;
+  address: string;
+  lat: number;
+  lon: number;
+}
+
+export interface SuggestResponse {
+  city: string;
+  day: string | null;
+  /** The booked stay there, when it is on the map: cards show their distance. */
+  stay?: { name: string; lat: number; lon: number } | null;
+  /** A stay booked there with no position: the panel says how to place it. */
+  stay_without_pin?: string | null;
+  suggestions: Suggestion[];
+  unverified: number;
+}
+
+/** A fixed part of the day ("busy") the arranged plan must leave free. */
+export interface DayBusy {
+  start: string;
+  end?: string | null;
+  label: string;
+}
+
+export interface ArrangedItem {
+  id: string;
+  title: string;
+  time: string | null;
+  current_time: string | null;
+  /** Booked with a time: it keeps that time. */
+  fixed: boolean;
+}
+
+export interface ArrangeResponse {
+  day: string;
+  items: ArrangedItem[];
+  tip: string | null;
 }

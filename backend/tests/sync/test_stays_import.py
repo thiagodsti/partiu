@@ -9,6 +9,7 @@ join *that* one rather than starting a second).
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -683,3 +684,57 @@ class TestPriceBecomesAnExpense:
         assert stay["price_amount"] is None
         import_lodging_from_email(email, user_id)
         assert len(self._expenses(conn)) == 1
+
+
+class TestPlacingOnRescan:
+    """A stay imported without a pin gets one when its mail is read again."""
+
+    BEIJING = {
+        "前井胡同": [
+            {
+                "name": "Qianjing",
+                "city": "Beijing",
+                "countrycode": "CN",
+                "country": "China",
+                "address": "",
+                "lat": 39.9365,
+                "lon": 116.3839,
+            }
+        ]
+    }
+
+    def _import(self, conn, user_id, answers):
+        from conftest import load_anonymized_fixture
+
+        from backend.integrations.photon import client as photon
+        from backend.sync.stays_import import import_lodging_from_email
+
+        email = load_anonymized_fixture("trip_com_hotel_confirmation_anonymized.json")
+        with (
+            patch.object(photon, "is_configured", return_value=True),
+            patch.object(photon, "search_places", side_effect=lambda q, **kw: answers.get(q, [])),
+        ):
+            return import_lodging_from_email(email, user_id)
+
+    def test_the_local_street_places_it_and_its_times_move_to_beijing(self, conn):
+        user_id = _make_user(conn)
+        (stay_id,) = self._import(conn, user_id, {})
+        before = conn.execute("SELECT * FROM trip_stays WHERE id = ?", (stay_id,)).fetchone()
+        assert before["lat"] is None
+
+        assert self._import(conn, user_id, self.BEIJING) == []
+        after = conn.execute("SELECT * FROM trip_stays WHERE id = ?", (stay_id,)).fetchone()
+        assert (after["lat"], after["lon"]) == (39.9365, 116.3839)
+        # 14:00 at the hotel is 06:00 UTC in Beijing (UTC+8); the dates hold.
+        assert after["check_in_datetime"].startswith("2027-03-24T06:00")
+        assert (after["check_in_date"], after["check_out_date"]) == ("2027-03-24", "2027-03-27")
+
+    def test_a_place_already_on_the_map_is_left_alone(self, conn):
+        user_id = _make_user(conn)
+        (stay_id,) = self._import(conn, user_id, self.BEIJING)
+        conn.execute("UPDATE trip_stays SET lat = 1.0, lon = 2.0 WHERE id = ?", (stay_id,))
+        conn.commit()
+        moved = {"前井胡同": [{**self.BEIJING["前井胡同"][0], "lat": 50.0, "lon": 50.0}]}
+        self._import(conn, user_id, moved)
+        row = conn.execute("SELECT lat, lon FROM trip_stays WHERE id = ?", (stay_id,)).fetchone()
+        assert (row["lat"], row["lon"]) == (1.0, 2.0)

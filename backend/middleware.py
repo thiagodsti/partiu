@@ -25,12 +25,15 @@ _SECURITY_HEADERS = {
     # CartoDB tile servers and unpkg needed for the trip route map (Leaflet)
     # OpenFreeMap serves the planner map's vector tiles, style, glyphs and sprites;
     # MapLibre decodes them in a worker it starts from a blob: URL
+    # thumb./upload.wikimedia.org: the planner's AI suggestions show a place's
+    # Wikipedia thumbnail (suggestions/photos.py) — the API hands out thumb.
+    # URLs today; image loads only, nothing is fetched by script
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org "
-        "https://tiles.openfreemap.org; "
+        "https://tiles.openfreemap.org https://thumb.wikimedia.org https://upload.wikimedia.org; "
         "connect-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org "
         "https://tiles.openfreemap.org; "
         "worker-src 'self' blob:; "

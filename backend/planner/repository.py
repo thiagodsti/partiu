@@ -24,6 +24,8 @@ _ITEM_COLUMNS = (
     "lon",
     "status",
     "sort_order",
+    "image_url",
+    "image_page",
 )
 _TASK_COLUMNS = ("text", "done", "assignee_user_id", "assignee_guest_id")
 
@@ -55,6 +57,8 @@ def _item(row: sqlite3.Row) -> PlanItem:
         lon=row["lon"],
         status=row["status"],
         sort_order=row["sort_order"],
+        image_url=row["image_url"],
+        image_page=row["image_page"],
     )
 
 
@@ -149,9 +153,9 @@ class PlannerRepository:
             ).fetchone()[0]
             conn.execute(
                 """INSERT INTO trip_plan_items (id, trip_id, date, time, title, notes,
-                       place_name, lat, lon, status, sort_order, created_by, created_at,
-                       updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       place_name, lat, lon, status, sort_order, image_url, image_page,
+                       created_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     item_id,
                     trip_id,
@@ -164,6 +168,8 @@ class PlannerRepository:
                     values.get("lon"),
                     values["status"],
                     last + 1,
+                    values.get("image_url"),
+                    values.get("image_page"),
                     user_id,
                     now,
                     now,

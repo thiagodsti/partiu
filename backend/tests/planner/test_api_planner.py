@@ -231,3 +231,39 @@ class TestItemPlace:
         assert (item["place_name"], item["lat"], item["lon"]) == ("Forbidden City", 39.916, 116.397)
         auth_client.patch(f"{base}/{item_id}", json={"place_name": None, "lat": None, "lon": None})
         assert _plan(auth_client, trip_id)["items"][0]["lat"] is None
+
+
+class TestItemPhoto:
+    THUMB = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Tower.jpg/320px-Tower.jpg"
+    PAGE = "https://en.wikipedia.org/wiki/Bel%C3%A9m_Tower"
+
+    def test_a_suggested_place_keeps_its_photo(self, auth_client):
+        trip_id = _trip(auth_client)
+        r = auth_client.post(
+            f"/api/trips/{trip_id}/plan/items",
+            json={"title": "Belém Tower", "image_url": self.THUMB, "image_page": self.PAGE},
+        )
+        assert r.status_code in (200, 201), r.text
+        item = _plan(auth_client, trip_id)["items"][0]
+        assert item["image_url"] == self.THUMB and item["image_page"] == self.PAGE
+
+    def test_a_photo_from_anywhere_else_is_refused(self, auth_client):
+        trip_id = _trip(auth_client)
+        r = auth_client.post(
+            f"/api/trips/{trip_id}/plan/items",
+            json={"title": "X", "image_url": "https://tracker.example/pixel.gif"},
+        )
+        assert r.status_code in (400, 422)
+        r = auth_client.post(
+            f"/api/trips/{trip_id}/plan/items",
+            json={"title": "X", "image_url": self.THUMB, "image_page": "https://evil.example/"},
+        )
+        assert r.status_code in (400, 422)
+
+    def test_the_photo_can_be_removed(self, auth_client):
+        trip_id = _trip(auth_client)
+        item_id = auth_client.post(
+            f"/api/trips/{trip_id}/plan/items", json={"title": "T", "image_url": self.THUMB}
+        ).json()["id"]
+        auth_client.patch(f"/api/trips/{trip_id}/plan/items/{item_id}", json={"image_url": None})
+        assert _plan(auth_client, trip_id)["items"][0]["image_url"] is None

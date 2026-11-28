@@ -104,6 +104,11 @@ class TestRealConfirmation:
         (stay,) = extract_trip_com_stays(trip_email)
         assert stay["address"] == "No. 7 Qianjing Hutong, Xicheng District, Beijing, China"
 
+    def test_the_local_script_line_comes_back_apart(self, trip_email):
+        """OSM names Chinese streets in Chinese: this line is what finds the hotel."""
+        (stay,) = extract_trip_com_stays(trip_email)
+        assert stay["local_address"] == "北京西城区前井胡同7号"
+
     def test_country_and_guests_are_not_guessed(self, trip_email):
         """The country is a name inside the address and the template lists only
         the names entered at booking, so neither is turned into a fact."""
@@ -137,6 +142,8 @@ class TestSyntheticTemplate:
         assert stay["check_out_datetime"] == "2027-06-07T11:00"
         assert stay["booking_reference"] == "1111222333"
         assert stay["address"] == "1 Example Street, Porto, Portugal"
+        # A Latin line under the address is not a local-script address.
+        assert stay["local_address"] is None
         assert stay["city"] == "Porto"
         assert stay["contact"] == "+351000000000"
 

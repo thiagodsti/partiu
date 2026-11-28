@@ -38,6 +38,10 @@ const {
 }));
 
 vi.mock('../api/client', () => ({
+  suggestionsApi: {
+    status: vi.fn().mockResolvedValue({ available: false, use_history: false, daily_limit: 40, used_today: 0 }),
+    setUseHistory: vi.fn().mockResolvedValue({ use_history: false }),
+  },
   emailReviewApi: {
     ignoredSenders: () => Promise.resolve([]),
     stopIgnoring: () => Promise.resolve(null),

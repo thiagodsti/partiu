@@ -23,6 +23,7 @@ class TestStatuses:
             "aviationstack",
             "photon",
             "kitinerary",
+            "ai_suggestions",
             "ollama",
             "push",
         }
@@ -155,7 +156,15 @@ class TestEndpoint:
         r = auth_client.get("/api/settings/admin/integrations")
         assert r.status_code == 200
         keys = {row["key"] for row in r.json()}
-        assert {"carto", "aviationstack", "photon", "kitinerary", "ollama", "push"} == keys
+        assert {
+            "carto",
+            "aviationstack",
+            "photon",
+            "kitinerary",
+            "ai_suggestions",
+            "ollama",
+            "push",
+        } == keys
 
     def test_the_response_carries_no_key_material(self, auth_client):
         from backend.settings import integrations
@@ -165,6 +174,15 @@ class TestEndpoint:
             body = auth_client.get("/api/settings/admin/integrations").text
 
         assert secret not in body
+
+    def test_the_ai_key_is_reported_but_never_sent(self, auth_client, monkeypatch):
+        secret = "sk-ai-secret-value"
+        monkeypatch.setenv("AI_SUGGESTIONS_PROVIDER", "anthropic")
+        monkeypatch.setenv("AI_SUGGESTIONS_API_KEY", secret)
+        r = auth_client.get("/api/settings/admin/integrations")
+        row = next(x for x in r.json() if x["key"] == "ai_suggestions")
+        assert row["configured"] is True and row["env_var"] == "AI_SUGGESTIONS_PROVIDER"
+        assert secret not in r.text
 
     def test_unauthenticated_is_refused(self, client):
         assert client.get("/api/settings/admin/integrations").status_code == 401
