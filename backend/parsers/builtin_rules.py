@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 # Increment this version whenever rules, extractors, or PDF logic are added or modified.
 # When a sync detects a version mismatch, it performs a full rescan
 # instead of an incremental one (deduplication prevents duplicate flights).
-PARSER_VERSION = "35"  # stay prices (Trip.com, Booking.com, schema.org) become trip expenses
+PARSER_VERSION = "36"  # imported stays placed on the map: Trip.com local street, checked geocoding, backfill on rescan
 # Every one of these is a mail that already matched its rule and was marked
 # processed after yielding nothing, so only the full rescan a bump triggers
 # walks back over them. ("33" added the cancellation extractors, for the same

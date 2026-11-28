@@ -33,7 +33,10 @@ Four decisions are deliberate:
   idempotency keys on.
 - The **address is the first line under its label only.** China properties
   print the local-script address on the line after, and folding it in would
-  hand the geocoder a query it cannot match.
+  hand the geocoder a query it cannot match. That line is returned apart, as
+  ``local_address``: OSM names Chinese streets in Chinese, so its street is
+  what finds the hotel when the English rendering does not
+  (``sync/stay_geocode.py``).
 - The **guest count is left out.** The template lists only the guest names
   entered at booking (often just the lead guest), and the room's *capacity*
   ("up to 2 guests") is not how many people are coming. A wrong count is worse
@@ -74,6 +77,7 @@ _CLOCK_RE = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _PHONE_RE = re.compile(r"^Call\s*(\+?[\d\s().-]{6,})$")
 _ROOMS_NIGHTS_RE = re.compile(r"^\d+\s+Rooms?\s+\d+\s+nights?$", re.IGNORECASE)
 _REFERENCE_RE = re.compile(r"^\d{8,}$")
+_LOCAL_SCRIPT_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 # Trip.com sprinkles zero-width non-joiners through the header's booking number
 # ("1‌688‌902…") so mail clients do not autolink it.
 _ZERO_WIDTH_RE = re.compile(r"[​-‍﻿]")
@@ -193,11 +197,14 @@ def extract_trip_com_stays(email_msg) -> list[dict]:
         return []
 
     city = _CITY_RE.search(text)
-    address = _after(fields, "Address", 1)
+    address = _after(fields, "Address", 2)
+    # The line under the address, when it is the local-script one (China).
+    local = address[1] if len(address) > 1 and _LOCAL_SCRIPT_RE.search(address[1]) else None
 
     stay = {
         "name": name,
         "address": address[0] if address else None,
+        "local_address": local,
         "city": city.group(1).strip() if city else None,
         "country_code": None,
         "check_in_datetime": check_in,
