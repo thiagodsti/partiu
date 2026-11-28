@@ -93,6 +93,18 @@ class SuggestionsRepository:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def known_cities(self, folded_names: list[str]) -> set[str]:
+        """Which of these (accent-folded) names are a city in the airports table."""
+        names = [n for n in folded_names if n][:12]
+        if not names:
+            return set()
+        with db_conn() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT city_folded FROM airports WHERE city_folded IN ({','.join('?' * len(names))})",
+                names,
+            ).fetchall()
+        return {r["city_folded"] for r in rows}
+
     def rated_trips(self, user_id: int, exclude_trip_id: str, today: str, limit: int) -> list[dict]:
         """Finished trips the traveller is on that carry a rating, newest first.
 

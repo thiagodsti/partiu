@@ -46,7 +46,7 @@ _GENERIC = frozenset(
     no nr number unit building floor room street st road rd lane ln avenue ave
     alley boulevard blvd way district county province city town village area
     zone block calle rua rue avenida via strada strasse platz de del la el los las
-    do da dos das di le the and of hotel hostel inn apartment apartments
+    do da dos das di le les des du au aux von van der den het the and of hotel hostel inn apartment apartments
     residence house branch store shop north south east west
     """.split()
 )

@@ -462,6 +462,23 @@ class TestArrange:
         )
         assert set(exclude) <= set(_sent(ai_on)["already_planned"])
 
+    def test_a_planned_title_beyond_the_cap_is_still_not_suggested(self, auth_client, ai_on):
+        trip_id, stop_id = _trip_with_stop(auth_client)
+        for n in range(80):
+            auth_client.post(f"/api/trips/{trip_id}/plan/items", json={"title": f"Item {n}"})
+        ai_on.return_value = {
+            "suggestions": [
+                {"name": "Item 79", "why": "x", "category": "sight", "best_time": "any"},
+                {"name": "New place", "why": "y", "category": "sight", "best_time": "any"},
+            ]
+        }
+        r = auth_client.post(
+            f"/api/trips/{trip_id}/plan/suggestions",
+            json={"stop_id": stop_id, "exclude": [f"Shown {n}" for n in range(50)]},
+        )
+        assert "Item 79" not in _sent(ai_on)["already_planned"]
+        assert [c["title"] for c in r.json()["suggestions"]] == ["New place"]
+
     def test_one_item_is_nothing_to_arrange(self, auth_client, ai_on):
         trip_id, _ = _trip_with_stop(auth_client)
         auth_client.post(

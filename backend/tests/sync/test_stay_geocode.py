@@ -105,6 +105,18 @@ class TestStreetNames:
         (lat, _, _), _ = _geocode(stay, {stay["address"]: [wrong, right]})
         assert lat == 48.856
 
+    def test_des_is_not_what_names_a_street(self):
+        stay = {
+            "name": "Flat",
+            "address": "10 Rue des Martyrs, Paris",
+            "city": None,
+            "country_code": "FR",
+        }
+        wrong = _hit("Rue des Archives", "Paris", "FR", 48.859, 2.357)
+        right = _hit("Rue des Martyrs", "Paris", "FR", 48.880, 2.339)
+        (lat, _, _), _ = _geocode(stay, {stay["address"]: [wrong, right]})
+        assert lat == 48.880
+
 
 class TestWhereChecks:
     def test_a_hit_in_a_city_the_booking_never_names_is_refused(self):

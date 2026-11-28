@@ -253,7 +253,11 @@ class SuggestionsService:
 
         raw = answer.get("suggestions")
         proposed = [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
-        known = {t.casefold() for t in request["already_planned"]}
+        # Every title on the plan and in the panel, not the capped list the
+        # model was sent: a place it repeats anyway must still be dropped.
+        known = {
+            _clip(t, 120).casefold() for t in [*self._repository.known_titles(trip_id), *exclude]
+        }
         cards = []
         for s in proposed:
             name = _clip(str(s.get("name") or ""), 120)
@@ -423,7 +427,7 @@ class SuggestionsService:
             place = self._repository.stop_on(trip_id, day)
             if place is None and stay:
                 place = {
-                    "name": _city_of_stay(stay),
+                    "name": _city_of_stay(stay, self._repository.known_cities),
                     "lat": stay["lat"],
                     "lon": stay["lon"],
                     "country_code": stay.get("country"),
@@ -607,18 +611,26 @@ _STREET_WORDS = frozenset(
 )
 
 
-def _city_of_stay(stay: dict) -> str:
-    """A stay's address ends in its city more often than not; a guess good
-    enough to search for, and only used when the route names no city."""
+def _city_of_stay(stay: dict, known_cities=None) -> str:
+    """The city in a stay's address, used only when the route names none.
+
+    A part the airports table knows as a city wins wherever it sits ("…,
+    Arganzuela, Madrid" is Madrid, not the district). Otherwise, from the end:
+    a part that reads as a street never stands in for the city, and the last
+    part is taken for the country only when there are three or more — a
+    fallback, since an address may or may not end in one.
+    """
     parts = []
     for part in (stay.get("address") or "").split(","):
         # "1100-000 Lisboa" is the city behind a postcode; "Rua X 10" a street.
         words = [w for w in part.split() if not any(c.isdigit() for c in w)]
         if words:
             parts.append(" ".join(words))
-    # From the end: the country goes when there are enough parts to have one
-    # ("…, Lisboa, Portugal"), and a part that reads as a street never stands
-    # in for the city ("Calle Fernando Poo 16, Madrid" is Madrid).
+    if known_cities and parts:
+        cities = known_cities([fold_text(p) for p in parts])
+        for part in reversed(parts):
+            if fold_text(part) in cities:
+                return part
     candidates = parts[:-1] if len(parts) >= 3 else parts
     for part in reversed(candidates):
         if not _STREET_WORDS & set(fold_text(part).split()):

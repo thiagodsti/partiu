@@ -233,7 +233,9 @@
     const results = await Promise.allSettled(
       proposal.items.map((a, i) => api.updateItem(params.id, a.id, { time: a.time, sort_order: i })),
     );
-    arranged = null;
+    // Only this proposal's preview: a newer one opened while these writes
+    // were in flight stays open.
+    if (arranged === proposal) arranged = null;
     if (results.some((r) => r.status === 'rejected')) {
       arrangeError = $t('arrange.error_apply');
       try {

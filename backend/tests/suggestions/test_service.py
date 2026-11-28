@@ -24,6 +24,10 @@ class TestCityOfStay:
         stay = {"name": "H", "address": "No. 7 Qianjing Hutong, Xicheng District, Beijing, China"}
         assert _city_of_stay(stay) == "Beijing"
 
+    def test_a_known_city_wins_over_a_district_after_it(self):
+        stay = {"name": "Flat", "address": "Calle Fernando Poo 16, Arganzuela, Madrid"}
+        assert _city_of_stay(stay, lambda names: {"madrid"} & set(names)) == "Madrid"
+
     def test_only_a_street_falls_back_to_the_name(self):
         assert _city_of_stay({"name": "Casa Azul", "address": "Rua das Flores 10"}) == "Casa Azul"
 
